@@ -1,4 +1,5 @@
 from __future__ import annotations
+import pytest
 
 import asyncio
 from types import SimpleNamespace
@@ -1662,5 +1663,115 @@ def test_core_engine_exposes_functional_task_manager() -> None:
 
 
 
+
+
+
+
+
+def create_test_engine() -> CoreEngine:
+    return create_engine()
+
+def test_core_engine_creates_plan():
+    from app.planning.models import PlanStatus, PlanStep
+
+    engine = create_test_engine()
+
+    plan = engine.create_plan(
+        "Dosyay? kontrol et",
+        [
+            PlanStep(
+                "Kontrol et",
+                metadata={
+                    "tool_name": "test_tool",
+                    "parameters": {},
+                },
+            )
+        ],
+    )
+
+    assert plan.goal == "Dosyay? kontrol et"
+    assert len(plan.steps) == 1
+    assert plan.status is PlanStatus.READY
+
+
+@pytest.mark.asyncio
+async def test_core_engine_executes_plan_successfully():
+    from app.planning.models import PlanStatus, PlanStep
+    from app.core.models import ToolResult, ToolExecutionStatus
+
+    engine = create_test_engine()
+
+    async def fake_execute(
+        tool_name,
+        *,
+        parameters=None,
+    ):
+        return ToolResult(
+            status=ToolExecutionStatus.SUCCESS,
+            tool_name=tool_name,
+            data={"ok": True},
+        )
+
+    engine._tool_executor.execute = fake_execute
+
+    plan = engine.create_plan(
+        "Test plan?",
+        [
+            PlanStep(
+                "?lk ad?m",
+                metadata={
+                    "tool_name": "test_tool",
+                    "parameters": {},
+                },
+            )
+        ],
+    )
+
+    result = await engine.execute_plan(plan)
+
+    assert result.status is PlanStatus.COMPLETED
+    assert result.progress == 1.0
+    assert result.steps[0].metadata["tool_result"] == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_core_engine_fails_plan_when_tool_fails():
+    from app.planning.models import PlanStatus, PlanStep
+    from app.core.models import ToolResult, ToolExecutionStatus
+
+    engine = create_test_engine()
+
+    async def fake_execute(
+        tool_name,
+        *,
+        parameters=None,
+    ):
+        return ToolResult(
+            status=ToolExecutionStatus.FAILED,
+            tool_name=tool_name,
+            message="tool failed",
+            error="execution error",
+        )
+
+    engine._tool_executor.execute = fake_execute
+
+    plan = engine.create_plan(
+        "Ba?ar?s?z plan",
+        [
+            PlanStep(
+                "Hatal? ad?m",
+                metadata={
+                    "tool_name": "test_tool",
+                    "parameters": {},
+                },
+            )
+        ],
+    )
+
+    result = await engine.execute_plan(plan)
+
+    assert result.status is PlanStatus.FAILED
+    assert result.steps[0].status.value == "failed"
+    assert result.steps[0].metadata["tool_error"] == "execution error"
 
 

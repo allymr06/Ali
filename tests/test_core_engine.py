@@ -1,47 +1,60 @@
+from __future__ import annotations
+
+import asyncio
+
 from app.core.engine import CoreEngine
 from app.core.models import Context, Request
+from app.providers.mock import MockProvider
+from app.providers.registry import ProviderRegistry
+
+
+def create_engine() -> CoreEngine:
+    registry = ProviderRegistry()
+    registry.register(MockProvider(), make_default=True)
+    return CoreEngine(registry)
 
 
 def test_core_engine_handles_request():
-    engine = CoreEngine()
+    engine = create_engine()
     request = Request("Merhaba JARVIS")
 
-    response = engine.handle(request)
+    response = asyncio.run(engine.handle(request))
 
+    assert response.text == "Mock yanıtı: Merhaba JARVIS"
     assert response.request_id == request.request_id
-    assert "Merhaba JARVIS" in response.text
+    assert response.metadata["provider"] == "mock"
+    assert response.metadata["model"] == "mock-model"
 
 
 def test_core_engine_creates_context_when_missing():
-    engine = CoreEngine()
+    engine = create_engine()
     request = Request("Test")
 
-    response = engine.handle(request)
+    response = asyncio.run(engine.handle(request))
 
-    assert response is not None
+    assert response.request_id == request.request_id
+    assert response.text == "Mock yanıtı: Test"
 
 
 def test_core_engine_accepts_existing_context():
-    engine = CoreEngine()
-    request = Request("Test")
+    engine = create_engine()
+    request = Request("Mevcut context testi")
     context = Context()
 
-    response = engine.handle(
-        request,
-        context,
-    )
+    response = asyncio.run(engine.handle(request, context))
 
-    assert response.request_id == request.request_id
+    assert response.text == "Mock yanıtı: Mevcut context testi"
 
 
-def test_core_engine_supports_custom_responder():
-    def responder(request, context):
-        return f"Özel cevap: {request.text}"
+def test_core_engine_uses_registered_default_provider():
+    registry = ProviderRegistry()
+    provider = MockProvider()
+    registry.register(provider, make_default=True)
 
-    engine = CoreEngine(responder=responder)
-    request = Request("Sistem testi")
+    engine = CoreEngine(registry)
+    request = Request("Provider testi")
 
-    response = engine.handle(request)
+    response = asyncio.run(engine.handle(request))
 
-    assert response.text == "Özel cevap: Sistem testi"
-    assert response.request_id == request.request_id
+    assert response.metadata["provider"] == "mock"
+    assert response.metadata["model"] == "mock-model"

@@ -1,59 +1,46 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
-
 from app.core.models import Context, Request, Response
+from app.providers.registry import ProviderRegistry
 
 
 class CoreEngine:
     """
     Central orchestration entry point for JARVIS.
 
-    The engine intentionally knows nothing about a specific AI provider,
-    UI framework, voice implementation, or Windows automation mechanism.
-    Those systems will be connected through explicit interfaces later.
+    The engine delegates AI generation to the currently selected
+    provider from ProviderRegistry.
     """
 
     def __init__(
         self,
-        responder: Callable[[Request, Context], str] | None = None,
+        provider_registry: ProviderRegistry,
     ) -> None:
-        self._responder = responder or self._default_responder
+        self._provider_registry = provider_registry
 
-    def handle(
+    async def handle(
         self,
         request: Request,
         context: Context | None = None,
     ) -> Response:
         """
-        Process one normalized request and return a response.
-
-        The current implementation establishes the orchestration boundary.
-        AI reasoning, tools, permissions, memory, and task execution will be
-        attached through subsequent milestones.
+        Process a request through the configured AI provider.
         """
         active_context = context or Context()
 
-        response_text = self._responder(
+        provider = self._provider_registry.get_default()
+
+        model_response = await provider.generate(
             request,
             active_context,
         )
 
         return Response(
-            text=response_text,
+            text=model_response.text,
             request_id=request.request_id,
-        )
-
-    @staticmethod
-    def _default_responder(
-        request: Request,
-        context: Context,
-    ) -> str:
-        """
-        Safe fallback used before an AI provider is connected.
-        """
-        return (
-            "JARVIS Core hazır. "
-            f"İsteğiniz alındı: {request.text}"
+            metadata={
+                "provider": model_response.provider,
+                "model": model_response.model,
+                "finish_reason": model_response.finish_reason,
+            },
         )

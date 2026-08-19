@@ -201,10 +201,16 @@ def test_executor_unregisters_tool() -> None:
 
 
 def test_executor_unknown_tool_fails() -> None:
+    from app.core.models import ToolExecutionStatus
+
     executor = ToolExecutor()
 
-    with pytest.raises(KeyError):
-        executor.execute("unknown")
+    result = executor.execute("unknown")
+
+    assert result.status is ToolExecutionStatus.FAILED
+    assert result.tool_name == "unknown"
+    assert result.verified is False
+    assert "not registered" in (result.error or "")
 
 
 def test_executor_passes_operation_to_permission_engine() -> None:

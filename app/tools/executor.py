@@ -2,6 +2,7 @@
 
 import asyncio
 import inspect
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -221,7 +222,18 @@ class ToolExecutor:
     ) -> ToolResult:
         normalized_name = name.strip()
 
-        registered = self.get(normalized_name)
+        try:
+            registered = self.get(normalized_name)
+        except KeyError as exc:
+            return ToolResult(
+                status=ToolExecutionStatus.FAILED,
+                tool_name=normalized_name,
+                message="Tool is not registered.",
+                error=str(exc),
+                started_at=None,
+                finished_at=self._now(),
+                verified=False,
+            )
 
         definition = registered.definition
         execution_parameters = parameters or {}
@@ -240,10 +252,32 @@ class ToolExecutor:
             return blocked
 
         try:
-            value = registered.handler(
-                *args,
-                **execution_parameters,
-            )
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(
+                    registered.handler,
+                    *args,
+                    **execution_parameters,
+                )
+
+                try:
+                    value = future.result(
+                        timeout=definition.timeout_seconds,
+                    )
+                except FuturesTimeoutError:
+                    future.cancel()
+
+                    return ToolResult(
+                        status=ToolExecutionStatus.TIMEOUT,
+                        tool_name=definition.name,
+                        message="Tool execution timed out.",
+                        error=(
+                            f"Tool execution exceeded the "
+                            f"{definition.timeout_seconds} second timeout."
+                        ),
+                        started_at=started_at,
+                        finished_at=self._now(),
+                        verified=False,
+                    )
 
             if inspect.isawaitable(value):
                 value.close()
@@ -327,7 +361,24 @@ class ToolExecutor:
             )
 
             if inspect.isawaitable(value):
-                value = await value
+                try:
+                    value = await asyncio.wait_for(
+                        value,
+                        timeout=definition.timeout_seconds,
+                    )
+                except asyncio.TimeoutError:
+                    return ToolResult(
+                        status=ToolExecutionStatus.TIMEOUT,
+                        tool_name=definition.name,
+                        message="Tool execution timed out.",
+                        error=(
+                            f"Tool execution exceeded the "
+                            f"{definition.timeout_seconds} second timeout."
+                        ),
+                        started_at=started_at,
+                        finished_at=self._now(),
+                        verified=False,
+                    )
 
             return ToolResult(
                 status=ToolExecutionStatus.SUCCESS,
@@ -361,6 +412,64 @@ class ToolExecutor:
             bool: "boolean",
         }
 
+        def annotation_to_schema(annotation: Any) -> dict[str, Any]:
+            from types import UnionType
+            from typing import Union, get_args, get_origin
+
+            origin = get_origin(annotation)
+            args = get_args(annotation)
+
+            if origin in (Union, UnionType):
+                non_none_args = tuple(
+                    arg
+                    for arg in args
+                    if arg is not type(None)
+                )
+
+                if len(non_none_args) == 1:
+                    return annotation_to_schema(
+                        non_none_args[0]
+                    )
+
+            if origin is list:
+                item_annotation = (
+                    args[0]
+                    if args
+                    else str
+                )
+
+                return {
+                    "type": "array",
+                    "items": annotation_to_schema(
+                        item_annotation
+                    ),
+                }
+
+            if origin is dict:
+                value_annotation = (
+                    args[1]
+                    if len(args) > 1
+                    else Any
+                )
+
+                return {
+                    "type": "object",
+                    "additionalProperties": (
+                        annotation_to_schema(
+                            value_annotation
+                        )
+                        if value_annotation is not Any
+                        else {}
+                    ),
+                }
+
+            return {
+                "type": type_mapping.get(
+                    annotation,
+                    "string",
+                )
+            }
+
         for registered in self._tools.values():
             definition = registered.definition
             signature = inspect.signature(registered.handler)
@@ -378,16 +487,13 @@ class ToolExecutor:
                 annotation = parameter.annotation
 
                 if annotation is inspect.Parameter.empty:
-                    json_type = "string"
+                    property_schema = {
+                        "type": "string",
+                    }
                 else:
-                    json_type = type_mapping.get(
-                        annotation,
-                        "string",
+                    property_schema = annotation_to_schema(
+                        annotation
                     )
-
-                property_schema: dict[str, Any] = {
-                    "type": json_type,
-                }
 
                 if parameter.default is not inspect.Parameter.empty:
                     property_schema["default"] = parameter.default

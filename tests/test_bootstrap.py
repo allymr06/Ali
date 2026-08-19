@@ -32,3 +32,16 @@ def test_create_application_uses_environment_settings(monkeypatch):
 
     assert application.settings.app_name == "JARVIS-Test"
     assert application.provider_registry.get_default().name == "mock"
+
+def test_bootstrap_registers_openai_provider(monkeypatch) -> None:
+    from app.bootstrap import create_application
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    application = create_application()
+
+    registry = application.provider_registry
+
+    assert registry.contains("mock")
+    assert registry.contains("openai")
+    assert registry.get_default().name == "mock"

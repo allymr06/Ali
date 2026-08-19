@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 
@@ -7,6 +7,7 @@ from app.core.engine import CoreEngine
 from app.memory.in_memory import InMemoryStore
 from app.memory.manager import MemoryManager
 from app.providers.mock import MockProvider
+from app.providers.openai import OpenAIProvider
 from app.providers.registry import ProviderRegistry
 from app.tools.executor import ToolExecutor
 
@@ -35,6 +36,10 @@ def create_application(
 
     provider_registry.register(
         MockProvider(),
+    )
+
+    provider_registry.register(
+        OpenAIProvider(active_settings),
     )
 
     memory_manager = MemoryManager(

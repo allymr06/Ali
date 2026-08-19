@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from app.core.models import Context, Request, Response
-from app.memory.base import MemoryStore
+from app.memory.manager import MemoryManager
+from app.memory.policy import MemoryPolicy
 from app.providers.registry import ProviderRegistry
 
 
@@ -9,16 +10,19 @@ class CoreEngine:
     """
     Central orchestration entry point for JARVIS.
 
-    The engine coordinates AI providers and memory through abstractions.
+    CoreEngine coordinates providers and memory but does not own
+    their implementation details.
     """
 
     def __init__(
         self,
         provider_registry: ProviderRegistry,
-        memory_store: MemoryStore | None = None,
+        memory_manager: MemoryManager,
+        memory_policy: MemoryPolicy | None = None,
     ) -> None:
         self._provider_registry = provider_registry
-        self._memory_store = memory_store
+        self._memory_manager = memory_manager
+        self._memory_policy = memory_policy or MemoryPolicy()
 
     async def handle(
         self,
@@ -26,16 +30,18 @@ class CoreEngine:
         context: Context | None = None,
     ) -> Response:
         """
-        Process a request through memory and the configured AI provider.
+        Process one request through the JARVIS orchestration pipeline.
         """
         active_context = context or Context()
 
-        if self._memory_store is not None:
-            memories = self._memory_store.search(
+        decision = self._memory_policy.evaluate(request)
+
+        if decision.should_remember:
+            self._memory_manager.remember(
                 request.text,
-                limit=5,
+                memory_type=decision.memory_type,
+                importance=decision.importance,
             )
-            active_context.values["relevant_memories"] = memories
 
         provider = self._provider_registry.get_default()
 
@@ -50,6 +56,6 @@ class CoreEngine:
             metadata={
                 "provider": model_response.provider,
                 "model": model_response.model,
-                "finish_reason": model_response.finish_reason,
+                "memory_decision": decision.should_remember,
             },
         )

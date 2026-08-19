@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from types import SimpleNamespace
 
@@ -112,11 +112,11 @@ async def test_openai_provider_passes_system_prompt_and_memories():
     )
 
     context = Context(
-        memories=["Ali JARVIS'i geliştiriyor."]
+        memories=["Ali JARVIS'i gelistiriyor."]
     )
 
     await provider.generate(
-        Request("Nerede kaldık?"),
+        Request("Nerede kald?k?"),
         context,
         system_prompt="Sen JARVIS'sin.",
     )
@@ -126,10 +126,10 @@ async def test_openai_provider_passes_system_prompt_and_memories():
     assert call["model"] == "test-model"
     assert call["messages"][0]["role"] == "system"
     assert call["messages"][0]["content"] == "Sen JARVIS'sin."
-    assert "Ali JARVIS'i geliştiriyor." in (
+    assert "Ali JARVIS'i gelistiriyor." in (
         call["messages"][1]["content"]
     )
-    assert call["messages"][-1]["content"] == "Nerede kaldık?"
+    assert call["messages"][-1]["content"] == "Nerede kald?k?"
 
 
 @pytest.mark.asyncio
@@ -179,3 +179,164 @@ async def test_openai_provider_requires_client():
             Request("test"),
             Context(),
         )
+
+def test_openai_provider_creates_client_from_settings(monkeypatch) -> None:
+    from app.config.settings import Settings
+    from app.providers.openai import OpenAIProvider
+
+    monkeypatch.setenv("JARVIS_API_KEY", "test-secret")
+    monkeypatch.setenv("JARVIS_API_BASE_URL", "https://example.test/v1")
+
+    provider = OpenAIProvider(Settings.from_environment())
+
+    assert provider._client is not None
+    assert provider._client.api_key == "test-secret"
+    assert str(provider._client.base_url).rstrip("/") == "https://example.test/v1"
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_generates_model_response(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from app.config.settings import Settings
+    from app.providers.openai import OpenAIProvider
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            assert kwargs["model"] == "test-model"
+            assert kwargs["messages"][-1]["role"] == "user"
+            assert kwargs["messages"][-1]["content"] == "Merhaba JARVIS"
+
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content="Merhaba Ali.",
+                            tool_calls=None,
+                        ),
+                        finish_reason="stop",
+                    )
+                ],
+                usage=SimpleNamespace(
+                    prompt_tokens=10,
+                    completion_tokens=5,
+                    total_tokens=15,
+                ),
+            )
+
+    class FakeClient:
+        def __init__(self):
+            self.chat = SimpleNamespace(
+                completions=FakeCompletions()
+            )
+
+    monkeypatch.setenv("JARVIS_API_KEY", "test-secret")
+    monkeypatch.setenv("JARVIS_DEFAULT_MODEL", "test-model")
+
+    provider = OpenAIProvider(
+        Settings.from_environment(),
+        client=FakeClient(),
+    )
+
+    response = await provider.generate(
+        Request("Merhaba JARVIS"),
+        Context(),
+    )
+
+    assert response.text == "Merhaba Ali."
+    assert response.provider == "openai"
+    assert response.model == "test-model"
+    assert response.finish_reason == "stop"
+    assert response.usage["total_tokens"] == 15
+
+@pytest.mark.asyncio
+async def test_openai_provider_parses_tool_calls(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from app.config.settings import Settings
+    from app.core.models import Context, Request
+    from app.providers.openai import OpenAIProvider
+
+    tool_call = SimpleNamespace(
+        id="call_123",
+        type="function",
+        function=SimpleNamespace(
+            name="get_weather",
+            arguments='{"city":"Baku"}',
+        ),
+    )
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            assert kwargs["tools"] == [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "description": "Get weather information.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "city": {"type": "string"},
+                            },
+                            "required": ["city"],
+                        },
+                    },
+                }
+            ]
+
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content="",
+                            tool_calls=[tool_call],
+                        ),
+                        finish_reason="tool_calls",
+                    )
+                ],
+                usage=None,
+            )
+
+    class FakeClient:
+        def __init__(self):
+            self.chat = SimpleNamespace(
+                completions=FakeCompletions()
+            )
+
+    monkeypatch.setenv("JARVIS_API_KEY", "test-secret")
+
+    provider = OpenAIProvider(
+        Settings.from_environment(),
+        client=FakeClient(),
+    )
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get weather information.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "city": {"type": "string"},
+                    },
+                    "required": ["city"],
+                },
+            },
+        }
+    ]
+
+    response = await provider.generate(
+        Request("Baku'de hava nas?l?"),
+        Context(),
+        tools=tools,
+    )
+
+    assert response.finish_reason == "tool_calls"
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0]["id"] == "call_123"
+    assert response.tool_calls[0]["type"] == "function"
+    assert response.tool_calls[0]["function"]["name"] == "get_weather"
+    assert response.tool_calls[0]["function"]["arguments"] == '{"city":"Baku"}'

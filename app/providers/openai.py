@@ -3,6 +3,8 @@
 import asyncio
 from typing import Any
 
+from openai import AsyncOpenAI
+
 from app.config.settings import Settings
 from app.core.models import Context, Request
 from app.providers.base import (
@@ -44,6 +46,12 @@ class OpenAIProvider(AIProvider):
     ) -> None:
         self._settings = settings or Settings.from_environment()
         self._client = client
+
+        if self._client is None and self._settings.api_key:
+            self._client = AsyncOpenAI(
+                api_key=self._settings.api_key,
+                base_url=self._settings.api_base_url or None,
+            )
 
     async def generate(
         self,

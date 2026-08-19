@@ -78,3 +78,9 @@ def test_settings_rejects_negative_retries(monkeypatch) -> None:
 
     with pytest.raises(ValueError):
         Settings.from_environment()
+
+def test_settings_reads_api_key(monkeypatch) -> None:
+    monkeypatch.setenv("JARVIS_API_KEY", "test-secret")
+    settings = Settings.from_environment()
+    assert settings.api_key == "test-secret"
+

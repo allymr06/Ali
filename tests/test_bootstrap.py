@@ -45,3 +45,16 @@ def test_bootstrap_registers_openai_provider(monkeypatch) -> None:
     assert registry.contains("mock")
     assert registry.contains("openai")
     assert registry.get_default().name == "mock"
+
+def test_bootstrap_can_select_openai_provider(monkeypatch) -> None:
+    from app.bootstrap import create_application
+    from app.config.settings import Settings
+
+    monkeypatch.setenv("JARVIS_DEFAULT_PROVIDER", "openai")
+    monkeypatch.setenv("JARVIS_API_KEY", "test-secret")
+
+    application = create_application(Settings.from_environment())
+
+    assert application.provider_registry.contains("mock")
+    assert application.provider_registry.contains("openai")
+    assert application.provider_registry.get_default().name == "openai"

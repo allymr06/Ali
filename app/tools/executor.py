@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, get_type_hints
 
 from app.core.models import (
     ToolDefinition,
@@ -473,6 +473,7 @@ class ToolExecutor:
         for registered in self._tools.values():
             definition = registered.definition
             signature = inspect.signature(registered.handler)
+            type_hints = get_type_hints(registered.handler)
 
             properties: dict[str, Any] = {}
             required: list[str] = []
@@ -484,7 +485,7 @@ class ToolExecutor:
                 ):
                     continue
 
-                annotation = parameter.annotation
+                annotation = type_hints.get(parameter.name, parameter.annotation)
 
                 if annotation is inspect.Parameter.empty:
                     property_schema = {

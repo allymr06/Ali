@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
@@ -1088,7 +1088,7 @@ def test_core_engine_does_not_execute_tool_when_arguments_are_not_a_dict() -> No
     class InvalidArgumentsProvider(MockProvider):
         async def generate(self, request, context, **kwargs):
             return SimpleNamespace(
-                text="Geçersiz parametre.",
+                text="Gecersiz parametre.",
                 model="mock-model",
                 provider="mock",
                 finish_reason="stop",
@@ -1122,7 +1122,7 @@ def test_core_engine_does_not_execute_tool_when_arguments_are_not_a_dict() -> No
     )
 
     assert called["value"] is False
-    assert response.text == "Geçersiz parametre."
+    assert response.text == "Gecersiz parametre."
 
 
 def test_core_engine_does_not_execute_unknown_tool() -> None:
@@ -1312,4 +1312,288 @@ def test_core_engine_stops_after_max_tool_iterations() -> None:
     assert call_count["value"] == 5
     assert response.metadata["tool_calls"] == 5
     assert response.metadata["tool_iterations"] == 5
+
+
+def test_core_engine_skips_tool_call_when_function_name_is_missing() -> None:
+    registry = ProviderRegistry()
+    memory_manager = MemoryManager(InMemoryStore())
+    tool_executor = ToolExecutor()
+
+    called = {"value": False}
+
+    def test_tool() -> str:
+        called["value"] = True
+        return "executed"
+
+    tool_executor.register(
+        ToolDefinition(
+            name="test_tool",
+            description="Test tool.",
+        ),
+        test_tool,
+    )
+
+    class MissingNameProvider(MockProvider):
+        async def generate(self, request, context, **kwargs):
+            return SimpleNamespace(
+                text="Tool adi eksik.",
+                model="mock-model",
+                provider="mock",
+                finish_reason="tool_calls",
+                tool_calls=[
+                    {
+                        "id": "call_missing_name",
+                        "type": "function",
+                        "function": {
+                            "arguments": "{}",
+                        },
+                    }
+                ],
+                usage={},
+                metadata={},
+            )
+
+    registry.register(
+        MissingNameProvider(),
+        make_default=True,
+    )
+
+    engine = CoreEngine(
+        registry,
+        memory_manager,
+        tool_executor=tool_executor,
+    )
+
+    response = asyncio.run(
+        engine.handle(Request("Test"))
+    )
+
+    assert called["value"] is False
+    assert response.text == "Tool adi eksik."
+
+
+def test_core_engine_skips_tool_call_when_arguments_are_none() -> None:
+    registry = ProviderRegistry()
+    memory_manager = MemoryManager(InMemoryStore())
+    tool_executor = ToolExecutor()
+
+    called = {"value": False}
+
+    def test_tool() -> str:
+        called["value"] = True
+        return "executed"
+
+    tool_executor.register(
+        ToolDefinition(
+            name="test_tool",
+            description="Test tool.",
+        ),
+        test_tool,
+    )
+
+    class NoneArgumentsProvider(MockProvider):
+        async def generate(self, request, context, **kwargs):
+            return SimpleNamespace(
+                text="Gecersiz arguman.",
+                model="mock-model",
+                provider="mock",
+                finish_reason="stop",
+                tool_calls=[
+                    {
+                        "id": "call_none_arguments",
+                        "type": "function",
+                        "function": {
+                            "name": "test_tool",
+                            "arguments": None,
+                        },
+                    }
+                ],
+                usage={},
+                metadata={},
+            )
+
+    registry.register(
+        NoneArgumentsProvider(),
+        make_default=True,
+    )
+
+    engine = CoreEngine(
+        registry,
+        memory_manager,
+        tool_executor=tool_executor,
+    )
+
+    response = asyncio.run(
+        engine.handle(Request("Test"))
+    )
+
+    assert called["value"] is False
+    assert response.text == "Gecersiz arguman."
+
+
+def test_core_engine_executes_duplicate_tool_call_id_only_once_in_same_response() -> None:
+    registry = ProviderRegistry()
+    memory_manager = MemoryManager(InMemoryStore())
+    tool_executor = ToolExecutor()
+
+    call_count = {"value": 0}
+
+    def test_tool() -> str:
+        call_count["value"] += 1
+        return "ok"
+
+    tool_executor.register(
+        ToolDefinition(
+            name="test_tool",
+            description="Test tool.",
+        ),
+        test_tool,
+    )
+
+    class DuplicateSameResponseProvider(MockProvider):
+        async def generate(self, request, context, **kwargs):
+            return SimpleNamespace(
+                text="Tamam.",
+                model="mock-model",
+                provider="mock",
+                finish_reason="stop",
+                tool_calls=[
+                    {
+                        "id": "same_id",
+                        "type": "function",
+                        "function": {
+                            "name": "test_tool",
+                            "arguments": "{}",
+                        },
+                    },
+                    {
+                        "id": "same_id",
+                        "type": "function",
+                        "function": {
+                            "name": "test_tool",
+                            "arguments": "{}",
+                        },
+                    },
+                ],
+                usage={},
+                metadata={},
+            )
+
+    registry.register(
+        DuplicateSameResponseProvider(),
+        make_default=True,
+    )
+
+    engine = CoreEngine(
+        registry,
+        memory_manager,
+        tool_executor=tool_executor,
+    )
+
+    response = asyncio.run(
+        engine.handle(Request("Test"))
+    )
+
+    assert call_count["value"] == 1
+    assert response.metadata["tool_calls"] == 1
+
+
+def test_core_engine_executes_tool_call_without_id() -> None:
+    registry = ProviderRegistry()
+    memory_manager = MemoryManager(InMemoryStore())
+    tool_executor = ToolExecutor()
+
+    called = {"value": False}
+
+    def test_tool() -> str:
+        called["value"] = True
+        return "ok"
+
+    tool_executor.register(
+        ToolDefinition(
+            name="test_tool",
+            description="Test tool.",
+        ),
+        test_tool,
+    )
+
+    class MissingIdProvider(MockProvider):
+        async def generate(self, request, context, **kwargs):
+            return SimpleNamespace(
+                text="Tamam.",
+                model="mock-model",
+                provider="mock",
+                finish_reason="stop",
+                tool_calls=[
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "test_tool",
+                            "arguments": "{}",
+                        },
+                    }
+                ],
+                usage={},
+                metadata={},
+            )
+
+    registry.register(
+        MissingIdProvider(),
+        make_default=True,
+    )
+
+    engine = CoreEngine(
+        registry,
+        memory_manager,
+        tool_executor=tool_executor,
+    )
+
+    response = asyncio.run(
+        engine.handle(Request("Test"))
+    )
+
+    assert called["value"] is True
+    assert response.metadata["tool_calls"] == 5
+
+
+def test_core_engine_skips_tool_call_with_empty_function() -> None:
+    registry = ProviderRegistry()
+    memory_manager = MemoryManager(InMemoryStore())
+    tool_executor = ToolExecutor()
+
+    class EmptyFunctionProvider(MockProvider):
+        async def generate(self, request, context, **kwargs):
+            return SimpleNamespace(
+                text="Fonksiyon bilgisi eksik.",
+                model="mock-model",
+                provider="mock",
+                finish_reason="stop",
+                tool_calls=[
+                    {
+                        "id": "call_empty_function",
+                        "type": "function",
+                        "function": {},
+                    }
+                ],
+                usage={},
+                metadata={},
+            )
+
+    registry.register(
+        EmptyFunctionProvider(),
+        make_default=True,
+    )
+
+    engine = CoreEngine(
+        registry,
+        memory_manager,
+        tool_executor=tool_executor,
+    )
+
+    response = asyncio.run(
+        engine.handle(Request("Test"))
+    )
+
+    assert response.text == "Fonksiyon bilgisi eksik."
+    assert response.metadata["tool_calls"] == 0
 

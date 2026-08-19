@@ -13,9 +13,16 @@ class ProviderRegistry:
     independent from any specific provider implementation.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        default_provider: str | None = None,
+    ) -> None:
         self._providers: dict[str, AIProvider] = {}
-        self._default_provider: str | None = None
+        self._default_provider = (
+            default_provider.strip()
+            if default_provider
+            else None
+        )
         self._lock = RLock()
 
     def register(
@@ -38,7 +45,7 @@ class ProviderRegistry:
 
             self._providers[name] = provider
 
-            if make_default or self._default_provider is None:
+            if make_default:
                 self._default_provider = name
 
     def unregister(self, name: str) -> AIProvider:
@@ -77,7 +84,20 @@ class ProviderRegistry:
         """Return the currently configured default provider."""
         with self._lock:
             if self._default_provider is None:
-                raise RuntimeError("No default provider is configured.")
+                if not self._providers:
+                    raise RuntimeError(
+                        "No providers are registered."
+                    )
+
+                self._default_provider = next(
+                    iter(self._providers)
+                )
+
+            if self._default_provider not in self._providers:
+                raise RuntimeError(
+                    f"Default provider "
+                    f"'{self._default_provider}' is not registered."
+                )
 
             return self._providers[self._default_provider]
 
@@ -95,7 +115,8 @@ class ProviderRegistry:
 
     def contains(self, name: str) -> bool:
         """Return whether a provider is registered."""
-        return name.strip() in self._providers
+        with self._lock:
+            return name.strip() in self._providers
 
     def list_names(self) -> tuple[str, ...]:
         """Return registered provider names."""

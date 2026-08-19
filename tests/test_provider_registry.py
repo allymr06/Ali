@@ -163,3 +163,17 @@ def test_provider_name_is_normalized():
 
     assert registry.contains("test")
     assert registry.get("test") is provider
+def test_registry_uses_configured_default_provider(monkeypatch) -> None:
+    from app.config.settings import Settings
+    from app.providers.mock import MockProvider
+
+    monkeypatch.setenv("JARVIS_DEFAULT_PROVIDER", "mock")
+
+    settings = Settings.from_environment()
+    registry = ProviderRegistry(
+        default_provider=settings.default_provider,
+    )
+
+    registry.register(MockProvider())
+
+    assert registry.get_default().name == "mock"

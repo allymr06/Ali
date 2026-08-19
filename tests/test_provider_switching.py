@@ -43,3 +43,10 @@ def test_custom_settings_control_default_provider() -> None:
     application = create_application(settings)
 
     assert application.provider_registry.get_default().name == "openai"
+
+def test_bootstrap_shares_tool_executor_with_core_engine() -> None:
+    application = create_application()
+
+    assert application.engine._tool_executor is (
+        application.tool_executor
+    )

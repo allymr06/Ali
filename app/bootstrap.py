@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 
@@ -51,6 +51,7 @@ def create_application(
     engine = CoreEngine(
         provider_registry=provider_registry,
         memory_manager=memory_manager,
+        tool_executor=tool_executor,
     )
 
     return JARVISApplication(

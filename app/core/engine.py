@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 
@@ -30,7 +30,7 @@ class CoreEngine:
         self._memory_manager = memory_manager
         self._memory_policy = memory_policy or MemoryPolicy()
         self._memory_analyzer = MemoryAnalyzer()
-        self._tool_executor = tool_executor or ToolExecutor()
+        self._tool_executor = tool_executor if tool_executor is not None else ToolExecutor()
 
     async def handle(
         self,

@@ -1,8 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import pytest
 
-from app.core.models import RiskLevel, ToolDefinition, ToolExecutionStatus
+from app.core.models import RiskLevel, ToolDefinition, ToolExecutionStatus, ToolResult
 from app.security.permissions import PermissionEngine
 from app.tools.executor import ToolExecutor
 
@@ -232,3 +232,273 @@ def test_executor_passes_operation_to_permission_engine() -> None:
 
     assert result.status is ToolExecutionStatus.BLOCKED
     assert result.error == "User confirmation required."
+
+def test_executor_rejects_invalid_arguments_before_execution() -> None:
+    called = False
+
+    def tool(value: int) -> int:
+        nonlocal called
+        called = True
+        return value * 2
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="typed_tool",
+            description="Typed tool",
+        ),
+        tool,
+    )
+
+    result = executor.execute(
+        "typed_tool",
+        parameters={},
+    )
+
+    assert result.status is ToolExecutionStatus.FAILED
+    assert result.message == "Invalid tool arguments."
+    assert result.verified is False
+    assert called is False
+
+
+def test_executor_accepts_valid_keyword_arguments() -> None:
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="typed_tool",
+            description="Typed tool",
+        ),
+        lambda value: value * 2,
+    )
+
+    result = executor.execute(
+        "typed_tool",
+        parameters={"value": 21},
+    )
+
+    assert result.status is ToolExecutionStatus.SUCCESS
+    assert result.data == 42
+    assert result.verified is True
+
+
+def test_executor_rejects_unexpected_arguments() -> None:
+    called = False
+
+    def tool(value: int) -> int:
+        nonlocal called
+        called = True
+        return value
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="typed_tool",
+            description="Typed tool",
+        ),
+        tool,
+    )
+
+    result = executor.execute(
+        "typed_tool",
+        parameters={
+            "value": 10,
+            "unexpected": True,
+        },
+    )
+
+    assert result.status is ToolExecutionStatus.FAILED
+    assert result.message == "Invalid tool arguments."
+    assert called is False
+def test_executor_rejects_wrong_argument_type() -> None:
+    called = False
+
+    def tool(value: int) -> int:
+        nonlocal called
+        called = True
+        return value * 2
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="typed_tool",
+            description="Typed tool",
+        ),
+        tool,
+    )
+
+    result = executor.execute(
+        "typed_tool",
+        parameters={"value": "not-an-int"},
+    )
+
+    assert result.status is ToolExecutionStatus.FAILED
+    assert result.message == "Invalid tool arguments."
+    assert result.verified is False
+    assert called is False
+
+
+def test_executor_accepts_matching_argument_type() -> None:
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="typed_tool",
+            description="Typed tool",
+        ),
+        lambda value: value,
+    )
+
+    result = executor.execute(
+        "typed_tool",
+        parameters={"value": "hello"},
+    )
+
+    assert result.status is ToolExecutionStatus.SUCCESS
+    assert result.data == "hello"
+    assert result.verified is True
+def test_executor_normalizes_tool_result() -> None:
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="echo",
+            description="Echo value",
+        ),
+        lambda value: value,
+    )
+
+    result = executor.execute(
+        "echo",
+        parameters={"value": "hello"},
+    )
+
+    assert result.status is ToolExecutionStatus.SUCCESS
+    assert result.data == "hello"
+    assert result.verified is True
+    assert result.finished_at is not None
+
+
+def test_executor_marks_failed_result_as_unverified() -> None:
+    executor = ToolExecutor()
+
+    def failing_tool() -> None:
+        raise RuntimeError("tool failure")
+
+    executor.register(
+        ToolDefinition(
+            name="failing",
+            description="Failing tool",
+        ),
+        failing_tool,
+    )
+
+    result = executor.execute("failing")
+
+    assert result.status is ToolExecutionStatus.FAILED
+    assert result.verified is False
+    assert result.data is None
+    assert result.error == "tool failure"
+
+
+def test_executor_does_not_mark_blocked_tool_as_verified() -> None:
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="protected",
+            description="Protected operation",
+            risk_level=RiskLevel.MEDIUM,
+        ),
+        lambda: "executed",
+    )
+
+    result = executor.execute("protected")
+
+    assert result.status is ToolExecutionStatus.BLOCKED
+    assert result.verified is False
+    assert result.data is None
+def test_executor_wraps_existing_tool_result() -> None:
+    executor = ToolExecutor()
+
+    def tool() -> ToolResult:
+        return ToolResult(
+            status=ToolExecutionStatus.SUCCESS,
+            tool_name="inner",
+            message="Inner result",
+            data={"value": 42},
+            verified=True,
+        )
+
+    executor.register(
+        ToolDefinition(
+            name="wrapper",
+            description="Returns a ToolResult",
+        ),
+        tool,
+    )
+
+    result = executor.execute("wrapper")
+
+    assert result.status is ToolExecutionStatus.SUCCESS
+    assert result.data == {"value": 42}
+    assert result.verified is True
+    assert result.tool_name == "wrapper"
+
+
+def test_executor_preserves_failed_tool_result() -> None:
+    executor = ToolExecutor()
+
+    def tool() -> ToolResult:
+        return ToolResult(
+            status=ToolExecutionStatus.FAILED,
+            tool_name="inner",
+            message="Inner failure",
+            error="failure",
+            verified=False,
+        )
+
+    executor.register(
+        ToolDefinition(
+            name="wrapper",
+            description="Returns a failed ToolResult",
+        ),
+        tool,
+    )
+
+    result = executor.execute("wrapper")
+
+    assert result.status is ToolExecutionStatus.FAILED
+    assert result.error == "failure"
+    assert result.verified is False
+    assert result.tool_name == "wrapper"
+
+
+def test_executor_does_not_trust_unverified_tool_result() -> None:
+    executor = ToolExecutor()
+
+    def tool() -> ToolResult:
+        return ToolResult(
+            status=ToolExecutionStatus.SUCCESS,
+            tool_name="inner",
+            message="Unverified success",
+            data="value",
+            verified=False,
+        )
+
+    executor.register(
+        ToolDefinition(
+            name="wrapper",
+            description="Returns an unverified result",
+        ),
+        tool,
+    )
+
+    result = executor.execute("wrapper")
+
+    assert result.status is ToolExecutionStatus.SUCCESS
+    assert result.data == "value"
+    assert result.verified is True

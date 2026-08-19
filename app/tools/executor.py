@@ -141,14 +141,116 @@ class ToolExecutor:
         args: tuple[Any, ...],
         parameters: dict[str, Any],
     ) -> str | None:
-        """Validate tool arguments without executing the handler."""
+        """Validate tool input arguments without resolving the return type."""
         try:
             signature = inspect.signature(handler)
-            signature.bind(*args, **parameters)
+
+            bound = signature.bind(*args, **parameters)
+            bound.apply_defaults()
+
+            try:
+                resolved_hints = get_type_hints(
+                    handler,
+                    globalns=getattr(handler, "__globals__", None),
+                    localns=None,
+                )
+            except (NameError, TypeError, ValueError):
+                resolved_hints = {}
+
+            for name, value in bound.arguments.items():
+                parameter = signature.parameters[name]
+
+                annotation = resolved_hints.get(
+                    name,
+                    parameter.annotation,
+                )
+
+                if annotation is inspect.Parameter.empty:
+                    continue
+
+                if isinstance(annotation, str):
+                    continue
+
+                if not self._matches_type(value, annotation):
+                    return (
+                        f"Argument '{name}' has invalid type. "
+                        f"Expected {annotation!r}, "
+                        f"got {type(value).__name__}."
+                    )
+
         except TypeError as exc:
             return str(exc)
 
         return None
+    def _matches_type(
+        self,
+        value: Any,
+        annotation: Any,
+    ) -> bool:
+        """Return whether a value matches a runtime type annotation."""
+        from types import UnionType
+        from typing import Union, get_args, get_origin
+
+        if annotation is Any:
+            return True
+
+        if value is None:
+            origin = get_origin(annotation)
+
+            if origin in (Union, UnionType):
+                return type(None) in get_args(annotation)
+
+            return annotation is type(None)
+
+        origin = get_origin(annotation)
+
+        if origin in (Union, UnionType):
+            return any(
+                self._matches_type(
+                    value,
+                    option,
+                )
+                for option in get_args(annotation)
+            )
+
+        if origin is list:
+            if not isinstance(value, list):
+                return False
+
+            args = get_args(annotation)
+
+            if not args:
+                return True
+
+            return all(
+                self._matches_type(
+                    item,
+                    args[0],
+                )
+                for item in value
+            )
+
+        if origin is dict:
+            if not isinstance(value, dict):
+                return False
+
+            args = get_args(annotation)
+
+            if len(args) < 2:
+                return True
+
+            key_type, value_type = args
+
+            return all(
+                self._matches_type(key, key_type)
+                and self._matches_type(item, value_type)
+                for key, item in value.items()
+            )
+
+        if isinstance(annotation, type):
+            return isinstance(value, annotation)
+
+        return True
     def _evaluate_permission(
         self,
         definition: ToolDefinition,
@@ -325,6 +427,27 @@ class ToolExecutor:
                     verified=False,
                 )
 
+            if isinstance(value, ToolResult):
+                value.tool_name = definition.name
+                value.verified = (
+                    value.status is ToolExecutionStatus.SUCCESS
+                )
+                return value
+
+            if isinstance(value, ToolResult):
+                value.tool_name = definition.name
+                value.verified = (
+                    value.status is ToolExecutionStatus.SUCCESS
+                )
+                return value
+
+            if isinstance(value, ToolResult):
+                value.tool_name = definition.name
+                value.verified = (
+                    value.status is ToolExecutionStatus.SUCCESS
+                )
+                return value
+
             return ToolResult(
                 status=ToolExecutionStatus.SUCCESS,
                 tool_name=definition.name,
@@ -410,6 +533,13 @@ class ToolExecutor:
                         finished_at=self._now(),
                         verified=False,
                     )
+
+            if isinstance(value, ToolResult):
+                value.tool_name = definition.name
+                value.verified = (
+                    value.status is ToolExecutionStatus.SUCCESS
+                )
+                return value
 
             return ToolResult(
                 status=ToolExecutionStatus.SUCCESS,

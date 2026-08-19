@@ -410,3 +410,63 @@ def test_task_manager_cannot_add_step_to_cancelled_task() -> None:
     ):
         manager.add_step(task.task_id, "Too late")
 
+
+
+def test_task_can_wait_for_input_and_resume():
+    manager = TaskManager()
+    task = manager.create("input test")
+
+    manager.start(task.task_id)
+    manager.wait_for_input(task.task_id)
+
+    assert task.status is TaskStatus.WAITING_FOR_INPUT
+
+    manager.resume_from_input(task.task_id)
+
+    assert task.status is TaskStatus.RUNNING
+
+
+def test_task_can_wait_for_approval_and_resume():
+    manager = TaskManager()
+    task = manager.create("approval test")
+
+    manager.start(task.task_id)
+    manager.wait_for_approval(task.task_id)
+
+    assert task.status is TaskStatus.WAITING_FOR_APPROVAL
+
+    manager.resume_from_approval(task.task_id)
+
+    assert task.status is TaskStatus.RUNNING
+
+
+def test_task_cannot_wait_for_input_from_invalid_state():
+    manager = TaskManager()
+    task = manager.create("invalid input state")
+
+    with pytest.raises(ValueError):
+        manager.wait_for_input(task.task_id)
+
+
+def test_task_cannot_wait_for_approval_from_invalid_state():
+    manager = TaskManager()
+    task = manager.create("invalid approval state")
+
+    with pytest.raises(ValueError):
+        manager.wait_for_approval(task.task_id)
+
+
+def test_task_cannot_resume_input_from_invalid_state():
+    manager = TaskManager()
+    task = manager.create("invalid resume input")
+
+    with pytest.raises(ValueError):
+        manager.resume_from_input(task.task_id)
+
+
+def test_task_cannot_resume_approval_from_invalid_state():
+    manager = TaskManager()
+    task = manager.create("invalid resume approval")
+
+    with pytest.raises(ValueError):
+        manager.resume_from_approval(task.task_id)

@@ -77,6 +77,54 @@ class TaskManager:
         task.updated_at = utc_now()
         return task
 
+    def wait_for_input(self, task_id: UUID) -> Task:
+        task = self.get(task_id)
+
+        if task.status is not TaskStatus.RUNNING:
+            raise ValueError(
+                f"Cannot wait for input from state {task.status.value}."
+            )
+
+        task.status = TaskStatus.WAITING_FOR_INPUT
+        task.updated_at = utc_now()
+        return task
+
+    def wait_for_approval(self, task_id: UUID) -> Task:
+        task = self.get(task_id)
+
+        if task.status is not TaskStatus.RUNNING:
+            raise ValueError(
+                f"Cannot wait for approval from state {task.status.value}."
+            )
+
+        task.status = TaskStatus.WAITING_FOR_APPROVAL
+        task.updated_at = utc_now()
+        return task
+
+    def resume_from_input(self, task_id: UUID) -> Task:
+        task = self.get(task_id)
+
+        if task.status is not TaskStatus.WAITING_FOR_INPUT:
+            raise ValueError(
+                f"Cannot resume from state {task.status.value}."
+            )
+
+        task.status = TaskStatus.RUNNING
+        task.updated_at = utc_now()
+        return task
+
+    def resume_from_approval(self, task_id: UUID) -> Task:
+        task = self.get(task_id)
+
+        if task.status is not TaskStatus.WAITING_FOR_APPROVAL:
+            raise ValueError(
+                f"Cannot resume from state {task.status.value}."
+            )
+
+        task.status = TaskStatus.RUNNING
+        task.updated_at = utc_now()
+        return task
+
     def cancel(self, task_id: UUID) -> Task:
         task = self.get(task_id)
 
@@ -230,6 +278,120 @@ class TaskManager:
         step.updated_at = utc_now()
 
         task.current_step = step.name
+        task.updated_at = utc_now()
+
+        return step
+
+    def wait_step_for_input(
+        self,
+        task_id: UUID,
+        step_id: UUID,
+    ) -> TaskStep:
+        task = self.get(task_id)
+        step = self.get_step(task.task_id, step_id)
+
+        if step.status is not TaskStepStatus.RUNNING:
+            raise ValueError(
+                f"Cannot wait for input from state {step.status.value}."
+            )
+
+        step.status = TaskStepStatus.WAITING_FOR_INPUT
+        step.updated_at = utc_now()
+        task.updated_at = utc_now()
+
+        return step
+
+    def wait_step_for_approval(
+        self,
+        task_id: UUID,
+        step_id: UUID,
+    ) -> TaskStep:
+        task = self.get(task_id)
+        step = self.get_step(task.task_id, step_id)
+
+        if step.status is not TaskStepStatus.RUNNING:
+            raise ValueError(
+                f"Cannot wait for approval from state {step.status.value}."
+            )
+
+        step.status = TaskStepStatus.WAITING_FOR_APPROVAL
+        step.updated_at = utc_now()
+        task.updated_at = utc_now()
+
+        return step
+
+    def pause_step(
+        self,
+        task_id: UUID,
+        step_id: UUID,
+    ) -> TaskStep:
+        task = self.get(task_id)
+        step = self.get_step(task.task_id, step_id)
+
+        if step.status is not TaskStepStatus.RUNNING:
+            raise ValueError(
+                f"Cannot pause step from state {step.status.value}."
+            )
+
+        step.status = TaskStepStatus.PAUSED
+        step.updated_at = utc_now()
+        task.updated_at = utc_now()
+
+        return step
+
+    def resume_step(
+        self,
+        task_id: UUID,
+        step_id: UUID,
+    ) -> TaskStep:
+        task = self.get(task_id)
+        step = self.get_step(task.task_id, step_id)
+
+        if step.status is not TaskStepStatus.PAUSED:
+            raise ValueError(
+                f"Cannot resume step from state {step.status.value}."
+            )
+
+        step.status = TaskStepStatus.RUNNING
+        step.updated_at = utc_now()
+        task.updated_at = utc_now()
+
+        return step
+
+    def resume_step_from_input(
+        self,
+        task_id: UUID,
+        step_id: UUID,
+    ) -> TaskStep:
+        task = self.get(task_id)
+        step = self.get_step(task.task_id, step_id)
+
+        if step.status is not TaskStepStatus.WAITING_FOR_INPUT:
+            raise ValueError(
+                f"Cannot resume step from state {step.status.value}."
+            )
+
+        step.status = TaskStepStatus.RUNNING
+        step.updated_at = utc_now()
+        task.updated_at = utc_now()
+
+        return step
+
+    def resume_step_from_approval(
+        self,
+        task_id: UUID,
+        step_id: UUID,
+    ) -> TaskStep:
+        task = self.get(task_id)
+        step = self.get_step(task.task_id, step_id)
+
+        if step.status is not TaskStepStatus.WAITING_FOR_APPROVAL:
+            raise ValueError(
+                f"Cannot resume step from state {step.status.value}."
+            )
+
+        step.status = TaskStepStatus.RUNNING
+        step.updated_at = utc_now()
         task.updated_at = utc_now()
 
         return step

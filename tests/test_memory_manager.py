@@ -93,3 +93,18 @@ def test_manager_rejects_invalid_importance(
             "Geçersiz önem",
             importance=2.0,
         )
+def test_manager_does_not_duplicate_identical_memory() -> None:
+    manager = MemoryManager(
+        InMemoryStore()
+    )
+
+    first = manager.remember(
+        "Ali Python öğreniyor",
+    )
+
+    second = manager.remember(
+        "Ali Python öğreniyor",
+    )
+
+    assert first.memory_id == second.memory_id
+    assert manager.count() == 1

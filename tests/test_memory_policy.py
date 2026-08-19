@@ -80,3 +80,43 @@ def test_policy_is_conservative() -> None:
 
     assert decision.should_remember is False
     assert decision.reason == "No memory-worthy signal detected."
+from app.memory.analyzer import MemoryCandidate
+def test_policy_accepts_analyzer_candidate() -> None:
+    policy = MemoryPolicy()
+
+    candidate = MemoryCandidate(
+        content="Python öğreniyorum",
+        memory_type=MemoryType.FACT,
+        confidence=0.9,
+        reason="Explicit user memory request.",
+    )
+
+    decision = policy.evaluate(
+        Request("HATIRLA: Python öğreniyorum"),
+        candidate,
+    )
+
+    assert decision.should_remember is True
+    assert decision.memory_type is MemoryType.FACT
+    assert decision.importance == 0.9
+
+
+def test_policy_rejects_low_confidence_candidate() -> None:
+    policy = MemoryPolicy()
+
+    candidate = MemoryCandidate(
+        content="Belirsiz bilgi",
+        memory_type=MemoryType.FACT,
+        confidence=0.2,
+        reason="Weak inference.",
+    )
+
+    decision = policy.evaluate(
+        Request("Belki bunu hatırlarsın"),
+        candidate,
+    )
+
+    assert decision.should_remember is False
+    assert decision.reason == (
+        "Memory candidate confidence is too low."
+    )

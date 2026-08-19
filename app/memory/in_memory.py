@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from threading import RLock
 from uuid import UUID
@@ -48,7 +48,7 @@ class InMemoryStore(MemoryStore):
         *,
         limit: int = 10,
     ) -> list[MemoryEntry]:
-        normalized_query = query.strip().lower()
+        normalized_query = query.strip().casefold()
 
         if not normalized_query:
             return []
@@ -56,22 +56,34 @@ class InMemoryStore(MemoryStore):
         if limit < 1:
             raise ValueError("Search limit must be at least 1.")
 
+        query_words = set(normalized_query.split())
+
         with self._lock:
-            matches = [
-                memory
-                for memory in self._memories.values()
-                if normalized_query in memory.content.lower()
-            ]
+            matches: list[tuple[int, MemoryEntry]] = []
+
+            for memory in self._memories.values():
+                if not memory.active:
+                    continue
+
+                memory_words = set(memory.content.casefold().split())
+                overlap = query_words & memory_words
+
+                if overlap:
+                    matches.append((len(overlap), memory))
 
             matches.sort(
-                key=lambda memory: (
-                    memory.importance,
-                    memory.updated_at,
+                key=lambda item: (
+                    item[0],
+                    item[1].importance,
+                    item[1].updated_at,
                 ),
                 reverse=True,
             )
 
-            return matches[:limit]
+            return [
+                memory
+                for _, memory in matches[:limit]
+            ]
 
     def list_all(self) -> list[MemoryEntry]:
         with self._lock:

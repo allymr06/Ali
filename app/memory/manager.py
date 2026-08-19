@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections.abc import Sequence
 from uuid import UUID
@@ -27,15 +27,24 @@ class MemoryManager:
         confidence: float = 1.0,
     ) -> MemoryEntry:
         """Create and persist a new memory."""
+        normalized_content = content.strip()
+
+        for existing in self._store.list_all():
+            if (
+                existing.active
+                and existing.content.casefold() == normalized_content.casefold()
+                and existing.memory_type is memory_type
+            ):
+                return existing
+
         memory = MemoryEntry(
-            content=content,
+            content=normalized_content,
             memory_type=memory_type,
             importance=importance,
             confidence=confidence,
         )
 
         return self._store.save(memory)
-
     def recall(
         self,
         query: str,

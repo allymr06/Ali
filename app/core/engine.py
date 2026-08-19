@@ -1,6 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from app.core.models import Context, Request, Response
+from app.memory.analyzer import MemoryAnalyzer
 from app.memory.manager import MemoryManager
 from app.memory.policy import MemoryPolicy
 from app.providers.registry import ProviderRegistry
@@ -10,8 +11,8 @@ class CoreEngine:
     """
     Central orchestration entry point for JARVIS.
 
-    CoreEngine coordinates providers and memory but does not own
-    their implementation details.
+    CoreEngine coordinates providers and memory while keeping
+    implementation details isolated behind explicit interfaces.
     """
 
     def __init__(
@@ -23,6 +24,7 @@ class CoreEngine:
         self._provider_registry = provider_registry
         self._memory_manager = memory_manager
         self._memory_policy = memory_policy or MemoryPolicy()
+        self._memory_analyzer = MemoryAnalyzer()
 
     async def handle(
         self,
@@ -32,16 +34,33 @@ class CoreEngine:
         """
         Process one request through the JARVIS orchestration pipeline.
         """
-        active_context = context or Context()
+        active_context = context if context is not None else Context()
 
-        decision = self._memory_policy.evaluate(request)
+        candidate = self._memory_analyzer.analyze(request)
 
-        if decision.should_remember:
+        decision = self._memory_policy.evaluate(
+            request,
+            candidate,
+        )
+
+        if decision.should_remember and candidate is not None:
             self._memory_manager.remember(
-                request.text,
+                candidate.content,
                 memory_type=decision.memory_type,
                 importance=decision.importance,
+                confidence=candidate.confidence,
             )
+
+        recalled_memories = self._memory_manager.recall(
+            request.text,
+            limit=5,
+        )
+
+        active_context.memories.clear()
+        active_context.memories.extend(
+            memory.content
+            for memory in recalled_memories
+        )
 
         provider = self._provider_registry.get_default()
 
@@ -57,5 +76,6 @@ class CoreEngine:
                 "provider": model_response.provider,
                 "model": model_response.model,
                 "memory_decision": decision.should_remember,
+                "memory_count": len(active_context.memories),
             },
         )

@@ -3,99 +3,123 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.core.models import Request
+from app.memory.analyzer import MemoryCandidate
 from app.memory.models import MemoryType
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True, slots=True)
 class MemoryDecision:
-    """Result of a memory retention decision."""
+    """Decision made by the memory policy."""
 
     should_remember: bool
-    memory_type: MemoryType = MemoryType.FACT
-    importance: float = 0.5
-    reason: str = ""
+    memory_type: MemoryType
+    importance: float
+    reason: str
 
 
 class MemoryPolicy:
     """
-    Deterministic policy for deciding whether a request
-    contains information worth remembering.
+    Decide whether information should become durable memory.
 
-    This is intentionally conservative. A future intelligent
-    policy layer can replace or extend these rules.
+    Explicit user instructions always have the highest priority.
     """
 
-    _EXPLICIT_MARKERS = (
-        "hatırla",
-        "unutma",
-        "remember",
-        "don't forget",
-        "do not forget",
-    )
+    def evaluate(
+        self,
+        request: Request,
+        candidate: MemoryCandidate | None = None,
+    ) -> MemoryDecision:
+        text = request.text.strip()
+        normalized = text.casefold()
 
-    _PREFERENCE_MARKERS = (
-        "seviyorum",
-        "sevmiyorum",
-        "tercih ediyorum",
-        "tercih ederim",
-        "prefer",
-        "like",
-        "don't like",
-    )
+        # Explicit analyzer candidate has priority.
+        if candidate is not None:
+            if candidate.confidence < 0.5:
+                return MemoryDecision(
+                    should_remember=False,
+                    memory_type=candidate.memory_type,
+                    importance=0.5,
+                    reason="Memory candidate confidence is too low.",
+                )
 
-    @staticmethod
-    def _normalize(text: str) -> str:
-        """
-        Normalize text for case-insensitive marker matching.
+            if candidate.reason == "Explicit user memory request.":
+                return MemoryDecision(
+                    should_remember=True,
+                    memory_type=candidate.memory_type,
+                    importance=0.9,
+                    reason=candidate.reason,
+                )
 
-        Turkish dotted and dotless I characters are normalized
-        to a common representation so policy matching remains
-        predictable.
-        """
-        return (
-            text.strip()
-            .casefold()
-            .replace("ı", "i")
-            .replace("İ", "i")
-        )
-
-    def evaluate(self, request: Request) -> MemoryDecision:
-        """Evaluate whether a request should become a memory."""
-        normalized = self._normalize(request.text)
-
-        if not normalized:
-            return MemoryDecision(
-                should_remember=False,
-                reason="Empty request.",
-            )
-
-        explicit_markers = tuple(
-            self._normalize(marker)
-            for marker in self._EXPLICIT_MARKERS
-        )
-
-        preference_markers = tuple(
-            self._normalize(marker)
-            for marker in self._PREFERENCE_MARKERS
-        )
-
-        if any(marker in normalized for marker in explicit_markers):
             return MemoryDecision(
                 should_remember=True,
-                memory_type=MemoryType.FACT,
-                importance=0.9,
-                reason="Explicit memory request.",
+                memory_type=candidate.memory_type,
+                importance=min(
+                    max(candidate.confidence, 0.0),
+                    1.0,
+                ),
+                reason=candidate.reason,
             )
 
-        if any(marker in normalized for marker in preference_markers):
+        # Explicit Turkish memory requests.
+        explicit_turkish_prefixes = (
+            "hatırla:",
+            "hatırla ",
+            "hatirla:",
+            "hatirla ",
+            "bunu hatırla:",
+            "bunu hatırla ",
+            "bunu hatirla:",
+            "bunu hatirla ",
+        )
+
+        for prefix in explicit_turkish_prefixes:
+            if normalized.startswith(prefix):
+                return MemoryDecision(
+                    should_remember=True,
+                    memory_type=MemoryType.FACT,
+                    importance=0.9,
+                    reason="Explicit user memory request.",
+                )
+
+        # Explicit English memory requests.
+        explicit_english_prefixes = (
+            "remember:",
+            "remember ",
+            "remember that ",
+        )
+
+        for prefix in explicit_english_prefixes:
+            if normalized.startswith(prefix):
+                return MemoryDecision(
+                    should_remember=True,
+                    memory_type=MemoryType.FACT,
+                    importance=0.9,
+                    reason="Explicit user memory request.",
+                )
+
+        # Preference detection.
+        preference_signals = (
+            "tercih ediyorum",
+            "tercih ederim",
+            "seviyorum",
+            "sevmiyorum",
+            "istemiyorum",
+            "istiyorum",
+            "hoşuma gidiyor",
+            "hoşuma gitmiyor",
+        )
+
+        if any(signal in normalized for signal in preference_signals):
             return MemoryDecision(
                 should_remember=True,
                 memory_type=MemoryType.PREFERENCE,
                 importance=0.8,
-                reason="Detected user preference.",
+                reason="User preference detected.",
             )
 
         return MemoryDecision(
             should_remember=False,
+            memory_type=MemoryType.FACT,
+            importance=0.5,
             reason="No memory-worthy signal detected.",
         )

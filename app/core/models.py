@@ -92,6 +92,7 @@ class Context:
     user_id: str = "default"
     active_task_id: UUID | None = None
     values: dict[str, Any] = field(default_factory=dict)
+    memories: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)

@@ -69,6 +69,8 @@ class CoreEngine:
 
         provider = self._provider_registry.get_default()
 
+        tool_schemas = self._tool_executor.get_openai_tools()
+
         tool_results = []
         processed_tool_call_ids: set[str] = set()
         max_tool_iterations = 5
@@ -77,6 +79,7 @@ class CoreEngine:
             model_response = await provider.generate(
                 request,
                 active_context,
+                tools=tool_schemas or None,
             )
 
             tool_calls = getattr(

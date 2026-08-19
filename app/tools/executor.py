@@ -350,5 +350,72 @@ class ToolExecutor:
                 verified=False,
             )
 
+    def get_openai_tools(self) -> list[dict[str, Any]]:
+        """Generate OpenAI-compatible tool schemas for registered tools."""
+        tools: list[dict[str, Any]] = []
+
+        type_mapping: dict[Any, str] = {
+            str: "string",
+            int: "integer",
+            float: "number",
+            bool: "boolean",
+        }
+
+        for registered in self._tools.values():
+            definition = registered.definition
+            signature = inspect.signature(registered.handler)
+
+            properties: dict[str, Any] = {}
+            required: list[str] = []
+
+            for parameter in signature.parameters.values():
+                if parameter.kind in (
+                    inspect.Parameter.VAR_POSITIONAL,
+                    inspect.Parameter.VAR_KEYWORD,
+                ):
+                    continue
+
+                annotation = parameter.annotation
+
+                if annotation is inspect.Parameter.empty:
+                    json_type = "string"
+                else:
+                    json_type = type_mapping.get(
+                        annotation,
+                        "string",
+                    )
+
+                property_schema: dict[str, Any] = {
+                    "type": json_type,
+                }
+
+                if parameter.default is not inspect.Parameter.empty:
+                    property_schema["default"] = parameter.default
+                else:
+                    required.append(parameter.name)
+
+                properties[parameter.name] = property_schema
+
+            parameters: dict[str, Any] = {
+                "type": "object",
+                "properties": properties,
+            }
+
+            if required:
+                parameters["required"] = required
+
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": definition.name,
+                        "description": definition.description,
+                        "parameters": parameters,
+                    },
+                }
+            )
+
+        return tools
+
     def __len__(self) -> int:
         return len(self._tools)

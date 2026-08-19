@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import inspect
@@ -135,6 +135,20 @@ class ToolExecutor:
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)
 
+    def _validate_arguments(
+        self,
+        handler: ToolHandler,
+        args: tuple[Any, ...],
+        parameters: dict[str, Any],
+    ) -> str | None:
+        """Validate tool arguments without executing the handler."""
+        try:
+            signature = inspect.signature(handler)
+            signature.bind(*args, **parameters)
+        except TypeError as exc:
+            return str(exc)
+
+        return None
     def _evaluate_permission(
         self,
         definition: ToolDefinition,
@@ -250,6 +264,23 @@ class ToolExecutor:
             blocked.started_at = started_at
             blocked.finished_at = self._now()
             return blocked
+        
+        argument_error = self._validate_arguments(
+            registered.handler,
+            args,
+            execution_parameters,
+        )
+
+        if argument_error is not None:
+            return ToolResult(
+                status=ToolExecutionStatus.FAILED,
+                tool_name=definition.name,
+                message="Invalid tool arguments.",
+                error=argument_error,
+                started_at=started_at,
+                finished_at=self._now(),
+                verified=False,
+            )
 
         try:
             with ThreadPoolExecutor(max_workers=1) as pool:

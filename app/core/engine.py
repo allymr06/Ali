@@ -14,8 +14,9 @@ class CoreEngine:
     """
     Central orchestration entry point for JARVIS.
 
-    CoreEngine coordinates providers and memory while keeping
-    implementation details isolated behind explicit interfaces.
+    CoreEngine coordinates providers, memory, and tool execution
+    while keeping implementation details isolated behind explicit
+    interfaces.
     """
 
     def __init__(
@@ -39,7 +40,11 @@ class CoreEngine:
         """
         Process one request through the JARVIS orchestration pipeline.
         """
-        active_context = context if context is not None else Context()
+        active_context = (
+            context
+            if context is not None
+            else Context()
+        )
 
         candidate = self._memory_analyzer.analyze(request)
 
@@ -48,7 +53,10 @@ class CoreEngine:
             candidate,
         )
 
-        if decision.should_remember and candidate is not None:
+        if (
+            decision.should_remember
+            and candidate is not None
+        ):
             self._memory_manager.remember(
                 candidate.content,
                 memory_type=decision.memory_type,
@@ -69,7 +77,9 @@ class CoreEngine:
 
         provider = self._provider_registry.get_default()
 
-        tool_schemas = self._tool_executor.get_openai_tools()
+        tool_schemas = (
+            self._tool_executor.get_openai_tools()
+        )
 
         tool_results = []
         processed_tool_call_ids: set[str] = set()
@@ -91,9 +101,20 @@ class CoreEngine:
             if not tool_calls:
                 break
 
-            active_context.values.setdefault(
+            messages = active_context.values.setdefault(
                 "messages",
                 [],
+            )
+
+            # Preserve the assistant tool-call message.
+            # This is required to maintain a valid tool-call
+            # conversation chain.
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": model_response.text or None,
+                    "tool_calls": tool_calls,
+                }
             )
 
             new_tool_call_found = False
@@ -114,7 +135,11 @@ class CoreEngine:
                         tool_call_id
                     )
 
-                function = tool_call.get("function", {})
+                function = tool_call.get(
+                    "function",
+                    {},
+                )
+
                 tool_name = function.get("name")
 
                 if not tool_name:
@@ -126,8 +151,13 @@ class CoreEngine:
                 )
 
                 try:
-                    arguments = json.loads(raw_arguments)
-                except (TypeError, json.JSONDecodeError):
+                    arguments = json.loads(
+                        raw_arguments
+                    )
+                except (
+                    TypeError,
+                    json.JSONDecodeError,
+                ):
                     continue
 
                 if not isinstance(arguments, dict):
@@ -140,10 +170,10 @@ class CoreEngine:
 
                 tool_results.append(result)
 
-                active_context.values["messages"].append(
+                messages.append(
                     {
                         "role": "tool",
-                        "tool_call_id": tool_call.get("id"),
+                        "tool_call_id": tool_call_id,
                         "content": (
                             str(result.data)
                             if result.succeeded
@@ -165,8 +195,13 @@ class CoreEngine:
                 "provider": model_response.provider,
                 "model": model_response.model,
                 "memory_decision": decision.should_remember,
-                "memory_count": len(active_context.memories),
+                "memory_count": len(
+                    active_context.memories
+                ),
                 "tool_calls": len(tool_results),
-            "tool_iterations": min(len(tool_results), max_tool_iterations),
+                "tool_iterations": min(
+                    len(tool_results),
+                    max_tool_iterations,
+                ),
             },
         )

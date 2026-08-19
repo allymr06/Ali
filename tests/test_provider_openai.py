@@ -429,3 +429,110 @@ async def test_openai_provider_preserves_assistant_tool_calls_message() -> None:
         and message["content"] == "Baku: sunny"
         for message in messages
     )
+
+@pytest.mark.asyncio
+async def test_openai_provider_preserves_multiple_tool_calls_in_message() -> None:
+    client = FakeClient(make_response())
+
+    provider = OpenAIProvider(
+        make_settings(),
+        client=client,
+    )
+
+    context = Context(
+        values={
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_weather",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"city":"Baku"}',
+                            },
+                        },
+                        {
+                            "id": "call_time",
+                            "type": "function",
+                            "function": {
+                                "name": "get_time",
+                                "arguments": '{"city":"Baku"}',
+                            },
+                        },
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_weather",
+                    "content": "Baku: sunny",
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_time",
+                    "content": "Baku: 12:00",
+                },
+            ],
+        },
+    )
+
+    await provider.generate(
+        Request("Baku hava ve saat bilgisi"),
+        context,
+    )
+
+    messages = client.chat.completions.calls[0]["messages"]
+
+    assistant_messages = [
+        message
+        for message in messages
+        if message.get("role") == "assistant"
+    ]
+
+    assert len(assistant_messages) == 1
+
+    assistant_message = assistant_messages[0]
+
+    assert len(
+        assistant_message["tool_calls"]
+    ) == 2
+
+    assert (
+        assistant_message["tool_calls"][0]["id"]
+        == "call_weather"
+    )
+
+    assert (
+        assistant_message["tool_calls"][0]["function"]["name"]
+        == "get_weather"
+    )
+
+    assert (
+        assistant_message["tool_calls"][1]["id"]
+        == "call_time"
+    )
+
+    assert (
+        assistant_message["tool_calls"][1]["function"]["name"]
+        == "get_time"
+    )
+
+    assert any(
+        message.get("role") == "tool"
+        and message.get("tool_call_id")
+        == "call_weather"
+        and message.get("content")
+        == "Baku: sunny"
+        for message in messages
+    )
+
+    assert any(
+        message.get("role") == "tool"
+        and message.get("tool_call_id")
+        == "call_time"
+        and message.get("content")
+        == "Baku: 12:00"
+        for message in messages
+    )

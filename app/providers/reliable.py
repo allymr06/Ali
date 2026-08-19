@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 
@@ -7,6 +7,7 @@ from app.providers.base import (
     AIProvider,
     ModelCapabilities,
     ModelResponse,
+    ProviderAuthenticationError,
     ProviderError,
 )
 
@@ -62,6 +63,8 @@ class ReliableProvider(AIProvider):
                     ),
                     timeout=self._timeout_seconds,
                 )
+            except ProviderAuthenticationError:
+                raise
             except ProviderError:
                 if attempt >= self._max_retries:
                     raise

@@ -138,3 +138,29 @@ async def test_provider_streaming_default_is_not_supported():
             context,
         ):
             chunks.append(chunk)
+
+def test_model_response_mutable_defaults_are_isolated():
+    first = ModelResponse(
+        text="first",
+        model="test-model",
+        provider="test-provider",
+    )
+
+    second = ModelResponse(
+        text="second",
+        model="test-model",
+        provider="test-provider",
+    )
+
+    first.tool_calls.append(
+        {
+            "id": "call_1",
+            "type": "function",
+        }
+    )
+    first.usage["total_tokens"] = 10
+    first.metadata["source"] = "test"
+
+    assert second.tool_calls == []
+    assert second.usage == {}
+    assert second.metadata == {}

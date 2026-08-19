@@ -18,11 +18,7 @@ from app.providers.base import (
 
 
 class OpenAIProvider(AIProvider):
-    """OpenAI-compatible provider adapter.
-
-    The CoreEngine depends only on AIProvider, so this implementation
-    can be registered or removed without changing the JARVIS core.
-    """
+    """OpenAI-compatible provider adapter."""
 
     @property
     def name(self) -> str:
@@ -44,13 +40,22 @@ class OpenAIProvider(AIProvider):
         *,
         client: Any | None = None,
     ) -> None:
-        self._settings = settings or Settings.from_environment()
+        self._settings = (
+            settings
+            or Settings.from_environment()
+        )
         self._client = client
 
-        if self._client is None and self._settings.api_key:
+        if (
+            self._client is None
+            and self._settings.api_key
+        ):
             self._client = AsyncOpenAI(
                 api_key=self._settings.api_key,
-                base_url=self._settings.api_base_url or None,
+                base_url=(
+                    self._settings.api_base_url
+                    or None
+                ),
             )
 
     async def generate(
@@ -86,7 +91,9 @@ class OpenAIProvider(AIProvider):
             messages.append(
                 {
                     "role": "system",
-                    "content": f"Relevant memory: {memory}",
+                    "content": (
+                        f"Relevant memory: {memory}"
+                    ),
                 }
             )
 
@@ -98,12 +105,18 @@ class OpenAIProvider(AIProvider):
         if context_messages:
             messages.extend(context_messages)
 
-        messages.append(
-            {
-                "role": "user",
-                "content": request.text,
-            }
-        )
+        # The original user request is added only on the
+        # first generation call. During a tool loop the
+        # conversation already contains the assistant
+        # tool-call message and the tool result, so adding
+        # the user request again would duplicate the turn.
+        if not context_messages:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": request.text,
+                }
+            )
 
         last_error: Exception | None = None
 
@@ -117,16 +130,26 @@ class OpenAIProvider(AIProvider):
                         messages=messages,
                         tools=tools or None,
                     ),
-                    timeout=self._settings.provider_timeout_seconds,
+                    timeout=(
+                        self._settings
+                        .provider_timeout_seconds
+                    ),
                 )
 
                 choice = response.choices[0]
                 message = choice.message
 
-                tool_calls: list[dict[str, Any]] = []
+                tool_calls: list[
+                    dict[str, Any]
+                ] = []
 
                 for tool_call in (
-                    getattr(message, "tool_calls", None) or []
+                    getattr(
+                        message,
+                        "tool_calls",
+                        None,
+                    )
+                    or []
                 ):
                     tool_calls.append(
                         {
@@ -233,7 +256,10 @@ class OpenAIProvider(AIProvider):
                     ) from exc
 
                 if status_code == 429:
-                    if attempt < self._settings.provider_max_retries:
+                    if (
+                        attempt
+                        < self._settings.provider_max_retries
+                    ):
                         await asyncio.sleep(
                             2 ** attempt
                         )
@@ -243,7 +269,10 @@ class OpenAIProvider(AIProvider):
                         "OpenAI rate limit exceeded."
                     ) from exc
 
-                if attempt < self._settings.provider_max_retries:
+                if (
+                    attempt
+                    < self._settings.provider_max_retries
+                ):
                     await asyncio.sleep(
                         2 ** attempt
                     )
@@ -251,5 +280,6 @@ class OpenAIProvider(AIProvider):
 
         raise ProviderUnavailableError(
             "OpenAI provider failed after "
-            f"{self._settings.provider_max_retries + 1} attempts."
+            f"{self._settings.provider_max_retries + 1} "
+            "attempts."
         ) from last_error

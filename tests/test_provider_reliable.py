@@ -136,3 +136,44 @@ async def test_reliable_provider_enforces_timeout():
             Request("timeout"),
             Context(),
         )
+
+class AuthenticationFailureProvider(MockProvider):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def generate(
+        self,
+        request,
+        context,
+        *,
+        model=None,
+        system_prompt=None,
+        tools=None,
+    ):
+        self.calls += 1
+
+        from app.providers.base import ProviderAuthenticationError
+
+        raise ProviderAuthenticationError(
+            "authentication failed"
+        )
+
+
+@pytest.mark.asyncio
+async def test_reliable_provider_does_not_retry_authentication_failure():
+    provider = AuthenticationFailureProvider()
+
+    reliable = ReliableProvider(
+        provider,
+        max_retries=5,
+    )
+
+    from app.providers.base import ProviderAuthenticationError
+
+    with pytest.raises(ProviderAuthenticationError):
+        await reliable.generate(
+            Request("authentication"),
+            Context(),
+        )
+
+    assert provider.calls == 1

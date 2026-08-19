@@ -1,4 +1,6 @@
-from __future__ import annotations
+﻿from __future__ import annotations
+
+import asyncio
 
 import pytest
 
@@ -502,3 +504,471 @@ def test_executor_does_not_trust_unverified_tool_result() -> None:
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "value"
     assert result.verified is True
+# ===== JARVIS EXECUTOR HARDENING TESTS =====
+
+def test_executor_async_validates_arguments_before_handler_runs() -> None:
+    called = False
+
+    async def tool(value: int) -> int:
+        nonlocal called
+        called = True
+        return value * 2
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="async_typed",
+            description="Async typed tool",
+        ),
+        tool,
+    )
+
+    async def run() -> None:
+        result = await executor.execute(
+            "async_typed",
+            parameters={"value": "wrong"},
+        )
+
+        assert result.status is ToolExecutionStatus.FAILED
+        assert result.message == "Invalid tool arguments."
+        assert result.verified is False
+        assert called is False
+
+    asyncio.run(run())
+
+
+def test_executor_async_rejects_missing_required_arguments() -> None:
+    called = False
+
+    async def tool(value: int) -> int:
+        nonlocal called
+        called = True
+        return value
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="async_required",
+            description="Async required argument tool",
+        ),
+        tool,
+    )
+
+    async def run() -> None:
+        result = await executor.execute(
+            "async_required",
+            parameters={},
+        )
+
+        assert result.status is ToolExecutionStatus.FAILED
+        assert result.message == "Invalid tool arguments."
+        assert called is False
+
+    asyncio.run(run())
+
+
+def test_executor_async_rejects_unexpected_arguments_before_handler_runs() -> None:
+    called = False
+
+    async def tool(value: int) -> int:
+        nonlocal called
+        called = True
+        return value
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="async_unexpected",
+            description="Async unexpected argument tool",
+        ),
+        tool,
+    )
+
+    async def run() -> None:
+        result = await executor.execute(
+            "async_unexpected",
+            parameters={
+                "value": 10,
+                "unexpected": True,
+            },
+        )
+
+        assert result.status is ToolExecutionStatus.FAILED
+        assert result.message == "Invalid tool arguments."
+        assert called is False
+
+    asyncio.run(run())
+
+
+def test_executor_async_preserves_failed_tool_result() -> None:
+    async def tool() -> ToolResult:
+        return ToolResult(
+            status=ToolExecutionStatus.FAILED,
+            tool_name="inner",
+            message="Inner failure",
+            error="failure",
+            verified=False,
+        )
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="async_failed_result",
+            description="Async failed result",
+        ),
+        tool,
+    )
+
+    async def run() -> None:
+        result = await executor.execute("async_failed_result")
+
+        assert result.status is ToolExecutionStatus.FAILED
+        assert result.error == "failure"
+        assert result.verified is False
+        assert result.tool_name == "async_failed_result"
+
+    asyncio.run(run())
+
+
+def test_executor_async_timeout_returns_timeout_result() -> None:
+    async def slow_tool() -> str:
+        await asyncio.sleep(0.2)
+        return "finished"
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="slow_async",
+            description="Slow async tool",
+            timeout_seconds=0.01,
+        ),
+        slow_tool,
+    )
+
+    async def run() -> None:
+        result = await executor.execute("slow_async")
+
+        assert result.status is ToolExecutionStatus.TIMEOUT
+        assert result.verified is False
+        assert result.error is not None
+        assert "timeout" in result.error.lower()
+
+    asyncio.run(run())
+
+
+def test_executor_sync_timeout_returns_timeout_result() -> None:
+    import time
+
+    def slow_tool() -> str:
+        time.sleep(0.2)
+        return "finished"
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="slow_sync",
+            description="Slow sync tool",
+            timeout_seconds=0.01,
+        ),
+        slow_tool,
+    )
+
+    result = executor.execute("slow_sync")
+
+    assert result.status is ToolExecutionStatus.TIMEOUT
+    assert result.verified is False
+    assert result.error is not None
+    assert "timeout" in result.error.lower()
+
+
+def test_executor_does_not_execute_blocked_tool_with_confirmation_false() -> None:
+    called = False
+
+    def tool() -> str:
+        nonlocal called
+        called = True
+        return "executed"
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="protected",
+            description="Protected tool",
+            risk_level=RiskLevel.HIGH,
+        ),
+        tool,
+    )
+
+    result = executor.execute(
+        "protected",
+        confirmation_granted=False,
+    )
+
+    assert result.status is ToolExecutionStatus.BLOCKED
+    assert result.verified is False
+    assert called is False
+
+
+def test_executor_confirmation_allows_high_risk_tool() -> None:
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="high_risk",
+            description="High risk tool",
+            risk_level=RiskLevel.HIGH,
+        ),
+        lambda: "executed",
+    )
+
+    result = executor.execute(
+        "high_risk",
+        confirmation_granted=True,
+    )
+
+    assert result.status is ToolExecutionStatus.SUCCESS
+    assert result.data == "executed"
+    assert result.verified is True
+
+
+def test_executor_preserves_tool_result_data() -> None:
+    executor = ToolExecutor()
+
+    def tool() -> ToolResult:
+        return ToolResult(
+            status=ToolExecutionStatus.SUCCESS,
+            tool_name="wrong_name",
+            message="Success",
+            data={"answer": 42},
+            verified=False,
+        )
+
+    executor.register(
+        ToolDefinition(
+            name="result_tool",
+            description="Result tool",
+        ),
+        tool,
+    )
+
+    result = executor.execute("result_tool")
+
+    assert result.status is ToolExecutionStatus.SUCCESS
+    assert result.tool_name == "result_tool"
+    assert result.data == {"answer": 42}
+    assert result.verified is True
+
+
+def test_executor_openai_schema_contains_required_arguments() -> None:
+    executor = ToolExecutor()
+
+    def weather(city: str, days: int) -> str:
+        return f"{city}: {days}"
+
+    executor.register(
+        ToolDefinition(
+            name="weather",
+            description="Get weather",
+        ),
+        weather,
+    )
+
+    tools = executor.get_openai_tools()
+
+    assert len(tools) == 1
+
+    function = tools[0]["function"]
+
+    assert function["name"] == "weather"
+    assert function["description"] == "Get weather"
+    assert function["parameters"]["type"] == "object"
+    assert function["parameters"]["properties"]["city"]["type"] == "string"
+    assert function["parameters"]["properties"]["days"]["type"] == "integer"
+    assert function["parameters"]["required"] == ["city", "days"]
+
+
+def test_executor_openai_schema_handles_optional_argument() -> None:
+    executor = ToolExecutor()
+
+    def search(query: str, limit: int = 10) -> str:
+        return query
+
+    executor.register(
+        ToolDefinition(
+            name="search",
+            description="Search",
+        ),
+        search,
+    )
+
+    tools = executor.get_openai_tools()
+
+    parameters = tools[0]["function"]["parameters"]
+
+    assert parameters["properties"]["query"]["type"] == "string"
+    assert parameters["properties"]["limit"]["type"] == "integer"
+    assert parameters["properties"]["limit"]["default"] == 10
+    assert parameters["required"] == ["query"]
+
+
+def test_executor_openai_schema_handles_list_and_dict() -> None:
+    executor = ToolExecutor()
+
+    def process(
+        names: list[str],
+        metadata: dict[str, int],
+    ) -> str:
+        return "ok"
+
+    executor.register(
+        ToolDefinition(
+            name="process",
+            description="Process data",
+        ),
+        process,
+    )
+
+    tools = executor.get_openai_tools()
+
+    properties = tools[0]["function"]["parameters"]["properties"]
+
+    assert properties["names"]["type"] == "array"
+    assert properties["names"]["items"]["type"] == "string"
+
+    assert properties["metadata"]["type"] == "object"
+    assert properties["metadata"]["additionalProperties"]["type"] == "integer"
+
+
+def test_executor_openai_schema_skips_variadic_parameters() -> None:
+    executor = ToolExecutor()
+
+    def tool(
+        value: str,
+        *args: str,
+        **kwargs: str,
+    ) -> str:
+        return value
+
+    executor.register(
+        ToolDefinition(
+            name="variadic",
+            description="Variadic tool",
+        ),
+        tool,
+    )
+
+    tools = executor.get_openai_tools()
+
+    properties = tools[0]["function"]["parameters"]["properties"]
+
+    assert list(properties) == ["value"]
+    assert properties["value"]["type"] == "string"
+
+
+def test_executor_normalizes_tool_name_on_lookup() -> None:
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="echo",
+            description="Echo",
+        ),
+        lambda: "ok",
+    )
+
+    result = executor.execute("  echo  ")
+
+    assert result.status is ToolExecutionStatus.SUCCESS
+    assert result.tool_name == "echo"
+    assert result.data == "ok"
+
+
+def test_executor_unregistration_returns_original_registered_tool() -> None:
+    executor = ToolExecutor()
+
+    definition = ToolDefinition(
+        name="echo",
+        description="Echo",
+    )
+
+    handler = lambda: "ok"
+
+    executor.register(definition, handler)
+
+    removed = executor.unregister("  echo  ")
+
+    assert removed.definition is definition
+    assert removed.handler is handler
+    assert not executor.contains("echo")
+
+
+def test_executor_permission_check_happens_before_argument_validation() -> None:
+    called = False
+
+    def dangerous(value: int) -> int:
+        nonlocal called
+        called = True
+        return value
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="dangerous",
+            description="Dangerous",
+            risk_level=RiskLevel.MEDIUM,
+        ),
+        dangerous,
+    )
+
+    result = executor.execute(
+        "dangerous",
+        parameters={"value": "invalid"},
+    )
+
+    assert result.status is ToolExecutionStatus.BLOCKED
+    assert result.error == "User confirmation required."
+    assert called is False
+
+
+def test_executor_async_permission_check_happens_before_handler() -> None:
+    called = False
+
+    async def dangerous() -> str:
+        nonlocal called
+        called = True
+        return "executed"
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="async_dangerous",
+            description="Async dangerous",
+            risk_level=RiskLevel.MEDIUM,
+        ),
+        dangerous,
+    )
+
+    async def run() -> None:
+        result = await executor.execute("async_dangerous")
+
+        assert result.status is ToolExecutionStatus.BLOCKED
+        assert result.error == "User confirmation required."
+        assert called is False
+
+    asyncio.run(run())
+
+
+
+
+# ===== Additional ToolExecutor tests =====
+
+

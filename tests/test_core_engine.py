@@ -1065,3 +1065,251 @@ def test_core_engine_preserves_multiple_tool_call_chain() -> None:
     assert len(calls) == 2
     assert response.metadata["tool_calls"] == 2
     assert response.metadata["tool_iterations"] == 2
+
+def test_core_engine_does_not_execute_tool_when_arguments_are_not_a_dict() -> None:
+    registry = ProviderRegistry()
+    memory_manager = MemoryManager(InMemoryStore())
+    tool_executor = ToolExecutor()
+
+    called = {"value": False}
+
+    def tool(city: str) -> str:
+        called["value"] = True
+        return city
+
+    tool_executor.register(
+        ToolDefinition(
+            name="test_tool",
+            description="Test tool.",
+        ),
+        tool,
+    )
+
+    class InvalidArgumentsProvider(MockProvider):
+        async def generate(self, request, context, **kwargs):
+            return SimpleNamespace(
+                text="Geçersiz parametre.",
+                model="mock-model",
+                provider="mock",
+                finish_reason="stop",
+                tool_calls=[
+                    {
+                        "id": "call_invalid_type",
+                        "type": "function",
+                        "function": {
+                            "name": "test_tool",
+                            "arguments": '"not a dict"',
+                        },
+                    }
+                ],
+                usage={},
+                metadata={},
+            )
+
+    registry.register(
+        InvalidArgumentsProvider(),
+        make_default=True,
+    )
+
+    engine = CoreEngine(
+        registry,
+        memory_manager,
+        tool_executor=tool_executor,
+    )
+
+    response = asyncio.run(
+        engine.handle(Request("Test"))
+    )
+
+    assert called["value"] is False
+    assert response.text == "Geçersiz parametre."
+
+
+def test_core_engine_does_not_execute_unknown_tool() -> None:
+    registry = ProviderRegistry()
+    memory_manager = MemoryManager(InMemoryStore())
+    tool_executor = ToolExecutor()
+
+    class UnknownToolProvider(MockProvider):
+        async def generate(self, request, context, **kwargs):
+            return SimpleNamespace(
+                text="Bilinmeyen tool.",
+                model="mock-model",
+                provider="mock",
+                finish_reason="tool_calls",
+                tool_calls=[
+                    {
+                        "id": "call_unknown",
+                        "type": "function",
+                        "function": {
+                            "name": "does_not_exist",
+                            "arguments": "{}",
+                        },
+                    }
+                ],
+                usage={},
+                metadata={},
+            )
+
+    registry.register(
+        UnknownToolProvider(),
+        make_default=True,
+    )
+
+    engine = CoreEngine(
+        registry,
+        memory_manager,
+        tool_executor=tool_executor,
+    )
+
+    response = asyncio.run(
+        engine.handle(Request("Test"))
+    )
+
+    assert response.text == "Bilinmeyen tool."
+
+
+def test_core_engine_does_not_execute_duplicate_tool_call_id() -> None:
+    registry = ProviderRegistry()
+    memory_manager = MemoryManager(InMemoryStore())
+    tool_executor = ToolExecutor()
+
+    call_count = {"value": 0}
+
+    def test_tool() -> str:
+        call_count["value"] += 1
+        return "ok"
+
+    tool_executor.register(
+        ToolDefinition(
+            name="test_tool",
+            description="Test tool.",
+        ),
+        test_tool,
+    )
+
+    calls = []
+
+    class DuplicateCallProvider(MockProvider):
+        async def generate(self, request, context, **kwargs):
+            calls.append(
+                list(context.values.get("messages", []))
+            )
+
+            if len(calls) == 1:
+                return SimpleNamespace(
+                    text="",
+                    model="mock-model",
+                    provider="mock",
+                    finish_reason="tool_calls",
+                    tool_calls=[
+                        {
+                            "id": "duplicate_id",
+                            "type": "function",
+                            "function": {
+                                "name": "test_tool",
+                                "arguments": "{}",
+                            },
+                        }
+                    ],
+                    usage={},
+                    metadata={},
+                )
+
+            return SimpleNamespace(
+                text="Tamam.",
+                model="mock-model",
+                provider="mock",
+                finish_reason="stop",
+                tool_calls=[
+                    {
+                        "id": "duplicate_id",
+                        "type": "function",
+                        "function": {
+                            "name": "test_tool",
+                            "arguments": "{}",
+                        },
+                    }
+                ],
+                usage={},
+                metadata={},
+            )
+
+    registry.register(
+        DuplicateCallProvider(),
+        make_default=True,
+    )
+
+    engine = CoreEngine(
+        registry,
+        memory_manager,
+        tool_executor=tool_executor,
+    )
+
+    response = asyncio.run(
+        engine.handle(Request("Test"))
+    )
+
+    assert call_count["value"] == 1
+    assert response.text == "Tamam."
+
+
+def test_core_engine_stops_after_max_tool_iterations() -> None:
+    registry = ProviderRegistry()
+    memory_manager = MemoryManager(InMemoryStore())
+    tool_executor = ToolExecutor()
+
+    call_count = {"value": 0}
+
+    def looping_tool() -> str:
+        call_count["value"] += 1
+        return "loop"
+
+    tool_executor.register(
+        ToolDefinition(
+            name="loop_tool",
+            description="Looping test tool.",
+        ),
+        looping_tool,
+    )
+
+    class LoopProvider(MockProvider):
+        async def generate(self, request, context, **kwargs):
+            return SimpleNamespace(
+                text="",
+                model="mock-model",
+                provider="mock",
+                finish_reason="tool_calls",
+                tool_calls=[
+                    {
+                        "id": f"call_{call_count['value']}",
+                        "type": "function",
+                        "function": {
+                            "name": "loop_tool",
+                            "arguments": "{}",
+                        },
+                    }
+                ],
+                usage={},
+                metadata={},
+            )
+
+    registry.register(
+        LoopProvider(),
+        make_default=True,
+    )
+
+    engine = CoreEngine(
+        registry,
+        memory_manager,
+        tool_executor=tool_executor,
+    )
+
+    response = asyncio.run(
+        engine.handle(Request("Loop"))
+    )
+
+    assert call_count["value"] == 5
+    assert response.metadata["tool_calls"] == 5
+    assert response.metadata["tool_iterations"] == 5
+

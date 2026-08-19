@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import inspect
@@ -508,6 +508,23 @@ class ToolExecutor:
             blocked.finished_at = self._now()
             return blocked
 
+        argument_error = self._validate_arguments(
+            registered.handler,
+            args,
+            execution_parameters,
+        )
+
+        if argument_error is not None:
+            return ToolResult(
+                status=ToolExecutionStatus.FAILED,
+                tool_name=definition.name,
+                message="Invalid tool arguments.",
+                error=argument_error,
+                started_at=started_at,
+                finished_at=self._now(),
+                verified=False,
+            )
+
         try:
             value = registered.handler(
                 *args,
@@ -561,7 +578,6 @@ class ToolExecutor:
                 finished_at=self._now(),
                 verified=False,
             )
-
     def get_openai_tools(self) -> list[dict[str, Any]]:
         """Generate OpenAI-compatible tool schemas for registered tools."""
         tools: list[dict[str, Any]] = []
@@ -687,3 +703,4 @@ class ToolExecutor:
 
     def __len__(self) -> int:
         return len(self._tools)
+

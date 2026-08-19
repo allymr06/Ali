@@ -123,3 +123,88 @@ def test_permission_decision_values() -> None:
     assert PermissionDecision.ALLOW == "allow"
     assert PermissionDecision.CONFIRM == "confirm"
     assert PermissionDecision.DENY == "deny"
+
+def test_permission_result_properties_are_consistent() -> None:
+    tool = ToolDefinition(
+        name="test_tool",
+        description="Test tool",
+        risk_level=RiskLevel.MEDIUM,
+    )
+
+    result = PermissionEngine().evaluate(tool)
+
+    assert result.decision == PermissionDecision.CONFIRM
+    assert result.allowed is False
+    assert result.requires_confirmation is True
+    assert result.denied is False
+
+
+def test_operation_defaults_to_tool_name() -> None:
+    tool = ToolDefinition(
+        name="delete_file",
+        description="Delete a file",
+        risk_level=RiskLevel.HIGH,
+    )
+
+    result = PermissionEngine().evaluate(tool)
+
+    assert result.operation == "delete_file"
+
+
+def test_empty_operation_falls_back_to_tool_name() -> None:
+    tool = ToolDefinition(
+        name="execute_command",
+        description="Execute a command",
+        risk_level=RiskLevel.HIGH,
+    )
+
+    result = PermissionEngine().evaluate(
+        tool,
+        operation="",
+    )
+
+    assert result.operation == "execute_command"
+
+
+def test_permission_evaluation_does_not_mutate_tool_definition() -> None:
+    tool = ToolDefinition(
+        name="write_file",
+        description="Write a file",
+        risk_level=RiskLevel.MEDIUM,
+        requires_confirmation=True,
+    )
+
+    original_name = tool.name
+    original_risk = tool.risk_level
+    original_confirmation = tool.requires_confirmation
+
+    result = PermissionEngine().evaluate(
+        tool,
+        operation="write_config",
+        parameters={"path": "config.json"},
+    )
+
+    assert result.requires_confirmation is True
+    assert tool.name == original_name
+    assert tool.risk_level is original_risk
+    assert tool.requires_confirmation is original_confirmation
+
+
+def test_critical_risk_remains_denied_even_with_parameters() -> None:
+    tool = ToolDefinition(
+        name="system_shutdown",
+        description="Shutdown the system",
+        risk_level=RiskLevel.CRITICAL,
+    )
+
+    result = PermissionEngine().evaluate(
+        tool,
+        operation="shutdown_now",
+        parameters={"force": True},
+    )
+
+    assert result.decision == PermissionDecision.DENY
+    assert result.denied is True
+    assert result.allowed is False
+    assert result.requires_confirmation is False
+    assert result.operation == "shutdown_now"

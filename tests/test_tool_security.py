@@ -118,3 +118,204 @@ def test_executor_async_tool_still_works() -> None:
         assert result.verified is True
 
     asyncio.run(run())
+
+# ===== Additional Tool Security Tests =====
+
+def test_executor_cannot_bypass_medium_risk_without_confirmation() -> None:
+    called = False
+
+    def dangerous() -> str:
+        nonlocal called
+        called = True
+        return "executed"
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="dangerous",
+            description="Medium-risk operation",
+            risk_level=__import__(
+                "app.core.models",
+                fromlist=["RiskLevel"],
+            ).RiskLevel.MEDIUM,
+        ),
+        dangerous,
+    )
+
+    result = executor.execute(
+        "dangerous",
+        confirmation_granted=False,
+    )
+
+    assert result.status is ToolExecutionStatus.BLOCKED
+    assert result.verified is False
+    assert result.error == "User confirmation required."
+    assert called is False
+
+
+def test_executor_allows_medium_risk_only_with_confirmation() -> None:
+    called = False
+
+    def dangerous() -> str:
+        nonlocal called
+        called = True
+        return "executed"
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="dangerous",
+            description="Medium-risk operation",
+            risk_level=__import__(
+                "app.core.models",
+                fromlist=["RiskLevel"],
+            ).RiskLevel.MEDIUM,
+        ),
+        dangerous,
+    )
+
+    result = executor.execute(
+        "dangerous",
+        confirmation_granted=True,
+    )
+
+    assert result.status is ToolExecutionStatus.SUCCESS
+    assert result.data == "executed"
+    assert result.verified is True
+    assert called is True
+
+
+def test_executor_critical_tool_remains_blocked_even_with_confirmation() -> None:
+    called = False
+
+    def critical() -> str:
+        nonlocal called
+        called = True
+        return "executed"
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="critical",
+            description="Critical operation",
+            risk_level=__import__(
+                "app.core.models",
+                fromlist=["RiskLevel"],
+            ).RiskLevel.CRITICAL,
+        ),
+        critical,
+    )
+
+    result = executor.execute(
+        "critical",
+        confirmation_granted=True,
+    )
+
+    assert result.status is ToolExecutionStatus.BLOCKED
+    assert result.verified is False
+    assert called is False
+
+
+def test_executor_explicit_confirmation_requirement_cannot_be_bypassed() -> None:
+    called = False
+
+    def protected() -> str:
+        nonlocal called
+        called = True
+        return "executed"
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="protected",
+            description="Protected operation",
+            risk_level=__import__(
+                "app.core.models",
+                fromlist=["RiskLevel"],
+            ).RiskLevel.READ_ONLY,
+            requires_confirmation=True,
+        ),
+        protected,
+    )
+
+    result = executor.execute(
+        "protected",
+        confirmation_granted=False,
+    )
+
+    assert result.status is ToolExecutionStatus.BLOCKED
+    assert result.verified is False
+    assert result.error == "User confirmation required."
+    assert called is False
+
+
+def test_executor_explicit_confirmation_requirement_allows_execution_after_confirmation() -> None:
+    called = False
+
+    def protected() -> str:
+        nonlocal called
+        called = True
+        return "executed"
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="protected",
+            description="Protected operation",
+            risk_level=__import__(
+                "app.core.models",
+                fromlist=["RiskLevel"],
+            ).RiskLevel.READ_ONLY,
+            requires_confirmation=True,
+        ),
+        protected,
+    )
+
+    result = executor.execute(
+        "protected",
+        confirmation_granted=True,
+    )
+
+    assert result.status is ToolExecutionStatus.SUCCESS
+    assert result.data == "executed"
+    assert result.verified is True
+    assert called is True
+
+
+def test_executor_async_permission_gate_runs_before_async_handler() -> None:
+    called = False
+
+    async def dangerous() -> str:
+        nonlocal called
+        called = True
+        return "executed"
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="async_dangerous",
+            description="Async medium-risk operation",
+            risk_level=__import__(
+                "app.core.models",
+                fromlist=["RiskLevel"],
+            ).RiskLevel.MEDIUM,
+        ),
+        dangerous,
+    )
+
+    async def run() -> None:
+        result = await executor.execute("async_dangerous")
+
+        assert result.status is ToolExecutionStatus.BLOCKED
+        assert result.verified is False
+        assert result.error == "User confirmation required."
+        assert called is False
+
+    asyncio.run(run())
+

@@ -7,6 +7,7 @@ from app.memory.analyzer import MemoryAnalyzer
 from app.memory.manager import MemoryManager
 from app.memory.policy import MemoryPolicy
 from app.providers.registry import ProviderRegistry
+from app.tasks.manager import TaskManager
 from app.tools.executor import ToolExecutor
 
 
@@ -25,12 +26,27 @@ class CoreEngine:
         memory_manager: MemoryManager,
         memory_policy: MemoryPolicy | None = None,
         tool_executor: ToolExecutor | None = None,
+        task_manager: TaskManager | None = None,
     ) -> None:
         self._provider_registry = provider_registry
         self._memory_manager = memory_manager
         self._memory_policy = memory_policy or MemoryPolicy()
         self._memory_analyzer = MemoryAnalyzer()
-        self._tool_executor = tool_executor if tool_executor is not None else ToolExecutor()
+        self._tool_executor = (
+            tool_executor
+            if tool_executor is not None
+            else ToolExecutor()
+        )
+        self._task_manager = (
+            task_manager
+            if task_manager is not None
+            else TaskManager()
+        )
+
+    @property
+    def task_manager(self) -> TaskManager:
+        """Return the task manager used by this engine."""
+        return self._task_manager
 
     async def handle(
         self,
@@ -205,3 +221,4 @@ class CoreEngine:
                 ),
             },
         )
+

@@ -1597,3 +1597,70 @@ def test_core_engine_skips_tool_call_with_empty_function() -> None:
     assert response.text == "Fonksiyon bilgisi eksik."
     assert response.metadata["tool_calls"] == 0
 
+
+def test_core_engine_uses_task_manager() -> None:
+    registry = ProviderRegistry()
+    registry.register(
+        MockProvider(),
+        make_default=True,
+    )
+
+    memory_manager = MemoryManager(
+        InMemoryStore()
+    )
+
+    from app.tasks.manager import TaskManager
+
+    task_manager = TaskManager()
+
+    engine = CoreEngine(
+        registry,
+        memory_manager,
+        task_manager=task_manager,
+    )
+
+    assert engine.task_manager is task_manager
+
+def test_create_application_wires_task_manager() -> None:
+    from app.config.settings import Settings
+    from app.tasks.manager import TaskManager
+    from app.main import create_application
+
+    settings = Settings.from_environment()
+
+    application = create_application(settings)
+
+    assert application.engine.task_manager is not None
+    assert isinstance(
+        application.engine.task_manager,
+        TaskManager,
+    )
+
+
+def test_create_application_shares_task_manager_with_engine() -> None:
+    from app.main import create_application
+
+    application = create_application()
+
+    assert application.task_manager is application.engine.task_manager
+
+def test_core_engine_exposes_functional_task_manager() -> None:
+    from app.main import create_application
+
+    application = create_application()
+
+    task_manager = application.engine.task_manager
+
+    assert task_manager is application.task_manager
+
+    task = task_manager.create(
+        goal="JARVIS test gorevi",
+    )
+
+    assert task is not None
+    assert task_manager.get(task.task_id) == task
+
+
+
+
+

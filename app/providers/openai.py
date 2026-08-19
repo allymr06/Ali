@@ -90,6 +90,14 @@ class OpenAIProvider(AIProvider):
                 }
             )
 
+        context_messages = context.values.get(
+            "messages",
+            [],
+        )
+
+        if context_messages:
+            messages.extend(context_messages)
+
         messages.append(
             {
                 "role": "user",

@@ -340,3 +340,92 @@ async def test_openai_provider_parses_tool_calls(monkeypatch) -> None:
     assert response.tool_calls[0]["type"] == "function"
     assert response.tool_calls[0]["function"]["name"] == "get_weather"
     assert response.tool_calls[0]["function"]["arguments"] == '{"city":"Baku"}'
+
+@pytest.mark.asyncio
+async def test_openai_provider_includes_context_messages() -> None:
+    client = FakeClient(make_response())
+
+    provider = OpenAIProvider(
+        make_settings(),
+        client=client,
+    )
+
+    context = Context(
+        values={
+            "messages": [
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_123",
+                    "content": "Baku: sunny",
+                }
+            ]
+        }
+    )
+
+    await provider.generate(
+        Request("Baku'de hava nas?l?"),
+        context,
+    )
+
+    messages = client.chat.completions.calls[0]["messages"]
+
+    assert any(
+        message["role"] == "tool"
+        and message["tool_call_id"] == "call_123"
+        and message["content"] == "Baku: sunny"
+        for message in messages
+    )
+
+@pytest.mark.asyncio
+async def test_openai_provider_preserves_assistant_tool_calls_message() -> None:
+    client = FakeClient(make_response())
+
+    provider = OpenAIProvider(
+        make_settings(),
+        client=client,
+    )
+
+    context = Context(
+        values={
+            "messages": [
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "call_123",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"city":"Baku"}',
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_123",
+                    "content": "Baku: sunny",
+                },
+            ]
+        }
+    )
+
+    await provider.generate(
+        Request("Baku'de hava nas?l?"),
+        context,
+    )
+
+    messages = client.chat.completions.calls[0]["messages"]
+
+    assert any(
+        message["role"] == "assistant"
+        and message["tool_calls"][0]["id"] == "call_123"
+        for message in messages
+    )
+
+    assert any(
+        message["role"] == "tool"
+        and message["tool_call_id"] == "call_123"
+        and message["content"] == "Baku: sunny"
+        for message in messages
+    )

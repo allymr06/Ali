@@ -88,3 +88,236 @@ def test_core_engine_uses_registered_default_provider() -> None:
     )
 
     assert response.metadata["provider"] == "mock"
+def test_core_engine_executes_tool_call() -> None:
+    from types import SimpleNamespace
+
+    from app.core.models import ToolDefinition
+    from app.tools.executor import ToolExecutor
+
+    registry = ProviderRegistry()
+    memory_manager = MemoryManager(InMemoryStore())
+    tool_executor = ToolExecutor()
+
+    called = {"value": False}
+
+    def get_weather(city: str) -> str:
+        called["value"] = True
+        return f"{city}: sunny"
+
+    tool_executor.register(
+        ToolDefinition(
+            name="get_weather",
+            description="Get weather information.",
+        ),
+        get_weather,
+    )
+
+    class ToolCallingProvider(MockProvider):
+        async def generate(self, request, context, **kwargs):
+            return SimpleNamespace(
+                text="",
+                model="mock-model",
+                provider="mock",
+                finish_reason="tool_calls",
+                tool_calls=[
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": '{"city":"Baku"}',
+                        },
+                    }
+                ],
+                usage={},
+                metadata={},
+            )
+
+    registry.register(
+        ToolCallingProvider(),
+        make_default=True,
+    )
+
+    engine = CoreEngine(
+        registry,
+        memory_manager,
+        tool_executor=tool_executor,
+    )
+
+    response = asyncio.run(
+        engine.handle(Request("Baku'de hava nas?l?"))
+    )
+
+    assert called["value"] is True
+    assert response.metadata["tool_calls"] == 1
+
+def test_core_engine_sends_tool_result_back_to_provider() -> None:
+    from types import SimpleNamespace
+
+    from app.core.models import ToolDefinition
+    from app.tools.executor import ToolExecutor
+
+    registry = ProviderRegistry()
+    memory_manager = MemoryManager(InMemoryStore())
+    tool_executor = ToolExecutor()
+
+    tool_executor.register(
+        ToolDefinition(
+            name="get_weather",
+            description="Get weather information.",
+        ),
+        lambda city: f"{city}: sunny",
+    )
+
+    calls = []
+
+    class TwoStepProvider(MockProvider):
+        async def generate(self, request, context, **kwargs):
+            calls.append(context.values.get("messages", []).copy())
+
+            if len(calls) == 1:
+                return SimpleNamespace(
+                    text="",
+                    model="mock-model",
+                    provider="mock",
+                    finish_reason="tool_calls",
+                    tool_calls=[
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"city":"Baku"}',
+                            },
+                        }
+                    ],
+                    usage={},
+                    metadata={},
+                )
+
+            messages = context.values.get("messages", [])
+
+            assert any(
+                message.get("role") == "tool"
+                and message.get("tool_call_id") == "call_1"
+                and message.get("content") == "Baku: sunny"
+                for message in messages
+            )
+
+            return SimpleNamespace(
+                text="Baku'de hava gunesli.",
+                model="mock-model",
+                provider="mock",
+                finish_reason="stop",
+                tool_calls=[],
+                usage={},
+                metadata={},
+            )
+
+    registry.register(
+        TwoStepProvider(),
+        make_default=True,
+    )
+
+    engine = CoreEngine(
+        registry,
+        memory_manager,
+        tool_executor=tool_executor,
+    )
+
+    response = asyncio.run(
+        engine.handle(Request("Baku'de hava nas?l?"))
+    )
+
+    assert response.text == "Baku'de hava gunesli."
+    assert len(calls) == 2
+
+def test_core_engine_completes_tool_call_loop() -> None:
+    from types import SimpleNamespace
+
+    from app.core.models import ToolDefinition
+    from app.tools.executor import ToolExecutor
+
+    registry = ProviderRegistry()
+    memory_manager = MemoryManager(InMemoryStore())
+    tool_executor = ToolExecutor()
+
+    tool_executor.register(
+        ToolDefinition(
+            name="get_weather",
+            description="Get weather information.",
+        ),
+        lambda city: f"{city}: sunny",
+    )
+
+    calls = []
+
+    class AgentProvider(MockProvider):
+        async def generate(self, request, context, **kwargs):
+            calls.append(
+                list(
+                    context.values.get(
+                        "messages",
+                        [],
+                    )
+                )
+            )
+
+            if len(calls) == 1:
+                return SimpleNamespace(
+                    text="",
+                    model="mock-model",
+                    provider="mock",
+                    finish_reason="tool_calls",
+                    tool_calls=[
+                        {
+                            "id": "call_weather",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": '{"city":"Baku"}',
+                            },
+                        }
+                    ],
+                    usage={},
+                    metadata={},
+                )
+
+            assert any(
+                message.get("role") == "tool"
+                and message.get("tool_call_id") == "call_weather"
+                and message.get("content") == "Baku: sunny"
+                for message in context.values["messages"]
+            )
+
+            return SimpleNamespace(
+                text="Baku'de hava gunesli.",
+                model="mock-model",
+                provider="mock",
+                finish_reason="stop",
+                tool_calls=[],
+                usage={},
+                metadata={},
+            )
+
+    registry.register(
+        AgentProvider(),
+        make_default=True,
+    )
+
+    engine = CoreEngine(
+        registry,
+        memory_manager,
+        tool_executor=tool_executor,
+    )
+
+    response = asyncio.run(
+        engine.handle(
+            Request("Baku'de hava nas?l?")
+        )
+    )
+
+    assert response.text == "Baku'de hava gunesli."
+    assert response.metadata["tool_calls"] == 1
+    assert response.metadata["tool_iterations"] == 1
+    assert len(calls) == 2

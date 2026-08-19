@@ -3,11 +3,17 @@
 from threading import RLock
 from uuid import UUID
 
-from app.core.models import Task, TaskStatus
+from app.core.models import (
+    Task,
+    TaskStatus,
+    TaskStep,
+    TaskStepStatus,
+    utc_now,
+)
 
 
 class TaskManager:
-    """Manage the lifecycle of JARVIS tasks."""
+    """Manage the lifecycle of JARVIS tasks and their steps."""
 
     def __init__(self) -> None:
         self._tasks: dict[UUID, Task] = {}
@@ -43,9 +49,7 @@ class TaskManager:
             )
 
         task.status = TaskStatus.RUNNING
-        task.updated_at = task.updated_at.__class__.now(
-            task.updated_at.tzinfo
-        )
+        task.updated_at = utc_now()
 
         return task
 
@@ -58,6 +62,7 @@ class TaskManager:
             )
 
         task.status = TaskStatus.PAUSED
+        task.updated_at = utc_now()
         return task
 
     def resume(self, task_id: UUID) -> Task:
@@ -69,6 +74,7 @@ class TaskManager:
             )
 
         task.status = TaskStatus.RUNNING
+        task.updated_at = utc_now()
         return task
 
     def cancel(self, task_id: UUID) -> Task:
@@ -83,6 +89,7 @@ class TaskManager:
             )
 
         task.status = TaskStatus.CANCELLED
+        task.updated_at = utc_now()
         return task
 
     def complete(
@@ -100,6 +107,7 @@ class TaskManager:
         task.status = TaskStatus.COMPLETED
         task.progress = 1.0
         task.result = result
+        task.updated_at = utc_now()
         return task
 
     def fail(
@@ -119,6 +127,7 @@ class TaskManager:
 
         task.status = TaskStatus.FAILED
         task.error = error
+        task.updated_at = utc_now()
         return task
 
     def update_progress(
@@ -140,3 +149,175 @@ class TaskManager:
         )
 
         return task
+
+    def add_step(
+        self,
+        task_id: UUID,
+        name: str,
+        *,
+        metadata: dict[str, object] | None = None,
+    ) -> TaskStep:
+        task = self.get(task_id)
+
+        if task.status in (
+            TaskStatus.COMPLETED,
+            TaskStatus.CANCELLED,
+            TaskStatus.FAILED,
+        ):
+            raise ValueError(
+                f"Cannot add step to task from state {task.status.value}."
+            )
+
+        if not name.strip():
+            raise ValueError("Task step name cannot be empty.")
+
+        step = TaskStep(
+            name=name.strip(),
+            metadata=dict(metadata or {}),
+        )
+
+        with self._lock:
+            task.steps.append(step)
+            task.updated_at = utc_now()
+
+        return step
+
+    def get_step(
+        self,
+        task_id: UUID,
+        step_id: UUID,
+    ) -> TaskStep:
+        task = self.get(task_id)
+
+        with self._lock:
+            for step in task.steps:
+                if step.step_id == step_id:
+                    return step
+
+        raise KeyError(
+            f"Unknown task step: {step_id}"
+        )
+
+    def list_steps(
+        self,
+        task_id: UUID,
+    ) -> list[TaskStep]:
+        task = self.get(task_id)
+
+        with self._lock:
+            return list(task.steps)
+
+    def start_step(
+        self,
+        task_id: UUID,
+        step_id: UUID,
+    ) -> TaskStep:
+        task = self.get(task_id)
+        step = self.get_step(task.task_id, step_id)
+
+        if task.status is not TaskStatus.RUNNING:
+            raise ValueError(
+                f"Cannot start step while task is "
+                f"in state {task.status.value}."
+            )
+
+        if step.status is not TaskStepStatus.QUEUED:
+            raise ValueError(
+                f"Cannot start step from state {step.status.value}."
+            )
+
+        step.status = TaskStepStatus.RUNNING
+        step.updated_at = utc_now()
+
+        task.current_step = step.name
+        task.updated_at = utc_now()
+
+        return step
+
+    def complete_step(
+        self,
+        task_id: UUID,
+        step_id: UUID,
+        result: object = None,
+    ) -> TaskStep:
+        task = self.get(task_id)
+        step = self.get_step(task.task_id, step_id)
+
+        if step.status is not TaskStepStatus.RUNNING:
+            raise ValueError(
+                f"Cannot complete step from state {step.status.value}."
+            )
+
+        step.status = TaskStepStatus.COMPLETED
+        step.result = result
+        step.updated_at = utc_now()
+
+        self._recalculate_progress(task)
+
+        return step
+
+    def fail_step(
+        self,
+        task_id: UUID,
+        step_id: UUID,
+        error: str,
+    ) -> TaskStep:
+        task = self.get(task_id)
+        step = self.get_step(task.task_id, step_id)
+
+        if step.status not in (
+            TaskStepStatus.RUNNING,
+            TaskStepStatus.PAUSED,
+        ):
+            raise ValueError(
+                f"Cannot fail step from state {step.status.value}."
+            )
+
+        step.status = TaskStepStatus.FAILED
+        step.error = error
+        step.updated_at = utc_now()
+
+        task.updated_at = utc_now()
+
+        return step
+
+    def cancel_step(
+        self,
+        task_id: UUID,
+        step_id: UUID,
+    ) -> TaskStep:
+        task = self.get(task_id)
+        step = self.get_step(task.task_id, step_id)
+
+        if step.status in (
+            TaskStepStatus.COMPLETED,
+            TaskStepStatus.CANCELLED,
+        ):
+            raise ValueError(
+                f"Cannot cancel step from state {step.status.value}."
+            )
+
+        step.status = TaskStepStatus.CANCELLED
+        step.updated_at = utc_now()
+        task.updated_at = utc_now()
+
+        return step
+
+    @staticmethod
+    def _recalculate_progress(task: Task) -> None:
+        if not task.steps:
+            return
+
+        completed = sum(
+            step.status is TaskStepStatus.COMPLETED
+            for step in task.steps
+        )
+
+        task.progress = completed / len(task.steps)
+        task.updated_at = utc_now()
+
+        if all(
+            step.status is TaskStepStatus.COMPLETED
+            for step in task.steps
+        ):
+            task.current_step = None

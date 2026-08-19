@@ -34,6 +34,32 @@ class TaskStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class TaskStepStatus(str, Enum):
+    """Lifecycle state of an individual task step."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    WAITING_FOR_INPUT = "waiting_for_input"
+    WAITING_FOR_APPROVAL = "waiting_for_approval"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class TaskStepStatus(str, Enum):
+    """Lifecycle state of an individual task step."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    WAITING_FOR_INPUT = "waiting_for_input"
+    WAITING_FOR_APPROVAL = "waiting_for_approval"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 class ToolExecutionStatus(str, Enum):
     """Outcome of a tool execution."""
 
@@ -96,6 +122,20 @@ class Context:
 
 
 @dataclass(slots=True)
+class TaskStep:
+    """A single executable step belonging to a JARVIS task."""
+
+    name: str
+    step_id: UUID = field(default_factory=uuid4)
+    status: TaskStepStatus = TaskStepStatus.QUEUED
+    created_at: datetime = field(default_factory=utc_now)
+    updated_at: datetime = field(default_factory=utc_now)
+    result: Any = None
+    error: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class Task:
     """Persistent representation of a potentially long-running task."""
 
@@ -108,6 +148,7 @@ class Task:
     progress: float = 0.0
     result: Any = None
     error: str | None = None
+    steps: list[TaskStep] = field(default_factory=list)
 
     def update_progress(
         self,

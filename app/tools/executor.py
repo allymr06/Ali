@@ -189,10 +189,13 @@ class ToolExecutor:
     ) -> bool:
         """Return whether a value matches a runtime type annotation."""
         from types import UnionType
-        from typing import Union, get_args, get_origin
+        from typing import Annotated, Literal, Union, get_args, get_origin
 
         if annotation is Any:
             return True
+
+        if annotation is None:
+            return value is None
 
         if value is None:
             origin = get_origin(annotation)
@@ -203,6 +206,7 @@ class ToolExecutor:
             return annotation is type(None)
 
         origin = get_origin(annotation)
+        args = get_args(annotation)
 
         if origin in (Union, UnionType):
             return any(
@@ -210,14 +214,28 @@ class ToolExecutor:
                     value,
                     option,
                 )
-                for option in get_args(annotation)
+                for option in args
+            )
+
+        if origin is Annotated:
+            if not args:
+                return True
+
+            return self._matches_type(
+                value,
+                args[0],
+            )
+
+        if origin is Literal:
+            return any(
+                type(value) is type(literal)
+                and value == literal
+                for literal in args
             )
 
         if origin is list:
             if not isinstance(value, list):
                 return False
-
-            args = get_args(annotation)
 
             if not args:
                 return True
@@ -234,8 +252,6 @@ class ToolExecutor:
             if not isinstance(value, dict):
                 return False
 
-            args = get_args(annotation)
-
             if len(args) < 2:
                 return True
 
@@ -245,6 +261,67 @@ class ToolExecutor:
                 self._matches_type(key, key_type)
                 and self._matches_type(item, value_type)
                 for key, item in value.items()
+            )
+
+        if origin is tuple:
+            if not isinstance(value, tuple):
+                return False
+
+            if not args:
+                return True
+
+            if len(args) == 2 and args[1] is Ellipsis:
+                return all(
+                    self._matches_type(
+                        item,
+                        args[0],
+                    )
+                    for item in value
+                )
+
+            if len(value) != len(args):
+                return False
+
+            return all(
+                self._matches_type(
+                    item,
+                    expected,
+                )
+                for item, expected in zip(
+                    value,
+                    args,
+                    strict=True,
+                )
+            )
+
+        if origin is set:
+            if not isinstance(value, set):
+                return False
+
+            if not args:
+                return True
+
+            return all(
+                self._matches_type(
+                    item,
+                    args[0],
+                )
+                for item in value
+            )
+
+        if origin is frozenset:
+            if not isinstance(value, frozenset):
+                return False
+
+            if not args:
+                return True
+
+            return all(
+                self._matches_type(
+                    item,
+                    args[0],
+                )
+                for item in value
             )
 
         if isinstance(annotation, type):
@@ -591,10 +668,15 @@ class ToolExecutor:
 
         def annotation_to_schema(annotation: Any) -> dict[str, Any]:
             from types import UnionType
-            from typing import Union, get_args, get_origin
+            from typing import Literal, Union, get_args, get_origin
 
             origin = get_origin(annotation)
             args = get_args(annotation)
+
+            if origin is Literal:
+                return {
+                    "enum": list(args),
+                }
 
             if origin in (Union, UnionType):
                 non_none_args = tuple(

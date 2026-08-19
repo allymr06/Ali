@@ -102,3 +102,39 @@ def test_provider_error_hierarchy():
 def test_provider_is_abstract():
     with pytest.raises(TypeError):
         AIProvider()
+@pytest.mark.asyncio
+async def test_provider_generate_accepts_system_prompt_and_tools():
+    provider = FakeProvider()
+    request = Request("Test")
+    context = Context()
+
+    response = await provider.generate(
+        request,
+        context,
+        system_prompt="You are JARVIS.",
+        tools=[
+            {
+                "name": "test_tool",
+                "description": "Test tool",
+            }
+        ],
+    )
+
+    assert response.provider == "fake"
+    assert response.text == "Fake response: Test"
+
+
+@pytest.mark.asyncio
+async def test_provider_streaming_default_is_not_supported():
+    provider = FakeProvider()
+    request = Request("Test")
+    context = Context()
+
+    chunks = []
+
+    with pytest.raises(NotImplementedError):
+        async for chunk in provider.stream(
+            request,
+            context,
+        ):
+            chunks.append(chunk)

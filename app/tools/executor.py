@@ -511,19 +511,6 @@ class ToolExecutor:
                 )
                 return value
 
-            if isinstance(value, ToolResult):
-                value.tool_name = definition.name
-                value.verified = (
-                    value.status is ToolExecutionStatus.SUCCESS
-                )
-                return value
-
-            if isinstance(value, ToolResult):
-                value.tool_name = definition.name
-                value.verified = (
-                    value.status is ToolExecutionStatus.SUCCESS
-                )
-                return value
 
             return ToolResult(
                 status=ToolExecutionStatus.SUCCESS,

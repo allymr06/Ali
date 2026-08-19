@@ -34,18 +34,6 @@ class TaskStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class TaskStepStatus(str, Enum):
-    """Lifecycle state of an individual task step."""
-
-    QUEUED = "queued"
-    RUNNING = "running"
-    WAITING_FOR_INPUT = "waiting_for_input"
-    WAITING_FOR_APPROVAL = "waiting_for_approval"
-    PAUSED = "paused"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
 
 class TaskStepStatus(str, Enum):
     """Lifecycle state of an individual task step."""

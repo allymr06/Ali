@@ -5,6 +5,9 @@ import json
 from app.core.models import Context, Request, Response
 from app.memory.analyzer import MemoryAnalyzer
 from app.memory.manager import MemoryManager
+from app.planning.planner import Planner
+from app.planning.models import Plan, PlanStep
+from app.planning.executor import PlanExecutor
 from app.memory.policy import MemoryPolicy
 from app.providers.registry import ProviderRegistry
 from app.tasks.manager import TaskManager
@@ -43,11 +46,85 @@ class CoreEngine:
             else TaskManager()
         )
 
+        self._planner = Planner()
+        self._plan_executor = PlanExecutor(
+            self._planner
+        )
+
     @property
     def task_manager(self) -> TaskManager:
         """Return the task manager used by this engine."""
         return self._task_manager
 
+    def create_plan(
+        self,
+        goal: str,
+        steps: list[PlanStep] | None = None,
+    ) -> Plan:
+        """Create and validate a JARVIS execution plan."""
+        return self._planner.create_plan(
+            goal,
+            steps=steps,
+        )
+
+    async def execute_plan(
+        self,
+        plan: Plan,
+    ) -> Plan:
+        """Execute a validated plan through the tool pipeline."""
+        self._plan_executor.start(plan)
+
+        while plan.status.value == "running":
+            step = self._plan_executor.next_step(plan)
+
+            if step is None:
+                break
+
+            tool_name = step.metadata.get("tool_name")
+
+            if not isinstance(tool_name, str) or not tool_name:
+                self._plan_executor.fail_step(
+                    plan,
+                    step,
+                )
+                break
+
+            parameters = step.metadata.get(
+                "parameters",
+                {},
+            )
+
+            if not isinstance(parameters, dict):
+                self._plan_executor.fail_step(
+                    plan,
+                    step,
+                )
+                break
+
+            result = await self._tool_executor.execute(
+                tool_name,
+                parameters=parameters,
+            )
+
+            if result.succeeded:
+                step.metadata["tool_result"] = result.data
+
+                self._plan_executor.complete_step(
+                    plan,
+                    step,
+                )
+            else:
+                step.metadata["tool_error"] = (
+                    result.error
+                    or result.message
+                )
+
+                self._plan_executor.fail_step(
+                    plan,
+                    step,
+                )
+
+        return plan
     async def handle(
         self,
         request: Request,
@@ -221,4 +298,7 @@ class CoreEngine:
                 ),
             },
         )
+
+
+
 

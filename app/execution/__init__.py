@@ -1,3 +1,8 @@
+from app.execution.coordinator import (
+    ExecutionCoordinator,
+    RecoveryCandidate,
+    RecoveryCandidateStatus,
+)
 from app.execution.context import ExecutionContext
 from app.execution.events import (
     ExecutionEvent,
@@ -19,6 +24,9 @@ from app.execution.task_service import TaskExecutionObserver, TaskExecutionServi
 from app.execution.verification import VerificationEngine
 
 __all__ = [
+    "RecoveryCandidateStatus",
+    "RecoveryCandidate",
+    "ExecutionCoordinator",
     "RecoveryStatus",
     "ExecutionRecoveryService",
     "FileExecutionStateStore",

@@ -4,6 +4,7 @@ from app.execution.events import (
     ExecutionEventBus,
     ExecutionEventType,
 )
+from app.execution.persistence import FileExecutionStateStore
 from app.execution.journal import ExecutionJournal
 from app.execution.state import (
     ExecutionSnapshot,
@@ -17,6 +18,7 @@ from app.execution.task_service import TaskExecutionObserver, TaskExecutionServi
 from app.execution.verification import VerificationEngine
 
 __all__ = [
+    "FileExecutionStateStore",
     "ExecutionService",
     "TaskExecutionObserver",
     "TaskExecutionService",

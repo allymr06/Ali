@@ -6,6 +6,16 @@ from app.core.models import Request
 from app.memory.models import MemoryType
 
 
+EXPLICIT_MEMORY_PREFIXES = (
+    "hatırla:",
+    "hatırla ",
+    "hatirla:",
+    "hatirla ",
+    "remember:",
+    "remember ",
+)
+
+
 @dataclass(frozen=True, slots=True)
 class MemoryCandidate:
     """A possible memory extracted from a user request."""
@@ -25,15 +35,6 @@ class MemoryAnalyzer:
     the rest of the memory pipeline.
     """
 
-    _EXPLICIT_PREFIXES = (
-    	"hatırla:",
-    	"hatırla ",
-    	"hatirla:",
-    	"hatirla ",
-    	"remember:",
-    	"remember ",
-)
-
     def analyze(self, request: Request) -> MemoryCandidate | None:
         """Return a memory candidate when the request contains one."""
 
@@ -44,7 +45,7 @@ class MemoryAnalyzer:
 
         lowered = normalized.casefold()
 
-        for prefix in self._EXPLICIT_PREFIXES:
+        for prefix in EXPLICIT_MEMORY_PREFIXES:
             if lowered.startswith(prefix):
                 content = normalized[len(prefix):].strip()
 

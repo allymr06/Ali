@@ -1,85 +1,9 @@
-from __future__ import annotations
+"""Public application entry point.
 
-from dataclasses import dataclass
+Application construction lives in :mod:`app.bootstrap`; this module remains
+as the stable import path used by callers.
+"""
 
-from app.config.settings import Settings
-from app.core.engine import CoreEngine
-from app.memory.in_memory import InMemoryStore
-from app.memory.manager import MemoryManager
-from app.providers.mock import MockProvider
-from app.providers.openai import OpenAIProvider
-from app.providers.registry import ProviderRegistry
-from app.tasks.manager import TaskManager
-from app.tools.executor import ToolExecutor
+from app.bootstrap import JARVISApplication, create_application
 
-
-@dataclass(slots=True)
-class JARVISApplication:
-    """Fully initialized JARVIS application."""
-
-    settings: Settings
-    provider_registry: ProviderRegistry
-    memory_manager: MemoryManager
-    tool_executor: ToolExecutor
-    task_manager: TaskManager
-    engine: CoreEngine
-
-
-def create_application(
-    settings: Settings | None = None,
-) -> JARVISApplication:
-    """Create and wire the complete JARVIS application."""
-
-    active_settings = settings or Settings.from_environment()
-
-    provider_registry = ProviderRegistry(
-        default_provider=active_settings.default_provider,
-    )
-
-    provider_registry.register(
-        MockProvider(),
-    )
-
-    provider_registry.register(
-        OpenAIProvider(active_settings),
-    )
-
-    memory_manager = MemoryManager(
-        InMemoryStore(),
-    )
-
-    tool_executor = ToolExecutor()
-    task_manager = TaskManager()
-
-    engine = CoreEngine(
-        provider_registry=provider_registry,
-        memory_manager=memory_manager,
-        tool_executor=tool_executor,
-        task_manager=task_manager,
-    )
-
-    return JARVISApplication(
-        settings=active_settings,
-        provider_registry=provider_registry,
-        memory_manager=memory_manager,
-        tool_executor=tool_executor,
-        task_manager=task_manager,
-        engine=engine,
-    )
-
-
-# AgentLoop exposure is intentionally provided as a read-only
-# application-level facade so the existing Application constructor
-# and bootstrap wiring remain unchanged.
-from app.agent.loop import AgentLoop as _AgentLoop
-
-def _application_agent_loop(self):
-    return _AgentLoop(
-        engine=self.engine,
-    )
-
-
-if not hasattr(JARVISApplication, "agent_loop"):
-    JARVISApplication.agent_loop = property(
-        _application_agent_loop
-    )
+__all__ = ["JARVISApplication", "create_application"]

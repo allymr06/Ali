@@ -3,9 +3,7 @@
 import asyncio
 import inspect
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, get_type_hints
 
 from app.core.models import (
@@ -13,18 +11,10 @@ from app.core.models import (
     ToolExecutionStatus,
     ToolResult,
 )
+from app.core.time import utc_now
 from app.security.permissions import PermissionDecision, PermissionEngine
-
-
-ToolHandler = Callable[..., Any]
-
-
-@dataclass(frozen=True, slots=True)
-class RegisteredTool:
-    """A registered JARVIS tool and its executable handler."""
-
-    definition: ToolDefinition
-    handler: ToolHandler
+from app.tools.base import RegisteredTool, ToolCallable
+from app.tools.registry import ToolRegistry
 
 
 class _AwaitableToolResult(ToolResult):
@@ -56,22 +46,15 @@ class ToolExecutor:
         self,
         permission_engine: PermissionEngine | Any | None = None,
     ) -> None:
-        self._tools: dict[str, RegisteredTool] = {}
-
         if (
             permission_engine is not None
             and hasattr(permission_engine, "list_tools")
             and not hasattr(permission_engine, "evaluate")
         ):
-            registry = permission_engine
+            self._registry = permission_engine
             self._permission_engine = PermissionEngine()
-
-            for tool in registry.list_tools():
-                self._tools[tool.name.strip()] = RegisteredTool(
-                    definition=tool.definition,
-                    handler=tool.handler,
-                )
         else:
+            self._registry = ToolRegistry()
             self._permission_engine = (
                 permission_engine
                 if permission_engine is not None
@@ -81,7 +64,7 @@ class ToolExecutor:
     def register(
         self,
         definition: ToolDefinition,
-        handler: ToolHandler,
+        handler: ToolCallable,
     ) -> None:
         """Register a tool with its executable handler."""
         name = definition.name.strip()
@@ -92,52 +75,35 @@ class ToolExecutor:
         if not callable(handler):
             raise TypeError("Tool handler must be callable.")
 
-        if name in self._tools:
-            raise ValueError(
-                f"Tool '{name}' is already registered."
+        self._registry.register(
+            RegisteredTool(
+                definition=definition,
+                handler=handler,
             )
-
-        self._tools[name] = RegisteredTool(
-            definition=definition,
-            handler=handler,
         )
 
     def unregister(self, name: str) -> RegisteredTool:
         """Remove and return a registered tool."""
-        normalized_name = name.strip()
-
-        try:
-            return self._tools.pop(normalized_name)
-        except KeyError as exc:
-            raise KeyError(
-                f"Tool '{normalized_name}' is not registered."
-            ) from exc
+        return self._registry.unregister(name)
 
     def get(self, name: str) -> RegisteredTool:
         """Return a registered tool."""
-        normalized_name = name.strip()
-
-        try:
-            return self._tools[normalized_name]
-        except KeyError as exc:
-            raise KeyError(
-                f"Tool '{normalized_name}' is not registered."
-            ) from exc
+        return self._registry.get(name)
 
     def contains(self, name: str) -> bool:
         """Return whether a tool is registered."""
-        return name.strip() in self._tools
+        return self._registry.contains(name)
 
     def list_names(self) -> tuple[str, ...]:
         """Return registered tool names."""
-        return tuple(self._tools)
+        return self._registry.list_names()
 
     def _now(self) -> datetime:
-        return datetime.now(timezone.utc)
+        return utc_now()
 
     def _validate_arguments(
         self,
-        handler: ToolHandler,
+        handler: ToolCallable,
         args: tuple[Any, ...],
         parameters: dict[str, Any],
     ) -> str | None:
@@ -716,7 +682,7 @@ class ToolExecutor:
                 )
             }
 
-        for registered in self._tools.values():
+        for registered in self._registry.list_tools():
             definition = registered.definition
             signature = inspect.signature(registered.handler)
             type_hints = get_type_hints(registered.handler)
@@ -771,5 +737,5 @@ class ToolExecutor:
         return tools
 
     def __len__(self) -> int:
-        return len(self._tools)
+        return len(self._registry)
 

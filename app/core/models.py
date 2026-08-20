@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
-
-def utc_now() -> datetime:
-    """Return the current UTC time as a timezone-aware datetime."""
-    return datetime.now(timezone.utc)
+from app.core.time import utc_now
 
 
 class RequestSource(str, Enum):

@@ -24,6 +24,13 @@ class JARVISApplication:
     task_manager: TaskManager
     engine: CoreEngine
 
+    @property
+    def agent_loop(self):
+        """Create an agent loop bound to this application's engine."""
+        from app.agent.loop import AgentLoop
+
+        return AgentLoop(engine=self.engine)
+
 
 def create_application(
     settings: Settings | None = None,

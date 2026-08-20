@@ -3,8 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.core.models import Request
-from app.memory.analyzer import MemoryCandidate
+from app.memory.analyzer import EXPLICIT_MEMORY_PREFIXES, MemoryCandidate
 from app.memory.models import MemoryType
+
+
+CONTEXTUAL_MEMORY_PREFIXES = (
+    "bunu hatırla:",
+    "bunu hatırla ",
+    "bunu hatirla:",
+    "bunu hatirla ",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,42 +68,15 @@ class MemoryPolicy:
                 reason=candidate.reason,
             )
 
-        # Explicit Turkish memory requests.
-        explicit_turkish_prefixes = (
-            "hatırla:",
-            "hatırla ",
-            "hatirla:",
-            "hatirla ",
-            "bunu hatırla:",
-            "bunu hatırla ",
-            "bunu hatirla:",
-            "bunu hatirla ",
-        )
-
-        for prefix in explicit_turkish_prefixes:
-            if normalized.startswith(prefix):
-                return MemoryDecision(
-                    should_remember=True,
-                    memory_type=MemoryType.FACT,
-                    importance=0.9,
-                    reason="Explicit user memory request.",
-                )
-
-        # Explicit English memory requests.
-        explicit_english_prefixes = (
-            "remember:",
-            "remember ",
-            "remember that ",
-        )
-
-        for prefix in explicit_english_prefixes:
-            if normalized.startswith(prefix):
-                return MemoryDecision(
-                    should_remember=True,
-                    memory_type=MemoryType.FACT,
-                    importance=0.9,
-                    reason="Explicit user memory request.",
-                )
+        if normalized.startswith(
+            EXPLICIT_MEMORY_PREFIXES + CONTEXTUAL_MEMORY_PREFIXES
+        ):
+            return MemoryDecision(
+                should_remember=True,
+                memory_type=MemoryType.FACT,
+                importance=0.9,
+                reason="Explicit user memory request.",
+            )
 
         # Preference detection.
         preference_signals = (

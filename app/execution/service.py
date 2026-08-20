@@ -10,8 +10,14 @@ from app.execution.events import (
     ExecutionEventBus,
     ExecutionEventType,
 )
+from app.execution.journal import ExecutionJournal
 from app.execution.models import RetryPolicy
 from app.execution.replanner import Replanner
+from app.execution.state import (
+    ExecutionSnapshot,
+    ExecutionSnapshotStatus,
+    ExecutionStateStore,
+)
 from app.execution.verification import VerificationEngine
 from app.planning.executor import PlanExecutor
 from app.planning.models import Plan, PlanStep
@@ -22,47 +28,47 @@ class ExecutionObserver:
 
     async def on_step_started(
         self,
-        plan,
-        step,
+        plan: Plan,
+        step: PlanStep,
     ) -> None:
         return None
 
     async def on_step_completed(
         self,
-        plan,
-        step,
+        plan: Plan,
+        step: PlanStep,
     ) -> None:
         return None
 
     async def on_step_failed(
         self,
-        plan,
-        step,
+        plan: Plan,
+        step: PlanStep,
         error: str,
     ) -> None:
         return None
 
     async def on_plan_completed(
         self,
-        plan,
+        plan: Plan,
     ) -> None:
         return None
 
     async def on_plan_failed(
         self,
-        plan,
+        plan: Plan,
     ) -> None:
         return None
 
     async def on_plan_cancelled(
         self,
-        plan,
+        plan: Plan,
     ) -> None:
         return None
 
 
 class ExecutionService:
-    """Coordinate plan execution, verification, retries, and events."""
+    """Coordinate planning execution, verification, retry, replanning, and state."""
 
     def __init__(
         self,
@@ -73,6 +79,8 @@ class ExecutionService:
         retry_policy: RetryPolicy | None = None,
         observer: ExecutionObserver | None = None,
         event_bus: ExecutionEventBus | None = None,
+        state_store: ExecutionStateStore | None = None,
+        journal: ExecutionJournal | None = None,
         replanner: Replanner | None = None,
     ) -> None:
         self._tool_executor = tool_executor
@@ -85,11 +93,63 @@ class ExecutionService:
         self._retry_policy = retry_policy or RetryPolicy()
         self._observer = observer or ExecutionObserver()
         self._event_bus = event_bus or ExecutionEventBus()
+        self._state_store = state_store or ExecutionStateStore()
+        self._journal = journal
         self._replanner = replanner or Replanner()
 
     @property
     def event_bus(self) -> ExecutionEventBus:
         return self._event_bus
+
+    @property
+    def state_store(self) -> ExecutionStateStore:
+        return self._state_store
+
+    async def _publish(
+        self,
+        event: ExecutionEvent,
+    ) -> None:
+        await self._event_bus.publish(event)
+
+        if self._journal is not None:
+            await self._journal.append(event)
+
+    def _save_snapshot(
+        self,
+        plan: Plan,
+        *,
+        status: ExecutionSnapshotStatus | None = None,
+        step: PlanStep | None = None,
+        error: str | None = None,
+    ) -> ExecutionSnapshot:
+        try:
+            snapshot = self._state_store.get(plan.plan_id)
+        except KeyError:
+            snapshot = ExecutionSnapshot(
+                plan_id=plan.plan_id,
+                status=(
+                    status
+                    or ExecutionSnapshotStatus.RUNNING
+                ),
+                goal=plan.goal,
+            )
+
+        if status is not None:
+            snapshot.status = status
+
+        if step is not None:
+            snapshot.current_step_id = step.step_id
+            snapshot.current_step_name = step.name
+
+            attempts = step.metadata.get("attempts")
+            if isinstance(attempts, int):
+                snapshot.attempts[step.name] = attempts
+
+        if error is not None:
+            snapshot.metadata["error"] = error
+
+        snapshot.touch()
+        return self._state_store.save(snapshot)
 
     async def execute(
         self,
@@ -98,15 +158,24 @@ class ExecutionService:
         execution_context: ExecutionContext | None = None,
         cancel_event: asyncio.Event | None = None,
     ) -> Plan:
-        context = execution_context or ExecutionContext(
-            plan_id=plan.plan_id,
+        context = (
+            execution_context
+            if execution_context is not None
+            else ExecutionContext(
+                plan_id=plan.plan_id,
+            )
         )
 
         context.plan_id = plan.plan_id
 
         self._plan_executor.start(plan)
 
-        await self._event_bus.publish(
+        self._save_snapshot(
+            plan,
+            status=ExecutionSnapshotStatus.RUNNING,
+        )
+
+        await self._publish(
             ExecutionEvent(
                 event_type=ExecutionEventType.PLAN_STARTED,
                 plan_id=plan.plan_id,
@@ -117,12 +186,21 @@ class ExecutionService:
         )
 
         while plan.status.value == "running":
-            if cancel_event is not None and cancel_event.is_set():
+            if (
+                cancel_event is not None
+                and cancel_event.is_set()
+            ):
                 self._plan_executor.cancel(plan)
+                self._save_snapshot(
+                    plan,
+                    status=ExecutionSnapshotStatus.CANCELLED,
+                )
 
-                await self._observer.on_plan_cancelled(plan)
+                await self._observer.on_plan_cancelled(
+                    plan
+                )
 
-                await self._event_bus.publish(
+                await self._publish(
                     ExecutionEvent(
                         event_type=ExecutionEventType.PLAN_CANCELLED,
                         plan_id=plan.plan_id,
@@ -141,12 +219,18 @@ class ExecutionService:
                 step_name=step.name,
             )
 
+            self._save_snapshot(
+                plan,
+                status=ExecutionSnapshotStatus.RUNNING,
+                step=step,
+            )
+
             await self._observer.on_step_started(
                 plan,
                 step,
             )
 
-            await self._event_bus.publish(
+            await self._publish(
                 ExecutionEvent(
                     event_type=ExecutionEventType.STEP_STARTED,
                     plan_id=plan.plan_id,
@@ -156,6 +240,7 @@ class ExecutionService:
             )
 
             previous_status = plan.status
+
             await self._execute_step(
                 plan,
                 step,
@@ -165,12 +250,19 @@ class ExecutionService:
             if (
                 plan.status.value == "failed"
                 and self._replanner.can_replan(
-                    context.metadata.get("replan_count", 0)
+                    int(
+                        context.metadata.get(
+                            "replan_count",
+                            0,
+                        )
+                    )
                 )
             ):
-                replan_count = context.metadata.get(
-                    "replan_count",
-                    0,
+                replan_count = int(
+                    context.metadata.get(
+                        "replan_count",
+                        0,
+                    )
                 )
 
                 error = str(
@@ -192,16 +284,31 @@ class ExecutionService:
                     )
 
                     plan = replacement
+                    context.plan_id = plan.plan_id
+
                     self._plan_executor.start(plan)
+
+                    self._save_snapshot(
+                        plan,
+                        status=ExecutionSnapshotStatus.RUNNING,
+                    )
+
                     continue
 
             if plan.status is not previous_status:
                 continue
 
         if plan.status.value == "completed":
-            await self._observer.on_plan_completed(plan)
+            self._save_snapshot(
+                plan,
+                status=ExecutionSnapshotStatus.COMPLETED,
+            )
 
-            await self._event_bus.publish(
+            await self._observer.on_plan_completed(
+                plan
+            )
+
+            await self._publish(
                 ExecutionEvent(
                     event_type=ExecutionEventType.PLAN_COMPLETED,
                     plan_id=plan.plan_id,
@@ -212,9 +319,16 @@ class ExecutionService:
             )
 
         elif plan.status.value == "failed":
-            await self._observer.on_plan_failed(plan)
+            self._save_snapshot(
+                plan,
+                status=ExecutionSnapshotStatus.FAILED,
+            )
 
-            await self._event_bus.publish(
+            await self._observer.on_plan_failed(
+                plan
+            )
+
+            await self._publish(
                 ExecutionEvent(
                     event_type=ExecutionEventType.PLAN_FAILED,
                     plan_id=plan.plan_id,
@@ -222,9 +336,16 @@ class ExecutionService:
             )
 
         elif plan.status.value == "cancelled":
-            await self._observer.on_plan_cancelled(plan)
+            self._save_snapshot(
+                plan,
+                status=ExecutionSnapshotStatus.CANCELLED,
+            )
 
-            await self._event_bus.publish(
+            await self._observer.on_plan_cancelled(
+                plan
+            )
+
+            await self._publish(
                 ExecutionEvent(
                     event_type=ExecutionEventType.PLAN_CANCELLED,
                     plan_id=plan.plan_id,
@@ -240,19 +361,40 @@ class ExecutionService:
         *,
         execution_context: ExecutionContext,
     ) -> None:
-        tool_name = step.metadata.get("tool_name")
+        tool_name = step.metadata.get(
+            "tool_name"
+        )
 
-        if not isinstance(tool_name, str) or not tool_name.strip():
+        if (
+            not isinstance(tool_name, str)
+            or not tool_name.strip()
+        ):
+            error = "Invalid tool_name."
+
             self._fail(
                 plan,
                 step,
-                "Invalid tool_name.",
+                error,
             )
+
             await self._observer.on_step_failed(
                 plan,
                 step,
-                "Invalid tool_name.",
+                error,
             )
+
+            await self._publish(
+                ExecutionEvent(
+                    event_type=ExecutionEventType.STEP_FAILED,
+                    plan_id=plan.plan_id,
+                    step_id=step.step_id,
+                    step_name=step.name,
+                    data={
+                        "error": error,
+                    },
+                )
+            )
+
             return
 
         parameters = step.metadata.get(
@@ -261,31 +403,68 @@ class ExecutionService:
         )
 
         if not isinstance(parameters, dict):
+            error = "Parameters must be a dictionary."
+
             self._fail(
                 plan,
                 step,
-                "Parameters must be a dictionary.",
+                error,
             )
+
             await self._observer.on_step_failed(
                 plan,
                 step,
-                "Parameters must be a dictionary.",
+                error,
             )
+
+            await self._publish(
+                ExecutionEvent(
+                    event_type=ExecutionEventType.STEP_FAILED,
+                    plan_id=plan.plan_id,
+                    step_id=step.step_id,
+                    step_name=step.name,
+                    data={
+                        "error": error,
+                    },
+                )
+            )
+
             return
 
-        verifier = step.metadata.get("verifier")
+        verifier = step.metadata.get(
+            "verifier"
+        )
 
-        if verifier is not None and not callable(verifier):
+        if (
+            verifier is not None
+            and not callable(verifier)
+        ):
+            error = "Verifier must be callable."
+
             self._fail(
                 plan,
                 step,
-                "Verifier must be callable.",
+                error,
             )
+
             await self._observer.on_step_failed(
                 plan,
                 step,
-                "Verifier must be callable.",
+                error,
             )
+
+            await self._publish(
+                ExecutionEvent(
+                    event_type=ExecutionEventType.STEP_FAILED,
+                    plan_id=plan.plan_id,
+                    step_id=step.step_id,
+                    step_name=step.name,
+                    data={
+                        "error": error,
+                    },
+                )
+            )
+
             return
 
         last_error = ""
@@ -312,10 +491,15 @@ class ExecutionService:
                 last_error = (
                     f"Tool executor exception: {exc}"
                 )
+
+                step.metadata["attempts"] = attempt
+
                 continue
 
             step.metadata["attempts"] = attempt
-            step.metadata["last_status"] = result.status.value
+            step.metadata["last_status"] = (
+                result.status.value
+            )
             step.metadata["execution_id"] = str(
                 result.execution_id
             )
@@ -329,7 +513,7 @@ class ExecutionService:
             ] = tool_name
 
             if attempt > 1:
-                await self._event_bus.publish(
+                await self._publish(
                     ExecutionEvent(
                         event_type=ExecutionEventType.STEP_RETRYING,
                         plan_id=plan.plan_id,
@@ -343,29 +527,49 @@ class ExecutionService:
                     )
                 )
 
-            verification = self._verification_engine.verify(
-                result,
-                verifier=verifier,
+            verification = (
+                self._verification_engine.verify(
+                    result,
+                    verifier=verifier,
+                )
             )
 
             if verification.passed:
-                step.metadata["tool_result"] = result.data
-                step.metadata["verified"] = True
-                step.metadata["verification_reason"] = (
-                    verification.reason
+                step.metadata["tool_result"] = (
+                    result.data
                 )
+                step.metadata["verified"] = True
+                step.metadata[
+                    "verification_reason"
+                ] = verification.reason
 
                 self._plan_executor.complete_step(
                     plan,
                     step,
                 )
 
+                snapshot = self._save_snapshot(
+                    plan,
+                    status=ExecutionSnapshotStatus.RUNNING,
+                    step=step,
+                )
+
+                if step.step_id not in (
+                    snapshot.completed_step_ids
+                ):
+                    snapshot.completed_step_ids.append(
+                        step.step_id
+                    )
+                    self._state_store.save(
+                        snapshot
+                    )
+
                 await self._observer.on_step_completed(
                     plan,
                     step,
                 )
 
-                await self._event_bus.publish(
+                await self._publish(
                     ExecutionEvent(
                         event_type=ExecutionEventType.STEP_COMPLETED,
                         plan_id=plan.plan_id,
@@ -394,12 +598,35 @@ class ExecutionService:
             ):
                 break
 
-        attempts = step.metadata.get("attempts")
+        attempts = step.metadata.get(
+            "attempts"
+        )
 
         if not isinstance(attempts, int):
-            attempts = self._retry_policy.max_attempts
+            attempts = (
+                self._retry_policy.max_attempts
+            )
 
         step.metadata["attempts"] = attempts
+        step.metadata["verified"] = False
+        step.metadata["tool_error"] = last_error
+
+        snapshot = self._save_snapshot(
+            plan,
+            status=ExecutionSnapshotStatus.FAILED,
+            step=step,
+            error=last_error,
+        )
+
+        if step.step_id not in (
+            snapshot.failed_step_ids
+        ):
+            snapshot.failed_step_ids.append(
+                step.step_id
+            )
+            self._state_store.save(
+                snapshot
+            )
 
         self._fail(
             plan,
@@ -413,7 +640,7 @@ class ExecutionService:
             last_error,
         )
 
-        await self._event_bus.publish(
+        await self._publish(
             ExecutionEvent(
                 event_type=ExecutionEventType.STEP_FAILED,
                 plan_id=plan.plan_id,
@@ -434,6 +661,7 @@ class ExecutionService:
     ) -> None:
         step.metadata["verified"] = False
         step.metadata["tool_error"] = error
+
         self._plan_executor.fail_step(
             plan,
             step,

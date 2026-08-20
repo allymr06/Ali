@@ -1,3 +1,9 @@
+from app.agent.approval import (
+    ApprovalDecision,
+    ApprovalRequest,
+    ApprovalStatus,
+    ApprovalStore,
+)
 from app.agent.loop import AgentLoop
 from app.agent.models import (
     AgentExecutionResult,
@@ -6,6 +12,10 @@ from app.agent.models import (
 )
 
 __all__ = [
+    "ApprovalDecision",
+    "ApprovalRequest",
+    "ApprovalStatus",
+    "ApprovalStore",
     "AgentExecutionResult",
     "AgentLoop",
     "AgentMode",

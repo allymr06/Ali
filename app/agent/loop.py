@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import Any
 
+from app.agent.approval import ApprovalStatus, ApprovalStore
 from app.agent.models import (
     AgentExecutionResult,
     AgentMode,
@@ -33,14 +34,44 @@ class AgentLoop:
         engine: CoreEngine,
         plan_builder: PlanBuilder | None = None,
         mode_router: ModeRouter | None = None,
+        approval_store: ApprovalStore | None = None,
     ) -> None:
         self._engine = engine
         self._plan_builder = plan_builder
         self._mode_router = mode_router or self._default_mode_router
+        self._approval_store = approval_store or ApprovalStore()
 
     @property
     def engine(self) -> CoreEngine:
         return self._engine
+
+    @property
+    def approval_store(self) -> ApprovalStore:
+        return self._approval_store
+
+    def approve(
+        self,
+        operation_id,
+    ):
+        return self._approval_store.approve(
+            operation_id
+        )
+
+    def deny(
+        self,
+        operation_id,
+    ):
+        return self._approval_store.deny(
+            operation_id
+        )
+
+    def get_approval(
+        self,
+        operation_id,
+    ):
+        return self._approval_store.get(
+            operation_id
+        )
 
     def choose_mode(
         self,
@@ -50,6 +81,25 @@ class AgentLoop:
         return self._mode_router(
             request,
             context,
+        )
+
+    def request_approval(
+        self,
+        *,
+        operation: str,
+        reason: str,
+        risk_level: str,
+        task_id=None,
+        plan_id=None,
+        metadata=None,
+    ):
+        return self._approval_store.create(
+            operation=operation,
+            reason=reason,
+            risk_level=risk_level,
+            task_id=task_id,
+            plan_id=plan_id,
+            metadata=metadata,
         )
 
     def build_plan(

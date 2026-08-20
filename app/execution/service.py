@@ -11,6 +11,7 @@ from app.execution.events import (
     ExecutionEventType,
 )
 from app.execution.models import RetryPolicy
+from app.execution.replanner import Replanner
 from app.execution.verification import VerificationEngine
 from app.planning.executor import PlanExecutor
 from app.planning.models import Plan, PlanStep
@@ -72,6 +73,7 @@ class ExecutionService:
         retry_policy: RetryPolicy | None = None,
         observer: ExecutionObserver | None = None,
         event_bus: ExecutionEventBus | None = None,
+        replanner: Replanner | None = None,
     ) -> None:
         self._tool_executor = tool_executor
         self._plan_executor = plan_executor
@@ -83,6 +85,7 @@ class ExecutionService:
         self._retry_policy = retry_policy or RetryPolicy()
         self._observer = observer or ExecutionObserver()
         self._event_bus = event_bus or ExecutionEventBus()
+        self._replanner = replanner or Replanner()
 
     @property
     def event_bus(self) -> ExecutionEventBus:
@@ -152,11 +155,48 @@ class ExecutionService:
                 )
             )
 
+            previous_status = plan.status
             await self._execute_step(
                 plan,
                 step,
                 execution_context=context,
             )
+
+            if (
+                plan.status.value == "failed"
+                and self._replanner.can_replan(
+                    context.metadata.get("replan_count", 0)
+                )
+            ):
+                replan_count = context.metadata.get(
+                    "replan_count",
+                    0,
+                )
+
+                error = str(
+                    step.metadata.get(
+                        "tool_error",
+                        "Execution failed.",
+                    )
+                )
+
+                replacement = self._replanner.replan(
+                    plan,
+                    step,
+                    error,
+                )
+
+                if replacement is not None:
+                    context.metadata["replan_count"] = (
+                        replan_count + 1
+                    )
+
+                    plan = replacement
+                    self._plan_executor.start(plan)
+                    continue
+
+            if plan.status is not previous_status:
+                continue
 
         if plan.status.value == "completed":
             await self._observer.on_plan_completed(plan)

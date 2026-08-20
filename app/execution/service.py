@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 from typing import Any
 
+from app.agent.approval import ApprovalGrant, approval_binding_digest
 from app.core.models import ToolExecutionStatus
+from app.core.time import utc_now
 from app.execution.context import ExecutionContext
 from app.execution.events import (
     ExecutionEvent,
@@ -245,6 +248,7 @@ class ExecutionService:
                 plan,
                 step,
                 execution_context=context,
+                cancel_event=cancel_event,
             )
 
             if (
@@ -360,6 +364,7 @@ class ExecutionService:
         step: PlanStep,
         *,
         execution_context: ExecutionContext,
+        cancel_event: asyncio.Event | None,
     ) -> None:
         tool_name = step.metadata.get(
             "tool_name"
@@ -467,6 +472,40 @@ class ExecutionService:
 
             return
 
+        approval_grant = step.metadata.pop("_approval_grant", None)
+        confirmation_granted = False
+
+        if isinstance(approval_grant, ApprovalGrant):
+            operation = str(
+                step.metadata.get("operation", tool_name)
+            )
+            try:
+                expected_binding = approval_binding_digest(
+                    operation=operation,
+                    tool_name=tool_name,
+                    parameters=parameters,
+                    task_id=approval_grant.task_id,
+                    plan_id=plan.plan_id,
+                    step_id=step.step_id,
+                )
+            except ValueError:
+                expected_binding = ""
+
+            confirmation_granted = bool(expected_binding) and (
+                hmac.compare_digest(
+                    approval_grant.binding_digest,
+                    expected_binding,
+                )
+                and (
+                    approval_grant.expires_at is None
+                    or utc_now() < approval_grant.expires_at
+                )
+                and (
+                    approval_grant.task_id is None
+                    or approval_grant.task_id == execution_context.task_id
+                )
+            )
+
         last_error = ""
 
         for attempt in range(
@@ -477,15 +516,43 @@ class ExecutionService:
                 attempt > 1
                 and self._retry_policy.backoff_seconds > 0
             ):
-                await asyncio.sleep(
+                delay = (
                     self._retry_policy.backoff_seconds
                     * (2 ** (attempt - 2))
                 )
 
+                if cancel_event is None:
+                    await asyncio.sleep(delay)
+                else:
+                    try:
+                        await asyncio.wait_for(
+                            cancel_event.wait(),
+                            timeout=delay,
+                        )
+                    except TimeoutError:
+                        pass
+                    else:
+                        self._plan_executor.cancel(plan)
+                        step.metadata["verified"] = False
+                        step.metadata["tool_error"] = (
+                            "Cancellation requested during retry backoff."
+                        )
+                        return
+
             try:
+                execution_kwargs = {
+                    "parameters": parameters,
+                }
+
+                if confirmation_granted:
+                    execution_kwargs["confirmation_granted"] = True
+
+                if cancel_event is not None:
+                    execution_kwargs["cancel_event"] = cancel_event
+
                 result = await self._tool_executor.execute(
                     tool_name.strip(),
-                    parameters=parameters,
+                    **execution_kwargs,
                 )
             except Exception as exc:
                 last_error = (
@@ -511,6 +578,14 @@ class ExecutionService:
             execution_context.metadata[
                 "last_tool_name"
             ] = tool_name
+
+            if result.status is ToolExecutionStatus.CANCELLED:
+                step.metadata["verified"] = False
+                step.metadata["tool_error"] = (
+                    result.error or result.message or "Tool execution cancelled."
+                )
+                self._plan_executor.cancel(plan)
+                return
 
             if attempt > 1:
                 await self._publish(

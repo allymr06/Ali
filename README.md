@@ -74,11 +74,12 @@ JARVIS currently targets Python 3.12.
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt pytest pytest-asyncio
+python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-The dependency declarations still need to be consolidated before clean-machine installation can be considered reproducible.
+Runtime and development dependencies are pinned in `pyproject.toml`. The
+requirements files install the corresponding project dependency set.
 
 ## Engineering principles
 
@@ -103,4 +104,3 @@ The next milestone is to harden the existing tool runtime and complete the first
 - `docs/TESTING.md`
 - `docs/SECURITY.md`
 - `docs/CONFIGURATION.md`
-

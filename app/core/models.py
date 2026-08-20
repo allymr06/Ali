@@ -161,6 +161,7 @@ class ToolResult:
     started_at: datetime | None = None
     finished_at: datetime | None = None
     verified: bool = False
+    side_effects_may_continue: bool = False
 
     @property
     def succeeded(self) -> bool:
@@ -188,3 +189,16 @@ class ToolDefinition:
     requires_confirmation: bool = False
     timeout_seconds: float = 30.0
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.name = self.name.strip()
+        self.description = self.description.strip()
+
+        if not self.name:
+            raise ValueError("Tool name cannot be empty.")
+
+        if not self.description:
+            raise ValueError("Tool description cannot be empty.")
+
+        if self.timeout_seconds <= 0:
+            raise ValueError("Tool timeout_seconds must be greater than 0.")

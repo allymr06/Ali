@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -11,6 +12,7 @@ from app.agent.approval import (
 from app.agent.loop import AgentLoop
 from app.agent.models import AgentMode
 from app.core.models import Context, Request
+from app.core.time import utc_now
 from app.main import create_application
 
 
@@ -160,3 +162,18 @@ def test_agent_loop_can_deny_request():
     )
 
     assert result.status is ApprovalStatus.DENIED
+
+
+def test_approval_store_rejects_expired_request():
+    store = ApprovalStore()
+    request = store.create(
+        operation="delete_file",
+        reason="Delete operation",
+        risk_level="high",
+    )
+    request.expires_at = utc_now() - timedelta(seconds=1)
+
+    with pytest.raises(ValueError, match="expired"):
+        store.approve(request.operation_id)
+
+    assert request.status is ApprovalStatus.EXPIRED

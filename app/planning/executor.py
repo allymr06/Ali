@@ -132,5 +132,9 @@ class PlanExecutor:
                 f"Cannot cancel plan from state {plan.status.value}."
             )
 
+        for step in plan.steps:
+            if step.status is PlanStepStatus.RUNNING:
+                step.status = PlanStepStatus.CANCELLED
+
         plan.status = PlanStatus.CANCELLED
         return plan

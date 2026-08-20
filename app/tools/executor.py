@@ -1,7 +1,9 @@
 ﻿from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime
 from typing import Any, get_type_hints
@@ -291,9 +293,104 @@ class ToolExecutor:
             )
 
         if isinstance(annotation, type):
+            if annotation in {str, int, float, bool, bytes}:
+                return type(value) is annotation
+
             return isinstance(value, annotation)
 
         return True
+
+    def _validate_output(
+        self,
+        handler: ToolCallable,
+        value: Any,
+    ) -> str | None:
+        """Validate a handler result against its declared return type."""
+        try:
+            signature = inspect.signature(handler)
+            annotation = signature.return_annotation
+
+            try:
+                annotation = get_type_hints(
+                    handler,
+                    globalns=getattr(handler, "__globals__", None),
+                    localns=None,
+                ).get("return", annotation)
+            except (NameError, TypeError, ValueError):
+                pass
+
+            if (
+                annotation is inspect.Signature.empty
+                or isinstance(annotation, str)
+            ):
+                return None
+
+            if not self._matches_type(value, annotation):
+                return (
+                    "Tool returned an invalid type. "
+                    f"Expected {annotation!r}, got {type(value).__name__}."
+                )
+        except (TypeError, ValueError):
+            return None
+
+        return None
+
+    def _normalize_result(
+        self,
+        *,
+        definition: ToolDefinition,
+        value: Any,
+        started_at: datetime,
+    ) -> ToolResult:
+        if isinstance(value, ToolResult):
+            value.tool_name = definition.name
+            value.started_at = value.started_at or started_at
+            value.finished_at = value.finished_at or self._now()
+
+            if value.status is not ToolExecutionStatus.SUCCESS:
+                value.verified = False
+
+            return value
+
+        return ToolResult(
+            status=ToolExecutionStatus.SUCCESS,
+            tool_name=definition.name,
+            message="Tool executed successfully; outcome is not yet verified.",
+            data=value,
+            started_at=started_at,
+            finished_at=self._now(),
+            verified=False,
+        )
+
+    def _interrupted_result(
+        self,
+        *,
+        definition: ToolDefinition,
+        started_at: datetime,
+        status: ToolExecutionStatus,
+        side_effects_may_continue: bool,
+    ) -> ToolResult:
+        if status is ToolExecutionStatus.CANCELLED:
+            message = "Tool execution was cancelled."
+            error = "Cancellation requested."
+        else:
+            message = "Tool execution timed out."
+            error = (
+                "Tool execution exceeded the "
+                f"{definition.timeout_seconds} second timeout."
+            )
+
+        return ToolResult(
+            status=status,
+            tool_name=definition.name,
+            message=message,
+            error=error,
+            started_at=started_at,
+            finished_at=self._now(),
+            verified=False,
+            side_effects_may_continue=side_effects_may_continue,
+        )
+
     def _evaluate_permission(
         self,
         definition: ToolDefinition,
@@ -338,6 +435,7 @@ class ToolExecutor:
         operation: str | None = None,
         parameters: dict[str, Any] | None = None,
         confirmation_granted: bool = False,
+        cancel_event: Any | None = None,
     ) -> ToolResult | Any:
         """
         Execute a tool.
@@ -361,6 +459,7 @@ class ToolExecutor:
                 operation=operation,
                 parameters=parameters,
                 confirmation_granted=confirmation_granted,
+                cancel_event=cancel_event,
             )
 
         return self._execute_sync(
@@ -369,6 +468,7 @@ class ToolExecutor:
             operation=operation,
             parameters=parameters,
             confirmation_granted=confirmation_granted,
+            cancel_event=cancel_event,
         )
 
     def _execute_sync(
@@ -378,6 +478,7 @@ class ToolExecutor:
         operation: str | None,
         parameters: dict[str, Any] | None,
         confirmation_granted: bool,
+        cancel_event: Any | None,
     ) -> ToolResult:
         normalized_name = name.strip()
 
@@ -395,7 +496,18 @@ class ToolExecutor:
             )
 
         definition = registered.definition
-        execution_parameters = parameters or {}
+
+        if parameters is not None and not isinstance(parameters, dict):
+            return ToolResult(
+                status=ToolExecutionStatus.FAILED,
+                tool_name=definition.name,
+                message="Invalid tool arguments.",
+                error="Tool parameters must be a dictionary.",
+                finished_at=self._now(),
+                verified=False,
+            )
+
+        execution_parameters = dict(parameters or {})
         started_at = self._now()
 
         blocked = self._evaluate_permission(
@@ -428,32 +540,51 @@ class ToolExecutor:
             )
 
         try:
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(
-                    registered.handler,
-                    *args,
-                    **execution_parameters,
+            if cancel_event is not None and cancel_event.is_set():
+                return self._interrupted_result(
+                    definition=definition,
+                    started_at=started_at,
+                    status=ToolExecutionStatus.CANCELLED,
+                    side_effects_may_continue=False,
                 )
 
-                try:
-                    value = future.result(
-                        timeout=definition.timeout_seconds,
-                    )
-                except FuturesTimeoutError:
-                    future.cancel()
+            pool = ThreadPoolExecutor(max_workers=1)
+            future = pool.submit(
+                registered.handler,
+                *args,
+                **execution_parameters,
+            )
+            deadline = time.monotonic() + definition.timeout_seconds
 
-                    return ToolResult(
-                        status=ToolExecutionStatus.TIMEOUT,
-                        tool_name=definition.name,
-                        message="Tool execution timed out.",
-                        error=(
-                            f"Tool execution exceeded the "
-                            f"{definition.timeout_seconds} second timeout."
-                        ),
-                        started_at=started_at,
-                        finished_at=self._now(),
-                        verified=False,
-                    )
+            try:
+                while True:
+                    if cancel_event is not None and cancel_event.is_set():
+                        future.cancel()
+                        return self._interrupted_result(
+                            definition=definition,
+                            started_at=started_at,
+                            status=ToolExecutionStatus.CANCELLED,
+                            side_effects_may_continue=future.running(),
+                        )
+
+                    remaining = deadline - time.monotonic()
+
+                    if remaining <= 0:
+                        future.cancel()
+                        return self._interrupted_result(
+                            definition=definition,
+                            started_at=started_at,
+                            status=ToolExecutionStatus.TIMEOUT,
+                            side_effects_may_continue=future.running(),
+                        )
+
+                    try:
+                        value = future.result(timeout=min(remaining, 0.01))
+                        break
+                    except FuturesTimeoutError:
+                        continue
+            finally:
+                pool.shutdown(wait=False, cancel_futures=True)
 
             if inspect.isawaitable(value):
                 value.close()
@@ -470,22 +601,23 @@ class ToolExecutor:
                     verified=False,
                 )
 
-            if isinstance(value, ToolResult):
-                value.tool_name = definition.name
-                value.verified = (
-                    value.status is ToolExecutionStatus.SUCCESS
+            output_error = self._validate_output(registered.handler, value)
+
+            if output_error is not None:
+                return ToolResult(
+                    status=ToolExecutionStatus.FAILED,
+                    tool_name=definition.name,
+                    message="Invalid tool output.",
+                    error=output_error,
+                    started_at=started_at,
+                    finished_at=self._now(),
+                    verified=False,
                 )
-                return value
 
-
-            return ToolResult(
-                status=ToolExecutionStatus.SUCCESS,
-                tool_name=definition.name,
-                message="Tool executed successfully.",
-                data=value,
+            return self._normalize_result(
+                definition=definition,
+                value=value,
                 started_at=started_at,
-                finished_at=self._now(),
-                verified=True,
             )
 
         except Exception as exc:
@@ -506,6 +638,7 @@ class ToolExecutor:
         operation: str | None,
         parameters: dict[str, Any] | None,
         confirmation_granted: bool,
+        cancel_event: Any | None,
     ) -> ToolResult:
         normalized_name = name.strip()
 
@@ -523,7 +656,18 @@ class ToolExecutor:
             )
 
         definition = registered.definition
-        execution_parameters = parameters or {}
+
+        if parameters is not None and not isinstance(parameters, dict):
+            return ToolResult(
+                status=ToolExecutionStatus.FAILED,
+                tool_name=definition.name,
+                message="Invalid tool arguments.",
+                error="Tool parameters must be a dictionary.",
+                finished_at=self._now(),
+                verified=False,
+            )
+
+        execution_parameters = dict(parameters or {})
         started_at = self._now()
 
         blocked = self._evaluate_permission(
@@ -556,46 +700,116 @@ class ToolExecutor:
             )
 
         try:
-            value = registered.handler(
-                *args,
-                **execution_parameters,
+            if cancel_event is not None and cancel_event.is_set():
+                return self._interrupted_result(
+                    definition=definition,
+                    started_at=started_at,
+                    status=ToolExecutionStatus.CANCELLED,
+                    side_effects_may_continue=False,
+                )
+
+            thread_based = not inspect.iscoroutinefunction(
+                registered.handler
             )
 
-            if inspect.isawaitable(value):
-                try:
-                    value = await asyncio.wait_for(
-                        value,
-                        timeout=definition.timeout_seconds,
+            if thread_based:
+                operation_task = asyncio.create_task(
+                    asyncio.to_thread(
+                        registered.handler,
+                        *args,
+                        **execution_parameters,
                     )
-                except asyncio.TimeoutError:
-                    return ToolResult(
-                        status=ToolExecutionStatus.TIMEOUT,
-                        tool_name=definition.name,
-                        message="Tool execution timed out.",
-                        error=(
-                            f"Tool execution exceeded the "
-                            f"{definition.timeout_seconds} second timeout."
-                        ),
-                        started_at=started_at,
-                        finished_at=self._now(),
-                        verified=False,
-                    )
-
-            if isinstance(value, ToolResult):
-                value.tool_name = definition.name
-                value.verified = (
-                    value.status is ToolExecutionStatus.SUCCESS
                 )
-                return value
+            else:
+                operation_task = asyncio.create_task(
+                    registered.handler(
+                        *args,
+                        **execution_parameters,
+                    )
+                )
 
-            return ToolResult(
-                status=ToolExecutionStatus.SUCCESS,
-                tool_name=definition.name,
-                message="Tool executed successfully.",
-                data=value,
+            cancel_task = (
+                asyncio.create_task(cancel_event.wait())
+                if cancel_event is not None
+                else None
+            )
+            wait_set = {operation_task}
+
+            if cancel_task is not None:
+                wait_set.add(cancel_task)
+
+            try:
+                done, _ = await asyncio.wait(
+                    wait_set,
+                    timeout=definition.timeout_seconds,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            except asyncio.CancelledError:
+                operation_task.cancel()
+
+                with contextlib.suppress(asyncio.CancelledError):
+                    await operation_task
+
+                if cancel_task is not None:
+                    cancel_task.cancel()
+
+                raise
+
+            if operation_task not in done:
+                operation_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await operation_task
+                was_cancelled = (
+                    cancel_task is not None
+                    and cancel_task in done
+                    and bool(cancel_task.result())
+                )
+
+                return self._interrupted_result(
+                    definition=definition,
+                    started_at=started_at,
+                    status=(
+                        ToolExecutionStatus.CANCELLED
+                        if was_cancelled
+                        else ToolExecutionStatus.TIMEOUT
+                    ),
+                    side_effects_may_continue=thread_based,
+                )
+
+            value = operation_task.result()
+
+            if inspect.isawaitable(value):
+                value.close()
+                return ToolResult(
+                    status=ToolExecutionStatus.FAILED,
+                    tool_name=definition.name,
+                    message="Invalid asynchronous tool handler.",
+                    error=(
+                        "A synchronous handler returned an awaitable; "
+                        "register an async function instead."
+                    ),
+                    started_at=started_at,
+                    finished_at=self._now(),
+                    verified=False,
+                )
+
+            output_error = self._validate_output(registered.handler, value)
+
+            if output_error is not None:
+                return ToolResult(
+                    status=ToolExecutionStatus.FAILED,
+                    tool_name=definition.name,
+                    message="Invalid tool output.",
+                    error=output_error,
+                    started_at=started_at,
+                    finished_at=self._now(),
+                    verified=False,
+                )
+
+            return self._normalize_result(
+                definition=definition,
+                value=value,
                 started_at=started_at,
-                finished_at=self._now(),
-                verified=True,
             )
 
         except Exception as exc:
@@ -608,133 +822,163 @@ class ToolExecutor:
                 finished_at=self._now(),
                 verified=False,
             )
-    def get_openai_tools(self) -> list[dict[str, Any]]:
-        """Generate OpenAI-compatible tool schemas for registered tools."""
-        tools: list[dict[str, Any]] = []
+        finally:
+            if "cancel_task" in locals() and cancel_task is not None:
+                cancel_task.cancel()
+
+    @staticmethod
+    def _annotation_to_schema(annotation: Any) -> dict[str, Any]:
+        from types import UnionType
+        from typing import Literal, Union, get_args, get_origin
 
         type_mapping: dict[Any, str] = {
             str: "string",
             int: "integer",
             float: "number",
             bool: "boolean",
+            type(None): "null",
         }
+        origin = get_origin(annotation)
+        args = get_args(annotation)
 
-        def annotation_to_schema(annotation: Any) -> dict[str, Any]:
-            from types import UnionType
-            from typing import Literal, Union, get_args, get_origin
+        if annotation is Any or annotation is inspect.Signature.empty:
+            return {}
 
-            origin = get_origin(annotation)
-            args = get_args(annotation)
+        if origin is Literal:
+            return {"enum": list(args)}
 
-            if origin is Literal:
-                return {
-                    "enum": list(args),
-                }
+        if origin in (Union, UnionType):
+            return {
+                "anyOf": [
+                    ToolExecutor._annotation_to_schema(option)
+                    for option in args
+                ]
+            }
 
-            if origin in (Union, UnionType):
-                non_none_args = tuple(
-                    arg
-                    for arg in args
-                    if arg is not type(None)
-                )
+        if origin in {list, set, frozenset}:
+            return {
+                "type": "array",
+                "items": ToolExecutor._annotation_to_schema(
+                    args[0] if args else Any
+                ),
+            }
 
-                if len(non_none_args) == 1:
-                    return annotation_to_schema(
-                        non_none_args[0]
-                    )
-
-            if origin is list:
-                item_annotation = (
-                    args[0]
-                    if args
-                    else str
-                )
-
+        if origin is tuple:
+            if len(args) == 2 and args[1] is Ellipsis:
                 return {
                     "type": "array",
-                    "items": annotation_to_schema(
-                        item_annotation
-                    ),
-                }
-
-            if origin is dict:
-                value_annotation = (
-                    args[1]
-                    if len(args) > 1
-                    else Any
-                )
-
-                return {
-                    "type": "object",
-                    "additionalProperties": (
-                        annotation_to_schema(
-                            value_annotation
-                        )
-                        if value_annotation is not Any
-                        else {}
-                    ),
+                    "items": ToolExecutor._annotation_to_schema(args[0]),
                 }
 
             return {
-                "type": type_mapping.get(
-                    annotation,
-                    "string",
-                )
+                "type": "array",
+                "prefixItems": [
+                    ToolExecutor._annotation_to_schema(item)
+                    for item in args
+                ],
+                "minItems": len(args),
+                "maxItems": len(args),
             }
+
+        if origin is dict:
+            value_annotation = args[1] if len(args) > 1 else Any
+            return {
+                "type": "object",
+                "additionalProperties": (
+                    ToolExecutor._annotation_to_schema(value_annotation)
+                ),
+            }
+
+        return {"type": type_mapping.get(annotation, "string")}
+
+    def _input_schema(self, registered: RegisteredTool) -> dict[str, Any]:
+        signature = inspect.signature(registered.handler)
+
+        try:
+            type_hints = get_type_hints(registered.handler)
+        except (NameError, TypeError, ValueError):
+            type_hints = {}
+
+        properties: dict[str, Any] = {}
+        required: list[str] = []
+
+        for parameter in signature.parameters.values():
+            if parameter.kind in {
+                inspect.Parameter.VAR_POSITIONAL,
+                inspect.Parameter.VAR_KEYWORD,
+            }:
+                continue
+
+            annotation = type_hints.get(parameter.name, parameter.annotation)
+            property_schema = self._annotation_to_schema(annotation)
+
+            if not property_schema:
+                property_schema = {"type": "string"}
+
+            if parameter.default is not inspect.Parameter.empty:
+                property_schema["default"] = parameter.default
+            else:
+                required.append(parameter.name)
+
+            properties[parameter.name] = property_schema
+
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": properties,
+            "additionalProperties": False,
+        }
+
+        if required:
+            schema["required"] = required
+
+        return schema
+
+    def _output_schema(self, registered: RegisteredTool) -> dict[str, Any]:
+        signature = inspect.signature(registered.handler)
+
+        try:
+            annotation = get_type_hints(registered.handler).get(
+                "return",
+                signature.return_annotation,
+            )
+        except (NameError, TypeError, ValueError):
+            annotation = signature.return_annotation
+
+        return self._annotation_to_schema(annotation)
+
+    def get_tool_contracts(self) -> list[dict[str, Any]]:
+        """Return provider-neutral input, output, and security contracts."""
+        contracts: list[dict[str, Any]] = []
 
         for registered in self._registry.list_tools():
             definition = registered.definition
-            signature = inspect.signature(registered.handler)
-            type_hints = get_type_hints(registered.handler)
-
-            properties: dict[str, Any] = {}
-            required: list[str] = []
-
-            for parameter in signature.parameters.values():
-                if parameter.kind in (
-                    inspect.Parameter.VAR_POSITIONAL,
-                    inspect.Parameter.VAR_KEYWORD,
-                ):
-                    continue
-
-                annotation = type_hints.get(parameter.name, parameter.annotation)
-
-                if annotation is inspect.Parameter.empty:
-                    property_schema = {
-                        "type": "string",
-                    }
-                else:
-                    property_schema = annotation_to_schema(
-                        annotation
-                    )
-
-                if parameter.default is not inspect.Parameter.empty:
-                    property_schema["default"] = parameter.default
-                else:
-                    required.append(parameter.name)
-
-                properties[parameter.name] = property_schema
-
-            parameters: dict[str, Any] = {
-                "type": "object",
-                "properties": properties,
-            }
-
-            if required:
-                parameters["required"] = required
-
-            tools.append(
+            contracts.append(
                 {
-                    "type": "function",
-                    "function": {
-                        "name": definition.name,
-                        "description": definition.description,
-                        "parameters": parameters,
-                    },
+                    "name": definition.name,
+                    "description": definition.description,
+                    "input_schema": self._input_schema(registered),
+                    "output_schema": self._output_schema(registered),
+                    "risk_level": definition.risk_level.value,
+                    "requires_confirmation": definition.requires_confirmation,
+                    "timeout_seconds": definition.timeout_seconds,
                 }
             )
 
-        return tools
+        return contracts
+
+    def get_openai_tools(self) -> list[dict[str, Any]]:
+        """Generate OpenAI-compatible tool schemas for registered tools."""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": registered.definition.name,
+                    "description": registered.definition.description,
+                    "parameters": self._input_schema(registered),
+                },
+            }
+            for registered in self._registry.list_tools()
+        ]
 
     def __len__(self) -> int:
         return len(self._registry)

@@ -7,7 +7,15 @@ name = "jarvis"
 version = "0.1.0"
 description = "JARVIS - Just A Rather Very Intelligent System"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "openai==3.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

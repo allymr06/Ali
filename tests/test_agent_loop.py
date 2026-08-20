@@ -12,6 +12,7 @@ from app.agent.models import (
 from app.core.models import (
     Context,
     Request,
+    RiskLevel,
     ToolDefinition,
 )
 from app.main import create_application
@@ -424,6 +425,7 @@ async def test_agent_loop_resumes_same_plan_after_approval():
         ToolDefinition(
             name="approval_resume_test",
             description="approval resume test",
+            risk_level=RiskLevel.MEDIUM,
         ),
         approved_action,
     )

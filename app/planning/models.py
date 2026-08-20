@@ -25,6 +25,7 @@ class PlanStepStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
     BLOCKED = "blocked"
     SKIPPED = "skipped"
 

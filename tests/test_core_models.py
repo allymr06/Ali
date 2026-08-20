@@ -127,6 +127,20 @@ def test_tool_definition_has_safe_defaults():
     assert isinstance(tool.metadata, dict)
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"name": " ", "description": "Valid"},
+        {"name": "valid", "description": " "},
+        {"name": "valid", "description": "Valid", "timeout_seconds": 0},
+        {"name": "valid", "description": "Valid", "timeout_seconds": -1},
+    ],
+)
+def test_tool_definition_rejects_invalid_contract(kwargs):
+    with pytest.raises(ValueError):
+        ToolDefinition(**kwargs)
+
+
 def test_all_timestamps_are_timezone_aware():
     request = Request("Saat testi")
     response = Response("Cevap testi")

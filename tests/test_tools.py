@@ -1,4 +1,3 @@
-
 def test_tool_executor_generates_openai_schema() -> None:
     from app.core.models import ToolDefinition
     from app.tools.executor import ToolExecutor
@@ -39,52 +38,7 @@ def test_tool_executor_generates_openai_schema() -> None:
                             "default": 1,
                         },
                     },
-                    "required": ["city"],
-                },
-            },
-        }
-    ]
-
-def test_tool_executor_generates_openai_schema() -> None:
-    from app.core.models import ToolDefinition
-    from app.tools.executor import ToolExecutor
-
-    executor = ToolExecutor()
-
-    def get_weather(
-        city: str,
-        days: int = 1,
-    ) -> str:
-        """Get weather information for a city."""
-        return f"{city}: sunny"
-
-    executor.register(
-        ToolDefinition(
-            name="get_weather",
-            description="Get weather information for a city.",
-        ),
-        get_weather,
-    )
-
-    schema = executor.get_openai_tools()
-
-    assert schema == [
-        {
-            "type": "function",
-            "function": {
-                "name": "get_weather",
-                "description": "Get weather information for a city.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "city": {
-                            "type": "string",
-                        },
-                        "days": {
-                            "type": "integer",
-                            "default": 1,
-                        },
-                    },
+                    "additionalProperties": False,
                     "required": ["city"],
                 },
             },
@@ -142,18 +96,24 @@ def test_tool_executor_generates_schema_for_common_python_types() -> None:
     }
 
     assert parameters["properties"]["tags"] == {
-        "type": "array",
-        "items": {
-            "type": "string",
-        },
+        "anyOf": [
+            {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            {"type": "null"},
+        ],
         "default": None,
     }
 
     assert parameters["properties"]["metadata"] == {
-        "type": "object",
-        "additionalProperties": {
-            "type": "string",
-        },
+        "anyOf": [
+            {
+                "type": "object",
+                "additionalProperties": {"type": "string"},
+            },
+            {"type": "null"},
+        ],
         "default": None,
     }
 
@@ -189,18 +149,24 @@ def test_tool_executor_generates_schema_for_optional_types() -> None:
     }
 
     assert parameters["properties"]["tags"] == {
-        "type": "array",
-        "items": {
-            "type": "string",
-        },
+        "anyOf": [
+            {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            {"type": "null"},
+        ],
         "default": None,
     }
 
     assert parameters["properties"]["metadata"] == {
-        "type": "object",
-        "additionalProperties": {
-            "type": "string",
-        },
+        "anyOf": [
+            {
+                "type": "object",
+                "additionalProperties": {"type": "string"},
+            },
+            {"type": "null"},
+        ],
         "default": None,
     }
 

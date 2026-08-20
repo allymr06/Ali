@@ -3,13 +3,15 @@ from __future__ import annotations
 import pytest
 
 import asyncio
+from uuid import uuid4
 
-from app.core.models import ToolDefinition, ToolExecutionStatus, ToolResult
+from app.agent.approval import ApprovalGrant
+from app.core.models import RiskLevel, ToolDefinition, ToolExecutionStatus, ToolResult
 from app.execution.models import RetryPolicy
 from app.execution.service import ExecutionService
 from app.execution.verification import VerificationEngine
 from app.planning.executor import PlanExecutor
-from app.planning.models import PlanStatus, PlanStep
+from app.planning.models import PlanStatus, PlanStep, PlanStepStatus
 from app.planning.planner import Planner
 from app.tools.executor import ToolExecutor
 
@@ -155,6 +157,131 @@ def test_execution_retries_verification_failure():
 
     assert calls["count"] == 2
     assert result.status is PlanStatus.COMPLETED
+
+
+def test_execution_cancels_plan_while_tool_is_running():
+    tools = ToolExecutor()
+    started = asyncio.Event()
+    stopped = asyncio.Event()
+
+    async def long_running() -> str:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+
+    tools.register(
+        ToolDefinition(name="long_running", description="Long running"),
+        long_running,
+    )
+    plan = Planner().create_plan(
+        "cancel running tool",
+        [PlanStep("step", metadata={"tool_name": "long_running"})],
+    )
+
+    async def run():
+        cancel_event = asyncio.Event()
+        task = asyncio.create_task(
+            make_service(tool_executor=tools).execute(
+                plan,
+                cancel_event=cancel_event,
+            )
+        )
+        await started.wait()
+        cancel_event.set()
+        return await task
+
+    result = asyncio.run(run())
+
+    assert result.status is PlanStatus.CANCELLED
+    assert result.steps[0].status is PlanStepStatus.CANCELLED
+    assert result.steps[0].metadata["verified"] is False
+    assert stopped.is_set()
+
+
+def test_execution_cancellation_interrupts_retry_backoff():
+    tools = ToolExecutor()
+    attempted = asyncio.Event()
+    calls = 0
+
+    async def failing() -> str:
+        nonlocal calls
+        calls += 1
+        attempted.set()
+        raise RuntimeError("retry later")
+
+    tools.register(
+        ToolDefinition(name="failing", description="Failing"),
+        failing,
+    )
+    plan = Planner().create_plan(
+        "cancel backoff",
+        [PlanStep("step", metadata={"tool_name": "failing"})],
+    )
+    service = make_service(
+        tool_executor=tools,
+        retry_policy=RetryPolicy(max_attempts=3, backoff_seconds=10),
+    )
+
+    async def run():
+        cancel_event = asyncio.Event()
+        task = asyncio.create_task(
+            service.execute(plan, cancel_event=cancel_event)
+        )
+        await attempted.wait()
+        await asyncio.sleep(0)
+        cancel_event.set()
+        return await asyncio.wait_for(task, timeout=0.5)
+
+    result = asyncio.run(run())
+
+    assert result.status is PlanStatus.CANCELLED
+    assert result.steps[0].status is PlanStepStatus.CANCELLED
+    assert calls == 1
+
+
+def test_execution_rejects_approval_grant_bound_to_another_action():
+    tools = ToolExecutor()
+    called = False
+
+    def dangerous() -> str:
+        nonlocal called
+        called = True
+        return "executed"
+
+    tools.register(
+        ToolDefinition(
+            name="dangerous",
+            description="Dangerous",
+            risk_level=RiskLevel.HIGH,
+        ),
+        dangerous,
+    )
+    plan = Planner().create_plan(
+        "reject mismatched approval",
+        [
+            PlanStep(
+                "step",
+                metadata={
+                    "tool_name": "dangerous",
+                    "parameters": {"target": "current"},
+                    "_approval_grant": ApprovalGrant(
+                        operation_id=uuid4(),
+                        binding_digest="not-the-current-action",
+                        expires_at=None,
+                        task_id=None,
+                    ),
+                },
+            )
+        ],
+    )
+
+    result = asyncio.run(make_service(tool_executor=tools).execute(plan))
+
+    assert result.status is PlanStatus.FAILED
+    assert called is False
+    assert "confirmation" in result.steps[0].metadata["tool_error"].lower()
 
 
 def test_execution_fails_after_retry_exhaustion():

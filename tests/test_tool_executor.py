@@ -84,7 +84,7 @@ def test_executor_allows_read_only_tool() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "hello"
-    assert result.verified is True
+    assert result.verified is False
 
 
 def test_executor_blocks_medium_risk_without_confirmation() -> None:
@@ -134,7 +134,7 @@ def test_executor_runs_medium_risk_with_confirmation() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "done"
-    assert result.verified is True
+    assert result.verified is False
 
 
 def test_executor_blocks_critical_tool() -> None:
@@ -282,7 +282,7 @@ def test_executor_accepts_valid_keyword_arguments() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == 42
-    assert result.verified is True
+    assert result.verified is False
 
 
 def test_executor_rejects_unexpected_arguments() -> None:
@@ -361,7 +361,7 @@ def test_executor_accepts_matching_argument_type() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "hello"
-    assert result.verified is True
+    assert result.verified is False
 def test_executor_normalizes_tool_result() -> None:
     executor = ToolExecutor()
 
@@ -380,7 +380,7 @@ def test_executor_normalizes_tool_result() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "hello"
-    assert result.verified is True
+    assert result.verified is False
     assert result.finished_at is not None
 
 
@@ -503,7 +503,7 @@ def test_executor_does_not_trust_unverified_tool_result() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "value"
-    assert result.verified is True
+    assert result.verified is False
 # ===== JARVIS EXECUTOR HARDENING TESTS =====
 
 def test_executor_async_validates_arguments_before_handler_runs() -> None:
@@ -735,7 +735,7 @@ def test_executor_confirmation_allows_high_risk_tool() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "executed"
-    assert result.verified is True
+    assert result.verified is False
 
 
 def test_executor_preserves_tool_result_data() -> None:
@@ -763,7 +763,7 @@ def test_executor_preserves_tool_result_data() -> None:
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.tool_name == "result_tool"
     assert result.data == {"answer": 42}
-    assert result.verified is True
+    assert result.verified is False
 
 
 def test_executor_openai_schema_contains_required_arguments() -> None:

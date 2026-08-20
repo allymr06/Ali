@@ -63,7 +63,7 @@ def test_executor_accepts_valid_arguments() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "Baku: sunny"
-    assert result.verified is True
+    assert result.verified is False
 
 
 def test_executor_preserves_permission_gate_before_execution() -> None:
@@ -115,7 +115,7 @@ def test_executor_async_tool_still_works() -> None:
 
         assert result.status is ToolExecutionStatus.SUCCESS
         assert result.data == 42
-        assert result.verified is True
+        assert result.verified is False
 
     asyncio.run(run())
 
@@ -183,7 +183,7 @@ def test_executor_allows_medium_risk_only_with_confirmation() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "executed"
-    assert result.verified is True
+    assert result.verified is False
     assert called is True
 
 
@@ -283,7 +283,7 @@ def test_executor_explicit_confirmation_requirement_allows_execution_after_confi
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "executed"
-    assert result.verified is True
+    assert result.verified is False
     assert called is True
 
 

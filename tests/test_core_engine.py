@@ -884,14 +884,15 @@ def test_core_engine_passes_registered_tools_to_provider() -> None:
                 "description": (
                     "Get weather information."
                 ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
                         "city": {
                             "type": "string",
+                            },
                         },
-                    },
-                    "required": ["city"],
+                        "additionalProperties": False,
+                        "required": ["city"],
                 },
             },
         }

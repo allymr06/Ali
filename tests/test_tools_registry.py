@@ -42,13 +42,9 @@ def test_registry_rejects_duplicate_tool() -> None:
         registry.register(create_tool())
 
 
-def test_registry_rejects_empty_name() -> None:
-    registry = ToolRegistry()
-
-    tool = create_tool("   ")
-
+def test_tool_definition_rejects_empty_name() -> None:
     with pytest.raises(ValueError):
-        registry.register(tool)
+        create_tool("   ")
 
 
 def test_registry_rejects_unknown_tool() -> None:

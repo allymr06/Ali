@@ -211,6 +211,9 @@ class AgentLoop:
                     }
                 )
 
+            elif decision.result.value == "approved":
+                step.metadata["_approval_grant"] = decision.grant
+
         return pending, denied
 
     async def run(

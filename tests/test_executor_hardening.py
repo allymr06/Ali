@@ -50,7 +50,7 @@ def test_executor_async_handler_works_through_async_api() -> None:
 
         assert result.status is ToolExecutionStatus.SUCCESS
         assert result.data == 42
-        assert result.verified is True
+        assert result.verified is False
 
     asyncio.run(run())
 
@@ -96,7 +96,7 @@ def test_executor_accepts_none_for_optional_argument() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "none"
-    assert result.verified is True
+    assert result.verified is False
 
 
 def test_executor_validates_nested_list_types() -> None:
@@ -212,7 +212,7 @@ def test_executor_accepts_valid_literal_value() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "safe"
-    assert result.verified is True
+    assert result.verified is False
 
 
 def test_executor_validates_annotated_type() -> None:
@@ -295,7 +295,7 @@ def test_executor_critical_tool_cannot_be_forced_by_confirmation() -> None:
     assert called is False
 
 
-def test_executor_unverified_success_result_becomes_verified() -> None:
+def test_executor_preserves_unverified_success_result() -> None:
     def tool() -> ToolResult:
         return ToolResult(
             status=ToolExecutionStatus.SUCCESS,
@@ -316,7 +316,7 @@ def test_executor_unverified_success_result_becomes_verified() -> None:
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "payload"
     assert result.tool_name == "trust"
-    assert result.verified is True
+    assert result.verified is False
 
 
 def test_executor_failed_result_cannot_become_verified() -> None:
@@ -450,7 +450,10 @@ def test_executor_openai_schema_handles_optional_union() -> None:
 
     schema = executor.get_openai_tools()[0]["function"]["parameters"]
 
-    assert schema["properties"]["value"]["type"] == "integer"
+    assert schema["properties"]["value"]["anyOf"] == [
+        {"type": "integer"},
+        {"type": "null"},
+    ]
     assert schema["properties"]["value"]["default"] is None
     assert "required" not in schema
 
@@ -477,3 +480,197 @@ def test_executor_does_not_execute_after_invalid_parameter_container() -> None:
     assert result.status is ToolExecutionStatus.FAILED
     assert result.verified is False
     assert called is False
+
+
+def test_executor_rejects_bool_for_integer_contract() -> None:
+    called = False
+
+    def tool(value: int) -> int:
+        nonlocal called
+        called = True
+        return value
+
+    executor = ToolExecutor()
+    executor.register(
+        ToolDefinition(name="strict_integer", description="Strict integer"),
+        tool,
+    )
+
+    result = executor.execute(
+        "strict_integer",
+        parameters={"value": True},
+    )
+
+    assert result.status is ToolExecutionStatus.FAILED
+    assert "invalid type" in (result.error or "")
+    assert called is False
+
+
+def test_executor_rejects_output_that_violates_return_contract() -> None:
+    def tool() -> int:
+        return "not-an-integer"  # type: ignore[return-value]
+
+    executor = ToolExecutor()
+    executor.register(
+        ToolDefinition(name="bad_output", description="Bad output"),
+        tool,
+    )
+
+    result = executor.execute("bad_output")
+
+    assert result.status is ToolExecutionStatus.FAILED
+    assert result.message == "Invalid tool output."
+    assert result.verified is False
+
+
+def test_executor_schema_rejects_additional_properties() -> None:
+    def tool(value: int) -> int:
+        return value
+
+    executor = ToolExecutor()
+    executor.register(
+        ToolDefinition(name="strict_schema", description="Strict schema"),
+        tool,
+    )
+
+    parameters = executor.get_openai_tools()[0]["function"]["parameters"]
+
+    assert parameters["additionalProperties"] is False
+
+
+def test_executor_exposes_provider_neutral_input_and_output_contracts() -> None:
+    def tool(query: str, limit: int = 5) -> list[str]:
+        return [query] * limit
+
+    executor = ToolExecutor()
+    executor.register(
+        ToolDefinition(
+            name="search",
+            description="Search",
+            risk_level=RiskLevel.LOW,
+            timeout_seconds=4,
+        ),
+        tool,
+    )
+
+    contract = executor.get_tool_contracts()[0]
+
+    assert contract["input_schema"]["additionalProperties"] is False
+    assert contract["input_schema"]["required"] == ["query"]
+    assert contract["output_schema"] == {
+        "type": "array",
+        "items": {"type": "string"},
+    }
+    assert contract["risk_level"] == "low"
+    assert contract["timeout_seconds"] == 4
+
+
+def test_sync_timeout_returns_without_waiting_for_worker_completion() -> None:
+    release = threading.Event()
+
+    def tool() -> str:
+        release.wait(timeout=1)
+        return "late"
+
+    executor = ToolExecutor()
+    executor.register(
+        ToolDefinition(
+            name="bounded_sync",
+            description="Bounded sync",
+            timeout_seconds=0.02,
+        ),
+        tool,
+    )
+
+    started = time.monotonic()
+    result = executor.execute("bounded_sync")
+    elapsed = time.monotonic() - started
+    release.set()
+
+    assert result.status is ToolExecutionStatus.TIMEOUT
+    assert elapsed < 0.2
+    assert result.side_effects_may_continue is True
+
+
+def test_async_executor_does_not_block_loop_for_sync_handler() -> None:
+    def tool() -> str:
+        time.sleep(0.05)
+        return "done"
+
+    executor = ToolExecutor()
+    executor.register(
+        ToolDefinition(name="sync_in_async", description="Sync in async"),
+        tool,
+    )
+
+    async def run() -> None:
+        ticked = False
+
+        async def ticker() -> None:
+            nonlocal ticked
+            await asyncio.sleep(0.005)
+            ticked = True
+
+        result, _ = await asyncio.gather(
+            executor.execute("sync_in_async"),
+            ticker(),
+        )
+
+        assert result.status is ToolExecutionStatus.SUCCESS
+        assert ticked is True
+
+    asyncio.run(run())
+
+
+def test_executor_honors_cancellation_before_handler_starts() -> None:
+    called = False
+    cancel_event = threading.Event()
+    cancel_event.set()
+
+    def tool() -> str:
+        nonlocal called
+        called = True
+        return "unexpected"
+
+    executor = ToolExecutor()
+    executor.register(
+        ToolDefinition(name="cancelled", description="Cancelled"),
+        tool,
+    )
+
+    result = executor.execute("cancelled", cancel_event=cancel_event)
+
+    assert result.status is ToolExecutionStatus.CANCELLED
+    assert result.side_effects_may_continue is False
+    assert called is False
+
+
+def test_executor_cancels_running_async_handler() -> None:
+    executor = ToolExecutor()
+    stopped = asyncio.Event()
+
+    async def tool() -> str:
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+
+    executor.register(
+        ToolDefinition(name="async_cancel", description="Async cancel"),
+        tool,
+    )
+
+    async def run() -> None:
+        cancel_event = asyncio.Event()
+        task = asyncio.create_task(
+            executor.execute("async_cancel", cancel_event=cancel_event)
+        )
+        await asyncio.sleep(0)
+        cancel_event.set()
+        result = await task
+
+        assert result.status is ToolExecutionStatus.CANCELLED
+        assert result.side_effects_may_continue is False
+        assert stopped.is_set()
+
+    asyncio.run(run())

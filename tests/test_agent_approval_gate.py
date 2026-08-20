@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -14,6 +15,7 @@ from app.agent.approval_gate import (
 )
 from app.agent.loop import AgentLoop
 from app.main import create_application
+from app.core.time import utc_now
 from app.planning.models import PlanStep
 
 
@@ -141,6 +143,8 @@ def test_gate_returns_approved_after_approval():
     )
 
     assert approved.result is ApprovalGateResult.APPROVED
+    assert approved.grant is not None
+    assert approved.grant.operation_id == pending.request.operation_id
 
 
 def test_gate_returns_denied_after_denial():
@@ -195,3 +199,93 @@ def test_agent_loop_evaluates_step_approval():
 
     assert decision.result is ApprovalGateResult.PENDING
     assert decision.request is not None
+
+
+def test_gate_invalidates_approval_when_parameters_change():
+    gate = ApprovalGate()
+    step = PlanStep(
+        "delete",
+        metadata={
+            "tool_name": "delete_file",
+            "requires_approval": True,
+            "parameters": {"path": "a.txt"},
+        },
+    )
+    first = gate.evaluate(step=step)
+    gate.approve(first.request.operation_id)
+    step.metadata["parameters"] = {"path": "b.txt"}
+
+    second = gate.evaluate(step=step)
+
+    assert first.request.status is ApprovalStatus.EXPIRED
+    assert second.result is ApprovalGateResult.PENDING
+    assert second.request.operation_id != first.request.operation_id
+
+
+def test_gate_invalidates_approval_when_plan_changes():
+    gate = ApprovalGate()
+    step = PlanStep(
+        "send",
+        metadata={"tool_name": "send_email", "requires_approval": True},
+    )
+    first_plan_id = uuid4()
+    first = gate.evaluate(step=step, plan_id=first_plan_id)
+    gate.approve(first.request.operation_id)
+
+    second = gate.evaluate(step=step, plan_id=uuid4())
+
+    assert second.result is ApprovalGateResult.PENDING
+    assert second.request.operation_id != first.request.operation_id
+
+
+def test_gate_reuses_approval_for_equivalent_parameter_order():
+    gate = ApprovalGate()
+    step = PlanStep(
+        "write",
+        metadata={
+            "tool_name": "write_file",
+            "requires_approval": True,
+            "parameters": {"path": "a.txt", "content": "hello"},
+        },
+    )
+    first = gate.evaluate(step=step)
+    gate.approve(first.request.operation_id)
+    step.metadata["parameters"] = {"content": "hello", "path": "a.txt"}
+
+    second = gate.evaluate(step=step)
+
+    assert second.result is ApprovalGateResult.APPROVED
+    assert second.request is first.request
+
+
+def test_gate_replaces_expired_approval_request():
+    gate = ApprovalGate()
+    step = PlanStep(
+        "delete",
+        metadata={"tool_name": "delete_file", "requires_approval": True},
+    )
+    first = gate.evaluate(step=step)
+    first.request.expires_at = utc_now() - timedelta(seconds=1)
+
+    second = gate.evaluate(step=step)
+
+    assert first.request.status is ApprovalStatus.EXPIRED
+    assert second.result is ApprovalGateResult.PENDING
+    assert second.request.operation_id != first.request.operation_id
+
+
+def test_gate_denies_non_serializable_approval_parameters():
+    gate = ApprovalGate()
+    step = PlanStep(
+        "unsafe",
+        metadata={
+            "tool_name": "unsafe_tool",
+            "requires_approval": True,
+            "parameters": {"value": object()},
+        },
+    )
+
+    decision = gate.evaluate(step=step)
+
+    assert decision.result is ApprovalGateResult.DENIED
+    assert decision.request is None

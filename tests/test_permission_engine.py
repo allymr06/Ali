@@ -3,7 +3,11 @@
 import pytest
 
 from app.core.models import RiskLevel, ToolDefinition
-from app.security.permissions import PermissionDecision, PermissionEngine
+from app.security.permissions import (
+    ParameterPermissionRule,
+    PermissionDecision,
+    PermissionEngine,
+)
 
 
 @pytest.fixture
@@ -208,3 +212,85 @@ def test_critical_risk_remains_denied_even_with_parameters() -> None:
     assert result.allowed is False
     assert result.requires_confirmation is False
     assert result.operation == "shutdown_now"
+
+
+def test_parameter_rule_can_elevate_low_risk_to_confirmation() -> None:
+    engine = PermissionEngine()
+    engine.register_parameter_rule(
+        "file_action",
+        ParameterPermissionRule(
+            name="recursive-write",
+            risk_level=RiskLevel.HIGH,
+            matches=lambda parameters: parameters.get("recursive") is True,
+        ),
+    )
+    tool = ToolDefinition(
+        name="file_action",
+        description="File action",
+        risk_level=RiskLevel.LOW,
+    )
+
+    safe = engine.evaluate(tool, parameters={"recursive": False})
+    elevated = engine.evaluate(tool, parameters={"recursive": True})
+
+    assert safe.decision == PermissionDecision.ALLOW
+    assert elevated.decision == PermissionDecision.CONFIRM
+    assert elevated.risk_level is RiskLevel.HIGH
+    assert elevated.parameter_rule == "recursive-write"
+
+
+def test_parameter_rule_cannot_lower_declared_risk() -> None:
+    engine = PermissionEngine()
+    engine.register_parameter_rule(
+        "dangerous",
+        ParameterPermissionRule(
+            name="invalid-downgrade",
+            risk_level=RiskLevel.READ_ONLY,
+            matches=lambda parameters: True,
+        ),
+    )
+    tool = ToolDefinition(
+        name="dangerous",
+        description="Dangerous",
+        risk_level=RiskLevel.HIGH,
+    )
+
+    result = engine.evaluate(tool, parameters={})
+
+    assert result.decision == PermissionDecision.CONFIRM
+    assert result.risk_level is RiskLevel.HIGH
+
+
+def test_parameter_rule_failure_is_denied_closed() -> None:
+    engine = PermissionEngine()
+
+    def broken_rule(parameters) -> bool:
+        raise RuntimeError("broken policy")
+
+    engine.register_parameter_rule(
+        "guarded",
+        ParameterPermissionRule(
+            name="broken-rule",
+            risk_level=RiskLevel.HIGH,
+            matches=broken_rule,
+        ),
+    )
+    tool = ToolDefinition(name="guarded", description="Guarded")
+
+    result = engine.evaluate(tool, parameters={})
+
+    assert result.decision == PermissionDecision.DENY
+    assert "failed closed" in result.reason
+
+
+def test_critical_tool_cannot_override_denial_with_confirmation_flag() -> None:
+    tool = ToolDefinition(
+        name="critical",
+        description="Critical",
+        risk_level=RiskLevel.CRITICAL,
+        requires_confirmation=True,
+    )
+
+    result = PermissionEngine().evaluate(tool)
+
+    assert result.decision == PermissionDecision.DENY

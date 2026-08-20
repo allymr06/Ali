@@ -93,6 +93,10 @@ class CoreEngine:
         self,
         goal: str,
         plan: Plan,
+        *,
+        cancel_event=None,
+        request_id=None,
+        conversation_id=None,
     ):
         """
         Create and execute a tracked JARVIS task from a validated plan.
@@ -104,9 +108,25 @@ class CoreEngine:
                 "Task goal and plan goal must match."
             )
 
+        task_metadata = {
+            "request_id": str(request_id)
+            if request_id is not None
+            else None,
+            "conversation_id": str(conversation_id)
+            if conversation_id is not None
+            else None,
+        }
+
+        if any(
+            value is not None
+            for value in task_metadata.values()
+        ):
+            plan.metadata["execution_context"] = task_metadata
+
         return await self._task_execution_service.execute(
             task.task_id,
             plan,
+            cancel_event=cancel_event,
         )
 
     async def handle(

@@ -81,6 +81,10 @@ class TaskExecutionService:
         self,
         task_id: UUID,
         plan: Plan,
+        *,
+        cancel_event=None,
+        request_id=None,
+        conversation_id=None,
     ):
         task = self._task_manager.get(task_id)
 
@@ -129,7 +133,18 @@ class TaskExecutionService:
         )
 
         try:
-            result = await execution_service.execute(plan)
+            from app.execution.context import ExecutionContext
+
+            result = await execution_service.execute(
+                plan,
+                execution_context=ExecutionContext(
+                    request_id=request_id,
+                    conversation_id=conversation_id,
+                    task_id=task_id,
+                    plan_id=plan.plan_id,
+                ),
+                cancel_event=cancel_event,
+            )
 
             current = self._task_manager.get(task_id)
 
@@ -158,7 +173,12 @@ class TaskExecutionService:
                 )
 
             elif result.status is PlanStatus.CANCELLED:
-                self._task_manager.cancel(task_id)
+                if current.status.value not in {
+                    "completed",
+                    "failed",
+                    "cancelled",
+                }:
+                    self._task_manager.cancel(task_id)
 
             elif current.status.value not in {
                 "completed",

@@ -5,6 +5,7 @@ from app.execution.events import (
     ExecutionEventType,
 )
 from app.execution.persistence import FileExecutionStateStore
+from app.execution.recovery import ExecutionRecoveryService, RecoveryStatus
 from app.execution.journal import ExecutionJournal
 from app.execution.state import (
     ExecutionSnapshot,
@@ -18,6 +19,8 @@ from app.execution.task_service import TaskExecutionObserver, TaskExecutionServi
 from app.execution.verification import VerificationEngine
 
 __all__ = [
+    "RecoveryStatus",
+    "ExecutionRecoveryService",
     "FileExecutionStateStore",
     "ExecutionService",
     "TaskExecutionObserver",

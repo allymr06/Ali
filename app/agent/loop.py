@@ -146,6 +146,73 @@ class AgentLoop:
             list(built),
         )
 
+    def _check_plan_approvals(
+        self,
+        plan: Plan,
+    ):
+        pending = []
+        denied = []
+
+        for step in plan.steps:
+            decision = self._approval_gate.evaluate(
+                step=step,
+                plan_id=plan.plan_id,
+            )
+
+            if decision.result.value == "pending":
+                pending.append(
+                    {
+                        "step_name": step.name,
+                        "operation_id": (
+                            str(decision.request.operation_id)
+                            if decision.request is not None
+                            else None
+                        ),
+                        "operation": (
+                            decision.request.operation
+                            if decision.request is not None
+                            else step.name
+                        ),
+                        "reason": (
+                            decision.request.reason
+                            if decision.request is not None
+                            else decision.message
+                        ),
+                        "risk_level": (
+                            decision.request.risk_level
+                            if decision.request is not None
+                            else step.metadata.get(
+                                "risk_level",
+                                "unknown",
+                            )
+                        ),
+                    }
+                )
+
+            elif decision.result.value == "denied":
+                denied.append(
+                    {
+                        "step_name": step.name,
+                        "operation_id": (
+                            str(decision.request.operation_id)
+                            if decision.request is not None
+                            else None
+                        ),
+                        "operation": (
+                            decision.request.operation
+                            if decision.request is not None
+                            else step.name
+                        ),
+                        "reason": (
+                            decision.request.reason
+                            if decision.request is not None
+                            else decision.message
+                        ),
+                    }
+                )
+
+        return pending, denied
+
     async def run(
         self,
         request: Request,
@@ -190,6 +257,48 @@ class AgentLoop:
             active_context,
         )
 
+        pending_approvals, denied_approvals = (
+            self._check_plan_approvals(plan)
+        )
+
+        if denied_approvals:
+            first = denied_approvals[0]
+
+            return AgentExecutionResult(
+                status=AgentStatus.FAILED,
+                response_text=(
+                    f"Approval denied for {first['operation']}."
+                ),
+                plan_id=plan.plan_id,
+                metadata={
+                    "mode": AgentMode.TASK.value,
+                    "request_id": str(request.request_id),
+                    "approval_status": "denied",
+                    "denied_approvals": denied_approvals,
+                },
+            )
+
+        if pending_approvals:
+            operations = ", ".join(
+                item["operation"]
+                for item in pending_approvals
+            )
+
+            return AgentExecutionResult(
+                status=AgentStatus.WAITING_FOR_APPROVAL,
+                response_text=(
+                    "Approval required before execution: "
+                    f"{operations}"
+                ),
+                plan_id=plan.plan_id,
+                metadata={
+                    "mode": AgentMode.TASK.value,
+                    "request_id": str(request.request_id),
+                    "approval_status": "pending",
+                    "pending_approvals": pending_approvals,
+                },
+            )
+
         task = await self._engine.execute_task(
             request.text,
             plan,
@@ -230,6 +339,9 @@ class AgentLoop:
         context: Context,
     ) -> AgentMode:
         text = request.text.strip().lower()
+
+        if context.active_task_id is not None:
+            return AgentMode.TASK
 
         direct_markers = (
             "merhaba",
@@ -292,28 +404,23 @@ class AgentLoop:
             "fail",
             "cancel",
             "context",
+            "send",
+            "g?nder",
+            "gonder",
+            "mail",
+            "email",
+            "e-posta",
         )
 
-        if context.active_task_id is not None:
+        if any(marker in text for marker in task_markers):
             return AgentMode.TASK
 
         if any(
-            marker in text
-            for marker in task_markers
-        ):
-            return AgentMode.TASK
-
-        if any(
-            text.startswith(marker)
-            or marker in text
+            text.startswith(marker) or marker in text
             for marker in direct_markers
         ):
             return AgentMode.DIRECT
 
-        # Ambiguous non-conversational requests belong to the
-        # task path. This also guarantees that task-mode requests
-        # cannot silently fall back to direct provider execution
-        # when no plan builder has been configured.
         return AgentMode.TASK
 
     @staticmethod

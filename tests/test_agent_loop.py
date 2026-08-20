@@ -265,3 +265,221 @@ async def test_agent_loop_preserves_context():
         captured["conversation_id"]
         == context.conversation_id
     )
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_blocks_execution_until_approval():
+    def builder(request, context):
+        return [
+            PlanStep(
+                "delete",
+                metadata={
+                    "tool_name": "approval_delete_test",
+                    "parameters": {},
+                    "requires_approval": True,
+                    "risk_level": "high",
+                    "approval_reason": "Destructive test operation.",
+                },
+            ),
+        ]
+
+    loop, application = create_loop(builder)
+
+    called = {"value": False}
+
+    def should_not_run():
+        called["value"] = True
+        return "executed"
+
+    application.tool_executor.register(
+        ToolDefinition(
+            name="approval_delete_test",
+            description="approval barrier test",
+        ),
+        should_not_run,
+    )
+
+    result = await loop.run(
+        Request("Delete something"),
+    )
+
+    assert (
+        result.status
+        is AgentStatus.WAITING_FOR_APPROVAL
+    )
+    assert result.task_id is None
+    assert result.plan_id is not None
+    assert result.metadata["approval_status"] == "pending"
+    assert len(result.metadata["pending_approvals"]) == 1
+    assert called["value"] is False
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_denied_approval_blocks_execution():
+    def builder(request, context):
+        return [
+            PlanStep(
+                "delete",
+                metadata={
+                    "tool_name": "approval_denied_test",
+                    "parameters": {},
+                    "requires_approval": True,
+                    "risk_level": "critical",
+                    "approval_reason": "Critical test operation.",
+                },
+            ),
+        ]
+
+    loop, application = create_loop(builder)
+
+    called = {"value": False}
+
+    def should_not_run():
+        called["value"] = True
+        return "executed"
+
+    application.tool_executor.register(
+        ToolDefinition(
+            name="approval_denied_test",
+            description="approval denial test",
+        ),
+        should_not_run,
+    )
+
+    plan = loop.build_plan(
+        Request("Critical action"),
+        Context(),
+    )
+
+    pending, denied = loop._check_plan_approvals(plan)
+
+    assert not denied
+    assert len(pending) == 1
+
+    operation_id = (
+        plan.steps[0]
+        .metadata["approval_operation_id"]
+    )
+
+    loop.deny(operation_id)
+
+    pending, denied = loop._check_plan_approvals(plan)
+
+    assert not pending
+    assert len(denied) == 1
+
+    plan_builder_called = {"value": False}
+
+    def reuse_builder(request, context):
+        plan_builder_called["value"] = True
+        return plan
+
+    loop2 = AgentLoop(
+        engine=application.engine,
+        plan_builder=reuse_builder,
+        approval_store=loop.approval_store,
+    )
+
+    result = await loop2.run(
+        Request("Critical action"),
+    )
+
+    assert result.status is AgentStatus.FAILED
+    assert result.metadata["approval_status"] == "denied"
+    assert called["value"] is False
+    assert plan_builder_called["value"] is True
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_resumes_same_plan_after_approval():
+    def builder(request, context):
+        if not hasattr(builder, "plan"):
+            builder.plan = Plan(
+                goal=request.text,
+                steps=[
+                    PlanStep(
+                        "send",
+                        metadata={
+                            "tool_name": "approval_resume_test",
+                            "parameters": {},
+                            "requires_approval": True,
+                            "risk_level": "medium",
+                            "approval_reason": "Outbound action.",
+                        },
+                    ),
+                ],
+            )
+
+        return builder.plan
+
+    loop, application = create_loop(builder)
+
+    called = {"value": False}
+
+    def approved_action():
+        called["value"] = True
+        return "approved-ok"
+
+    application.tool_executor.register(
+        ToolDefinition(
+            name="approval_resume_test",
+            description="approval resume test",
+        ),
+        approved_action,
+    )
+
+    request = Request("Send something")
+
+    first = await loop.run(request)
+
+    assert (
+        first.status
+        is AgentStatus.WAITING_FOR_APPROVAL
+    )
+
+    operation_id = (
+        builder.plan.steps[0]
+        .metadata["approval_operation_id"]
+    )
+
+    loop.approve(operation_id)
+
+    second = await loop.run(request)
+
+    assert second.status is AgentStatus.COMPLETED
+    assert second.task_id is not None
+    assert second.plan_id == builder.plan.plan_id
+    assert called["value"] is True
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_read_only_task_does_not_require_approval():
+    def builder(request, context):
+        return [
+            PlanStep(
+                "read",
+                metadata={
+                    "tool_name": "approval_read_test",
+                    "parameters": {},
+                    "risk_level": "read_only",
+                },
+            ),
+        ]
+
+    loop, application = create_loop(builder)
+
+    application.tool_executor.register(
+        ToolDefinition(
+            name="approval_read_test",
+            description="approval read test",
+        ),
+        lambda: "read-ok",
+    )
+
+    result = await loop.run(
+        Request("Read something"),
+        mode=AgentMode.TASK,
+    )
+
+    assert result.status is AgentStatus.COMPLETED
+    assert result.metadata["task_status"] == "completed"

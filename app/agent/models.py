@@ -15,6 +15,7 @@ class AgentStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    WAITING_FOR_APPROVAL = "waiting_for_approval"
 
 
 @dataclass(slots=True, frozen=True)

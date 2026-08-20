@@ -1775,3 +1775,109 @@ async def test_core_engine_fails_plan_when_tool_fails():
     assert result.steps[0].metadata["tool_error"] == "execution error"
 
 
+
+
+@pytest.mark.asyncio
+async def test_core_engine_executes_tracked_task():
+    from app.core.models import ToolDefinition
+    from app.planning.models import PlanStep
+    from app.main import create_application
+
+    application = create_application()
+    engine = application.engine
+
+    application.tool_executor.register(
+        ToolDefinition(
+            name="tracked_test",
+            description="Tracked task test tool.",
+        ),
+        lambda: "tracked-ok",
+    )
+
+    plan = engine.create_plan(
+        "Tracked execution",
+        [
+            PlanStep(
+                "run",
+                metadata={
+                    "tool_name": "tracked_test",
+                    "parameters": {},
+                },
+            ),
+        ],
+    )
+
+    task = await engine.execute_task(
+        "Tracked execution",
+        plan,
+    )
+
+    assert task.status.value == "completed"
+    assert task.progress == 1.0
+    assert len(task.steps) == 1
+    assert task.steps[0].status.value == "completed"
+    assert task.steps[0].result == "tracked-ok"
+
+
+@pytest.mark.asyncio
+async def test_core_engine_tracked_task_failure_is_propagated():
+    from app.core.models import ToolDefinition
+    from app.planning.models import PlanStep
+    from app.main import create_application
+
+    application = create_application()
+    engine = application.engine
+
+    def failing():
+        raise RuntimeError("tracked failure")
+
+    application.tool_executor.register(
+        ToolDefinition(
+            name="tracked_failure",
+            description="Tracked failure test tool.",
+        ),
+        failing,
+    )
+
+    plan = engine.create_plan(
+        "Tracked failure",
+        [
+            PlanStep(
+                "fail",
+                metadata={
+                    "tool_name": "tracked_failure",
+                    "parameters": {},
+                },
+            ),
+        ],
+    )
+
+    task = await engine.execute_task(
+        "Tracked failure",
+        plan,
+    )
+
+    assert task.status.value == "failed"
+    assert task.error
+    assert task.steps[0].status.value == "failed"
+
+
+def test_core_engine_rejects_mismatched_task_and_plan():
+    engine = create_engine()
+
+    from app.planning.models import PlanStep
+
+    plan = engine.create_plan(
+        "Plan goal",
+        [
+            PlanStep("step"),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="goal"):
+        asyncio.run(
+            engine.execute_task(
+                "Different task goal",
+                plan,
+            )
+        )

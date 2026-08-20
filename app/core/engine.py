@@ -3,6 +3,10 @@ from __future__ import annotations
 import json
 
 from app.core.models import Context, Request, Response
+from app.execution.models import RetryPolicy
+from app.execution.service import ExecutionService
+from app.execution.verification import VerificationEngine
+from app.execution.task_service import TaskExecutionService
 from app.memory.analyzer import MemoryAnalyzer
 from app.memory.manager import MemoryManager
 from app.planning.planner import Planner
@@ -50,6 +54,18 @@ class CoreEngine:
         self._plan_executor = PlanExecutor(
             self._planner
         )
+        self._verification_engine = VerificationEngine()
+        self._execution_service = ExecutionService(
+            tool_executor=self._tool_executor,
+            plan_executor=self._plan_executor,
+            verification_engine=self._verification_engine,
+            retry_policy=RetryPolicy(),
+        )
+        self._task_execution_service = TaskExecutionService(
+            task_manager=self._task_manager,
+            tool_executor=self._tool_executor,
+            retry_policy=RetryPolicy(),
+        )
 
     @property
     def task_manager(self) -> TaskManager:
@@ -71,60 +87,28 @@ class CoreEngine:
         self,
         plan: Plan,
     ) -> Plan:
-        """Execute a validated plan through the tool pipeline."""
-        self._plan_executor.start(plan)
+        """Execute a validated plan through the execution service."""
+        return await self._execution_service.execute(plan)
+    async def execute_task(
+        self,
+        goal: str,
+        plan: Plan,
+    ):
+        """
+        Create and execute a tracked JARVIS task from a validated plan.
+        """
+        task = self._task_manager.create(goal)
 
-        while plan.status.value == "running":
-            step = self._plan_executor.next_step(plan)
-
-            if step is None:
-                break
-
-            tool_name = step.metadata.get("tool_name")
-
-            if not isinstance(tool_name, str) or not tool_name:
-                self._plan_executor.fail_step(
-                    plan,
-                    step,
-                )
-                break
-
-            parameters = step.metadata.get(
-                "parameters",
-                {},
+        if task.goal.strip() != plan.goal.strip():
+            raise ValueError(
+                "Task goal and plan goal must match."
             )
 
-            if not isinstance(parameters, dict):
-                self._plan_executor.fail_step(
-                    plan,
-                    step,
-                )
-                break
+        return await self._task_execution_service.execute(
+            task.task_id,
+            plan,
+        )
 
-            result = await self._tool_executor.execute(
-                tool_name,
-                parameters=parameters,
-            )
-
-            if result.succeeded:
-                step.metadata["tool_result"] = result.data
-
-                self._plan_executor.complete_step(
-                    plan,
-                    step,
-                )
-            else:
-                step.metadata["tool_error"] = (
-                    result.error
-                    or result.message
-                )
-
-                self._plan_executor.fail_step(
-                    plan,
-                    step,
-                )
-
-        return plan
     async def handle(
         self,
         request: Request,

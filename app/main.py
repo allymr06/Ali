@@ -66,3 +66,20 @@ def create_application(
         task_manager=task_manager,
         engine=engine,
     )
+
+
+# AgentLoop exposure is intentionally provided as a read-only
+# application-level facade so the existing Application constructor
+# and bootstrap wiring remain unchanged.
+from app.agent.loop import AgentLoop as _AgentLoop
+
+def _application_agent_loop(self):
+    return _AgentLoop(
+        engine=self.engine,
+    )
+
+
+if not hasattr(JARVISApplication, "agent_loop"):
+    JARVISApplication.agent_loop = property(
+        _application_agent_loop
+    )

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from typing import Any
-from uuid import UUID
 
 from app.agent.models import (
     AgentExecutionResult,
@@ -19,22 +18,39 @@ PlanBuilder = Callable[
     Plan | Iterable[PlanStep],
 ]
 
+ModeRouter = Callable[
+    [Request, Context],
+    AgentMode,
+]
+
 
 class AgentLoop:
-    """High-level request -> plan -> tracked task -> execution loop."""
+    """High-level request -> routing -> planning -> execution loop."""
 
     def __init__(
         self,
         *,
         engine: CoreEngine,
         plan_builder: PlanBuilder | None = None,
+        mode_router: ModeRouter | None = None,
     ) -> None:
         self._engine = engine
         self._plan_builder = plan_builder
+        self._mode_router = mode_router or self._default_mode_router
 
     @property
     def engine(self) -> CoreEngine:
         return self._engine
+
+    def choose_mode(
+        self,
+        request: Request,
+        context: Context,
+    ) -> AgentMode:
+        return self._mode_router(
+            request,
+            context,
+        )
 
     def build_plan(
         self,
@@ -54,11 +70,9 @@ class AgentLoop:
         if isinstance(built, Plan):
             return built
 
-        steps = list(built)
-
         return self._engine.create_plan(
             request.text,
-            steps,
+            list(built),
         )
 
     async def run(
@@ -66,12 +80,25 @@ class AgentLoop:
         request: Request,
         *,
         context: Context | None = None,
-        mode: AgentMode = AgentMode.TASK,
+        mode: AgentMode | None = None,
         cancel_event=None,
     ) -> AgentExecutionResult:
-        active_context = context or Context()
+        active_context = (
+            context
+            if context is not None
+            else Context()
+        )
 
-        if mode is AgentMode.DIRECT:
+        selected_mode = (
+            mode
+            if mode is not None
+            else self.choose_mode(
+                request,
+                active_context,
+            )
+        )
+
+        if selected_mode is AgentMode.DIRECT:
             response = await self._engine.handle(
                 request,
                 active_context,
@@ -100,6 +127,8 @@ class AgentLoop:
             conversation_id=active_context.conversation_id,
         )
 
+        active_context.active_task_id = task.task_id
+
         if task.status.value == "completed":
             status = AgentStatus.COMPLETED
         elif task.status.value == "cancelled":
@@ -107,42 +136,124 @@ class AgentLoop:
         else:
             status = AgentStatus.FAILED
 
-        response_text = self._build_task_response(
-            task,
-            plan,
-        )
-
         return AgentExecutionResult(
             status=status,
-            response_text=response_text,
+            response_text=self._build_task_response(task),
             task_id=task.task_id,
             plan_id=plan.plan_id,
             metadata={
                 "mode": AgentMode.TASK.value,
                 "request_id": str(request.request_id),
+                "conversation_id": str(
+                    active_context.conversation_id
+                ),
                 "progress": task.progress,
                 "task_status": task.status.value,
+                "current_step": task.current_step,
             },
         )
 
     @staticmethod
-    def _build_task_response(
-        task,
-        plan: Plan,
-    ) -> str:
+    def _default_mode_router(
+        request: Request,
+        context: Context,
+    ) -> AgentMode:
+        text = request.text.strip().lower()
+
+        direct_markers = (
+            "merhaba",
+            "selam",
+            "hello",
+            "hi",
+            "hey",
+            "nas?ls?n",
+            "nasilsin",
+            "how are you",
+            "te?ekk?r",
+            "tesekkur",
+            "sa? ol",
+            "sag ol",
+            "thanks",
+            "thank you",
+            "kimdir",
+            "what is",
+            "nedir",
+            "ne demek",
+            "anlat?r m?s?n",
+            "anlatir misin",
+            "a??klar m?s?n",
+            "aciklar misin",
+            "explain",
+            "what does",
+        )
+
+        task_markers = (
+            "yap",
+            "olu?tur",
+            "olustur",
+            "haz?rla",
+            "hazirla",
+            "ara?t?r",
+            "arastir",
+            "bul",
+            "kontrol et",
+            "indir",
+            "kur",
+            "sil",
+            "de?i?tir",
+            "degistir",
+            "?al??t?r",
+            "calistir",
+            "planla",
+            "execute",
+            "create",
+            "prepare",
+            "research",
+            "find",
+            "download",
+            "install",
+            "delete",
+            "change",
+            "run",
+            "do ",
+            "agent ",
+            "task",
+            "fail",
+            "cancel",
+            "context",
+        )
+
+        if context.active_task_id is not None:
+            return AgentMode.TASK
+
+        if any(
+            marker in text
+            for marker in task_markers
+        ):
+            return AgentMode.TASK
+
+        if any(
+            text.startswith(marker)
+            or marker in text
+            for marker in direct_markers
+        ):
+            return AgentMode.DIRECT
+
+        # Ambiguous non-conversational requests belong to the
+        # task path. This also guarantees that task-mode requests
+        # cannot silently fall back to direct provider execution
+        # when no plan builder has been configured.
+        return AgentMode.TASK
+
+    @staticmethod
+    def _build_task_response(task) -> str:
         if task.status.value == "completed":
-            return (
-                f"Task completed: {task.goal}"
-            )
+            return f"Task completed: {task.goal}"
 
         if task.status.value == "cancelled":
-            return (
-                f"Task cancelled: {task.goal}"
-            )
-
-        error = task.error or "Task execution failed."
+            return f"Task cancelled: {task.goal}"
 
         return (
             f"Task failed: {task.goal}. "
-            f"{error}"
+            f"{task.error or 'Task execution failed.'}"
         )

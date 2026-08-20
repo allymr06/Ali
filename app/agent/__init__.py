@@ -1,3 +1,8 @@
+from app.agent.approval_gate import (
+    ApprovalGate,
+    ApprovalGateDecision,
+    ApprovalGateResult,
+)
 from app.agent.approval import (
     ApprovalDecision,
     ApprovalRequest,
@@ -12,6 +17,9 @@ from app.agent.models import (
 )
 
 __all__ = [
+    "ApprovalGate",
+    "ApprovalGateDecision",
+    "ApprovalGateResult",
     "ApprovalDecision",
     "ApprovalRequest",
     "ApprovalStatus",

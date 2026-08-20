@@ -5,6 +5,11 @@ from enum import Enum
 from uuid import UUID, uuid4
 
 
+class ApprovalRequirement(str, Enum):
+    NOT_REQUIRED = "not_required"
+    REQUIRED = "required"
+
+
 class ApprovalStatus(str, Enum):
     NOT_REQUIRED = "not_required"
     PENDING = "pending"
@@ -22,10 +27,20 @@ class ApprovalRequest:
     plan_id: UUID | None = None
     operation_id: UUID = field(default_factory=uuid4)
     status: ApprovalStatus = ApprovalStatus.PENDING
+    requirement: ApprovalRequirement = ApprovalRequirement.REQUIRED
     metadata: dict[str, object] = field(default_factory=dict)
+
+    @property
+    def is_resolved(self) -> bool:
+        return self.status in {
+            ApprovalStatus.APPROVED,
+            ApprovalStatus.DENIED,
+            ApprovalStatus.EXPIRED,
+        }
 
 
 class ApprovalStore:
+
     """In-memory approval state store."""
 
     def __init__(self) -> None:

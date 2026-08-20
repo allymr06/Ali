@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from app.agent.approval import ApprovalStatus, ApprovalStore
+from app.agent.approval_gate import ApprovalGate
 from app.agent.models import (
     AgentExecutionResult,
     AgentMode,
@@ -40,6 +41,9 @@ class AgentLoop:
         self._plan_builder = plan_builder
         self._mode_router = mode_router or self._default_mode_router
         self._approval_store = approval_store or ApprovalStore()
+        self._approval_gate = ApprovalGate(
+            self._approval_store
+        )
 
     @property
     def engine(self) -> CoreEngine:
@@ -48,6 +52,10 @@ class AgentLoop:
     @property
     def approval_store(self) -> ApprovalStore:
         return self._approval_store
+
+    @property
+    def approval_gate(self) -> ApprovalGate:
+        return self._approval_gate
 
     def approve(
         self,
@@ -81,6 +89,19 @@ class AgentLoop:
         return self._mode_router(
             request,
             context,
+        )
+
+    def evaluate_approval(
+        self,
+        *,
+        step,
+        task_id=None,
+        plan_id=None,
+    ):
+        return self._approval_gate.evaluate(
+            step=step,
+            task_id=task_id,
+            plan_id=plan_id,
         )
 
     def request_approval(

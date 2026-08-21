@@ -451,10 +451,14 @@ def test_core_engine_preserves_complete_tool_message_chain() -> None:
                 "messages"
             ]
 
-            assert len(messages) == 2
+            assert len(messages) == 3
 
-            assistant_message = messages[0]
-            tool_message = messages[1]
+            user_message = messages[0]
+            assistant_message = messages[1]
+            tool_message = messages[2]
+
+            assert user_message["role"] == "user"
+            assert user_message["content"] == request.text
 
             assert (
                 assistant_message["role"]
@@ -975,11 +979,15 @@ def test_core_engine_preserves_multiple_tool_call_chain() -> None:
                 "messages"
             ]
 
-            assert len(messages) == 3
+            assert len(messages) == 4
 
-            assistant_message = messages[0]
-            first_tool_message = messages[1]
-            second_tool_message = messages[2]
+            user_message = messages[0]
+            assistant_message = messages[1]
+            first_tool_message = messages[2]
+            second_tool_message = messages[3]
+
+            assert user_message["role"] == "user"
+            assert user_message["content"] == request.text
 
             assert (
                 assistant_message["role"]
@@ -1501,7 +1509,7 @@ def test_core_engine_executes_duplicate_tool_call_id_only_once_in_same_response(
     assert response.metadata["tool_calls"] == 1
 
 
-def test_core_engine_executes_tool_call_without_id() -> None:
+def test_core_engine_rejects_tool_call_without_id() -> None:
     registry = ProviderRegistry()
     memory_manager = MemoryManager(InMemoryStore())
     tool_executor = ToolExecutor()
@@ -1521,9 +1529,25 @@ def test_core_engine_executes_tool_call_without_id() -> None:
     )
 
     class MissingIdProvider(MockProvider):
+        def __init__(self) -> None:
+            self.calls = 0
+
         async def generate(self, request, context, **kwargs):
+            self.calls += 1
+
+            if self.calls > 1:
+                return SimpleNamespace(
+                    text="Kimliksiz araç çağrısı reddedildi.",
+                    model="mock-model",
+                    provider="mock",
+                    finish_reason="stop",
+                    tool_calls=[],
+                    usage={},
+                    metadata={},
+                )
+
             return SimpleNamespace(
-                text="Tamam.",
+                text="",
                 model="mock-model",
                 provider="mock",
                 finish_reason="stop",
@@ -1555,8 +1579,11 @@ def test_core_engine_executes_tool_call_without_id() -> None:
         engine.handle(Request("Test"))
     )
 
-    assert called["value"] is True
-    assert response.metadata["tool_calls"] == 5
+    assert called["value"] is False
+    assert response.metadata["tool_calls"] == 0
+    assert response.metadata["invalid_tool_calls"] == 1
+    assert response.metadata["failed_tool_calls"] == 1
+    assert response.metadata["completion_verified"] is False
 
 
 def test_core_engine_skips_tool_call_with_empty_function() -> None:

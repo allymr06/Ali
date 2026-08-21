@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+from uuid import uuid4
 
+from app.conversation.engine import ConversationEngine
 from app.core.models import (
     Context,
     Request,
@@ -23,6 +25,7 @@ from app.planning.models import Plan, PlanStep
 from app.planning.executor import PlanExecutor
 from app.memory.policy import MemoryPolicy
 from app.providers.registry import ProviderRegistry
+from app.providers.gateway import ProviderGateway
 from app.tasks.manager import TaskManager
 from app.tools.executor import ToolExecutor
 
@@ -48,6 +51,8 @@ class CoreEngine:
         tool_executor: ToolExecutor | None = None,
         task_manager: TaskManager | None = None,
         execution_limits: ExecutionLimits | None = None,
+        provider_gateway: ProviderGateway | None = None,
+        conversation_engine: ConversationEngine | None = None,
     ) -> None:
         self._provider_registry = provider_registry
         self._memory_manager = memory_manager
@@ -64,6 +69,11 @@ class CoreEngine:
             else TaskManager()
         )
         self._execution_limits = execution_limits or ExecutionLimits()
+        self._provider_gateway = provider_gateway or ProviderGateway(
+            provider_registry,
+            max_retries=0,
+        )
+        self._conversation_engine = conversation_engine or ConversationEngine()
 
         self._planner = Planner()
         self._plan_executor = PlanExecutor(
@@ -97,6 +107,14 @@ class CoreEngine:
     @property
     def execution_limits(self) -> ExecutionLimits:
         return self._execution_limits
+
+    @property
+    def provider_gateway(self) -> ProviderGateway:
+        return self._provider_gateway
+
+    @property
+    def conversation_engine(self) -> ConversationEngine:
+        return self._conversation_engine
 
     def create_plan(
         self,
@@ -306,6 +324,7 @@ class CoreEngine:
             memory.content
             for memory in recalled_memories
         )
+        self._conversation_engine.prepare_request(request, active_context)
 
         provider = self._provider_registry.get_default()
         active_limits = limits or self._execution_limits
@@ -338,7 +357,7 @@ class CoreEngine:
 
             try:
                 model_response = await self._await_provider(
-                    provider.generate(
+                    self._provider_gateway.generate(
                         request,
                         active_context,
                         tools=tool_schemas or None,
@@ -368,13 +387,22 @@ class CoreEngine:
                 break
 
             tool_iterations += 1
-            messages = active_context.values.setdefault("messages", [])
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": model_response.text or None,
-                    "tool_calls": tool_calls,
-                }
+            normalized_tool_calls = []
+            invalid_tool_call_ids: set[str] = set()
+            for tool_call in tool_calls:
+                normalized = dict(tool_call)
+                original_id = normalized.get("id")
+                if not isinstance(original_id, str) or not original_id.strip():
+                    generated_id = f"invalid-{uuid4()}"
+                    normalized["id"] = generated_id
+                    invalid_tool_call_ids.add(generated_id)
+                normalized_tool_calls.append(normalized)
+            tool_calls = normalized_tool_calls
+            self._conversation_engine.add_assistant_tool_calls(
+                active_context,
+                request_id=request.request_id,
+                content=model_response.text or None,
+                tool_calls=tool_calls,
             )
             new_tool_call_found = False
 
@@ -383,11 +411,16 @@ class CoreEngine:
 
                 if tool_call_id and tool_call_id in processed_tool_calls:
                     duplicate_tool_calls += 1
-                    messages.append(
-                        self._tool_message(
-                            tool_call_id,
-                            processed_tool_calls[tool_call_id],
-                        )
+                    message = self._tool_message(
+                        tool_call_id,
+                        processed_tool_calls[tool_call_id],
+                    )
+                    self._conversation_engine.add_tool_result(
+                        active_context,
+                        request_id=request.request_id,
+                        tool_call_id=str(tool_call_id),
+                        content=str(message["content"]),
+                        metadata={"duplicate": True},
                     )
                     continue
 
@@ -405,7 +438,13 @@ class CoreEngine:
 
                 tool_name = function.get("name")
 
-                if not isinstance(tool_name, str) or not tool_name.strip():
+                if tool_call_id in invalid_tool_call_ids:
+                    invalid_tool_calls += 1
+                    result = self._invalid_tool_result(
+                        str(tool_name or ""),
+                        "Tool call id is missing or invalid.",
+                    )
+                elif not isinstance(tool_name, str) or not tool_name.strip():
                     invalid_tool_calls += 1
                     result = self._invalid_tool_result(
                         "",
@@ -453,7 +492,20 @@ class CoreEngine:
                 if tool_call_id:
                     processed_tool_calls[tool_call_id] = result
 
-                messages.append(self._tool_message(tool_call_id, result))
+                message = self._tool_message(tool_call_id, result)
+                self._conversation_engine.add_tool_result(
+                    active_context,
+                    request_id=request.request_id,
+                    tool_call_id=str(tool_call_id),
+                    content=str(message["content"]),
+                    metadata={
+                        "tool_name": result.tool_name,
+                        "status": result.status.value,
+                        "verified": self._verification_engine.verify(
+                            result
+                        ).passed,
+                    },
+                )
 
             if outcome in {"budget_exhausted", "cancelled"}:
                 break
@@ -501,7 +553,7 @@ class CoreEngine:
                     else "Execution stopped before verified completion."
                 )
 
-        return Response(
+        response = Response(
             text=response_text,
             request_id=request.request_id,
             metadata={
@@ -509,6 +561,7 @@ class CoreEngine:
                 "model": model_name,
                 "memory_decision": decision.should_remember,
                 "memory_count": len(active_context.memories),
+                "conversation_id": str(active_context.conversation_id),
                 "outcome": outcome,
                 "completion_verified": completion_verified,
                 "budget_reason": budget_reason,
@@ -523,5 +576,30 @@ class CoreEngine:
                 "invalid_tool_calls": invalid_tool_calls,
                 "duplicate_tool_calls": duplicate_tool_calls,
                 "elapsed_seconds": usage.elapsed_seconds,
+                "provider_metadata": (
+                    dict(model_response.metadata)
+                    if model_response is not None
+                    else {}
+                ),
             },
         )
+        conversation_turn = self._conversation_engine.complete_response(
+            request,
+            response,
+            active_context,
+        )
+        conversation = self._conversation_engine.get(
+            active_context.conversation_id
+        )
+        response.metadata["conversation_turn_id"] = (
+            str(conversation_turn.turn_id)
+            if conversation_turn is not None
+            else None
+        )
+        response.metadata["conversation_turn_count"] = len(
+            conversation.turns
+        )
+        response.metadata["conversation_summary_turn_count"] = (
+            conversation.summary_turn_count
+        )
+        return response

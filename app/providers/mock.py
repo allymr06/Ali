@@ -16,8 +16,8 @@ class MockProvider(AIProvider):
         return ModelCapabilities(
             text=True,
             streaming=False,
-            structured_output=False,
-            tool_calling=False,
+            structured_output=True,
+            tool_calling=True,
             vision=False,
         )
 
@@ -29,6 +29,7 @@ class MockProvider(AIProvider):
         model: str | None = None,
         system_prompt: str | None = None,
         tools: list[dict[str, object]] | None = None,
+        response_format: dict[str, object] | None = None,
     ) -> ModelResponse:
         selected_model = model or "mock-model"
 

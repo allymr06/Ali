@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 
 from app.core.models import Context, Request
 from app.providers.base import (
     AIProvider,
     ModelCapabilities,
     ModelResponse,
+    ModelStreamChunk,
     ProviderAuthenticationError,
     ProviderError,
+    ProviderTimeoutError,
 )
 
 
@@ -48,25 +51,59 @@ class ReliableProvider(AIProvider):
         model: str | None = None,
         system_prompt: str | None = None,
         tools: list[dict[str, object]] | None = None,
+        response_format: dict[str, object] | None = None,
     ) -> ModelResponse:
         attempts = self._max_retries + 1
 
         for attempt in range(attempts):
             try:
+                provider_kwargs = {
+                    "model": model,
+                    "system_prompt": system_prompt,
+                    "tools": tools,
+                }
+                if response_format is not None:
+                    provider_kwargs["response_format"] = response_format
                 return await asyncio.wait_for(
-                    self._provider.generate(
-                        request,
-                        context,
-                        model=model,
-                        system_prompt=system_prompt,
-                        tools=tools,
-                    ),
+                    self._provider.generate(request, context, **provider_kwargs),
                     timeout=self._timeout_seconds,
                 )
             except ProviderAuthenticationError:
                 raise
-            except ProviderError:
+            except TimeoutError as exc:
+                error = ProviderTimeoutError(
+                    "Provider request timed out.",
+                    provider=self.name,
+                )
                 if attempt >= self._max_retries:
+                    raise error from exc
+            except ProviderError as exc:
+                if not exc.retryable or attempt >= self._max_retries:
                     raise
 
         raise RuntimeError("Provider execution failed unexpectedly.")
+
+    async def stream(
+        self,
+        request: Request,
+        context: Context,
+        *,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        tools: list[dict[str, object]] | None = None,
+    ) -> AsyncIterator[ModelStreamChunk]:
+        try:
+            async with asyncio.timeout(self._timeout_seconds):
+                async for chunk in self._provider.stream(
+                    request,
+                    context,
+                    model=model,
+                    system_prompt=system_prompt,
+                    tools=tools,
+                ):
+                    yield chunk
+        except TimeoutError as exc:
+            raise ProviderTimeoutError(
+                "Provider stream timed out.",
+                provider=self.name,
+            ) from exc

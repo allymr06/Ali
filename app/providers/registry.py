@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from threading import RLock
 
-from app.providers.base import AIProvider
+from app.providers.base import AIProvider, ProviderCapability
 
 
 class ProviderRegistry:
@@ -122,6 +122,18 @@ class ProviderRegistry:
         """Return registered provider names."""
         with self._lock:
             return tuple(self._providers.keys())
+
+    def list_capable(
+        self,
+        required: frozenset[ProviderCapability],
+    ) -> tuple[AIProvider, ...]:
+        """Return providers satisfying every requested capability."""
+        with self._lock:
+            return tuple(
+                provider
+                for provider in self._providers.values()
+                if provider.capabilities.supports(required)
+            )
 
     def __len__(self) -> int:
         with self._lock:

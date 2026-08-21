@@ -507,7 +507,7 @@ async def test_agent_direct_mode_converts_provider_exception_to_failure():
     result = await loop.run(Request("hello"), mode=AgentMode.DIRECT)
 
     assert result.status is AgentStatus.FAILED
-    assert result.metadata["error"] == "provider broke"
+    assert result.metadata["error"] == "Provider 'mock' failed unexpectedly."
 
 
 @pytest.mark.asyncio

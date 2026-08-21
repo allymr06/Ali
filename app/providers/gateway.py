@@ -1,0 +1,446 @@
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import time
+from collections.abc import AsyncIterator, Iterable
+from dataclasses import dataclass
+
+from app.core.models import Context, Request
+from app.providers.base import (
+    ModelResponse,
+    ModelStreamChunk,
+    ProviderAuthenticationError,
+    ProviderCapability,
+    ProviderError,
+    ProviderInvalidResponseError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+)
+from app.providers.models import RoutingDecision, TaskType
+from app.providers.registry import ProviderRegistry
+from app.providers.router import ModelRouter
+
+
+@dataclass(slots=True)
+class ProviderHealth:
+    successes: int = 0
+    failures: int = 0
+    consecutive_failures: int = 0
+    last_error: str | None = None
+    last_latency_seconds: float | None = None
+
+
+class _GatewayCancelled(Exception):
+    pass
+
+
+class ProviderGateway:
+    """The single bounded, observable entry point to model providers."""
+
+    def __init__(
+        self,
+        registry: ProviderRegistry,
+        *,
+        router: ModelRouter | None = None,
+        timeout_seconds: float = 30.0,
+        max_retries: int = 2,
+        retry_backoff_seconds: float = 0.25,
+        fallback_enabled: bool = True,
+    ) -> None:
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be greater than 0.")
+        if max_retries < 0:
+            raise ValueError("max_retries cannot be negative.")
+        if retry_backoff_seconds < 0:
+            raise ValueError("retry_backoff_seconds cannot be negative.")
+        self._registry = registry
+        self._router = router or ModelRouter(registry)
+        self._timeout_seconds = timeout_seconds
+        self._max_retries = max_retries
+        self._retry_backoff_seconds = retry_backoff_seconds
+        self._fallback_enabled = fallback_enabled
+        self._health: dict[str, ProviderHealth] = {}
+
+    @property
+    def router(self) -> ModelRouter:
+        return self._router
+
+    def health(self, provider: str) -> ProviderHealth:
+        state = self._health.setdefault(provider.strip(), ProviderHealth())
+        return ProviderHealth(
+            successes=state.successes,
+            failures=state.failures,
+            consecutive_failures=state.consecutive_failures,
+            last_error=state.last_error,
+            last_latency_seconds=state.last_latency_seconds,
+        )
+
+    async def _await_operation(self, awaitable, cancel_event):
+        operation = asyncio.create_task(awaitable)
+        cancellation = (
+            asyncio.create_task(cancel_event.wait())
+            if cancel_event is not None
+            else None
+        )
+        waiters = {operation}
+        if cancellation is not None:
+            waiters.add(cancellation)
+        try:
+            done, _ = await asyncio.wait(
+                waiters,
+                timeout=self._timeout_seconds,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if operation in done:
+                return operation.result()
+            operation.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await operation
+            if cancellation is not None and cancellation in done:
+                raise _GatewayCancelled
+            raise ProviderTimeoutError("Provider request timed out.")
+        finally:
+            if not operation.done():
+                operation.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await operation
+            if cancellation is not None:
+                cancellation.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await cancellation
+
+    @staticmethod
+    def _normalize_response(raw, expected_provider: str) -> ModelResponse:
+        if isinstance(raw, ModelResponse):
+            response = raw
+        else:
+            try:
+                response = ModelResponse(
+                    text=raw.text,
+                    model=raw.model,
+                    provider=raw.provider,
+                    finish_reason=getattr(raw, "finish_reason", None),
+                    tool_calls=list(getattr(raw, "tool_calls", []) or []),
+                    usage=dict(getattr(raw, "usage", {}) or {}),
+                    metadata=dict(getattr(raw, "metadata", {}) or {}),
+                )
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise ProviderInvalidResponseError(
+                    "Provider returned an invalid response contract.",
+                    provider=expected_provider,
+                ) from exc
+        if response.provider.strip() != expected_provider:
+            raise ProviderInvalidResponseError(
+                f"Provider identity mismatch: expected '{expected_provider}', "
+                f"received '{response.provider}'.",
+                provider=expected_provider,
+            )
+        return response
+
+    @staticmethod
+    def _is_retryable(error: Exception) -> bool:
+        return isinstance(error, ProviderError) and error.retryable
+
+    @staticmethod
+    def _normalize_error(error: Exception, provider: str) -> ProviderError:
+        if isinstance(error, ProviderError):
+            return error
+        if isinstance(error, TimeoutError):
+            return ProviderTimeoutError(
+                "Provider request timed out.",
+                provider=provider,
+            )
+        return ProviderError(
+            f"Provider '{provider}' failed unexpectedly.",
+            provider=provider,
+        )
+
+    async def _backoff(
+        self,
+        attempt: int,
+        cancel_event,
+        retry_after_seconds: float | None = None,
+    ) -> None:
+        delay = (
+            retry_after_seconds
+            if retry_after_seconds is not None and retry_after_seconds >= 0
+            else self._retry_backoff_seconds * (2 ** max(0, attempt - 1))
+        )
+        if delay <= 0:
+            return
+        if cancel_event is None:
+            await asyncio.sleep(delay)
+            return
+        try:
+            await asyncio.wait_for(cancel_event.wait(), timeout=delay)
+        except TimeoutError:
+            return
+        raise _GatewayCancelled
+
+    def _candidates(self, decision: RoutingDecision) -> tuple[tuple[str, str | None], ...]:
+        primary = ((decision.provider, decision.model),)
+        if not self._fallback_enabled or decision.user_override:
+            return primary
+        return primary + decision.fallback_candidates
+
+    def _model_metadata(
+        self,
+        provider: str,
+        model: str,
+        usage: dict[str, int],
+    ) -> dict[str, int | float]:
+        if not self._router.catalog.contains(provider, model):
+            return {}
+        profile = self._router.catalog.get(provider, model)
+        metadata: dict[str, int | float] = {}
+        if profile.max_context_tokens is not None:
+            metadata["model_context_limit"] = profile.max_context_tokens
+        input_tokens = usage.get("input_tokens", usage.get("prompt_tokens", 0))
+        output_tokens = usage.get(
+            "output_tokens",
+            usage.get("completion_tokens", 0),
+        )
+        if (
+            profile.input_cost_per_million is not None
+            and profile.output_cost_per_million is not None
+        ):
+            metadata["estimated_cost_usd"] = (
+                input_tokens * profile.input_cost_per_million
+                + output_tokens * profile.output_cost_per_million
+            ) / 1_000_000
+        return metadata
+
+    async def generate(
+        self,
+        request: Request,
+        context: Context,
+        *,
+        model: str | None = None,
+        provider: str | None = None,
+        system_prompt: str | None = None,
+        tools: list[dict] | None = None,
+        response_format: dict | None = None,
+        task_type: TaskType | str | None = None,
+        required_capabilities: Iterable[ProviderCapability] = (),
+        cancel_event=None,
+    ) -> ModelResponse:
+        if response_format is not None and not isinstance(response_format, dict):
+            raise TypeError("response_format must be a dictionary.")
+        required = self._router.required_capabilities(
+            request,
+            tools=tools,
+            structured_output=response_format is not None,
+            extra=required_capabilities,
+        )
+        decision = self._router.route(
+            request,
+            tools=tools,
+            provider=provider,
+            model=model,
+            task_type=task_type,
+            required=required,
+        )
+        last_error: Exception | None = None
+        fallback_count = 0
+
+        for candidate_index, (provider_name, selected_model) in enumerate(
+            self._candidates(decision)
+        ):
+            provider_instance = self._registry.get(provider_name)
+            if not provider_instance.capabilities.supports(required):
+                continue
+            health = self._health.setdefault(provider_name, ProviderHealth())
+
+            for attempt in range(1, self._max_retries + 2):
+                if cancel_event is not None and cancel_event.is_set():
+                    raise asyncio.CancelledError
+                started = time.monotonic()
+                try:
+                    provider_kwargs = {
+                        "model": selected_model,
+                        "system_prompt": system_prompt,
+                        "tools": tools,
+                    }
+                    if response_format is not None:
+                        provider_kwargs["response_format"] = response_format
+                    raw = await self._await_operation(
+                        provider_instance.generate(
+                            request,
+                            context,
+                            **provider_kwargs,
+                        ),
+                        cancel_event,
+                    )
+                    response = self._normalize_response(raw, provider_name)
+                except _GatewayCancelled as exc:
+                    raise asyncio.CancelledError from exc
+                except Exception as exc:
+                    error = self._normalize_error(exc, provider_name)
+                    health.failures += 1
+                    health.consecutive_failures += 1
+                    health.last_error = str(error)
+                    health.last_latency_seconds = time.monotonic() - started
+                    last_error = error
+                    if (
+                        self._is_retryable(error)
+                        and attempt <= self._max_retries
+                    ):
+                        try:
+                            await self._backoff(
+                                attempt,
+                                cancel_event,
+                                error.retry_after_seconds,
+                            )
+                        except _GatewayCancelled as cancel_exc:
+                            raise asyncio.CancelledError from cancel_exc
+                        continue
+                    break
+
+                health.successes += 1
+                health.consecutive_failures = 0
+                health.last_error = None
+                health.last_latency_seconds = time.monotonic() - started
+                response.metadata.update(
+                    {
+                        "gateway_attempt": attempt,
+                        "fallback_count": fallback_count,
+                        "routing_reason": decision.reason,
+                        "task_type": decision.task_type.value,
+                        "provider_latency_seconds": health.last_latency_seconds,
+                    }
+                )
+                response.metadata.update(
+                    self._model_metadata(
+                        provider_name,
+                        response.model,
+                        response.usage,
+                    )
+                )
+                return response
+
+            if candidate_index + 1 < len(self._candidates(decision)):
+                fallback_count += 1
+
+        if last_error is not None:
+            raise last_error
+        raise ProviderUnavailableError(
+            "No capable provider candidate is available."
+        )
+
+    async def stream(
+        self,
+        request: Request,
+        context: Context,
+        *,
+        model: str | None = None,
+        provider: str | None = None,
+        system_prompt: str | None = None,
+        tools: list[dict] | None = None,
+        task_type: TaskType | str | None = None,
+        cancel_event=None,
+    ) -> AsyncIterator[ModelStreamChunk]:
+        required = self._router.required_capabilities(
+            request,
+            tools=tools,
+            streaming=True,
+        )
+        decision = self._router.route(
+            request,
+            tools=tools,
+            provider=provider,
+            model=model,
+            task_type=task_type,
+            required=required,
+            streaming=True,
+        )
+        last_error: Exception | None = None
+        fallback_count = 0
+
+        for candidate_index, (provider_name, selected_model) in enumerate(
+            self._candidates(decision)
+        ):
+            provider_instance = self._registry.get(provider_name)
+            if not provider_instance.capabilities.supports(required):
+                continue
+            health = self._health.setdefault(provider_name, ProviderHealth())
+
+            for attempt in range(1, self._max_retries + 2):
+                emitted = False
+                started = time.monotonic()
+                try:
+                    async with asyncio.timeout(self._timeout_seconds):
+                        async for chunk in provider_instance.stream(
+                            request,
+                            context,
+                            model=selected_model,
+                            system_prompt=system_prompt,
+                            tools=tools,
+                        ):
+                            if cancel_event is not None and cancel_event.is_set():
+                                raise asyncio.CancelledError
+                            if not isinstance(chunk, ModelStreamChunk):
+                                raise ProviderInvalidResponseError(
+                                    "Provider returned an invalid stream chunk.",
+                                    provider=provider_name,
+                                )
+                            if chunk.provider != provider_name:
+                                raise ProviderInvalidResponseError(
+                                    "Streaming provider identity mismatch.",
+                                    provider=provider_name,
+                                )
+                            emitted = True
+                            chunk.metadata.update(
+                                {
+                                    "gateway_attempt": attempt,
+                                    "fallback_count": fallback_count,
+                                    "routing_reason": decision.reason,
+                                    "task_type": decision.task_type.value,
+                                }
+                            )
+                            yield chunk
+                except TimeoutError as exc:
+                    error: Exception = ProviderTimeoutError(
+                        "Provider stream timed out.",
+                        provider=provider_name,
+                    )
+                    error.__cause__ = exc
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    error = self._normalize_error(exc, provider_name)
+                else:
+                    health.successes += 1
+                    health.consecutive_failures = 0
+                    health.last_error = None
+                    health.last_latency_seconds = time.monotonic() - started
+                    return
+
+                health.failures += 1
+                health.consecutive_failures += 1
+                health.last_error = str(error)
+                health.last_latency_seconds = time.monotonic() - started
+                last_error = error
+
+                if emitted:
+                    raise error
+                if self._is_retryable(error) and attempt <= self._max_retries:
+                    try:
+                        await self._backoff(
+                            attempt,
+                            cancel_event,
+                            error.retry_after_seconds,
+                        )
+                    except _GatewayCancelled as cancel_exc:
+                        raise asyncio.CancelledError from cancel_exc
+                    continue
+                break
+
+            if candidate_index + 1 < len(self._candidates(decision)):
+                fallback_count += 1
+
+        if last_error is not None:
+            raise last_error
+        raise ProviderUnavailableError(
+            "No capable streaming provider candidate is available."
+        )

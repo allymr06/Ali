@@ -7,7 +7,9 @@ import pytest
 from app.config.settings import Settings
 from app.core.models import Context, Request
 from app.providers.base import (
+    ModelStreamChunk,
     ProviderAuthenticationError,
+    ProviderInvalidResponseError,
     ProviderRateLimitError,
     ProviderUnavailableError,
 )
@@ -536,3 +538,114 @@ async def test_openai_provider_preserves_multiple_tool_calls_in_message() -> Non
         == "Baku: 12:00"
         for message in messages
     )
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_streams_normalized_chunks() -> None:
+    chunks = [
+        SimpleNamespace(
+            model="stream-model",
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content="Mer", tool_calls=[]),
+                    finish_reason=None,
+                )
+            ],
+            usage=None,
+        ),
+        SimpleNamespace(
+            model="stream-model",
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content="haba", tool_calls=[]),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(
+                prompt_tokens=2,
+                completion_tokens=1,
+                total_tokens=3,
+            ),
+        ),
+    ]
+
+    class FakeStream:
+        def __aiter__(self):
+            self._iterator = iter(chunks)
+            return self
+
+        async def __anext__(self):
+            try:
+                return next(self._iterator)
+            except StopIteration:
+                raise StopAsyncIteration
+
+    class StreamingCompletions:
+        def __init__(self):
+            self.calls = []
+
+        async def create(self, **kwargs):
+            self.calls.append(kwargs)
+            return FakeStream()
+
+    completions = StreamingCompletions()
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions)
+    )
+    provider = OpenAIProvider(make_settings(), client=client)
+
+    received = [
+        chunk
+        async for chunk in provider.stream(Request("hello"), Context())
+    ]
+
+    assert all(isinstance(chunk, ModelStreamChunk) for chunk in received)
+    assert "".join(chunk.text for chunk in received) == "Merhaba"
+    assert received[-1].usage["total_tokens"] == 3
+    assert completions.calls[0]["stream"] is True
+    assert completions.calls[0]["stream_options"] == {"include_usage": True}
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_rejects_response_without_choices() -> None:
+    client = FakeClient(SimpleNamespace(choices=[], usage=None))
+    provider = OpenAIProvider(make_settings(), client=client)
+
+    with pytest.raises(ProviderInvalidResponseError):
+        await provider.generate(Request("hello"), Context())
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_passes_response_format() -> None:
+    client = FakeClient(make_response())
+    provider = OpenAIProvider(make_settings(), client=client)
+    response_format = {"type": "json_object"}
+
+    await provider.generate(
+        Request("json"),
+        Context(),
+        response_format=response_format,
+    )
+
+    assert client.chat.completions.calls[0]["response_format"] == response_format
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_appends_current_user_to_plain_history() -> None:
+    client = FakeClient(make_response())
+    provider = OpenAIProvider(make_settings(), client=client)
+    context = Context(
+        values={
+            "messages": [
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "answer"},
+            ]
+        }
+    )
+
+    await provider.generate(Request("second"), context)
+
+    assert client.chat.completions.calls[0]["messages"][-1] == {
+        "role": "user",
+        "content": "second",
+    }

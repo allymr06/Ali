@@ -78,3 +78,45 @@ Low-level execution code does not import the agent orchestration layer.
 Approval binding primitives live in `app.security`, while the agent layer owns
 approval request workflow and policy decisions. This keeps the Core import
 graph acyclic and lets execution be tested in isolation.
+
+## AI provider gateway
+
+Phase 3 introduces `ProviderGateway` as the only model-provider entry point used
+by `CoreEngine`. Provider adapters perform one vendor call and translate vendor
+data into strict `ModelResponse` or `ModelStreamChunk` contracts. The gateway
+owns routing, capability validation, timeout, retry, fallback, cancellation,
+health accounting, and provider metadata.
+
+`ModelRouter` classifies work as simple, standard, complex, long-running,
+vision, or agentic. It combines the task type with required capabilities such
+as tool calling, streaming, structured output, and vision. Explicit user model
+or provider overrides are honored but do not silently fall back.
+
+`ModelCatalog` stores dynamic model profiles, including task support, priority,
+context capacity, and optional pricing. Providers without catalog profiles can
+still be discovered by declared capability, allowing integrations to be added
+without changes to Core.
+
+Only classified transient failures are retried. Streaming can retry or fall
+back before the first emitted chunk; after output is visible, an error is
+reported without restarting the stream and duplicating content. Unexpected
+provider exceptions are sanitized at the gateway boundary.
+
+## Conversation engine
+
+Phase 4 introduces `ConversationEngine` as the owner of conversation lifecycle
+and provider message history. Conversations contain validated, timestamped
+turns with request, response, and tool-call identity. The Core records the user
+turn before generation, every assistant/tool exchange during execution, and the
+final assistant response.
+
+The engine builds context from complete request groups so a tool result is
+never separated from its assistant tool call. Older groups are represented by
+a bounded local summary while the store retains the full turn history. Summary
+metadata records how many turns were compacted and when the summary changed.
+
+Conversation storage is behind `ConversationStore`; the current bootstrap uses
+the copy-isolated, thread-safe in-memory implementation. Active conversations
+can be archived, reactivated, listed, or deleted without coupling providers to
+storage. Provider adapters receive normalized history and do not own lifecycle
+state.

@@ -9,8 +9,17 @@ import pytest
 
 from app.agent.approval import ApprovalStatus, ApprovalStore
 from app.agent.approval_gate import ApprovalGate, ApprovalGateResult
-from app.core.models import RiskLevel, ToolDefinition, ToolExecutionStatus
+from app.agent.loop import AgentLoop
+from app.agent.models import AgentMode, AgentStatus
+from app.core.models import (
+    Request,
+    RiskLevel,
+    ToolDefinition,
+    ToolExecutionStatus,
+    ToolResult,
+)
 from app.core.time import utc_now
+from app.main import create_application
 from app.planning.models import PlanStep
 from app.security.approval import (
     ApprovalExecutionContext,
@@ -311,6 +320,40 @@ def test_agent_gate_denies_critical_tool_without_creating_approval() -> None:
     assert decision.result is ApprovalGateResult.DENIED
     assert decision.request is None
     assert gate.store.list() == []
+
+
+@pytest.mark.asyncio
+async def test_agent_bound_approval_reaches_final_tool_boundary() -> None:
+    application = create_application()
+    application.tool_executor.register(
+        ToolDefinition(
+            name="send",
+            description="Send",
+            risk_level=RiskLevel.HIGH,
+        ),
+        lambda: ToolResult(
+            status=ToolExecutionStatus.SUCCESS,
+            tool_name="send",
+            data="sent",
+            verified=True,
+        ),
+    )
+    plan = application.engine.create_plan(
+        "send",
+        [PlanStep("send", metadata={"tool_name": "send", "parameters": {}})],
+    )
+    loop = AgentLoop(
+        engine=application.engine,
+        plan_builder=lambda request, context: plan,
+    )
+
+    waiting = await loop.run(Request("send"), mode=AgentMode.TASK)
+    operation_id = plan.steps[0].metadata["approval_operation_id"]
+    loop.approve(operation_id)
+    completed = await loop.run(Request("send"), mode=AgentMode.TASK)
+
+    assert waiting.status is AgentStatus.WAITING_FOR_APPROVAL
+    assert completed.status is AgentStatus.COMPLETED
 
 
 def test_approval_requests_are_immutable_and_store_transition_is_atomic() -> None:

@@ -74,3 +74,15 @@ The Phase 5 regression coverage includes:
 - tool-specific idempotent retry policy through the shared execution service;
 - preservation of existing input, output, permission, timeout, cancellation,
   and verification boundaries.
+
+The Phase 6 regression coverage includes:
+
+- complete and non-overlapping permission policy validation;
+- tool allowlists, denylists, and effective-risk ceilings;
+- parameter-based elevation, confirmation, denial, and fail-closed matchers;
+- bounded permission audit records and rule lifecycle revisions;
+- approval binding to tool version, parameters, task, plan, step, and expiry;
+- rejection of raw confirmation booleans and altered approval contexts;
+- real tool-contract risk resolution in the agent approval gate;
+- immutable approval requests and atomic concurrent state transitions;
+- configurable approval TTL and permission audit capacity.

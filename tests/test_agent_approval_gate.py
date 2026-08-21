@@ -217,7 +217,10 @@ def test_gate_invalidates_approval_when_parameters_change():
 
     second = gate.evaluate(step=step)
 
-    assert first.request.status is ApprovalStatus.EXPIRED
+    assert (
+        gate.store.get(first.request.operation_id).status
+        is ApprovalStatus.EXPIRED
+    )
     assert second.result is ApprovalGateResult.PENDING
     assert second.request.operation_id != first.request.operation_id
 
@@ -255,21 +258,26 @@ def test_gate_reuses_approval_for_equivalent_parameter_order():
     second = gate.evaluate(step=step)
 
     assert second.result is ApprovalGateResult.APPROVED
-    assert second.request is first.request
+    assert second.request.operation_id == first.request.operation_id
 
 
 def test_gate_replaces_expired_approval_request():
-    gate = ApprovalGate()
+    now = [utc_now()]
+    store = ApprovalStore(clock=lambda: now[0])
+    gate = ApprovalGate(store, approval_ttl_seconds=1)
     step = PlanStep(
         "delete",
         metadata={"tool_name": "delete_file", "requires_approval": True},
     )
     first = gate.evaluate(step=step)
-    first.request.expires_at = utc_now() - timedelta(seconds=1)
+    now[0] += timedelta(seconds=2)
 
     second = gate.evaluate(step=step)
 
-    assert first.request.status is ApprovalStatus.EXPIRED
+    assert (
+        store.get(first.request.operation_id).status
+        is ApprovalStatus.EXPIRED
+    )
     assert second.result is ApprovalGateResult.PENDING
     assert second.request.operation_id != first.request.operation_id
 

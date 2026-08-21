@@ -165,15 +165,16 @@ def test_agent_loop_can_deny_request():
 
 
 def test_approval_store_rejects_expired_request():
-    store = ApprovalStore()
+    now = [utc_now()]
+    store = ApprovalStore(clock=lambda: now[0])
     request = store.create(
         operation="delete_file",
         reason="Delete operation",
         risk_level="high",
+        expires_in_seconds=1,
     )
-    request.expires_at = utc_now() - timedelta(seconds=1)
-
+    now[0] += timedelta(seconds=2)
     with pytest.raises(ValueError, match="expired"):
         store.approve(request.operation_id)
 
-    assert request.status is ApprovalStatus.EXPIRED
+    assert store.get(request.operation_id).status is ApprovalStatus.EXPIRED

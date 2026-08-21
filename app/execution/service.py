@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import hmac
 from typing import Any
 
 from app.core.models import ToolExecutionStatus
-from app.core.time import utc_now
 from app.execution.context import ExecutionContext
 from app.execution.events import (
     ExecutionEvent,
@@ -23,7 +21,7 @@ from app.execution.state import (
 from app.execution.verification import VerificationEngine
 from app.planning.executor import PlanExecutor
 from app.planning.models import Plan, PlanStatus, PlanStep
-from app.security.approval import ApprovalGrant, approval_binding_digest
+from app.security.approval import ApprovalExecutionContext, ApprovalGrant
 
 
 class ExecutionObserver:
@@ -505,38 +503,6 @@ class ExecutionService:
             return
 
         approval_grant = step.metadata.pop("_approval_grant", None)
-        confirmation_granted = False
-
-        if isinstance(approval_grant, ApprovalGrant):
-            operation = str(
-                step.metadata.get("operation", tool_name)
-            )
-            try:
-                expected_binding = approval_binding_digest(
-                    operation=operation,
-                    tool_name=tool_name,
-                    parameters=parameters,
-                    task_id=approval_grant.task_id,
-                    plan_id=plan.plan_id,
-                    step_id=step.step_id,
-                )
-            except ValueError:
-                expected_binding = ""
-
-            confirmation_granted = bool(expected_binding) and (
-                hmac.compare_digest(
-                    approval_grant.binding_digest,
-                    expected_binding,
-                )
-                and (
-                    approval_grant.expires_at is None
-                    or utc_now() < approval_grant.expires_at
-                )
-                and (
-                    approval_grant.task_id is None
-                    or approval_grant.task_id == execution_context.task_id
-                )
-            )
 
         last_error = ""
         effective_max_attempts = self._retry_policy.max_attempts
@@ -628,8 +594,15 @@ class ExecutionService:
                     "parameters": parameters,
                 }
 
-                if confirmation_granted:
-                    execution_kwargs["confirmation_granted"] = True
+                if isinstance(approval_grant, ApprovalGrant):
+                    execution_kwargs["approval_grant"] = approval_grant
+                    execution_kwargs["approval_context"] = (
+                        ApprovalExecutionContext(
+                            task_id=execution_context.task_id,
+                            plan_id=plan.plan_id,
+                            step_id=step.step_id,
+                        )
+                    )
 
                 if cancel_event is not None:
                     execution_kwargs["cancel_event"] = cancel_event

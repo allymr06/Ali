@@ -140,3 +140,23 @@ tools are hidden from model providers and rejected by execution.
 filters fail closed and expose no tools. Tool-specific retries can only be
 declared for idempotent tools, and the shared execution service continues to
 count every attempt against the execution budget.
+
+## Permission and approval engine
+
+Phase 6 centralizes permission decisions in `PermissionEngine`. A validated
+`PermissionPolicy` classifies every risk level exactly once. Parameter rules
+may elevate effective risk or force confirmation/denial, while
+`PermissionScope` adds per-execution least-privilege limits. Decisions are
+immutable, carry evaluation identity and policy revision, and enter a bounded
+audit buffer.
+
+`ApprovalGate` resolves the real registered tool definition before deciding
+whether a plan step can run, so plan metadata cannot downgrade tool risk.
+Critical tools denied by policy never create misleading approval requests.
+Approved operations produce grants bound to operation, tool version,
+parameters, task, plan, step, and expiry.
+
+Grant verification occurs again at the `ToolExecutor` boundary rather than
+being reduced to a boolean in the execution service. Approval requests are
+immutable and their in-memory store serializes state transitions, including
+concurrent approval, denial, and expiry.

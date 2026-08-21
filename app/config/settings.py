@@ -99,6 +99,9 @@ class Settings:
     conversation_summary_max_characters: int = 4_000
     conversation_system_prompt: str | None = None
 
+    approval_ttl_seconds: float = 300.0
+    permission_audit_capacity: int = 1000
+
     api_key: str | None = None
     api_base_url: str | None = None
 
@@ -125,6 +128,10 @@ class Settings:
             raise ValueError(
                 "conversation_summary_max_characters must be at least 100."
             )
+        if self.approval_ttl_seconds <= 0:
+            raise ValueError("approval_ttl_seconds must be greater than 0.")
+        if self.permission_audit_capacity < 1:
+            raise ValueError("permission_audit_capacity must be at least 1.")
 
     @property
     def openai_api_key(self) -> str | None:
@@ -182,6 +189,14 @@ class Settings:
             ),
             conversation_system_prompt=os.getenv(
                 "JARVIS_CONVERSATION_SYSTEM_PROMPT"
+            ),
+            approval_ttl_seconds=_get_float(
+                "JARVIS_APPROVAL_TTL_SECONDS",
+                300.0,
+            ),
+            permission_audit_capacity=_get_positive_int(
+                "JARVIS_PERMISSION_AUDIT_CAPACITY",
+                1000,
             ),
             api_key=os.getenv("JARVIS_API_KEY"),
             api_base_url=os.getenv(

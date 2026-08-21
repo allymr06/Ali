@@ -20,6 +20,8 @@ def test_settings_defaults() -> None:
     assert settings.conversation_max_characters == 50_000
     assert settings.conversation_summary_max_characters == 4_000
     assert settings.conversation_system_prompt is None
+    assert settings.approval_ttl_seconds == 300.0
+    assert settings.permission_audit_capacity == 1000
 
 
 def test_settings_reads_environment(monkeypatch) -> None:
@@ -37,6 +39,8 @@ def test_settings_reads_environment(monkeypatch) -> None:
     monkeypatch.setenv("JARVIS_CONVERSATION_MAX_CHARACTERS", "2000")
     monkeypatch.setenv("JARVIS_CONVERSATION_SUMMARY_MAX_CHARACTERS", "500")
     monkeypatch.setenv("JARVIS_CONVERSATION_SYSTEM_PROMPT", "Be concise.")
+    monkeypatch.setenv("JARVIS_APPROVAL_TTL_SECONDS", "120")
+    monkeypatch.setenv("JARVIS_PERMISSION_AUDIT_CAPACITY", "250")
 
     settings = Settings.from_environment()
 
@@ -54,6 +58,22 @@ def test_settings_reads_environment(monkeypatch) -> None:
     assert settings.conversation_max_characters == 2000
     assert settings.conversation_summary_max_characters == 500
     assert settings.conversation_system_prompt == "Be concise."
+    assert settings.approval_ttl_seconds == 120.0
+    assert settings.permission_audit_capacity == 250
+
+
+def test_settings_rejects_invalid_security_limits(monkeypatch) -> None:
+    import pytest
+
+    monkeypatch.setenv("JARVIS_APPROVAL_TTL_SECONDS", "0")
+    with pytest.raises(ValueError):
+        Settings.from_environment()
+
+    monkeypatch.setenv("JARVIS_APPROVAL_TTL_SECONDS", "300")
+    monkeypatch.setenv("JARVIS_PERMISSION_AUDIT_CAPACITY", "0")
+    with pytest.raises(ValueError):
+        Settings.from_environment()
+
 def test_settings_reads_api_configuration(monkeypatch) -> None:
     monkeypatch.setenv(
         "JARVIS_API_KEY",

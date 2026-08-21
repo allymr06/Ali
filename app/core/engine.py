@@ -116,6 +116,10 @@ class CoreEngine:
     def conversation_engine(self) -> ConversationEngine:
         return self._conversation_engine
 
+    @property
+    def tool_executor(self) -> ToolExecutor:
+        return self._tool_executor
+
     def create_plan(
         self,
         goal: str,

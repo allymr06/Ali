@@ -36,13 +36,16 @@ class AgentLoop:
         plan_builder: PlanBuilder | None = None,
         mode_router: ModeRouter | None = None,
         approval_store: ApprovalStore | None = None,
+        approval_ttl_seconds: float = 300.0,
     ) -> None:
         self._engine = engine
         self._plan_builder = plan_builder
         self._mode_router = mode_router or self._default_mode_router
         self._approval_store = approval_store or ApprovalStore()
         self._approval_gate = ApprovalGate(
-            self._approval_store
+            self._approval_store,
+            approval_ttl_seconds=approval_ttl_seconds,
+            tool_executor=self._engine.tool_executor,
         )
 
     @property

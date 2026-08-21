@@ -27,15 +27,29 @@ The default risk policy is deterministic:
 - `CRITICAL` is denied by default, including when a confirmation flag is
   supplied.
 
-Trusted code may register parameter-sensitive rules that only elevate risk.
-Rules cannot downgrade a tool's declared risk. A rule failure is denied closed.
+Trusted code may register parameter-sensitive rules that elevate risk or force
+confirmation/denial. Rules cannot force an allow decision or downgrade a
+tool's declared risk. A matcher failure is denied closed without exposing its
+exception contents. Rule lifecycle changes increment the policy revision.
+
+`PermissionScope` can restrict an execution to an explicit tool allowlist,
+denylist, and maximum risk level. Every decision has an ID, timestamp, declared
+and effective risk, matching rules, and policy revision. A bounded in-memory
+audit buffer retains this metadata without retaining tool parameters.
 
 ## Approval binding
 
 Approval requests are bound to a SHA-256 fingerprint of the operation, tool,
-parameters, task, plan, and step. Parameters must be JSON-serializable. A
-changed action or execution context invalidates the previous approval and
-creates a new pending request. Approval requests expire after a bounded time.
+tool-contract version, parameters, task, plan, and step. Parameters must be
+JSON-serializable objects with string keys. A changed action, tool version, or
+execution context invalidates the previous approval and creates a new pending
+request. Approval requests expire after a bounded time.
+
+The final grant validation happens inside `ToolExecutor`, immediately before
+handler execution. A raw `confirmation_granted=True` flag cannot authorize an
+operation. Approval request objects are immutable and store transitions are
+serialized, preventing callers or concurrent requests from changing pending
+state into approval.
 
 ## Timeouts and cancellation
 
@@ -55,6 +69,6 @@ budgets. A timeout that may still have side effects is not retried.
 Tools may be exposed to a model only when they are enabled and match the
 request's name, capability, and tag filters. Invalid request filters fail
 closed. A provider tool call outside the exposed request scope is rejected at
-execution time. Disabling a tool removes it from discovery and blocks new execution
-without deleting its registration, allowing controlled runtime lifecycle
+execution time. Disabling a tool removes it from discovery and blocks new
+execution without deleting its registration, allowing controlled runtime lifecycle
 management and auditable registry revision changes.

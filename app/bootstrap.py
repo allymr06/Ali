@@ -15,6 +15,7 @@ from app.providers.gateway import ProviderGateway
 from app.providers.models import ModelProfile
 from app.providers.registry import ProviderRegistry
 from app.providers.router import ModelRouter
+from app.security.permissions import PermissionEngine
 from app.tasks.manager import TaskManager
 from app.tools.executor import ToolExecutor
 
@@ -38,7 +39,10 @@ class JARVISApplication:
         """Create an agent loop bound to this application's engine."""
         from app.agent.loop import AgentLoop
 
-        return AgentLoop(engine=self.engine)
+        return AgentLoop(
+            engine=self.engine,
+            approval_ttl_seconds=self.settings.approval_ttl_seconds,
+        )
 
 
 def create_application(
@@ -101,7 +105,11 @@ def create_application(
         InMemoryStore(),
     )
 
-    tool_executor = ToolExecutor()
+    tool_executor = ToolExecutor(
+        PermissionEngine(
+            audit_capacity=active_settings.permission_audit_capacity,
+        )
+    )
     task_manager = TaskManager()
 
     engine = CoreEngine(

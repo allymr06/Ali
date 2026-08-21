@@ -49,3 +49,13 @@ offline.
 Conversation limits preserve the complete most recent request/tool group even
 when that single group is larger than the configured normal window. This avoids
 creating an invalid partial tool-call chain.
+
+## Permission and approval security
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `JARVIS_APPROVAL_TTL_SECONDS` | `300` | Lifetime of an action-bound approval request. |
+| `JARVIS_PERMISSION_AUDIT_CAPACITY` | `1000` | Maximum in-memory permission decisions retained for diagnostics. |
+
+Approval TTL values must be positive and finite. The audit buffer is bounded
+and contains decision metadata, not tool parameter values.

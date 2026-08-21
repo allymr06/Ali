@@ -15,7 +15,16 @@ from app.core.models import (
     ToolResult,
 )
 from app.core.time import utc_now
-from app.security.permissions import PermissionDecision, PermissionEngine
+from app.security.approval import (
+    ApprovalExecutionContext,
+    ApprovalGrant,
+    validate_approval_grant,
+)
+from app.security.permissions import (
+    PermissionDecision,
+    PermissionEngine,
+    PermissionScope,
+)
 from app.tools.base import RegisteredTool, ToolCallable
 from app.tools.contracts import ToolContract
 from app.tools.registry import ToolRegistry
@@ -115,6 +124,10 @@ class ToolExecutor:
     @property
     def registry_revision(self) -> int:
         return self._registry.revision
+
+    @property
+    def permission_engine(self) -> PermissionEngine:
+        return self._permission_engine
 
     def enable(self, name: str) -> RegisteredTool:
         """Make a registered tool available for discovery and execution."""
@@ -466,12 +479,16 @@ class ToolExecutor:
         *,
         operation: str | None,
         parameters: dict[str, Any],
+        approval_grant: ApprovalGrant | None,
+        approval_context: ApprovalExecutionContext | None,
+        permission_scope: PermissionScope | None,
         confirmation_granted: bool,
     ) -> ToolResult | None:
         permission = self._permission_engine.evaluate(
             definition,
             operation=operation,
             parameters=parameters,
+            scope=permission_scope,
         )
 
         if permission.decision == PermissionDecision.DENY:
@@ -483,17 +500,34 @@ class ToolExecutor:
                 verified=False,
             )
 
-        if (
-            permission.decision == PermissionDecision.CONFIRM
-            and not confirmation_granted
-        ):
-            return ToolResult(
-                status=ToolExecutionStatus.BLOCKED,
+        if permission.decision == PermissionDecision.CONFIRM:
+            validation = validate_approval_grant(
+                approval_grant,
+                operation=permission.operation,
                 tool_name=definition.name,
-                message=permission.reason,
-                error="User confirmation required.",
-                verified=False,
+                parameters=parameters,
+                context=approval_context,
+                tool_version=definition.version,
             )
+
+            if not validation.valid:
+                validation_error = (
+                    "Unbound confirmation flags are not accepted."
+                    if confirmation_granted and approval_grant is None
+                    else validation.reason
+                )
+                error = (
+                    "User confirmation required."
+                    if approval_grant is None and not confirmation_granted
+                    else f"User confirmation required: {validation_error}"
+                )
+                return ToolResult(
+                    status=ToolExecutionStatus.BLOCKED,
+                    tool_name=definition.name,
+                    message=permission.reason,
+                    error=error,
+                    verified=False,
+                )
 
         return None
 
@@ -504,6 +538,9 @@ class ToolExecutor:
         operation: str | None = None,
         parameters: dict[str, Any] | None = None,
         confirmation_granted: bool = False,
+        approval_grant: ApprovalGrant | None = None,
+        approval_context: ApprovalExecutionContext | None = None,
+        permission_scope: PermissionScope | None = None,
         cancel_event: Any | None = None,
     ) -> ToolResult | Any:
         """
@@ -528,6 +565,9 @@ class ToolExecutor:
                 operation=operation,
                 parameters=parameters,
                 confirmation_granted=confirmation_granted,
+                approval_grant=approval_grant,
+                approval_context=approval_context,
+                permission_scope=permission_scope,
                 cancel_event=cancel_event,
             )
 
@@ -537,6 +577,9 @@ class ToolExecutor:
             operation=operation,
             parameters=parameters,
             confirmation_granted=confirmation_granted,
+            approval_grant=approval_grant,
+            approval_context=approval_context,
+            permission_scope=permission_scope,
             cancel_event=cancel_event,
         )
 
@@ -547,6 +590,9 @@ class ToolExecutor:
         operation: str | None,
         parameters: dict[str, Any] | None,
         confirmation_granted: bool,
+        approval_grant: ApprovalGrant | None,
+        approval_context: ApprovalExecutionContext | None,
+        permission_scope: PermissionScope | None,
         cancel_event: Any | None,
     ) -> ToolResult:
         normalized_name = name.strip()
@@ -583,6 +629,9 @@ class ToolExecutor:
             definition,
             operation=operation,
             parameters=execution_parameters,
+            approval_grant=approval_grant,
+            approval_context=approval_context,
+            permission_scope=permission_scope,
             confirmation_granted=confirmation_granted,
         )
 
@@ -712,6 +761,9 @@ class ToolExecutor:
         operation: str | None,
         parameters: dict[str, Any] | None,
         confirmation_granted: bool,
+        approval_grant: ApprovalGrant | None,
+        approval_context: ApprovalExecutionContext | None,
+        permission_scope: PermissionScope | None,
         cancel_event: Any | None,
     ) -> ToolResult:
         normalized_name = name.strip()
@@ -748,6 +800,9 @@ class ToolExecutor:
             definition,
             operation=operation,
             parameters=execution_parameters,
+            approval_grant=approval_grant,
+            approval_context=approval_context,
+            permission_scope=permission_scope,
             confirmation_granted=confirmation_granted,
         )
 

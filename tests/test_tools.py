@@ -1,3 +1,6 @@
+from tests.security_helpers import bound_approval
+
+
 def test_tool_executor_generates_openai_schema() -> None:
     from app.core.models import ToolDefinition
     from app.tools.executor import ToolExecutor
@@ -304,7 +307,7 @@ def test_tool_executor_requires_confirmation() -> None:
 
     result = executor.execute(
         "send_message",
-        confirmation_granted=True,
+        **bound_approval("send_message"),
     )
 
     assert result.status is ToolExecutionStatus.SUCCESS

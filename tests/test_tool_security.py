@@ -4,6 +4,7 @@ import asyncio
 
 from app.core.models import ToolDefinition, ToolExecutionStatus
 from app.tools.executor import ToolExecutor
+from tests.security_helpers import bound_approval
 
 
 def test_executor_rejects_unknown_tool() -> None:
@@ -178,7 +179,7 @@ def test_executor_allows_medium_risk_only_with_confirmation() -> None:
 
     result = executor.execute(
         "dangerous",
-        confirmation_granted=True,
+        **bound_approval("dangerous"),
     )
 
     assert result.status is ToolExecutionStatus.SUCCESS
@@ -278,7 +279,7 @@ def test_executor_explicit_confirmation_requirement_allows_execution_after_confi
 
     result = executor.execute(
         "protected",
-        confirmation_granted=True,
+        **bound_approval("protected"),
     )
 
     assert result.status is ToolExecutionStatus.SUCCESS

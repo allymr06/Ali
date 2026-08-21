@@ -14,7 +14,7 @@ Implemented:
 - provider registration, selection, timeout, and retry handling
 - conversation orchestration and model tool-call processing
 - versioned tool contracts, dynamic capability discovery, and bounded execution
-- risk-based permissions and approval flow
+- scoped, auditable permissions and action-bound immutable approvals
 - plans, dependencies, task states, progress, and cancellation
 - execution events, journaling, persistence, recovery, and replanning
 - working, conversation, and in-memory long-term memory foundations
@@ -34,7 +34,7 @@ Not implemented yet:
 
 ## Verification status
 
-The current test suite contains **565 passing tests** on Python 3.12. This result was verified on 21 August 2026.
+The current test suite contains **578 passing tests** on Python 3.12. This result was verified on 21 August 2026.
 
 The project does not yet claim production readiness. In particular, the first real end-to-end Windows vertical slice still needs to be completed:
 

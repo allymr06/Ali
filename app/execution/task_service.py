@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from app.execution.models import RetryPolicy
+from app.core.models import TaskStepStatus
+from app.execution.models import ExecutionLimits, RetryPolicy
 from app.execution.service import ExecutionObserver, ExecutionService
 from app.execution.verification import VerificationEngine
 from app.planning.executor import PlanExecutor
@@ -55,6 +56,18 @@ class TaskExecutionObserver(ExecutionObserver):
             error,
         )
 
+    async def on_plan_cancelled(self, plan) -> None:
+        for task_step in self._plan_to_task_steps.values():
+            if task_step.status not in {
+                TaskStepStatus.COMPLETED,
+                TaskStepStatus.CANCELLED,
+                TaskStepStatus.FAILED,
+            }:
+                self._task_manager.cancel_step(
+                    self._task_id,
+                    task_step.step_id,
+                )
+
 
 class TaskExecutionService:
     """
@@ -70,12 +83,28 @@ class TaskExecutionService:
         self,
         *,
         task_manager: TaskManager,
-        tool_executor: Any,
+        tool_executor: Any | None = None,
+        execution_service: ExecutionService | None = None,
         retry_policy: RetryPolicy | None = None,
+        limits: ExecutionLimits | None = None,
     ) -> None:
         self._task_manager = task_manager
         self._tool_executor = tool_executor
         self._retry_policy = retry_policy or RetryPolicy()
+        self._limits = limits or ExecutionLimits()
+
+        if execution_service is None and tool_executor is None:
+            raise ValueError(
+                "tool_executor is required when execution_service is absent."
+            )
+
+        self._execution_service = execution_service or ExecutionService(
+            tool_executor=tool_executor,
+            plan_executor=PlanExecutor(),
+            verification_engine=VerificationEngine(),
+            retry_policy=self._retry_policy,
+            limits=self._limits,
+        )
 
     async def execute(
         self,
@@ -89,8 +118,10 @@ class TaskExecutionService:
         task = self._task_manager.get(task_id)
 
         if task.goal.strip() != plan.goal.strip():
+            error = "Task goal and plan goal must match."
+            self._task_manager.fail(task_id, error)
             raise ValueError(
-                "Task goal and plan goal must match."
+                error
             )
 
         if task.status.value != "queued":
@@ -99,8 +130,10 @@ class TaskExecutionService:
             )
 
         if not plan.steps:
+            error = "Cannot execute a task without plan steps."
+            self._task_manager.fail(task_id, error)
             raise ValueError(
-                "Cannot execute a task without plan steps."
+                error
             )
 
         mapping = {}
@@ -124,18 +157,10 @@ class TaskExecutionService:
             mapping,
         )
 
-        execution_service = ExecutionService(
-            tool_executor=self._tool_executor,
-            plan_executor=PlanExecutor(),
-            verification_engine=VerificationEngine(),
-            retry_policy=self._retry_policy,
-            observer=observer,
-        )
-
         try:
             from app.execution.context import ExecutionContext
 
-            result = await execution_service.execute(
+            result = await self._execution_service.execute(
                 plan,
                 execution_context=ExecutionContext(
                     request_id=request_id,
@@ -144,6 +169,8 @@ class TaskExecutionService:
                     plan_id=plan.plan_id,
                 ),
                 cancel_event=cancel_event,
+                observer=observer,
+                limits=self._limits,
             )
 
             current = self._task_manager.get(task_id)
@@ -155,6 +182,11 @@ class TaskExecutionService:
                         "plan_id": str(result.plan_id),
                         "plan_goal": result.goal,
                         "plan_progress": result.progress,
+                        "outcome": result.metadata.get(
+                            "execution_outcome",
+                            "completed",
+                        ),
+                        "usage": result.metadata.get("execution_usage", {}),
                     },
                 )
 
@@ -167,9 +199,30 @@ class TaskExecutionService:
                         error = str(step_error)
                         break
 
+                partial_results = [
+                    {
+                        "step_id": str(step.step_id),
+                        "step_name": step.name,
+                        "result": step.metadata.get("tool_result"),
+                    }
+                    for step in result.steps
+                    if step.metadata.get("partial") is True
+                ]
+
                 self._task_manager.fail(
                     task_id,
                     error,
+                    result={
+                        "plan_id": str(result.plan_id),
+                        "plan_goal": result.goal,
+                        "plan_progress": result.progress,
+                        "outcome": result.metadata.get(
+                            "execution_outcome",
+                            "failed",
+                        ),
+                        "partial_results": partial_results,
+                        "usage": result.metadata.get("execution_usage", {}),
+                    },
                 )
 
             elif result.status is PlanStatus.CANCELLED:
@@ -178,7 +231,22 @@ class TaskExecutionService:
                     "failed",
                     "cancelled",
                 }:
-                    self._task_manager.cancel(task_id)
+                    self._task_manager.cancel(
+                        task_id,
+                        result={
+                            "plan_id": str(result.plan_id),
+                            "plan_goal": result.goal,
+                            "plan_progress": result.progress,
+                            "outcome": result.metadata.get(
+                                "execution_outcome",
+                                "cancelled",
+                            ),
+                            "usage": result.metadata.get(
+                                "execution_usage",
+                                {},
+                            ),
+                        },
+                    )
 
             elif current.status.value not in {
                 "completed",

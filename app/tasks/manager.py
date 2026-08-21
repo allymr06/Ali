@@ -125,7 +125,12 @@ class TaskManager:
         task.updated_at = utc_now()
         return task
 
-    def cancel(self, task_id: UUID) -> Task:
+    def cancel(
+        self,
+        task_id: UUID,
+        *,
+        result: object = None,
+    ) -> Task:
         task = self.get(task_id)
 
         if task.status in (
@@ -137,6 +142,7 @@ class TaskManager:
             )
 
         task.status = TaskStatus.CANCELLED
+        task.result = result
         task.updated_at = utc_now()
         return task
 
@@ -162,10 +168,13 @@ class TaskManager:
         self,
         task_id: UUID,
         error: str,
+        *,
+        result: object = None,
     ) -> Task:
         task = self.get(task_id)
 
         if task.status not in (
+            TaskStatus.QUEUED,
             TaskStatus.RUNNING,
             TaskStatus.PAUSED,
         ):
@@ -175,6 +184,7 @@ class TaskManager:
 
         task.status = TaskStatus.FAILED
         task.error = error
+        task.result = result
         task.updated_at = utc_now()
         return task
 

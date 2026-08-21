@@ -17,7 +17,12 @@ from app.execution.state import (
     ExecutionSnapshotStatus,
     ExecutionStateStore,
 )
-from app.execution.models import RetryPolicy, VerificationResult
+from app.execution.models import (
+    ExecutionLimits,
+    ExecutionUsage,
+    RetryPolicy,
+    VerificationResult,
+)
 from app.execution.replanner import Replanner, replace_failed_step
 from app.execution.service import ExecutionService
 from app.execution.task_service import TaskExecutionObserver, TaskExecutionService
@@ -35,6 +40,8 @@ __all__ = [
     "TaskExecutionService",
     "Replanner",
     "RetryPolicy",
+    "ExecutionLimits",
+    "ExecutionUsage",
     "replace_failed_step",
     "VerificationEngine",
     "VerificationResult",

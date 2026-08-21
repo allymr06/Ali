@@ -21,3 +21,15 @@ The Phase 1 regression coverage includes:
 - parameter-sensitive permission elevation and fail-closed rules;
 - exact approval binding, invalidation, and expiry;
 - cancellation state propagation through plans.
+
+The Phase 2 regression coverage includes:
+
+- one shared execution runtime for direct plans and tracked tasks;
+- request, conversation, task, plan, and step identity propagation;
+- hard plan-step, tool-call, model-iteration, token, and time budgets;
+- provider and running-tool cancellation;
+- exactly-once terminal cancellation events;
+- verified completion reporting in direct agent mode;
+- malformed and duplicate tool-call handling;
+- failed, cancelled, and partial result propagation;
+- prevention of orphan tasks after input validation failure.

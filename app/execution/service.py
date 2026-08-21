@@ -4,7 +4,6 @@ import asyncio
 import hmac
 from typing import Any
 
-from app.agent.approval import ApprovalGrant, approval_binding_digest
 from app.core.models import ToolExecutionStatus
 from app.core.time import utc_now
 from app.execution.context import ExecutionContext
@@ -14,7 +13,7 @@ from app.execution.events import (
     ExecutionEventType,
 )
 from app.execution.journal import ExecutionJournal
-from app.execution.models import RetryPolicy
+from app.execution.models import ExecutionLimits, RetryPolicy
 from app.execution.replanner import Replanner
 from app.execution.state import (
     ExecutionSnapshot,
@@ -23,7 +22,8 @@ from app.execution.state import (
 )
 from app.execution.verification import VerificationEngine
 from app.planning.executor import PlanExecutor
-from app.planning.models import Plan, PlanStep
+from app.planning.models import Plan, PlanStatus, PlanStep
+from app.security.approval import ApprovalGrant, approval_binding_digest
 
 
 class ExecutionObserver:
@@ -85,6 +85,7 @@ class ExecutionService:
         state_store: ExecutionStateStore | None = None,
         journal: ExecutionJournal | None = None,
         replanner: Replanner | None = None,
+        limits: ExecutionLimits | None = None,
     ) -> None:
         self._tool_executor = tool_executor
         self._plan_executor = plan_executor
@@ -99,6 +100,7 @@ class ExecutionService:
         self._state_store = state_store or ExecutionStateStore()
         self._journal = journal
         self._replanner = replanner or Replanner()
+        self._limits = limits or ExecutionLimits()
 
     @property
     def event_bus(self) -> ExecutionEventBus:
@@ -124,6 +126,7 @@ class ExecutionService:
         status: ExecutionSnapshotStatus | None = None,
         step: PlanStep | None = None,
         error: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ExecutionSnapshot:
         try:
             snapshot = self._state_store.get(plan.plan_id)
@@ -151,6 +154,9 @@ class ExecutionService:
         if error is not None:
             snapshot.metadata["error"] = error
 
+        if metadata:
+            snapshot.metadata.update(metadata)
+
         snapshot.touch()
         return self._state_store.save(snapshot)
 
@@ -160,6 +166,8 @@ class ExecutionService:
         *,
         execution_context: ExecutionContext | None = None,
         cancel_event: asyncio.Event | None = None,
+        observer: ExecutionObserver | None = None,
+        limits: ExecutionLimits | None = None,
     ) -> Plan:
         context = (
             execution_context
@@ -170,6 +178,34 @@ class ExecutionService:
         )
 
         context.plan_id = plan.plan_id
+        context.limits = limits or self._limits
+        context.usage.start()
+        active_observer = observer or self._observer
+
+        if len(plan.steps) > context.limits.max_plan_steps:
+            error = (
+                "Plan step budget exceeded: "
+                f"{len(plan.steps)} > {context.limits.max_plan_steps}."
+            )
+            plan.status = PlanStatus.FAILED
+            plan.metadata["execution_error"] = error
+            plan.metadata["execution_outcome"] = "budget_exhausted"
+            plan.metadata["execution_usage"] = context.usage.to_dict()
+            self._save_snapshot(
+                plan,
+                status=ExecutionSnapshotStatus.FAILED,
+                error=error,
+                metadata={"usage": context.usage.to_dict()},
+            )
+            await active_observer.on_plan_failed(plan)
+            await self._publish(
+                ExecutionEvent(
+                    event_type=ExecutionEventType.PLAN_FAILED,
+                    plan_id=plan.plan_id,
+                    data={"error": error, "reason": "budget_exhausted"},
+                )
+            )
+            return plan
 
         self._plan_executor.start(plan)
 
@@ -194,22 +230,6 @@ class ExecutionService:
                 and cancel_event.is_set()
             ):
                 self._plan_executor.cancel(plan)
-                self._save_snapshot(
-                    plan,
-                    status=ExecutionSnapshotStatus.CANCELLED,
-                )
-
-                await self._observer.on_plan_cancelled(
-                    plan
-                )
-
-                await self._publish(
-                    ExecutionEvent(
-                        event_type=ExecutionEventType.PLAN_CANCELLED,
-                        plan_id=plan.plan_id,
-                    )
-                )
-
                 break
 
             step = self._plan_executor.next_step(plan)
@@ -221,6 +241,7 @@ class ExecutionService:
                 step_id=step.step_id,
                 step_name=step.name,
             )
+            context.usage.plan_steps += 1
 
             self._save_snapshot(
                 plan,
@@ -228,7 +249,7 @@ class ExecutionService:
                 step=step,
             )
 
-            await self._observer.on_step_started(
+            await active_observer.on_step_started(
                 plan,
                 step,
             )
@@ -249,6 +270,7 @@ class ExecutionService:
                 step,
                 execution_context=context,
                 cancel_event=cancel_event,
+                observer=active_observer,
             )
 
             if (
@@ -303,12 +325,15 @@ class ExecutionService:
                 continue
 
         if plan.status.value == "completed":
+            plan.metadata["execution_outcome"] = "completed"
+            plan.metadata["execution_usage"] = context.usage.to_dict()
             self._save_snapshot(
                 plan,
                 status=ExecutionSnapshotStatus.COMPLETED,
+                metadata={"usage": context.usage.to_dict()},
             )
 
-            await self._observer.on_plan_completed(
+            await active_observer.on_plan_completed(
                 plan
             )
 
@@ -323,12 +348,15 @@ class ExecutionService:
             )
 
         elif plan.status.value == "failed":
+            plan.metadata.setdefault("execution_outcome", "failed")
+            plan.metadata["execution_usage"] = context.usage.to_dict()
             self._save_snapshot(
                 plan,
                 status=ExecutionSnapshotStatus.FAILED,
+                metadata={"usage": context.usage.to_dict()},
             )
 
-            await self._observer.on_plan_failed(
+            await active_observer.on_plan_failed(
                 plan
             )
 
@@ -340,12 +368,15 @@ class ExecutionService:
             )
 
         elif plan.status.value == "cancelled":
+            plan.metadata["execution_outcome"] = "cancelled"
+            plan.metadata["execution_usage"] = context.usage.to_dict()
             self._save_snapshot(
                 plan,
                 status=ExecutionSnapshotStatus.CANCELLED,
+                metadata={"usage": context.usage.to_dict()},
             )
 
-            await self._observer.on_plan_cancelled(
+            await active_observer.on_plan_cancelled(
                 plan
             )
 
@@ -365,6 +396,7 @@ class ExecutionService:
         *,
         execution_context: ExecutionContext,
         cancel_event: asyncio.Event | None,
+        observer: ExecutionObserver,
     ) -> None:
         tool_name = step.metadata.get(
             "tool_name"
@@ -382,7 +414,7 @@ class ExecutionService:
                 error,
             )
 
-            await self._observer.on_step_failed(
+            await observer.on_step_failed(
                 plan,
                 step,
                 error,
@@ -416,7 +448,7 @@ class ExecutionService:
                 error,
             )
 
-            await self._observer.on_step_failed(
+            await observer.on_step_failed(
                 plan,
                 step,
                 error,
@@ -452,7 +484,7 @@ class ExecutionService:
                 error,
             )
 
-            await self._observer.on_step_failed(
+            await observer.on_step_failed(
                 plan,
                 step,
                 error,
@@ -512,6 +544,15 @@ class ExecutionService:
             1,
             self._retry_policy.max_attempts + 1,
         ):
+            remaining = execution_context.usage.remaining_seconds(
+                execution_context.limits
+            )
+
+            if remaining <= 0:
+                last_error = "Execution time budget exhausted."
+                plan.metadata["execution_outcome"] = "budget_exhausted"
+                break
+
             if (
                 attempt > 1
                 and self._retry_policy.backoff_seconds > 0
@@ -520,6 +561,8 @@ class ExecutionService:
                     self._retry_policy.backoff_seconds
                     * (2 ** (attempt - 2))
                 )
+
+                delay = min(delay, remaining)
 
                 if cancel_event is None:
                     await asyncio.sleep(delay)
@@ -539,6 +582,29 @@ class ExecutionService:
                         )
                         return
 
+                if execution_context.usage.remaining_seconds(
+                    execution_context.limits
+                ) <= 0:
+                    last_error = "Execution time budget exhausted."
+                    plan.metadata["execution_outcome"] = "budget_exhausted"
+                    break
+
+            if (
+                execution_context.usage.tool_calls
+                >= execution_context.limits.max_tool_calls
+            ):
+                last_error = (
+                    "Tool-call budget exhausted: "
+                    f"{execution_context.limits.max_tool_calls}."
+                )
+                plan.metadata["execution_outcome"] = "budget_exhausted"
+                break
+
+            execution_context.usage.tool_calls += 1
+
+            if attempt > 1:
+                execution_context.usage.retries += 1
+
             try:
                 execution_kwargs = {
                     "parameters": parameters,
@@ -550,10 +616,20 @@ class ExecutionService:
                 if cancel_event is not None:
                     execution_kwargs["cancel_event"] = cancel_event
 
-                result = await self._tool_executor.execute(
-                    tool_name.strip(),
-                    **execution_kwargs,
+                result = await asyncio.wait_for(
+                    self._tool_executor.execute(
+                        tool_name.strip(),
+                        **execution_kwargs,
+                    ),
+                    timeout=execution_context.usage.remaining_seconds(
+                        execution_context.limits
+                    ),
                 )
+            except TimeoutError:
+                last_error = "Execution time budget exhausted."
+                plan.metadata["execution_outcome"] = "budget_exhausted"
+                step.metadata["attempts"] = attempt
+                break
             except Exception as exc:
                 last_error = (
                     f"Tool executor exception: {exc}"
@@ -586,6 +662,17 @@ class ExecutionService:
                 )
                 self._plan_executor.cancel(plan)
                 return
+
+            if result.status is ToolExecutionStatus.PARTIAL:
+                step.metadata["partial"] = True
+                step.metadata["tool_result"] = result.data
+                last_error = (
+                    result.error
+                    or result.message
+                    or "Tool execution produced a partial result."
+                )
+                plan.metadata["execution_outcome"] = "partial"
+                break
 
             if attempt > 1:
                 await self._publish(
@@ -639,7 +726,7 @@ class ExecutionService:
                         snapshot
                     )
 
-                await self._observer.on_step_completed(
+                await observer.on_step_completed(
                     plan,
                     step,
                 )
@@ -673,6 +760,12 @@ class ExecutionService:
             ):
                 break
 
+            if (
+                result.status is ToolExecutionStatus.TIMEOUT
+                and result.side_effects_may_continue
+            ):
+                break
+
         attempts = step.metadata.get(
             "attempts"
         )
@@ -685,6 +778,7 @@ class ExecutionService:
         step.metadata["attempts"] = attempts
         step.metadata["verified"] = False
         step.metadata["tool_error"] = last_error
+        plan.metadata["execution_error"] = last_error
 
         snapshot = self._save_snapshot(
             plan,
@@ -709,7 +803,7 @@ class ExecutionService:
             last_error,
         )
 
-        await self._observer.on_step_failed(
+        await observer.on_step_failed(
             plan,
             step,
             last_error,

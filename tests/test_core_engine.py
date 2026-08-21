@@ -1066,7 +1066,8 @@ def test_core_engine_preserves_multiple_tool_call_chain() -> None:
     )
     assert len(calls) == 2
     assert response.metadata["tool_calls"] == 2
-    assert response.metadata["tool_iterations"] == 2
+    assert response.metadata["tool_iterations"] == 1
+    assert response.metadata["model_iterations"] == 2
 
 def test_core_engine_does_not_execute_tool_when_arguments_are_not_a_dict() -> None:
     registry = ProviderRegistry()
@@ -1598,6 +1599,7 @@ def test_core_engine_skips_tool_call_with_empty_function() -> None:
 
     assert response.text == "Fonksiyon bilgisi eksik."
     assert response.metadata["tool_calls"] == 0
+    assert response.metadata["invalid_tool_calls"] == 1
 
 
 def test_core_engine_uses_task_manager() -> None:

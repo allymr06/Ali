@@ -1,192 +1,80 @@
-\# JARVIS Ω - Architecture
+# JARVIS Architecture
 
+## Purpose
 
+JARVIS is a modular, production-oriented personal AI assistant. Its runtime is
+organized around explicit boundaries for providers, memory, planning, task
+tracking, security, tool execution, verification, and persistence.
 
-\## 1. Purpose
+## Core runtime flow
 
-
-
-JARVIS is a modular, production-oriented personal AI assistant for Windows.
-
-
-
-The architecture is designed for:
-
-
-
-\- natural conversation
-
-\- contextual understanding
-
-\- memory
-
-\- tool use
-
-\- task planning
-
-\- multi-step agents
-
-\- Windows integration
-
-\- filesystem operations
-
-\- application control
-
-\- web research
-
-\- voice
-
-\- vision
-
-\- notifications
-
-\- coding assistance
-
-\- diagnostics
-
-\- security
-
-\- extensibility
-
-
-
-The system must remain modular and replaceable.
-
-
-
-\---
-
-
-
-\# 2. Architectural Principle
-
-
-
-The system follows:
-
-
-
-INPUT
-
-→ CONTEXT
-
-→ UNDERSTAND
-
-→ RISK ANALYSIS
-
-→ PLAN
-
-→ TOOL SELECTION
-
-→ PERMISSION
-
-→ EXECUTION
-
-→ VERIFICATION
-
-→ MEMORY
-
-→ RESPONSE
-
-
-
-Not every request must use every stage.
-
-
-
-Simple requests should remain lightweight.
-
-
-
-Complex requests may activate deeper planning and tool execution.
-
-
-
-\---
-
-
-
-\# 3. High-Level Architecture
-
-
+The Phase 2 runtime uses this bounded flow:
 
 ```text
+Request
+  -> Context and memory
+  -> Provider or validated plan
+  -> Approval-bound tool execution
+  -> Result verification
+  -> Task and plan state propagation
+  -> Response with outcome and usage metadata
+```
 
-&#x20;                        JARVIS
+`CoreEngine` is the composition root and public orchestration entry point. It
+owns one shared `ExecutionService` instance. Direct requests, plans, and tracked
+tasks therefore use the same tool executor, verification policy, execution
+limits, state store, and event bus.
 
-&#x20;                          │
+## Responsibilities
 
-&#x20;                   ┌──────┴──────┐
+- `CoreEngine` composes dependencies, enriches request context, runs the bounded
+  provider/tool loop, and exposes plan and task execution.
+- `AgentLoop` selects direct or task mode and maps verified Core outcomes to
+  agent terminal states.
+- `TaskExecutionService` adapts plan lifecycle events to tracked task and task
+  step states. It does not create a second execution runtime.
+- `ExecutionService` executes plan steps, checks approval grants, verifies tool
+  results, applies retries and limits, persists snapshots, and publishes
+  lifecycle events.
+- `ToolExecutor` enforces strict tool contracts and returns structured terminal
+  results.
+- `VerificationEngine` is the only component that decides whether a tool result
+  can complete a step.
+- `TaskManager` owns legal task and task-step state transitions.
 
-&#x20;                   │ Presentation │
+## Identity and traceability
 
-&#x20;                   │              │
+`request_id`, `conversation_id`, `task_id`, `plan_id`, and the current step
+identity travel in `ExecutionContext`. Plan lifecycle events are emitted from
+the shared service, and persisted snapshots include terminal usage metadata.
 
-&#x20;                   │ WinUI 3      │
+## Bounded execution
 
-&#x20;                   │ Voice UI     │
+`ExecutionLimits` applies hard per-execution limits for:
 
-&#x20;                   │ Notifications│
+- plan steps;
+- tool calls, including retry attempts;
+- provider/model iterations;
+- model tokens;
+- elapsed execution time.
 
-&#x20;                   └──────┬───────┘
+Budget exhaustion is a terminal, unverified outcome. It is never reported as a
+successful completion.
 
-&#x20;                          │
+## Terminal outcomes
 
-&#x20;                          ▼
+The runtime distinguishes `completed`, `failed`, `cancelled`, `partial`, and
+`budget_exhausted` outcomes. A plan step completes only after verification
+passes. Partial tool data is retained without treating the operation as
+complete, and unsafe-to-retry timeouts are not repeated.
 
-&#x20;                   ┌──────────────┐
+Tracked tasks retain plan identity, progress, outcome, partial data when
+present, and execution usage. Cancellation is propagated to every active or
+queued task step and produces one plan terminal event.
 
-&#x20;                   │ JARVIS Core  │
+## Dependency direction
 
-&#x20;                   │              │
-
-&#x20;                   │ Orchestrator │
-
-&#x20;                   │ Context      │
-
-&#x20;                   │ Conversation │
-
-&#x20;                   └──────┬───────┘
-
-&#x20;                          │
-
-&#x20;            ┌─────────────┼─────────────┐
-
-&#x20;            ▼             ▼             ▼
-
-&#x20;       Intelligence     Tasks         Security
-
-&#x20;            │             │             │
-
-&#x20;      ┌─────┼─────┐       │       Permission
-
-&#x20;      │     │     │       │       Risk Engine
-
-&#x20;      ▼     ▼     ▼       ▼
-
-&#x20;    Model Memory Vision  Agent
-
-&#x20;    Gateway Engine Engine Engine
-
-&#x20;      │
-
-&#x20;      ▼
-
-&#x20;                Tool Runtime
-
-&#x20;                      │
-
-&#x20;       ┌──────────────┼──────────────┐
-
-&#x20;       ▼              ▼              ▼
-
-&#x20;    Windows        Filesystem       Web
-
-&#x20;    Tools          Tools            Tools
-
-&#x20;       │
-
-&#x20;       ▼
-
-&#x20;               Windows Platform
-
+Low-level execution code does not import the agent orchestration layer.
+Approval binding primitives live in `app.security`, while the agent layer owns
+approval request workflow and policy decisions. This keeps the Core import
+graph acyclic and lets execution be tested in isolation.

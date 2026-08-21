@@ -5,7 +5,7 @@ import pytest
 import asyncio
 from uuid import uuid4
 
-from app.agent.approval import ApprovalGrant
+from app.security.approval import ApprovalGrant
 from app.core.models import RiskLevel, ToolDefinition, ToolExecutionStatus, ToolResult
 from app.execution.models import RetryPolicy
 from app.execution.service import ExecutionService

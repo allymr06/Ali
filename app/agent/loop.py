@@ -240,18 +240,44 @@ class AgentLoop:
         )
 
         if selected_mode is AgentMode.DIRECT:
-            response = await self._engine.handle(
-                request,
-                active_context,
-            )
+            try:
+                response = await self._engine.handle(
+                    request,
+                    active_context,
+                    cancel_event=cancel_event,
+                )
+            except Exception as exc:
+                return AgentExecutionResult(
+                    status=AgentStatus.FAILED,
+                    response_text=f"Request failed: {exc}",
+                    metadata={
+                        "mode": AgentMode.DIRECT.value,
+                        "request_id": str(request.request_id),
+                        "error": str(exc),
+                    },
+                )
+
+            outcome = response.metadata.get("outcome", "completed")
+
+            if outcome == "cancelled":
+                direct_status = AgentStatus.CANCELLED
+            elif response.metadata.get("completion_verified", True):
+                direct_status = AgentStatus.COMPLETED
+            else:
+                direct_status = AgentStatus.FAILED
 
             return AgentExecutionResult(
-                status=AgentStatus.COMPLETED,
+                status=direct_status,
                 response_text=response.text,
                 metadata={
                     "mode": AgentMode.DIRECT.value,
                     "request_id": str(request.request_id),
                     "response_id": str(response.response_id),
+                    "outcome": outcome,
+                    "completion_verified": response.metadata.get(
+                        "completion_verified",
+                        True,
+                    ),
                 },
             )
 

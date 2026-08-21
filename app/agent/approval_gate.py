@@ -5,12 +5,11 @@ from enum import Enum
 from uuid import UUID
 
 from app.agent.approval import (
-    ApprovalGrant,
     ApprovalRequest,
     ApprovalStatus,
     ApprovalStore,
-    approval_binding_digest,
 )
+from app.security.approval import ApprovalGrant, approval_binding_digest
 
 
 class ApprovalGateResult(str, Enum):

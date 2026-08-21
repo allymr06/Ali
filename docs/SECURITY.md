@@ -6,8 +6,9 @@ execution timeout.
 
 ## Tool contracts
 
-- Tool names, descriptions, and timeouts are validated when definitions are
-  created.
+- Tool names, descriptions, versions, timeouts, retry policy, concurrency
+  limits, capabilities, tags, and extension metadata are validated when
+  definitions are created.
 - Input arguments are bound to the handler signature and checked against type
   annotations before execution.
 - Unknown arguments are rejected. Exported JSON schemas set
@@ -44,3 +45,16 @@ an already-running thread; a timeout or cancellation therefore sets
 `side_effects_may_continue` when the worker may still be active. Tool
 implementations with side effects should support cooperative cancellation and
 must be idempotent where possible.
+
+Retries above one attempt require an explicit idempotency declaration in the
+tool contract. Every retry remains subject to the global time and tool-call
+budgets. A timeout that may still have side effects is not retried.
+
+## Discovery and lifecycle
+
+Tools may be exposed to a model only when they are enabled and match the
+request's name, capability, and tag filters. Invalid request filters fail
+closed. A provider tool call outside the exposed request scope is rejected at
+execution time. Disabling a tool removes it from discovery and blocks new execution
+without deleting its registration, allowing controlled runtime lifecycle
+management and auditable registry revision changes.

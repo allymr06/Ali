@@ -6,6 +6,7 @@ import inspect
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime
+from threading import RLock
 from typing import Any, get_type_hints
 
 from app.core.models import (
@@ -16,6 +17,7 @@ from app.core.models import (
 from app.core.time import utc_now
 from app.security.permissions import PermissionDecision, PermissionEngine
 from app.tools.base import RegisteredTool, ToolCallable
+from app.tools.contracts import ToolContract
 from app.tools.registry import ToolRegistry
 
 
@@ -62,11 +64,16 @@ class ToolExecutor:
                 if permission_engine is not None
                 else PermissionEngine()
             )
+        self._active_execution_counts: dict[str, int] = {}
+        self._execution_count_lock = RLock()
 
     def register(
         self,
         definition: ToolDefinition,
         handler: ToolCallable,
+        *,
+        enabled: bool = True,
+        source: str = "runtime",
     ) -> None:
         """Register a tool with its executable handler."""
         name = definition.name.strip()
@@ -81,12 +88,17 @@ class ToolExecutor:
             RegisteredTool(
                 definition=definition,
                 handler=handler,
+                enabled=enabled,
+                source=source,
             )
         )
 
     def unregister(self, name: str) -> RegisteredTool:
         """Remove and return a registered tool."""
-        return self._registry.unregister(name)
+        removed = self._registry.unregister(name)
+        with self._execution_count_lock:
+            self._active_execution_counts.pop(removed.name, None)
+        return removed
 
     def get(self, name: str) -> RegisteredTool:
         """Return a registered tool."""
@@ -99,6 +111,63 @@ class ToolExecutor:
     def list_names(self) -> tuple[str, ...]:
         """Return registered tool names."""
         return self._registry.list_names()
+
+    @property
+    def registry_revision(self) -> int:
+        return self._registry.revision
+
+    def enable(self, name: str) -> RegisteredTool:
+        """Make a registered tool available for discovery and execution."""
+        return self._registry.enable(name)
+
+    def disable(self, name: str) -> RegisteredTool:
+        """Hide and block a registered tool without unregistering it."""
+        return self._registry.disable(name)
+
+    def _try_acquire_execution_slot(self, definition: ToolDefinition) -> bool:
+        limit = definition.max_concurrency
+
+        if limit is None:
+            return True
+
+        with self._execution_count_lock:
+            active = self._active_execution_counts.get(definition.name, 0)
+
+            if active >= limit:
+                return False
+
+            self._active_execution_counts[definition.name] = active + 1
+            return True
+
+    def _release_execution_slot(self, definition: ToolDefinition) -> None:
+        if definition.max_concurrency is None:
+            return
+
+        with self._execution_count_lock:
+            active = self._active_execution_counts.get(definition.name, 0)
+
+            if active <= 1:
+                self._active_execution_counts.pop(definition.name, None)
+            else:
+                self._active_execution_counts[definition.name] = active - 1
+
+    def _concurrency_blocked_result(
+        self,
+        definition: ToolDefinition,
+        started_at: datetime,
+    ) -> ToolResult:
+        return ToolResult(
+            status=ToolExecutionStatus.BLOCKED,
+            tool_name=definition.name,
+            message="Tool concurrency limit reached.",
+            error=(
+                "Maximum concurrent executions: "
+                f"{definition.max_concurrency}."
+            ),
+            started_at=started_at,
+            finished_at=self._now(),
+            verified=False,
+        )
 
     def _now(self) -> datetime:
         return utc_now()
@@ -539,6 +608,9 @@ class ToolExecutor:
                 verified=False,
             )
 
+        if not self._try_acquire_execution_slot(definition):
+            return self._concurrency_blocked_result(definition, started_at)
+
         try:
             if cancel_event is not None and cancel_event.is_set():
                 return self._interrupted_result(
@@ -630,6 +702,8 @@ class ToolExecutor:
                 finished_at=self._now(),
                 verified=False,
             )
+        finally:
+            self._release_execution_slot(definition)
 
     async def _execute_async(
         self,
@@ -698,6 +772,9 @@ class ToolExecutor:
                 finished_at=self._now(),
                 verified=False,
             )
+
+        if not self._try_acquire_execution_slot(definition):
+            return self._concurrency_blocked_result(definition, started_at)
 
         try:
             if cancel_event is not None and cancel_event.is_set():
@@ -825,6 +902,7 @@ class ToolExecutor:
         finally:
             if "cancel_task" in locals() and cancel_task is not None:
                 cancel_task.cancel()
+            self._release_execution_slot(definition)
 
     @staticmethod
     def _annotation_to_schema(annotation: Any) -> dict[str, Any]:
@@ -946,38 +1024,65 @@ class ToolExecutor:
 
         return self._annotation_to_schema(annotation)
 
-    def get_tool_contracts(self) -> list[dict[str, Any]]:
-        """Return provider-neutral input, output, and security contracts."""
-        contracts: list[dict[str, Any]] = []
-
-        for registered in self._registry.list_tools():
-            definition = registered.definition
-            contracts.append(
-                {
-                    "name": definition.name,
-                    "description": definition.description,
-                    "input_schema": self._input_schema(registered),
-                    "output_schema": self._output_schema(registered),
-                    "risk_level": definition.risk_level.value,
-                    "requires_confirmation": definition.requires_confirmation,
-                    "timeout_seconds": definition.timeout_seconds,
-                }
+    def get_contract_objects(
+        self,
+        *,
+        names: set[str] | frozenset[str] | None = None,
+        capabilities: set[str] | frozenset[str] | None = None,
+        tags: set[str] | frozenset[str] | None = None,
+        include_disabled: bool = False,
+    ) -> tuple[ToolContract, ...]:
+        """Return typed contracts filtered by required capabilities/tags."""
+        return tuple(
+            ToolContract(
+                definition=registered.definition,
+                input_schema=self._input_schema(registered),
+                output_schema=self._output_schema(registered),
+                enabled=registered.enabled,
+                source=registered.source,
             )
+            for registered in self._registry.list_tools(
+                names=names,
+                capabilities=capabilities,
+                tags=tags,
+                include_disabled=include_disabled,
+            )
+        )
 
-        return contracts
-
-    def get_openai_tools(self) -> list[dict[str, Any]]:
-        """Generate OpenAI-compatible tool schemas for registered tools."""
+    def get_tool_contracts(
+        self,
+        *,
+        names: set[str] | frozenset[str] | None = None,
+        capabilities: set[str] | frozenset[str] | None = None,
+        tags: set[str] | frozenset[str] | None = None,
+        include_disabled: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Return provider-neutral input, output, and security contracts."""
         return [
-            {
-                "type": "function",
-                "function": {
-                    "name": registered.definition.name,
-                    "description": registered.definition.description,
-                    "parameters": self._input_schema(registered),
-                },
-            }
-            for registered in self._registry.list_tools()
+            contract.to_dict()
+            for contract in self.get_contract_objects(
+                names=names,
+                capabilities=capabilities,
+                tags=tags,
+                include_disabled=include_disabled,
+            )
+        ]
+
+    def get_openai_tools(
+        self,
+        *,
+        names: set[str] | frozenset[str] | None = None,
+        capabilities: set[str] | frozenset[str] | None = None,
+        tags: set[str] | frozenset[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Generate filtered OpenAI-compatible function schemas."""
+        return [
+            contract.to_openai()
+            for contract in self.get_contract_objects(
+                names=names,
+                capabilities=capabilities,
+                tags=tags,
+            )
         ]
 
     def __len__(self) -> int:

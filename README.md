@@ -13,7 +13,7 @@ Implemented:
 - provider abstraction with mock and OpenAI-compatible providers
 - provider registration, selection, timeout, and retry handling
 - conversation orchestration and model tool-call processing
-- structured tool registration and execution
+- versioned tool contracts, dynamic capability discovery, and bounded execution
 - risk-based permissions and approval flow
 - plans, dependencies, task states, progress, and cancellation
 - execution events, journaling, persistence, recovery, and replanning
@@ -34,7 +34,7 @@ Not implemented yet:
 
 ## Verification status
 
-The current test suite contains **451 passing tests** on Python 3.12. This result was verified on 21 August 2026.
+The current test suite contains **565 passing tests** on Python 3.12. This result was verified on 21 August 2026.
 
 The project does not yet claim production readiness. In particular, the first real end-to-end Windows vertical slice still needs to be completed:
 
@@ -94,7 +94,9 @@ An action must not be reported as completed merely because execution returned wi
 
 ## Next milestone
 
-The next milestone is to harden the existing tool runtime and complete the first real Windows vertical slice. This includes separating success from verification, strengthening timeout and cancellation behavior, binding approvals to exact operations, consolidating duplicate tool infrastructure, and adding one independently verified Windows action.
+The next milestone is the first real Windows vertical slice: one production
+Windows action executed through the completed permission, approval, bounded
+tool-runtime, and independent-verification path.
 
 ## Documentation
 

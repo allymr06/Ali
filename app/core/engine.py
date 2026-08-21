@@ -279,6 +279,28 @@ class CoreEngine:
             ),
         }
 
+    @staticmethod
+    def _tool_filter_values(
+        metadata: dict[str, object],
+        key: str,
+    ) -> set[str] | None:
+        value = metadata.get(key)
+
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            values = [value]
+        elif isinstance(value, (list, tuple, set, frozenset)):
+            values = list(value)
+        else:
+            raise ValueError(f"Request metadata '{key}' must be strings.")
+
+        if not all(isinstance(item, str) for item in values):
+            raise ValueError(f"Request metadata '{key}' must be strings.")
+
+        return {item.strip() for item in values if item.strip()}
+
     async def handle(
         self,
         request: Request,
@@ -330,7 +352,29 @@ class CoreEngine:
         active_limits = limits or self._execution_limits
         usage = ExecutionUsage()
         usage.start()
-        tool_schemas = self._tool_executor.get_openai_tools()
+        try:
+            tool_schemas = self._tool_executor.get_openai_tools(
+                names=self._tool_filter_values(
+                    request.metadata,
+                    "allowed_tools",
+                ),
+                capabilities=self._tool_filter_values(
+                    request.metadata,
+                    "tool_capabilities",
+                ),
+                tags=self._tool_filter_values(
+                    request.metadata,
+                    "tool_tags",
+                ),
+            )
+        except ValueError as exc:
+            tool_schemas = []
+            request.metadata["tool_filter_error"] = str(exc)
+        exposed_tool_names = {
+            str(item.get("function", {}).get("name", ""))
+            for item in tool_schemas
+            if isinstance(item.get("function"), dict)
+        }
         tool_results: list[ToolResult] = []
         processed_tool_calls: dict[str, ToolResult] = {}
         duplicate_tool_calls = 0
@@ -449,6 +493,12 @@ class CoreEngine:
                     result = self._invalid_tool_result(
                         "",
                         "Tool function name is missing.",
+                    )
+                elif tool_name.strip() not in exposed_tool_names:
+                    invalid_tool_calls += 1
+                    result = self._invalid_tool_result(
+                        tool_name,
+                        "Tool is not available for this request.",
                     )
                 else:
                     raw_arguments = function.get("arguments", "{}")

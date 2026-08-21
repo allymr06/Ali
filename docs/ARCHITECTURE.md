@@ -36,7 +36,8 @@ limits, state store, and event bus.
 - `ExecutionService` executes plan steps, checks approval grants, verifies tool
   results, applies retries and limits, persists snapshots, and publishes
   lifecycle events.
-- `ToolExecutor` enforces strict tool contracts and returns structured terminal
+- `ToolExecutor` enforces strict tool contracts, owns per-tool concurrency
+  admission and provider schema generation, and returns structured terminal
   results.
 - `VerificationEngine` is the only component that decides whether a tool result
   can complete a step.
@@ -120,3 +121,22 @@ the copy-isolated, thread-safe in-memory implementation. Active conversations
 can be archived, reactivated, listed, or deleted without coupling providers to
 storage. Provider adapters receive normalized history and do not own lifecycle
 state.
+
+## Tool runtime
+
+Phase 5 defines every tool through one provider-neutral `ToolContract`. The
+contract includes version, input and output schemas, risk and approval rules,
+timeout, retry policy, concurrency limit, capabilities, tags, source, and
+extension metadata. Provider-specific function schemas are derived from this
+contract instead of maintained separately.
+
+`ToolRegistry` supports runtime registration, removal, enable/disable lifecycle
+changes, and a monotonic revision for cache invalidation. Discovery can be
+restricted by exact tool names, required capabilities, and tags. Disabled
+tools are hidden from model providers and rejected by execution.
+
+`CoreEngine` can scope the tools exposed for one request with
+`allowed_tools`, `tool_capabilities`, and `tool_tags` metadata. Malformed
+filters fail closed and expose no tools. Tool-specific retries can only be
+declared for idempotent tools, and the shared execution service continues to
+count every attempt against the execution budget.

@@ -539,10 +539,28 @@ class ExecutionService:
             )
 
         last_error = ""
+        effective_max_attempts = self._retry_policy.max_attempts
+        effective_backoff_seconds = self._retry_policy.backoff_seconds
+
+        try:
+            tool_definition = self._tool_executor.get(
+                tool_name.strip()
+            ).definition
+        except KeyError:
+            tool_definition = None
+
+        if (
+            tool_definition is not None
+            and tool_definition.retry_max_attempts > effective_max_attempts
+        ):
+            effective_max_attempts = tool_definition.retry_max_attempts
+            effective_backoff_seconds = (
+                tool_definition.retry_backoff_seconds
+            )
 
         for attempt in range(
             1,
-            self._retry_policy.max_attempts + 1,
+            effective_max_attempts + 1,
         ):
             remaining = execution_context.usage.remaining_seconds(
                 execution_context.limits
@@ -555,10 +573,10 @@ class ExecutionService:
 
             if (
                 attempt > 1
-                and self._retry_policy.backoff_seconds > 0
+                and effective_backoff_seconds > 0
             ):
                 delay = (
-                    self._retry_policy.backoff_seconds
+                    effective_backoff_seconds
                     * (2 ** (attempt - 2))
                 )
 
@@ -772,7 +790,7 @@ class ExecutionService:
 
         if not isinstance(attempts, int):
             attempts = (
-                self._retry_policy.max_attempts
+                effective_max_attempts
             )
 
         step.metadata["attempts"] = attempts

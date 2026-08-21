@@ -62,3 +62,15 @@ The Phase 4 regression coverage includes:
 - bounded summaries with source turn count and update time;
 - optional system prompt injection without persisted fake turns;
 - conversation and turn trace metadata on Core responses.
+
+The Phase 5 regression coverage includes:
+
+- versioned tool metadata and unsafe retry-contract rejection;
+- provider-neutral contract and OpenAI schema derivation;
+- dynamic enable, disable, unregister, and registry revision behavior;
+- exact-name, capability, and tag-based discovery;
+- request-scoped tool exposure with malformed filters failing closed;
+- per-tool concurrency admission for overlapping execution;
+- tool-specific idempotent retry policy through the shared execution service;
+- preservation of existing input, output, permission, timeout, cancellation,
+  and verification boundaries.

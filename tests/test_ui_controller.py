@@ -8,7 +8,7 @@ import pytest
 
 from app.bootstrap import create_application
 from app.config.settings import Settings
-from app.core.models import Response
+from app.core.models import Context, Request, Response
 from app.research.models import ResearchReport
 from app.ui.controller import AsyncRunner, DesktopController
 from app.ui.models import ChatMessage
@@ -54,6 +54,68 @@ async def test_desktop_command_enters_real_core_and_preserves_conversation() -> 
     assert [item.role for item in controller.state.messages] == ["user", "assistant"]
     assert controller.state.busy is False
     assert controller.state.status == "LOCAL CORE READY"
+
+
+@pytest.mark.asyncio
+async def test_desktop_command_maps_final_assurance_metadata() -> None:
+    app = application()
+
+    class AssuranceEngine:
+        async def handle(self, request, context, **_kwargs):
+            return Response(
+                "Kanıtlı yanıt",
+                request_id=request.request_id,
+                metadata={
+                    "reasoning_level": "high",
+                    "assurance_level": "tool_verified",
+                    "uncertainty_summary": "Sınırlı kapsam.",
+                    "provider_metadata": {"private": "not-for-ui"},
+                },
+            )
+
+    app.engine = AssuranceEngine()
+    controller = DesktopController(app)
+
+    message = await controller.submit_command("Doğrula")
+
+    assert message.metadata == {
+        "reasoning_level": "high",
+        "assurance_level": "tool_verified",
+        "uncertainty_summary": "Sınırlı kapsam.",
+    }
+    assert controller.state.messages[-1] == message
+
+
+def test_controller_restores_persisted_assurance_metadata() -> None:
+    app = application()
+    context = Context()
+    request = Request("Önceki soru")
+    response = Response(
+        "Önceki yanıt",
+        request_id=request.request_id,
+        metadata={
+            "outcome": "completed",
+            "provider": "gemini",
+            "model": "gemini-test",
+            "reasoning_level": "medium",
+            "assurance_level": "research_supported",
+            "uncertainty_summary": "Kaynak tarihi bilinmiyor.",
+        },
+    )
+    app.conversation_engine.prepare_request(request, context)
+    app.conversation_engine.complete_response(request, response, context)
+
+    controller = DesktopController(app)
+
+    assert controller.context.conversation_id == context.conversation_id
+    assert controller.state.messages[-1].metadata == {
+        "outcome": "completed",
+        "provider": "gemini",
+        "model": "gemini-test",
+        "reasoning_level": "medium",
+        "assurance_level": "research_supported",
+        "uncertainty_summary": "Kaynak tarihi bilinmiyor.",
+    }
 
 
 

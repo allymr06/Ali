@@ -279,6 +279,11 @@ class ConversationEngine:
                     "outcome": response.metadata.get("outcome"),
                     "provider": response.metadata.get("provider"),
                     "model": response.metadata.get("model"),
+                    "reasoning_level": response.metadata.get("reasoning_level"),
+                    "assurance_level": response.metadata.get("assurance_level"),
+                    "uncertainty_summary": response.metadata.get(
+                        "uncertainty_summary"
+                    ),
                 },
             )
             conversation.add_turn(turn)

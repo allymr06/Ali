@@ -43,6 +43,7 @@ class StaticProvider(AIProvider):
         self.calls = 0
         self.models: list[str | None] = []
         self.response_formats: list[dict | None] = []
+        self.requests: list[Request] = []
 
     @property
     def name(self) -> str:
@@ -63,6 +64,7 @@ class StaticProvider(AIProvider):
         response_format=None,
     ):
         self.calls += 1
+        self.requests.append(request)
         self.models.append(model)
         self.response_formats.append(response_format)
         if self.errors:
@@ -324,6 +326,47 @@ async def test_gateway_normalizes_compatible_provider_response():
 
 
 @pytest.mark.asyncio
+async def test_gateway_passes_resolved_task_type_on_a_request_copy():
+    provider = StaticProvider("one")
+    gateway = ProviderGateway(registry_with(provider), max_retries=0)
+    request = Request("hello", metadata={"client_marker": "original"})
+
+    await gateway.generate(
+        request,
+        Context(),
+        task_type=TaskType.COMPLEX,
+    )
+
+    provider_request = provider.requests[0]
+    assert provider_request is not request
+    assert provider_request.request_id == request.request_id
+    assert provider_request.metadata["task_type"] == "complex"
+    assert "routing_reason" in provider_request.metadata
+    assert request.metadata == {"client_marker": "original"}
+
+
+@pytest.mark.asyncio
+async def test_gateway_keeps_reasoning_proportional_when_tools_are_available():
+    provider = StaticProvider(
+        "one",
+        capabilities=ModelCapabilities(text=True, tool_calling=True),
+    )
+    gateway = ProviderGateway(registry_with(provider), max_retries=0)
+    request = Request("Yalnızca hazırım yaz")
+
+    await gateway.generate(
+        request,
+        Context(),
+        tools=[{"type": "function", "function": {"name": "sample"}}],
+    )
+
+    provider_metadata = provider.requests[0].metadata
+    assert provider_metadata["task_type"] == "agentic"
+    assert provider_metadata["reasoning_task_type"] == "simple"
+    assert request.metadata == {}
+
+
+@pytest.mark.asyncio
 async def test_gateway_rejects_provider_identity_mismatch():
     provider = StaticProvider(
         "one",
@@ -426,6 +469,49 @@ async def test_gateway_falls_back_and_records_health():
     assert response.metadata["fallback_count"] == 1
     assert gateway.health("primary").failures == 1
     assert gateway.health("secondary").successes == 1
+
+
+@pytest.mark.asyncio
+async def test_gateway_does_not_leak_reasoning_level_across_fallbacks():
+    class ReasoningProvider(StaticProvider):
+        def __init__(self, *args, reasoning_level: str, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            self.reasoning_level = reasoning_level
+            self.incoming_levels: list[str | None] = []
+
+        async def generate(self, request, context, **kwargs):
+            self.incoming_levels.append(
+                request.metadata.get("_reasoning_level")
+            )
+            request.metadata["_reasoning_level"] = self.reasoning_level
+            return await super().generate(request, context, **kwargs)
+
+    primary = ReasoningProvider(
+        "primary",
+        reasoning_level="high",
+        errors=[ProviderUnavailableError("down")],
+    )
+    secondary = ReasoningProvider(
+        "secondary",
+        reasoning_level="low",
+    )
+    registry = registry_with(primary, secondary, default="primary")
+    catalog = ModelCatalog()
+    catalog.register(profile("primary", "primary-model", priority=1))
+    catalog.register(profile("secondary", "secondary-model", priority=2))
+    gateway = ProviderGateway(
+        registry,
+        router=ModelRouter(registry, catalog),
+        max_retries=0,
+    )
+    request = Request("hello", metadata={"client_marker": "original"})
+
+    result = await gateway.generate(request, Context())
+
+    assert primary.incoming_levels == [None]
+    assert secondary.incoming_levels == [None]
+    assert result.metadata["reasoning_level"] == "low"
+    assert request.metadata == {"client_marker": "original"}
 
 
 @pytest.mark.asyncio
@@ -713,6 +799,7 @@ class StreamingProvider(StaticProvider):
 
     async def stream(self, request, context, **kwargs):
         self.stream_calls += 1
+        self.requests.append(request)
         events = self.events.pop(0)
         if isinstance(events, Exception):
             raise events
@@ -738,6 +825,33 @@ async def test_gateway_streams_normalized_chunks_with_metadata():
     assert [chunk.text for chunk in chunks] == ["hi"]
     assert chunks[0].metadata["gateway_attempt"] == 1
     assert gateway.health("stream").successes == 1
+
+
+@pytest.mark.asyncio
+async def test_gateway_stream_passes_task_type_on_a_request_copy():
+    provider = StreamingProvider(
+        "stream",
+        [[ModelStreamChunk(text="hi", model="m", provider="stream")]],
+    )
+    gateway = ProviderGateway(registry_with(provider), max_retries=0)
+    request = Request("hello", metadata={"client_marker": "original"})
+
+    chunks = [
+        chunk
+        async for chunk in gateway.stream(
+            request,
+            Context(),
+            task_type=TaskType.VISION,
+        )
+    ]
+
+    assert len(chunks) == 1
+    provider_request = provider.requests[0]
+    assert provider_request is not request
+    assert provider_request.request_id == request.request_id
+    assert provider_request.metadata["task_type"] == "vision"
+    assert "routing_reason" in provider_request.metadata
+    assert request.metadata == {"client_marker": "original"}
 
 
 @pytest.mark.asyncio

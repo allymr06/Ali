@@ -101,7 +101,7 @@ class Settings:
     default_model: str = "mock-model"
     openai_model: str | None = None
     gemini_model: str | None = None
-    gemini_reasoning_effort: str = "minimal"
+    gemini_reasoning_effort: str = "auto"
 
     ollama_model: str | None = None
     ollama_base_url: str = "http://localhost:11434/v1/"
@@ -258,13 +258,14 @@ class Settings:
             )
 
         if self.gemini_reasoning_effort not in {
+            "auto",
             "minimal",
             "low",
             "medium",
             "high",
         }:
             raise ValueError(
-                "gemini_reasoning_effort must be minimal, low, medium, or high."
+                "gemini_reasoning_effort must be auto, minimal, low, medium, or high."
             )
         if not self.gemini_base_url.strip():
             raise ValueError("gemini_base_url cannot be empty.")
@@ -499,7 +500,7 @@ class Settings:
             ),
             gemini_reasoning_effort=os.getenv(
                 "JARVIS_GEMINI_REASONING_EFFORT",
-                "minimal",
+                "auto",
             ).strip().lower(),
             provider_timeout_seconds=_get_float(
                 "JARVIS_PROVIDER_TIMEOUT",

@@ -852,6 +852,19 @@ class DesktopWindow:
                 "Gemini",
                 bool(self.controller.application.settings.gemini_api_key),
             ),
+            (
+                "Ollama",
+                bool(
+                    self.controller.application.settings.ollama_enabled
+                    or (
+                        self.controller.application.settings
+                        .default_provider
+                        .strip()
+                        .casefold()
+                        == "ollama"
+                    )
+                ),
+            ),
             ("Voice", self._snapshot.voice_available),
             ("Vision", self._snapshot.vision_available),
             ("Web research", self._snapshot.research_available),
@@ -937,7 +950,7 @@ class DesktopWindow:
         provider_input = ttk.Combobox(
             api,
             textvariable=self.api_provider,
-            values=("gemini", "openai", "mock"),
+            values=("gemini", "openai", "ollama", "mock"),
             state="readonly",
             style="Jarvis.TCombobox",
         )
@@ -948,10 +961,33 @@ class DesktopWindow:
             fill="x", ipady=7, pady=(0, 10)
         )
         self._field_label(api, "API KEY")
-        self._entry(
-            api, textvariable=self.api_key, show="•"
-        ).pack(fill="x", ipady=7)
-        if state.credential_configured:
+        self.api_key_entry = self._entry(
+            api,
+            textvariable=self.api_key,
+            show="*",
+        )
+        self.api_key_entry.pack(
+            fill="x",
+            ipady=7,
+        )
+
+        if not state.credential_required:
+            self.api_key_entry.configure(
+                state="disabled"
+            )
+            self._line(
+                api,
+                "No API key required",
+                (
+                    "Ollama uses the local Ollama service."
+                    if state.provider == "ollama"
+                    else (
+                        "This provider does not use "
+                        "an API credential."
+                    )
+                ),
+            )
+        elif state.credential_configured:
             self._line(
                 api,
                 "Credential stored",
@@ -984,13 +1020,25 @@ class DesktopWindow:
             self._save_api_settings,
             variant="primary",
         ).pack(side="left", padx=6)
-        delete = self._button(
-            actions, "REMOVE KEY", self._delete_api_key, variant="ghost"
+        self.api_delete_button = self._button(
+            actions,
+            "REMOVE KEY",
+            self._delete_api_key,
+            variant="ghost",
         )
-        delete.configure(
-            state="normal" if state.credential_configured else "disabled"
+        self.api_delete_button.configure(
+            state=(
+                "normal"
+                if (
+                    state.credential_required
+                    and state.credential_configured
+                )
+                else "disabled"
+            )
         )
-        delete.pack(side="right")
+        self.api_delete_button.pack(
+            side="right"
+        )
 
     def _entry(
         self,
@@ -1028,10 +1076,51 @@ class DesktopWindow:
         defaults = {
             "gemini": "gemini-3.7-flash",
             "openai": "gpt-4o-mini",
+            "ollama": "llama3.2:latest",
             "mock": "mock-model",
         }
-        self.api_model.set(defaults[self.api_provider.get()])
+
+        provider = (
+            self.api_provider.get()
+        )
+
+        self.api_model.set(
+            defaults[provider]
+        )
         self.api_key.set("")
+
+        required = (
+            self.api_settings is not None
+            and self.api_settings.requires_credential(
+                provider
+            )
+        )
+
+        entry = getattr(
+            self,
+            "api_key_entry",
+            None,
+        )
+
+        if entry is not None:
+            entry.configure(
+                state=(
+                    "normal"
+                    if required
+                    else "disabled"
+                )
+            )
+
+        delete = getattr(
+            self,
+            "api_delete_button",
+            None,
+        )
+
+        if delete is not None:
+            delete.configure(
+                state="disabled"
+            )
 
     def _render_context(self, tab: str) -> None:
         self._clear(self.context_body)
@@ -1152,8 +1241,8 @@ class DesktopWindow:
         if self._snapshot.provider == "mock":
             self.render(UIScreen.SETTINGS)
             messagebox.showinfo(
-                "API provider required",
-                "Add an API key in Settings before starting a real conversation.",
+                "Provider required",
+                "Select and activate a real provider in Settings before starting a conversation.",
                 parent=self.root,
             )
             return "break"

@@ -16,6 +16,7 @@ from app.providers.base import (
 from app.providers.catalog import ModelCatalog
 from app.providers.gateway import ProviderGateway, ProviderHealth
 from app.providers.gemini import GeminiProvider
+from app.providers.ollama import OllamaProvider
 from app.providers.models import ModelProfile, RoutingDecision, TaskType
 from app.providers.router import ModelRouter
 
@@ -28,6 +29,7 @@ __all__ = [
     "ModelRouter",
     "ModelStreamChunk",
     "GeminiProvider",
+    "OllamaProvider",
     "ProviderAuthenticationError",
     "ProviderCapability",
     "ProviderCapabilityError",

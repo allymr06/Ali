@@ -21,6 +21,7 @@ from app.platform.windows import WindowsIntegrationService
 from app.providers.mock import MockProvider
 from app.providers.openai import OpenAIProvider
 from app.providers.gemini import GeminiProvider
+from app.providers.ollama import OllamaProvider
 from app.providers.catalog import ModelCatalog
 from app.providers.gateway import ProviderGateway
 from app.providers.models import ModelProfile, TaskType
@@ -114,9 +115,12 @@ def create_application(
     mock_provider = MockProvider()
     openai_provider = OpenAIProvider(active_settings)
     gemini_provider = GeminiProvider(active_settings)
+    ollama_provider = OllamaProvider(active_settings)
+
     provider_registry.register(mock_provider)
     provider_registry.register(openai_provider)
     provider_registry.register(gemini_provider)
+    provider_registry.register(ollama_provider)
 
     voice_provider_registry = (
         create_default_voice_provider_registry()
@@ -169,6 +173,20 @@ def create_application(
             priority=75,
         )
     )
+
+    ollama_model = (
+        active_settings.ollama_model
+        or "llama3.2:latest"
+    )
+    model_catalog.register(
+        ModelProfile(
+            provider="ollama",
+            model=ollama_model,
+            capabilities=ollama_provider.capabilities,
+            priority=90,
+        )
+    )
+
     provider_gateway = ProviderGateway(
         provider_registry,
         router=ModelRouter(provider_registry, model_catalog),

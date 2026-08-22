@@ -91,6 +91,10 @@ class Settings:
     gemini_model: str | None = None
     gemini_reasoning_effort: str = "low"
 
+    ollama_model: str | None = None
+    ollama_base_url: str = "http://localhost:11434/v1/"
+    ollama_enabled: bool = False
+
     provider_timeout_seconds: float = 30.0
     provider_max_retries: int = 2
     provider_retry_backoff_seconds: float = 0.25
@@ -194,6 +198,16 @@ class Settings:
             raise ValueError("openai_model cannot be empty when set.")
         if self.gemini_model is not None and not self.gemini_model.strip():
             raise ValueError("gemini_model cannot be empty when set.")
+        if self.ollama_model is not None and not self.ollama_model.strip():
+            raise ValueError("ollama_model cannot be empty when set.")
+        if not self.ollama_base_url.strip():
+            raise ValueError("ollama_base_url cannot be empty.")
+        if not self.ollama_base_url.startswith(
+            ("http://", "https://")
+        ):
+            raise ValueError(
+                "ollama_base_url must use http or https."
+            )
         if self.gemini_reasoning_effort not in {"low", "medium", "high"}:
             raise ValueError(
                 "gemini_reasoning_effort must be low, medium, or high."
@@ -383,6 +397,15 @@ class Settings:
             ),
             openai_model=os.getenv("JARVIS_OPENAI_MODEL"),
             gemini_model=os.getenv("JARVIS_GEMINI_MODEL"),
+            ollama_model=os.getenv("JARVIS_OLLAMA_MODEL"),
+            ollama_base_url=os.getenv(
+                "JARVIS_OLLAMA_BASE_URL",
+                "http://localhost:11434/v1/",
+            ),
+            ollama_enabled=_get_bool(
+                "JARVIS_OLLAMA_ENABLED",
+                False,
+            ),
             gemini_reasoning_effort=os.getenv(
                 "JARVIS_GEMINI_REASONING_EFFORT",
                 "low",

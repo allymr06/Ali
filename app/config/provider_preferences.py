@@ -7,9 +7,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
-SUPPORTED_PROVIDERS = frozenset({"gemini", "mock", "openai"})
+SUPPORTED_PROVIDERS = frozenset(
+    {"gemini", "mock", "ollama", "openai"}
+)
 DEFAULT_GEMINI_MODEL = "gemini-3.7-flash"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+DEFAULT_OLLAMA_MODEL = "llama3.2:latest"
 _MODEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 

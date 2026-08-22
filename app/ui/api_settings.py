@@ -8,6 +8,7 @@ from openai import AsyncOpenAI
 
 from app.config.provider_preferences import (
     DEFAULT_GEMINI_MODEL,
+    DEFAULT_OLLAMA_MODEL,
     DEFAULT_OPENAI_MODEL,
     ProviderPreferences,
     ProviderPreferencesStore,
@@ -23,6 +24,7 @@ class APISettingsSnapshot:
     provider: str
     model: str
     credential_configured: bool
+    credential_required: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +35,10 @@ class ConnectionTestResult:
 
 class APISettingsService:
     """Coordinate non-secret preferences and OS-backed API credentials."""
+
+    _CREDENTIAL_PROVIDERS = frozenset(
+        {"gemini", "openai"}
+    )
 
     def __init__(
         self,
@@ -56,41 +62,102 @@ class APISettingsService:
         self.preferences = preferences or ProviderPreferencesStore()
         self._client_factory = client_factory
 
+    @classmethod
+    def requires_credential(
+        cls,
+        provider: str,
+    ) -> bool:
+        return (
+            validate_provider(provider)
+            in cls._CREDENTIAL_PROVIDERS
+        )
+
     @property
     def credentials(self) -> CredentialStore:
         """Return the credential store for the currently selected provider."""
         provider = self.preferences.load().provider
-        return self._credential_store(provider)
+
+        if not self.requires_credential(
+            provider
+        ):
+            raise ValueError(
+                f"{provider.title()} does not use an API credential."
+            )
+
+        return self._credential_store(
+            provider
+        )
 
     def _credential_store(self, provider: str) -> CredentialStore:
         selected = validate_provider(provider)
         if selected == "mock":
             selected = "gemini"
-        return self._credential_stores[selected]
+
+        if selected not in self._credential_stores:
+            raise ValueError(
+                f"{selected.title()} does not use an API credential."
+            )
+
+        return self._credential_stores[
+            selected
+        ]
 
     def snapshot(self) -> APISettingsSnapshot:
         profile = self.preferences.load()
+
+        credential_required = (
+            self.requires_credential(
+                profile.provider
+            )
+        )
+
+        configured = (
+            bool(
+                self._credential_store(
+                    profile.provider
+                ).read()
+            )
+            if credential_required
+            else False
+        )
+
         return APISettingsSnapshot(
             provider=profile.provider,
             model=profile.model,
-            credential_configured=(
-                False
-                if profile.provider == "mock"
-                else bool(self._credential_store(profile.provider).read())
-            ),
+            credential_configured=configured,
+            credential_required=credential_required,
         )
 
     def save(self, provider: str, model: str, api_key: str | None = None) -> None:
         selected_provider = validate_provider(provider)
         selected_model = validate_model(model)
         normalized_key = api_key.strip() if api_key is not None else ""
-        store = self._credential_store(selected_provider)
-        if normalized_key and selected_provider != "mock":
-            store.write(normalized_key)
-        if selected_provider != "mock" and not (
-            normalized_key or store.read()
+
+        if self.requires_credential(
+            selected_provider
         ):
-            raise ValueError(f"{selected_provider.title()} requires an API key.")
+            store = self._credential_store(
+                selected_provider
+            )
+
+            if normalized_key:
+                store.write(
+                    normalized_key
+                )
+
+            if not (
+                normalized_key
+                or store.read()
+            ):
+                raise ValueError(
+                    f"{selected_provider.title()} requires an API key."
+                )
+
+        elif normalized_key:
+            raise ValueError(
+                f"{selected_provider.title()} does not use an API key."
+            )
+
         self.preferences.save(
             ProviderPreferences(
                 provider=selected_provider,
@@ -100,25 +167,42 @@ class APISettingsService:
 
     def delete_api_key(self) -> bool:
         profile = self.preferences.load()
-        if profile.provider == "mock":
+
+        if not self.requires_credential(
+            profile.provider
+        ):
             return False
-        deleted = self._credential_store(profile.provider).delete()
-        if profile.provider in {"gemini", "openai"}:
-            self.preferences.save(
-                ProviderPreferences(provider="mock", model=profile.model)
+
+        deleted = (
+            self._credential_store(
+                profile.provider
+            ).delete()
+        )
+
+        self.preferences.save(
+            ProviderPreferences(
+                provider="mock",
+                model=profile.model,
             )
+        )
+
         return deleted
 
     def build_runtime_settings(self) -> Settings:
         base = Settings.from_environment()
         profile = self.preferences.load()
         provider = os.getenv("JARVIS_DEFAULT_PROVIDER") or profile.provider
-        provider_model_env = (
-            "JARVIS_GEMINI_MODEL"
-            if provider == "gemini"
-            else "JARVIS_OPENAI_MODEL"
-        )
-        model = os.getenv(provider_model_env) or os.getenv(
+        provider_model_env = {
+            "gemini": "JARVIS_GEMINI_MODEL",
+            "ollama": "JARVIS_OLLAMA_MODEL",
+            "openai": "JARVIS_OPENAI_MODEL",
+        }.get(provider)
+
+        model = (
+            os.getenv(provider_model_env)
+            if provider_model_env
+            else None
+        ) or os.getenv(
             "JARVIS_DEFAULT_MODEL"
         ) or profile.model
         voice_provider_names = {
@@ -156,8 +240,25 @@ class APISettingsService:
             base,
             default_provider=provider,
             default_model=model,
-            openai_model=model if provider == "openai" else base.openai_model,
-            gemini_model=model if provider == "gemini" else base.gemini_model,
+            openai_model=(
+                model
+                if provider == "openai"
+                else base.openai_model
+            ),
+            gemini_model=(
+                model
+                if provider == "gemini"
+                else base.gemini_model
+            ),
+            ollama_model=(
+                model
+                if provider == "ollama"
+                else base.ollama_model
+            ),
+            ollama_enabled=(
+                base.ollama_enabled
+                or provider == "ollama"
+            ),
             voice_enabled=(
                 base.voice_enabled
                 if "JARVIS_VOICE_ENABLED" in os.environ
@@ -186,21 +287,51 @@ class APISettingsService:
         selected_provider = validate_provider(provider)
         selected_model = validate_model(model)
         if selected_provider == "mock":
-            return ConnectionTestResult(True, "Local mock provider is available.")
-        candidate = (api_key or "").strip() or self._credential_store(
-            selected_provider
-        ).read()
-        if not candidate:
-            return ConnectionTestResult(False, "Enter an API key first.")
-        client_arguments: dict[str, Any] = {
-            "api_key": candidate,
-            "timeout": 15.0,
-            "max_retries": 0,
-        }
-        if selected_provider == "gemini":
-            client_arguments["base_url"] = (
-                Settings.from_environment().gemini_base_url
+            return ConnectionTestResult(
+                True,
+                "Local mock provider is available.",
             )
+
+        settings = (
+            Settings.from_environment()
+        )
+
+        secret_candidate: str | None = None
+
+        if selected_provider == "ollama":
+            client_arguments: dict[str, Any] = {
+                "api_key": "ollama",
+                "base_url": (
+                    settings.ollama_base_url
+                ),
+                "timeout": 15.0,
+                "max_retries": 0,
+            }
+
+        else:
+            secret_candidate = (
+                (api_key or "").strip()
+                or self._credential_store(
+                    selected_provider
+                ).read()
+            )
+
+            if not secret_candidate:
+                return ConnectionTestResult(
+                    False,
+                    "Enter an API key first.",
+                )
+
+            client_arguments = {
+                "api_key": secret_candidate,
+                "timeout": 15.0,
+                "max_retries": 0,
+            }
+
+            if selected_provider == "gemini":
+                client_arguments["base_url"] = (
+                    settings.gemini_base_url
+                )
         client = self._client_factory(
             **client_arguments,
         )
@@ -212,7 +343,16 @@ class APISettingsService:
                 f"Connected successfully. Model: {resolved}",
             )
         except Exception as exc:
-            safe_message = str(exc).replace(candidate, "[REDACTED]")
+            safe_message = str(exc)
+
+            if secret_candidate:
+                safe_message = (
+                    safe_message.replace(
+                        secret_candidate,
+                        "[REDACTED]",
+                    )
+                )
+
             return ConnectionTestResult(
                 False,
                 f"Connection failed: {safe_message}",
@@ -234,6 +374,7 @@ __all__ = [
     "APISettingsSnapshot",
     "ConnectionTestResult",
     "DEFAULT_GEMINI_MODEL",
+    "DEFAULT_OLLAMA_MODEL",
     "DEFAULT_OPENAI_MODEL",
     "create_api_settings_service",
 ]

@@ -314,3 +314,79 @@ def test_settings_reads_and_validates_reliability_configuration(monkeypatch) -> 
     with pytest.raises(ValueError, match="circuit"):
         Settings(provider_circuit_failure_threshold=0)
 
+
+
+
+def test_settings_reads_ollama_warm_configuration(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        "JARVIS_OLLAMA_WARM_ENABLED",
+        "true",
+    )
+
+    monkeypatch.setenv(
+        "JARVIS_OLLAMA_KEEP_ALIVE_SECONDS",
+        "1800",
+    )
+
+    monkeypatch.setenv(
+        "JARVIS_OLLAMA_WARM_REFRESH_SECONDS",
+        "120",
+    )
+
+    monkeypatch.setenv(
+        "JARVIS_OLLAMA_WARM_RETRY_SECONDS",
+        "7.5",
+    )
+
+    monkeypatch.setenv(
+        "JARVIS_OLLAMA_WARMUP_TIMEOUT_SECONDS",
+        "20",
+    )
+
+    settings = Settings.from_environment()
+
+    assert settings.ollama_warm_enabled is True
+
+    assert (
+        settings.ollama_keep_alive_seconds
+        == 1800.0
+    )
+
+    assert (
+        settings.ollama_warm_refresh_seconds
+        == 120.0
+    )
+
+    assert (
+        settings.ollama_warm_retry_seconds
+        == 7.5
+    )
+
+    assert (
+        settings.ollama_warmup_timeout_seconds
+        == 20.0
+    )
+
+
+def test_settings_rejects_invalid_ollama_warm_configuration(
+) -> None:
+    import pytest
+
+    with pytest.raises(
+        ValueError,
+        match="warm durations",
+    ):
+        Settings(
+            ollama_warmup_timeout_seconds=0,
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="less than",
+    ):
+        Settings(
+            ollama_keep_alive_seconds=30,
+            ollama_warm_refresh_seconds=30,
+        )

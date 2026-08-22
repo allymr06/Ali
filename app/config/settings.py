@@ -95,6 +95,14 @@ class Settings:
     ollama_base_url: str = "http://localhost:11434/v1/"
     ollama_enabled: bool = False
 
+    # Keep the local Ollama model hot without blocking
+    # JARVIS application startup.
+    ollama_warm_enabled: bool = False
+    ollama_keep_alive_seconds: float = 1800.0
+    ollama_warm_refresh_seconds: float = 120.0
+    ollama_warm_retry_seconds: float = 15.0
+    ollama_warmup_timeout_seconds: float = 30.0
+
     provider_timeout_seconds: float = 30.0
     provider_max_retries: int = 2
     provider_retry_backoff_seconds: float = 0.25
@@ -208,6 +216,25 @@ class Settings:
             raise ValueError(
                 "ollama_base_url must use http or https."
             )
+        if min(
+            self.ollama_keep_alive_seconds,
+            self.ollama_warm_refresh_seconds,
+            self.ollama_warm_retry_seconds,
+            self.ollama_warmup_timeout_seconds,
+        ) <= 0:
+            raise ValueError(
+                "Ollama warm durations must be positive."
+            )
+
+        if (
+            self.ollama_warm_refresh_seconds
+            >= self.ollama_keep_alive_seconds
+        ):
+            raise ValueError(
+                "ollama_warm_refresh_seconds must be "
+                "less than ollama_keep_alive_seconds."
+            )
+
         if self.gemini_reasoning_effort not in {"low", "medium", "high"}:
             raise ValueError(
                 "gemini_reasoning_effort must be low, medium, or high."
@@ -405,6 +432,26 @@ class Settings:
             ollama_enabled=_get_bool(
                 "JARVIS_OLLAMA_ENABLED",
                 False,
+            ),
+            ollama_warm_enabled=_get_bool(
+                "JARVIS_OLLAMA_WARM_ENABLED",
+                False,
+            ),
+            ollama_keep_alive_seconds=_get_float(
+                "JARVIS_OLLAMA_KEEP_ALIVE_SECONDS",
+                1800.0,
+            ),
+            ollama_warm_refresh_seconds=_get_float(
+                "JARVIS_OLLAMA_WARM_REFRESH_SECONDS",
+                120.0,
+            ),
+            ollama_warm_retry_seconds=_get_float(
+                "JARVIS_OLLAMA_WARM_RETRY_SECONDS",
+                15.0,
+            ),
+            ollama_warmup_timeout_seconds=_get_float(
+                "JARVIS_OLLAMA_WARMUP_TIMEOUT_SECONDS",
+                30.0,
             ),
             gemini_reasoning_effort=os.getenv(
                 "JARVIS_GEMINI_REASONING_EFFORT",

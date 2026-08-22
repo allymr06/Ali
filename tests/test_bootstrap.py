@@ -127,3 +127,104 @@ def test_bootstrap_can_select_gemini_provider() -> None:
 
     assert application.provider_registry.get_default().name == "gemini"
     assert application.model_catalog.contains("gemini", "gemini-3.7-flash")
+
+
+
+def test_bootstrap_starts_ollama_warm_keeper_in_background(
+    monkeypatch,
+) -> None:
+    from app.config.settings import Settings
+
+    instances = []
+
+    class FakeWarmKeeper:
+        def __init__(
+            self,
+            **kwargs,
+        ):
+            self.kwargs = kwargs
+            self.started = False
+            self.closed = False
+            instances.append(self)
+
+        def start(self):
+            self.started = True
+            return True
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(
+        "app.bootstrap.OllamaWarmKeeper",
+        FakeWarmKeeper,
+    )
+
+    application = create_application(
+        Settings(
+            default_provider="ollama",
+            default_model="llama3.2:latest",
+            ollama_model="llama3.2:latest",
+            ollama_enabled=True,
+            ollama_warm_enabled=True,
+            ollama_keep_alive_seconds=1800,
+            ollama_warm_refresh_seconds=120,
+            ollama_warm_retry_seconds=15,
+            ollama_warmup_timeout_seconds=30,
+            windows_integrations_enabled=False,
+            memory_database_path=None,
+            conversation_database_path=None,
+            task_database_path=None,
+            task_runtime_directory=None,
+        )
+    )
+
+    try:
+        assert len(instances) == 1
+
+        keeper = instances[0]
+
+        assert keeper.started is True
+
+        assert (
+            application.ollama_warm_keeper
+            is keeper
+        )
+
+        assert keeper.kwargs == {
+            "base_url": (
+                "http://localhost:11434/v1/"
+            ),
+            "model": "llama3.2:latest",
+            "keep_alive_seconds": 1800,
+            "refresh_seconds": 120,
+            "retry_seconds": 15,
+            "timeout_seconds": 30,
+        }
+
+    finally:
+        application.close()
+
+    assert instances[0].closed is True
+
+
+def test_bootstrap_does_not_start_warmer_when_disabled(
+) -> None:
+    from app.config.settings import Settings
+
+    application = create_application(
+        Settings(
+            windows_integrations_enabled=False,
+            memory_database_path=None,
+            conversation_database_path=None,
+            task_database_path=None,
+            task_runtime_directory=None,
+        )
+    )
+
+    try:
+        assert (
+            application.ollama_warm_keeper
+            is None
+        )
+    finally:
+        application.close()

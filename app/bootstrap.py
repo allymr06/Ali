@@ -22,6 +22,7 @@ from app.providers.mock import MockProvider
 from app.providers.openai import OpenAIProvider
 from app.providers.gemini import GeminiProvider
 from app.providers.ollama import OllamaProvider
+from app.providers.ollama_warm import OllamaWarmKeeper
 from app.providers.catalog import ModelCatalog
 from app.providers.gateway import ProviderGateway
 from app.providers.models import ModelProfile, TaskType
@@ -68,6 +69,7 @@ class JARVISApplication:
     voice: VoiceService | None = None
     vision: VisionService | None = None
     research: ResearchService | None = None
+    ollama_warm_keeper: OllamaWarmKeeper | None = None
 
     @property
     def agent_loop(self):
@@ -81,6 +83,9 @@ class JARVISApplication:
 
     def close(self) -> None:
         """Release durable stores owned by the application runtime."""
+        if self.ollama_warm_keeper is not None:
+            self.ollama_warm_keeper.close()
+
         conversation_store = (
             self.conversation_engine.store
         )
@@ -420,6 +425,34 @@ def create_application(
         )
         research.register_tools(tool_executor)
 
+    ollama_warm_keeper = None
+
+    if (
+        active_settings.ollama_warm_enabled
+        and ollama_provider.is_configured
+    ):
+        ollama_warm_keeper = OllamaWarmKeeper(
+            base_url=active_settings.ollama_base_url,
+            model=ollama_model,
+            keep_alive_seconds=(
+                active_settings.ollama_keep_alive_seconds
+            ),
+            refresh_seconds=(
+                active_settings.ollama_warm_refresh_seconds
+            ),
+            retry_seconds=(
+                active_settings.ollama_warm_retry_seconds
+            ),
+            timeout_seconds=(
+                active_settings.ollama_warmup_timeout_seconds
+            ),
+        )
+
+        # start() never performs the HTTP request itself.
+        # The potentially slow model load runs in a daemon
+        # background thread.
+        ollama_warm_keeper.start()
+
     health_timeout = active_settings.diagnostics_health_timeout_seconds
     diagnostics.health.register(
         HealthCheck(
@@ -530,6 +563,9 @@ def create_application(
             "vision_enabled": vision is not None,
             "research_enabled": research is not None,
             "windows_enabled": windows is not None,
+            "ollama_warm_enabled": (
+                ollama_warm_keeper is not None
+            ),
         },
     )
 
@@ -551,4 +587,5 @@ def create_application(
         voice=voice,
         vision=vision,
         research=research,
+        ollama_warm_keeper=ollama_warm_keeper,
     )

@@ -251,7 +251,7 @@ async def test_gemini_recognizer_sends_inline_wav_audio() -> None:
 
     call = client.models.calls[0]
 
-    assert call["model"] == "gemini-3.7-flash"
+    assert call["model"] == "gemini-3.5-flash-lite"
 
     parts = call["contents"][0]["parts"]
     assert "Transcribe" in parts[0]["text"]
@@ -318,7 +318,7 @@ async def test_gemini_tts_wraps_inline_pcm_into_wav() -> None:
     voice = call["config"]["speech_config"]["voice_config"][
         "prebuilt_voice_config"
     ]["voice_name"]
-    assert voice == "Kore"
+    assert voice == "Charon"
 
 
 class DummyInput:

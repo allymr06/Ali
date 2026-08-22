@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import time
 from collections import deque
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
 from app.core.engine import CoreEngine
@@ -30,6 +30,64 @@ from app.voice.wake import TextWakeWordDetector
 
 
 T = TypeVar("T")
+
+_SENTENCE_ENDINGS = (".", "!", "?", "…", ":", ";")
+
+
+def split_speech_chunks(
+    text: str,
+    *,
+    max_characters: int = 120,
+    first_chunk_max: int = 90,
+) -> list[str]:
+    """Split a reply into speakable chunks along sentence boundaries.
+
+    Synthesis time grows with text length, so the FIRST chunk is kept
+    deliberately small — ideally a single sentence — to minimize time
+    to first audio; later chunks pack sentences up to the cap while
+    their predecessors are already playing. The concatenation of all
+    chunks always equals the normalized input.
+    """
+    normalized = " ".join(text.split())
+    if not normalized:
+        return []
+
+    sentences: list[str] = []
+    start = 0
+    for index, character in enumerate(normalized):
+        if character in _SENTENCE_ENDINGS and (
+            index + 1 == len(normalized)
+            or normalized[index + 1] == " "
+        ):
+            sentences.append(normalized[start : index + 1].strip())
+            start = index + 1
+    remainder = normalized[start:].strip()
+    if remainder:
+        sentences.append(remainder)
+
+    chunks: list[str] = []
+    current = ""
+    for position, sentence in enumerate(sentences):
+        limit = first_chunk_max if not chunks else max_characters
+        candidate = f"{current} {sentence}".strip()
+        if current and len(candidate) > limit:
+            chunks.append(current)
+            current = sentence
+        else:
+            current = candidate
+        while len(current) > limit * 2:
+            cut = current.rfind(" ", 0, limit)
+            if cut <= 0:
+                break
+            chunks.append(current[:cut])
+            current = current[cut + 1 :]
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+async def _await_task(task: "asyncio.Task[T]") -> T:
+    return await task
 
 
 class VoiceSession:
@@ -70,6 +128,12 @@ class VoiceSession:
         self._require_wake_word = require_wake_word
         self._retain_audio = retain_audio
         self._events: deque[VoiceSessionEvent] = deque(maxlen=event_capacity)
+        # Optional observer for live state changes (e.g. the desktop
+        # voice HUD). Set after construction; called on the session's
+        # event loop and must never raise into the pipeline.
+        self.state_callback: (
+            Callable[[VoiceSessionState], None] | None
+        ) = None
         self._interrupt_event = asyncio.Event()
         self._active = False
         self._finished = False
@@ -194,14 +258,19 @@ class VoiceSession:
             if not response.text.strip():
                 raise VoiceProviderError("Core returned no text for speech output.")
 
+            # Sentence-pipelined speech: the first chunk reaches the
+            # speakers while later chunks are still being synthesized,
+            # so time-to-first-audio no longer scales with reply length.
+            chunks = split_speech_chunks(response.text)
             self._record(VoiceSessionState.SYNTHESIZING)
             stage_started = time.monotonic()
             speech = await self._await_interruptible(
-                self._synthesizer.synthesize(response.text)
+                self._synthesizer.synthesize(chunks[0])
             )
             metadata["synthesis_latency_seconds"] = (
                 time.monotonic() - stage_started
             )
+            metadata["speech_chunks"] = len(chunks)
             metadata.update(
                 synthesis_provider=speech.provider,
                 synthesis_model=speech.model,
@@ -210,12 +279,33 @@ class VoiceSession:
 
             self._record(VoiceSessionState.SPEAKING)
             stage_started = time.monotonic()
-            await self._await_interruptible(
-                self._audio_output.play(
-                    speech,
-                    cancel_event=self._interrupt_event,
-                )
-            )
+            pending: asyncio.Task | None = None
+            try:
+                for index in range(len(chunks)):
+                    if index + 1 < len(chunks):
+                        pending = asyncio.create_task(
+                            self._synthesizer.synthesize(
+                                chunks[index + 1]
+                            )
+                        )
+                    await self._await_interruptible(
+                        self._audio_output.play(
+                            speech,
+                            cancel_event=self._interrupt_event,
+                        )
+                    )
+                    if pending is not None:
+                        speech = await self._await_interruptible(
+                            _await_task(pending)
+                        )
+                        pending = None
+            finally:
+                if pending is not None:
+                    pending.cancel()
+                    with contextlib.suppress(
+                        asyncio.CancelledError, Exception
+                    ):
+                        await pending
             metadata["playback_latency_seconds"] = (
                 time.monotonic() - stage_started
             )
@@ -290,6 +380,12 @@ class VoiceSession:
     def _record(self, state: VoiceSessionState, detail: str | None = None) -> None:
         self._state = state
         self._events.append(VoiceSessionEvent(state, self.session_id, detail=detail))
+        if self.state_callback is not None:
+            try:
+                self.state_callback(state)
+            except Exception:
+                # Observer failures must never break the voice turn.
+                pass
 
     def _result(
         self,

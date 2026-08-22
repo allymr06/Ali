@@ -1178,6 +1178,390 @@ class ScrollableWorkspace(tk.Frame):
         self._draw_thumb()
 
 
+class VoiceOverlay:
+    """Full-window voice HUD in the reference video's assembly language.
+
+    Opening plays a bracket-and-grid assembly; the redesigned core is a
+    segmented ring pair that breathes while listening, sweeps while
+    thinking, and drives a radial equalizer while speaking. Everything
+    runs on the shared 120 Hz engine and the overlay never blocks the
+    voice pipeline underneath it.
+    """
+
+    _STATE_TEXT = {
+        "listening": "DİNLİYOR",
+        "transcribing": "ÇÖZÜMLENİYOR",
+        "processing": "DÜŞÜNÜYOR",
+        "synthesizing": "YANIT HAZIRLANIYOR",
+        "speaking": "KONUŞUYOR",
+    }
+
+    def __init__(
+        self,
+        parent: tk.Widget,
+        colors: ThemeTokens,
+        engine: AnimationEngine,
+        *,
+        on_dismiss: Callable[[], None],
+    ) -> None:
+        self._parent = parent
+        self._colors = colors
+        self._engine = engine
+        self._on_dismiss = on_dismiss
+        self._canvas: tk.Canvas | None = None
+        self._assembly = 0.0
+        self._state = "listening"
+        self._transcript = ""
+        self._visible = False
+        self._closing = False
+
+    @property
+    def visible(self) -> bool:
+        return self._visible
+
+    def open(self) -> None:
+        if self._visible:
+            return
+        self._visible = True
+        self._closing = False
+        self._state = "listening"
+        self._transcript = ""
+        c = self._colors
+        self._canvas = tk.Canvas(
+            self._parent,
+            bg=c.background,
+            highlightthickness=0,
+            borderwidth=0,
+            cursor="hand2",
+        )
+        self._canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self._canvas.bind("<Button-1>", lambda _e: self._on_dismiss())
+        self._canvas.focus_set()
+        self._assembly = 0.0
+        self._engine.tween(
+            "voice-hud-assembly",
+            duration_ms=700,
+            on_update=self._set_assembly,
+        )
+        self._engine.loop("voice-hud", self._frame)
+
+    def close(self) -> None:
+        if not self._visible or self._closing:
+            return
+        self._closing = True
+        start = self._assembly
+
+        def retract(progress: float) -> None:
+            self._set_assembly(start * (1.0 - progress))
+
+        self._engine.tween(
+            "voice-hud-assembly",
+            duration_ms=420,
+            on_update=retract,
+            on_done=self._destroy,
+        )
+
+    def _destroy(self) -> None:
+        self._engine.stop("voice-hud")
+        self._engine.stop("voice-hud-assembly")
+        if self._canvas is not None:
+            try:
+                self._canvas.destroy()
+            except tk.TclError:
+                pass
+        self._canvas = None
+        self._visible = False
+        self._closing = False
+
+    def set_state(self, state: str) -> None:
+        self._state = state.strip().casefold()
+
+    def set_transcript(self, text: str) -> None:
+        self._transcript = text.strip()
+
+    def _set_assembly(self, value: float) -> None:
+        self._assembly = value
+
+    # -- drawing ------------------------------------------------------
+
+    def _frame(self, now: float) -> None:
+        canvas = self._canvas
+        if canvas is None or not canvas.winfo_exists():
+            self._engine.stop("voice-hud")
+            return
+        canvas.delete("all")
+        c = self._colors
+        width = max(2, canvas.winfo_width())
+        height = max(2, canvas.winfo_height())
+        cx, cy = width / 2, height / 2 - 24
+        p = self._assembly
+        glow = mix_colors(c.background, c.accent, 0.16 * p)
+
+        self._draw_grid(canvas, width, height, p)
+        self._draw_brackets(canvas, width, height, p)
+
+        core_radius = 118.0 * (0.72 + 0.28 * p)
+        state = self._state
+
+        if state == "speaking":
+            self._draw_equalizer(canvas, cx, cy, core_radius, now, p)
+        elif state in {"processing", "transcribing", "synthesizing"}:
+            self._draw_sweep(canvas, cx, cy, core_radius, now, p)
+        else:
+            self._draw_ripples(canvas, cx, cy, core_radius, now, p)
+
+        self._draw_core(canvas, cx, cy, core_radius, now, p, glow)
+        self._draw_labels(canvas, cx, cy, core_radius, width, height, p)
+
+    def _draw_grid(
+        self, canvas: tk.Canvas, width: int, height: int, p: float
+    ) -> None:
+        if p <= 0.05:
+            return
+        color = mix_colors(
+            self._colors.background, self._colors.line_soft, p
+        )
+        step = 46
+        for x in range(step, width, step):
+            canvas.create_line(x, 0, x, height, fill=color)
+        for y in range(step, height, step):
+            canvas.create_line(0, y, width, y, fill=color)
+        dot = mix_colors(
+            self._colors.background, self._colors.faint, 0.45 * p
+        )
+        for x in range(step, width, step * 2):
+            for y in range(step, height, step * 2):
+                canvas.create_oval(
+                    x - 1, y - 1, x + 1, y + 1, fill=dot, outline=""
+                )
+
+    def _draw_brackets(
+        self, canvas: tk.Canvas, width: int, height: int, p: float
+    ) -> None:
+        c = self._colors
+        margin_x, margin_y = 70, 56
+        arm = 96.0 * ease_out_cubic(min(1.0, p * 1.25))
+        slide = (1.0 - p) * 60.0
+        thickness = 5
+        color = mix_colors(c.background, c.accent_strong, min(1.0, p * 1.4))
+        corners = (
+            (margin_x - slide, margin_y - slide, 1, 1),
+            (width - margin_x + slide, margin_y - slide, -1, 1),
+            (margin_x - slide, height - margin_y + slide, 1, -1),
+            (
+                width - margin_x + slide,
+                height - margin_y + slide,
+                -1,
+                -1,
+            ),
+        )
+        for x, y, dx, dy in corners:
+            canvas.create_line(
+                x, y, x + arm * dx, y,
+                fill=color, width=thickness,
+            )
+            canvas.create_line(
+                x, y, x, y + arm * dy,
+                fill=color, width=thickness,
+            )
+
+    def _draw_ripples(
+        self,
+        canvas: tk.Canvas,
+        cx: float,
+        cy: float,
+        radius: float,
+        now: float,
+        p: float,
+    ) -> None:
+        for offset in (0.0, 0.5):
+            phase = ((now * 0.45 + offset) % 1.0)
+            r = radius + 26 + phase * 90
+            color = mix_colors(
+                self._colors.background,
+                self._colors.accent,
+                max(0.0, 0.4 * (1.0 - phase)) * p,
+            )
+            canvas.create_oval(
+                cx - r, cy - r, cx + r, cy + r,
+                outline=color, width=2,
+            )
+
+    def _draw_sweep(
+        self,
+        canvas: tk.Canvas,
+        cx: float,
+        cy: float,
+        radius: float,
+        now: float,
+        p: float,
+    ) -> None:
+        r = radius + 34
+        start = (now * 240.0) % 360.0
+        for trail in range(4):
+            color = mix_colors(
+                self._colors.background,
+                self._colors.accent,
+                (0.75 - trail * 0.17) * p,
+            )
+            canvas.create_arc(
+                cx - r, cy - r, cx + r, cy + r,
+                start=start - trail * 16,
+                extent=40,
+                style="arc",
+                outline=color,
+                width=4 - trail,
+            )
+
+    def _draw_equalizer(
+        self,
+        canvas: tk.Canvas,
+        cx: float,
+        cy: float,
+        radius: float,
+        now: float,
+        p: float,
+    ) -> None:
+        bars = 28
+        base = radius + 30
+        for index in range(bars):
+            angle = index * (2 * math.pi / bars) - math.pi / 2
+            wave = (
+                math.sin(now * 9.0 + index * 1.7)
+                + math.sin(now * 5.3 + index * 0.9)
+            ) / 2.0
+            length = (10 + 26 * abs(wave)) * p
+            inner = base
+            outer = base + length
+            color = mix_colors(
+                self._colors.faint,
+                self._colors.accent,
+                0.3 + 0.7 * abs(wave),
+            )
+            canvas.create_line(
+                cx + inner * math.cos(angle),
+                cy + inner * math.sin(angle),
+                cx + outer * math.cos(angle),
+                cy + outer * math.sin(angle),
+                fill=color,
+                width=3,
+                capstyle="round",
+            )
+
+    def _draw_core(
+        self,
+        canvas: tk.Canvas,
+        cx: float,
+        cy: float,
+        radius: float,
+        now: float,
+        p: float,
+        glow: str,
+    ) -> None:
+        c = self._colors
+        state = self._state
+        breathe = math.sin(now * 2.2) * (4.0 if state == "listening" else 1.5)
+        r = radius + breathe
+
+        canvas.create_oval(
+            cx - r - 14, cy - r - 14, cx + r + 14, cy + r + 14,
+            outline=mix_colors(c.background, c.accent, 0.25 * p),
+            width=8,
+        )
+
+        # Outer segmented ring rotating slowly; inner counter-rotating.
+        segments = 14
+        rotation = now * 24.0
+        for index in range(segments):
+            start = index * (360 / segments) + rotation
+            canvas.create_arc(
+                cx - r, cy - r, cx + r, cy + r,
+                start=start,
+                extent=(360 / segments) * 0.55,
+                style="arc",
+                outline=mix_colors(c.background, c.accent, p),
+                width=3,
+            )
+        inner_r = r - 20
+        for index in range(9):
+            start = index * 40 - rotation * 1.6
+            canvas.create_arc(
+                cx - inner_r, cy - inner_r,
+                cx + inner_r, cy + inner_r,
+                start=start,
+                extent=22,
+                style="arc",
+                outline=mix_colors(
+                    c.background, c.accent_strong, 0.75 * p
+                ),
+                width=2,
+            )
+
+        face_r = inner_r - 16
+        canvas.create_oval(
+            cx - face_r, cy - face_r, cx + face_r, cy + face_r,
+            fill=glow,
+            outline=mix_colors(c.background, c.accent, 0.8 * p),
+            width=2,
+        )
+        pulse = 0.5 + 0.5 * math.sin(now * 3.1)
+        dot_r = 5 + 3 * pulse
+        canvas.create_oval(
+            cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r,
+            fill=mix_colors(c.faint, c.accent, pulse),
+            outline="",
+        )
+
+    def _draw_labels(
+        self,
+        canvas: tk.Canvas,
+        cx: float,
+        cy: float,
+        radius: float,
+        width: int,
+        height: int,
+        p: float,
+    ) -> None:
+        c = self._colors
+        if p < 0.35:
+            return
+        opacity = min(1.0, (p - 0.35) / 0.65)
+        title = self._STATE_TEXT.get(self._state, "HAZIR")
+        canvas.create_text(
+            cx,
+            cy + radius + 92,
+            text=title,
+            fill=mix_colors(c.background, c.ink, opacity),
+            font=("Segoe UI Semibold", 16),
+        )
+        canvas.create_text(
+            cx,
+            cy + radius + 122,
+            text="J.A.R.V.I.S.  SESLİ BAĞLANTI",
+            fill=mix_colors(c.background, c.accent_strong, opacity),
+            font=("Segoe UI Semibold", 8),
+        )
+        if self._transcript:
+            snippet = self._transcript
+            if len(snippet) > 90:
+                snippet = snippet[:87] + "…"
+            canvas.create_text(
+                cx,
+                cy + radius + 152,
+                text=f"“{snippet}”",
+                fill=mix_colors(c.background, c.muted, opacity),
+                font=("Segoe UI", 10),
+                width=width - 260,
+            )
+        canvas.create_text(
+            width / 2,
+            height - 34,
+            text="KAPATMAK İÇİN TIKLA VEYA ESC",
+            fill=mix_colors(c.background, c.faint, 0.8 * opacity),
+            font=("Segoe UI", 8),
+        )
+
+
 class DesktopWindow:
     """Minimal monochrome desktop shell for the live JARVIS runtime."""
 
@@ -1227,6 +1611,10 @@ class DesktopWindow:
             self.root,
             reduced_motion=lambda: self.controller.state.reduced_motion,
         )
+        from app.voice.audio import VoiceEarcons
+
+        self._earcons = VoiceEarcons()
+        self.voice_overlay: VoiceOverlay | None = None
         self._configure_window()
         self._build_shell()
         self._bind_shortcuts()
@@ -1872,6 +2260,12 @@ class DesktopWindow:
         return "break"
 
     def _focus_workspace(self, _event: tk.Event[Any]) -> str:
+        if (
+            self.voice_overlay is not None
+            and self.voice_overlay.visible
+        ):
+            self._stop_voice()
+            return "break"
         self.workspace.focus_set()
         return "break"
 
@@ -3177,6 +3571,7 @@ class DesktopWindow:
             self._status_job = None
         for child in self.root.winfo_children():
             child.destroy()
+        self.voice_overlay = None
         self._colors = tokens(self.controller.state.theme)
         self.root.configure(bg=self._colors.background)
         self._nav_buttons.clear()
@@ -3338,6 +3733,11 @@ class DesktopWindow:
                         event.operation_id,
                         event.payload,
                     )
+                elif event.kind == "voice_state":
+                    self._apply_voice_session_state(
+                        event.operation_id,
+                        event.payload,
+                    )
                 elif event.kind == "voice_stop_done":
                     self._finish_voice_stop(
                         event.operation_id,
@@ -3429,7 +3829,28 @@ class DesktopWindow:
             self.controller.state.status = "LISTENING"
             self._set_busy(False, "LISTENING")
         self._update_voice_controls()
+        self._earcons.play_open()
+        self._open_voice_overlay(operation_id)
         return operation_id
+
+    def _open_voice_overlay(self, operation_id: int) -> None:
+        if self.voice_overlay is None:
+            self.voice_overlay = VoiceOverlay(
+                self.shell,
+                self._colors,
+                self.engine,
+                on_dismiss=self._stop_voice,
+            )
+        self.voice_overlay.open()
+        voice = self.controller.application.voice
+        if voice is not None:
+            voice.state_callback = (
+                lambda state, current=operation_id: self._queue_ui_event(
+                    current,
+                    "voice_state",
+                    getattr(state, "value", str(state)),
+                )
+            )
 
     def _launch_voice_operation(
         self,
@@ -3461,11 +3882,38 @@ class DesktopWindow:
         self._voice_stop_requested = False
         self.controller.state.voice_active = False
         self.controller.state.voice_status = "IDLE"
+        voice = self.controller.application.voice
+        if voice is not None:
+            voice.state_callback = None
+        if self.voice_overlay is not None and self.voice_overlay.visible:
+            self._earcons.play_close()
+            self.voice_overlay.close()
         if self._active_operation_id is None:
             self.controller.state.status = "LOCAL CORE READY"
             self._set_busy(False, "LOCAL CORE READY")
         self._update_voice_controls()
         return True
+
+    _VOICE_STATE_TEXT = {
+        "listening": "DİNLİYOR",
+        "transcribing": "ÇÖZÜMLENİYOR",
+        "processing": "DÜŞÜNÜYOR",
+        "synthesizing": "YANIT HAZIRLANIYOR",
+        "speaking": "KONUŞUYOR",
+    }
+
+    def _apply_voice_session_state(
+        self, operation_id: int, payload: object
+    ) -> None:
+        if operation_id != self._voice_operation_id:
+            return
+        state = str(payload).strip().casefold()
+        label = self._VOICE_STATE_TEXT.get(state)
+        if label is not None:
+            self.controller.state.voice_status = label
+            self._update_voice_controls()
+        if self.voice_overlay is not None and self.voice_overlay.visible:
+            self.voice_overlay.set_state(state)
 
     def _update_voice_controls(self) -> None:
         active = self.controller.state.voice_active
@@ -4005,6 +4453,12 @@ class DesktopWindow:
         self.controller.state.voice_messages.append(payload)
         self.controller.state.voice_status = "DİNLİYOR"
         self._update_voice_controls()
+        if (
+            self.voice_overlay is not None
+            and self.voice_overlay.visible
+            and payload.role == "user"
+        ):
+            self.voice_overlay.set_transcript(payload.content)
         if self.controller.state.screen is UIScreen.VOICE:
             self.render(UIScreen.VOICE)
 

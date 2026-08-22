@@ -11,6 +11,7 @@ from app.conversation.engine import ConversationEngine
 from app.core.models import (
     Context,
     Request,
+    RequestSource,
     Response,
     ToolExecutionStatus,
     ToolResult,
@@ -69,6 +70,13 @@ class CoreEngine:
     while keeping implementation details isolated behind explicit
     interfaces.
     """
+
+    VOICE_RESPONSE_DIRECTIVE = (
+        "Bu istek sesli olarak yanıtlanacak. En fazla iki kısa ve "
+        "doğal cümleyle cevap ver; liste, başlık ve kod kullanma. "
+        "Detay gerekiyorsa en önemli noktayı söyle ve daha fazlasını "
+        "isteyip istemediğini sor."
+    )
 
     def __init__(
         self,
@@ -910,6 +918,16 @@ class CoreEngine:
         provider_system_prompt = (
             interaction_decision.system_prompt
         )
+
+        if request.source is RequestSource.VOICE:
+            # Spoken replies are synthesized sentence by sentence, so
+            # brevity directly cuts both generation and speech latency.
+            voice_directive = self.VOICE_RESPONSE_DIRECTIVE
+            provider_system_prompt = (
+                f"{provider_system_prompt}\n\n{voice_directive}"
+                if provider_system_prompt
+                else voice_directive
+            )
 
         tool_schema_count_before = len(
             tool_schemas

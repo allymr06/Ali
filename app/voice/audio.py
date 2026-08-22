@@ -596,3 +596,80 @@ class WindowsWaveAudioOutput(AudioOutput):
             None,
             winsound.SND_PURGE,
         )
+
+
+def _render_earcon_wav(
+    *,
+    start_hz: float,
+    end_hz: float,
+    duration_ms: int,
+    volume: float = 0.32,
+    sample_rate: int = 24_000,
+) -> bytes:
+    """Render a short HUD-style chirp as WAV bytes.
+
+    A frequency sweep with a soft second harmonic and raised-cosine
+    fade reads as a clean sci-fi interface blip without any audio
+    assets shipping with the application.
+    """
+    import io
+    import struct
+    import wave
+
+    frame_count = int(sample_rate * duration_ms / 1000)
+    samples = array("h")
+    for index in range(frame_count):
+        progress = index / max(1, frame_count - 1)
+        frequency = start_hz + (end_hz - start_hz) * progress
+        phase = 2 * math.pi * frequency * index / sample_rate
+        envelope = 0.5 * (1 - math.cos(2 * math.pi * min(progress, 1.0)))
+        value = (
+            math.sin(phase)
+            + 0.35 * math.sin(2 * phase + math.pi / 4)
+        ) * envelope * volume
+        samples.append(int(max(-1.0, min(1.0, value)) * 32767))
+
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(samples.tobytes())
+    return output.getvalue()
+
+
+class VoiceEarcons:
+    """Distinct open/close interface sounds for voice mode.
+
+    Playback is asynchronous and fire-and-forget so the earcon never
+    delays the voice pipeline it decorates.
+    """
+
+    def __init__(self, module: Any | None = None) -> None:
+        self._module = module
+        self._open_wav = _render_earcon_wav(
+            start_hz=520.0, end_hz=1040.0, duration_ms=170
+        )
+        self._close_wav = _render_earcon_wav(
+            start_hz=880.0, end_hz=392.0, duration_ms=210
+        )
+
+    def _winsound(self):
+        return self._module or importlib.import_module("winsound")
+
+    def _play(self, data: bytes) -> None:
+        try:
+            winsound = self._winsound()
+            winsound.PlaySound(
+                data,
+                winsound.SND_MEMORY | winsound.SND_ASYNC,
+            )
+        except (ImportError, RuntimeError, OSError):
+            # A missing audio device must never break voice mode.
+            pass
+
+    def play_open(self) -> None:
+        self._play(self._open_wav)
+
+    def play_close(self) -> None:
+        self._play(self._close_wav)

@@ -130,6 +130,25 @@ class GeminiSpeechRecognizer(
 
         return self._client
 
+    _THINKING_MODEL_PREFIXES = (
+        "gemini-3.7",
+        "gemini-2.5-pro",
+    )
+
+    def _transcription_config(self) -> dict:
+        config: dict = {
+            "automatic_function_calling": {
+                "disable": True,
+            },
+        }
+        # Thinking models reason for many seconds before answering,
+        # which is wasted latency for verbatim transcription.
+        if self._model.strip().casefold().startswith(
+            self._THINKING_MODEL_PREFIXES
+        ):
+            config["thinking_config"] = {"thinking_budget": 0}
+        return config
+
     async def transcribe(
         self,
         capture: AudioCapture,
@@ -171,11 +190,7 @@ class GeminiSpeechRecognizer(
                         ],
                     }
                 ],
-                config={
-                    "automatic_function_calling": {
-                        "disable": True,
-                    },
-                },
+                config=self._transcription_config(),
             )
 
         except Exception as exc:

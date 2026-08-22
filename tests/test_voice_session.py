@@ -353,3 +353,58 @@ async def test_voice_vertical_slice_runs_through_real_core() -> None:
     assert result.state is VoiceSessionState.COMPLETED
     assert result.response_text == "Mock yanıtı: status"
     assert len(audio_output.played) == 1
+
+
+def test_split_speech_chunks_packs_sentences() -> None:
+    from app.voice.session import split_speech_chunks
+
+    text = (
+        "Elbette. Hava bugün güzel görünüyor! Sıcaklık yirmi altı "
+        "dereceye çıkacak. Akşam hafif rüzgar var. Yarın yağmur "
+        "ihtimali düşük, planlarını rahatça yapabilirsin. Başka bir "
+        "şey ister misin?"
+    )
+    chunks = split_speech_chunks(text, max_characters=80)
+
+    assert len(chunks) >= 2
+    assert " ".join(chunks) == " ".join(text.split())
+    assert all(len(chunk) <= 160 for chunk in chunks)
+    assert chunks[0].endswith((".", "!", "?"))
+
+
+def test_split_speech_chunks_handles_unpunctuated_text() -> None:
+    from app.voice.session import split_speech_chunks
+
+    text = "kelime " * 60
+    chunks = split_speech_chunks(text.strip(), max_characters=70)
+
+    assert len(chunks) >= 2
+    assert " ".join(chunks) == " ".join(text.split())
+
+
+class LongReplyEngine(FakeEngine):
+    RESPONSE = (
+        "Birinci cümle burada bitiyor. İkinci cümle de kayda değer "
+        "uzunlukta sürüyor ve kendi başına bir parça oluşturuyor. "
+        "Üçüncü cümle kapanışı yapmıyor, aksine metni uzatıyor. "
+        "Dördüncü cümle ise toplamı kesin olarak sınırın üstüne taşıyor."
+    )
+
+    async def handle(self, request, context=None, *, cancel_event=None):
+        self.requests.append((request, context, cancel_event))
+        return Response(self.RESPONSE, request_id=request.request_id)
+
+
+@pytest.mark.asyncio
+async def test_session_pipelines_speech_chunk_synthesis() -> None:
+    session, parts = make_session(engine=LongReplyEngine())
+    synthesizer = parts["synthesizer"]
+
+    result = await session.run_once()
+
+    assert result.state is VoiceSessionState.COMPLETED
+    assert len(synthesizer.texts) >= 2
+    assert " ".join(synthesizer.texts) == LongReplyEngine.RESPONSE
+    assert result.metadata["speech_chunks"] == len(synthesizer.texts)
+    # Playback count matches synthesized chunk count.
+    assert len(parts["audio_output"].played) == len(synthesizer.texts)

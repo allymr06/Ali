@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
+from threading import Event
 
 import pytest
 
@@ -9,6 +11,7 @@ from app.config.settings import Settings
 from app.core.models import Response
 from app.research.models import ResearchReport
 from app.ui.controller import AsyncRunner, DesktopController
+from app.ui.models import ChatMessage
 
 
 def application():
@@ -134,6 +137,31 @@ async def test_desktop_provider_error_keeps_readable_turkish() -> None:
     assert message.text.startswith("İstek tamamlanamadı.")
     assert "oturumu korundu" in message.text
 
+
+@pytest.mark.asyncio
+async def test_desktop_accepts_a_new_command_after_provider_failure() -> None:
+    app = application()
+
+    class RecoveringEngine:
+        calls = 0
+
+        async def handle(self, *_args, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("temporary provider failure")
+            return Response("Toparlandım.")
+
+    app.engine = RecoveringEngine()
+    controller = DesktopController(app)
+
+    failed = await controller.submit_command("İlk istek")
+    recovered = await controller.submit_command("Tekrar dene")
+
+    assert failed.role == "system"
+    assert recovered == ChatMessage("assistant", "Toparlandım.")
+    assert controller.state.busy is False
+    assert controller.state.status == "LOCAL CORE READY"
+
 @pytest.mark.asyncio
 async def test_desktop_command_rejects_empty_text() -> None:
     controller = DesktopController(application())
@@ -198,6 +226,23 @@ async def test_controller_bridges_enabled_voice_research_and_vision() -> None:
     assert await controller.run_vision("inspect") == "visible result"
 
 
+@pytest.mark.asyncio
+async def test_voice_messages_can_be_marshaled_to_the_ui_thread() -> None:
+    app = application()
+    app.voice = FakeVoice()
+    controller = DesktopController(app)
+    updates: list[ChatMessage] = []
+
+    result = await controller.run_voice(
+        message_callback=updates.append,
+        manage_state=False,
+    )
+
+    assert result == "spoken"
+    assert updates == [ChatMessage("assistant", "spoken")]
+    assert controller.state.messages == []
+
+
 def test_async_runner_executes_and_closes_once() -> None:
     async def value():
         return 42
@@ -206,6 +251,42 @@ def test_async_runner_executes_and_closes_once() -> None:
     assert runner.submit(value()).result(timeout=2) == 42
     runner.close()
     runner.close()
+
+
+def test_async_runner_cancels_pending_work_before_loop_shutdown() -> None:
+    started = Event()
+    finalized = Event()
+
+    async def pending() -> None:
+        started.set()
+        try:
+            await asyncio.sleep(60)
+        finally:
+            finalized.set()
+
+    runner = AsyncRunner()
+    runner.submit(pending())
+    assert started.wait(timeout=1)
+
+    runner.close()
+
+    assert finalized.wait(timeout=1)
+    assert not runner._thread.is_alive()
+
+
+@pytest.mark.asyncio
+async def test_desktop_command_can_leave_state_updates_to_ui_thread() -> None:
+    controller = DesktopController(application())
+
+    message = await controller.submit_command(
+        "Merhaba",
+        manage_state=False,
+    )
+
+    assert message.role == "assistant"
+    assert controller.state.messages == []
+    assert controller.state.busy is False
+    assert controller.state.status == "LOCAL CORE READY"
 
 
 def test_desktop_module_import_does_not_create_a_window() -> None:

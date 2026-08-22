@@ -4,8 +4,11 @@ import ctypes
 import math
 import sys
 import tkinter as tk
+from collections.abc import Coroutine
 from concurrent.futures import Future
+from dataclasses import dataclass
 from pathlib import Path
+from queue import Empty, SimpleQueue
 from tkinter import messagebox, ttk
 from typing import Any, Callable
 
@@ -16,6 +19,13 @@ from app.ui.models import ChatMessage, UIScreen, UITheme
 from app.ui.theme import ThemeTokens, tokens
 
 DISPLAY_MODEL_NAME = "JARVIS 0.2"
+
+
+@dataclass(frozen=True, slots=True)
+class UIEvent:
+    operation_id: int
+    kind: str
+    payload: object
 
 NAVIGATION = (
     (UIScreen.HOME, "01", "Komuta Merkezi"),
@@ -395,12 +405,21 @@ class DesktopWindow:
         self._home_orb: tk.Canvas | None = None
         self._pulse_frame = 0
         self._closing = False
+        self._ui_events: SimpleQueue[UIEvent] = SimpleQueue()
+        self._ui_poll_job: str | None = None
+        self._operation_sequence = 0
+        self._active_operation_id: int | None = None
+        self._command_operation_id: int | None = None
+        self._api_test_feedback: tuple[str, bool] | None = None
+        self._research_report: dict[str, object] | None = None
+        self._research_error: str | None = None
         self._snapshot = self.controller.snapshot()
         self._configure_window()
         self._build_shell()
         self._bind_shortcuts()
         self.render(UIScreen.HOME)
         self._animate_status()
+        self._schedule_ui_event_pump()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
     def _configure_window(self) -> None:
@@ -1596,6 +1615,28 @@ class DesktopWindow:
                 "Araştırma ayarlanmamış",
                 "Kullanmadan önce bir arama sağlayıcısı ayarla.",
             )
+        elif self._research_error:
+            self._line(
+                self.research_results,
+                "Araştırma başarısız",
+                self._research_error,
+            )
+        elif self._research_report is not None:
+            for claim in self._research_report.get("claims", []):
+                self._line(
+                    self.research_results,
+                    claim.get("text", ""),
+                    ", ".join(claim.get("citations", [])),
+                )
+            for uncertainty in self._research_report.get(
+                "uncertainties",
+                [],
+            ):
+                self._line(
+                    self.research_results,
+                    "BELİRSİZLİK",
+                    uncertainty,
+                )
 
     def _render_tools(self) -> None:
         self._heading(
@@ -1794,6 +1835,12 @@ class DesktopWindow:
             wraplength=680,
         )
         self.api_status.pack(fill="x", pady=(4, 8))
+        if self._api_test_feedback is not None:
+            feedback, ok = self._api_test_feedback
+            self.api_status.configure(
+                text=feedback,
+                fg=self._colors.ink if ok else self._colors.muted,
+            )
         actions = tk.Frame(api, bg=self._colors.surface)
         actions.pack(fill="x")
         self.api_test_button = self._button(
@@ -2043,13 +2090,170 @@ class DesktopWindow:
         self._pulse_frame += 1
         self._status_job = self.root.after(520, self._animate_status)
 
+    def _schedule_ui_event_pump(self) -> None:
+        if self._closing or self._ui_poll_job is not None:
+            return
+        self._ui_poll_job = self.root.after(16, self._drain_ui_events)
+
+    def _queue_ui_event(
+        self,
+        operation_id: int,
+        kind: str,
+        payload: object,
+    ) -> None:
+        self._ui_events.put(UIEvent(operation_id, kind, payload))
+
+    def _drain_ui_events(self) -> None:
+        self._ui_poll_job = None
+        if self._closing:
+            return
+        while True:
+            try:
+                event = self._ui_events.get_nowait()
+            except Empty:
+                break
+            if event.operation_id != self._active_operation_id:
+                continue
+            try:
+                if event.kind == "command_stream":
+                    self._apply_stream_text(
+                        event.operation_id,
+                        event.payload,
+                    )
+                elif event.kind == "command_done":
+                    self._finish_command(
+                        event.operation_id,
+                        event.payload,
+                    )
+                elif event.kind == "api_done":
+                    self._finish_api_test(
+                        event.operation_id,
+                        event.payload,
+                    )
+                elif event.kind == "voice_done":
+                    self._finish_voice(
+                        event.operation_id,
+                        event.payload,
+                    )
+                elif event.kind == "voice_message":
+                    self._apply_voice_message(
+                        event.operation_id,
+                        event.payload,
+                    )
+                elif event.kind == "aux_done":
+                    self._finish_aux(
+                        event.operation_id,
+                        event.payload,
+                    )
+                elif event.kind == "research_done":
+                    self._finish_research(
+                        event.operation_id,
+                        event.payload,
+                    )
+                else:
+                    raise RuntimeError(f"Unknown UI event: {event.kind}")
+            except Exception as exc:
+                self._recover_operation(event.operation_id, exc)
+        self._schedule_ui_event_pump()
+
+    def _begin_operation(self, status: str) -> int | None:
+        if self._active_operation_id is not None:
+            return None
+        self._operation_sequence += 1
+        operation_id = self._operation_sequence
+        self._active_operation_id = operation_id
+        self.controller.state.busy = True
+        self.controller.state.status = status
+        self._set_busy(True, status)
+        return operation_id
+
+    def _launch_operation(
+        self,
+        operation_id: int,
+        operation: Coroutine[Any, Any, Any],
+        done_event: str,
+    ) -> bool:
+        try:
+            future = self.controller.submit_background(
+                operation,
+                lambda result, value=operation_id, kind=done_event: (
+                    self._queue_ui_event(value, kind, result)
+                ),
+            )
+        except Exception as exc:
+            operation.close()
+            self._recover_operation(operation_id, exc)
+            return False
+        self._busy_future = future
+        return True
+
+    def _complete_operation(
+        self,
+        operation_id: int,
+        status: str = "LOCAL CORE READY",
+    ) -> bool:
+        if operation_id != self._active_operation_id:
+            return False
+        self._busy_future = None
+        self._active_operation_id = None
+        self.controller.state.busy = False
+        self.controller.state.status = status
+        self._set_busy(False, status)
+        return True
+
+    def _recover_operation(self, operation_id: int, error: Exception) -> None:
+        if operation_id != self._active_operation_id:
+            return
+        if self._busy_future is not None and not self._busy_future.done():
+            self._busy_future.cancel()
+        command_failed = operation_id == self._command_operation_id
+        if command_failed:
+            if self._typewriter_job is not None:
+                self.root.after_cancel(self._typewriter_job)
+                self._typewriter_job = None
+            self._streaming_text = None
+            self._stream_target_text = ""
+            self._streaming_label = None
+            self._command_complete_pending = False
+            self._pending_user_text = None
+            self._command_operation_id = None
+            self.controller.state.messages.append(
+                ChatMessage(
+                    "system",
+                    "İstek tamamlanamadı. JARVIS oturumu korundu; "
+                    "tekrar deneyebilirsin.",
+                )
+            )
+        self._complete_operation(operation_id)
+        if self._closing:
+            return
+        try:
+            if command_failed:
+                self.render(UIScreen.CHAT)
+            messagebox.showerror(
+                "JARVIS işlemi başarısız",
+                str(error),
+                parent=self.root,
+            )
+        except tk.TclError:
+            return
+
     def _set_busy(self, busy: bool, status: str) -> None:
-        self.status_label.configure(text=STATUS_TEXT.get(status, status))
-        self.send_button.configure(state="disabled" if busy else "normal")
+        try:
+            if self.status_label.winfo_exists():
+                self.status_label.configure(
+                    text=STATUS_TEXT.get(status, status)
+                )
+            if self.send_button.winfo_exists():
+                self.send_button.configure(
+                    state="disabled" if busy else "normal"
+                )
+        except tk.TclError:
+            return
 
     def _submit_command(self) -> str:
         text = self.command.get("1.0", "end").strip()
-        if not text or self._busy_future is not None:
+        if not text or self._active_operation_id is not None:
             return "break"
         if self._snapshot.provider == "mock":
             self.render(UIScreen.SETTINGS)
@@ -2066,46 +2270,49 @@ class DesktopWindow:
         self._streaming_label = None
         self._typing_frame = 0
         self._command_complete_pending = False
-        self._pending_user_text = text
+        self._pending_user_text = None
 
-        self._set_busy(
-            True,
-            "PROCESSING",
-        )
+        operation_id = self._begin_operation("PROCESSING")
+        if operation_id is None:
+            return "break"
+        self._command_operation_id = operation_id
+        self.controller.state.messages.append(ChatMessage("user", text))
 
-        self._busy_future = self.controller.submit_background(
+        launched = self._launch_operation(
+            operation_id,
             self.controller.submit_command(
                 text,
-                stream_callback=self._on_stream_text,
+                stream_callback=(
+                    lambda value, current=operation_id: self._queue_ui_event(
+                        current,
+                        "command_stream",
+                        value,
+                    )
+                ),
+                manage_state=False,
             ),
-            self._on_command_done,
+            "command_done",
         )
+        if not launched:
+            return "break"
         self.render(UIScreen.CHAT)
         self._schedule_typewriter(180)
         return "break"
 
     def _on_stream_text(
         self,
+        operation_id: int,
         text: str,
     ) -> None:
-        if self._closing:
-            return
-
-        self.root.after(
-            0,
-            lambda value=text: (
-                self._apply_stream_text(
-                    value
-                )
-            ),
-        )
+        self._queue_ui_event(operation_id, "command_stream", text)
 
     def _apply_stream_text(
         self,
-        text: str,
+        operation_id: int,
+        text: object,
     ) -> None:
         if (
-            self._busy_future is None
+            operation_id != self._active_operation_id
             or not isinstance(text, str)
             or not text
         ):
@@ -2183,21 +2390,44 @@ class DesktopWindow:
         self.workspace_scroller.canvas.update_idletasks()
         self.workspace_scroller.canvas.yview_moveto(1.0)
 
-    def _on_command_done(self, future: Future[Any]) -> None:
-        self.root.after(0, lambda: self._finish_command(future))
+    def _on_command_done(
+        self,
+        operation_id: int,
+        future: Future[Any],
+    ) -> None:
+        self._queue_ui_event(operation_id, "command_done", future)
 
-    def _finish_command(self, future: Future[Any]) -> None:
+    def _finish_command(
+        self,
+        operation_id: int,
+        payload: object,
+    ) -> None:
+        if operation_id != self._active_operation_id:
+            return
+        if not isinstance(payload, Future):
+            raise TypeError("Command completion payload must be a Future.")
         try:
-            message = future.result()
+            message = payload.result()
         except Exception as exc:
-            self._pending_user_text = None
-            messagebox.showerror(
-                "JARVIS isteği başarısız", str(exc), parent=self.root
+            self.controller.state.messages.append(
+                ChatMessage(
+                    "system",
+                    "İstek tamamlanamadı. JARVIS oturumu korundu; "
+                    "tekrar deneyebilirsin.",
+                )
             )
-            self._finalize_command()
+            self._finalize_command(operation_id)
+            messagebox.showerror(
+                "JARVIS isteği başarısız",
+                str(exc),
+                parent=self.root,
+            )
             return
 
         self._pending_user_text = None
+        if isinstance(message, ChatMessage):
+            self.controller.state.messages.append(message)
+        self.controller.state.status = "LOCAL CORE READY"
 
         if (
             not self._stream_target_text
@@ -2216,19 +2446,22 @@ class DesktopWindow:
             self._schedule_typewriter(0)
             return
 
-        self._finalize_command()
+        self._finalize_command(operation_id)
 
-    def _finalize_command(self) -> None:
+    def _finalize_command(self, operation_id: int | None = None) -> None:
+        operation_id = operation_id or self._command_operation_id
+        if operation_id is None or operation_id != self._active_operation_id:
+            return
         if self._typewriter_job is not None:
             self.root.after_cancel(self._typewriter_job)
             self._typewriter_job = None
-        self._busy_future = None
         self._streaming_text = None
         self._stream_target_text = ""
         self._streaming_label = None
         self._command_complete_pending = False
         self._pending_user_text = None
-        self._set_busy(False, self.controller.state.status)
+        self._command_operation_id = None
+        self._complete_operation(operation_id)
         self.render(UIScreen.CHAT)
         self.root.after(0, self._scroll_chat_to_bottom)
 
@@ -2239,37 +2472,59 @@ class DesktopWindow:
         self.workspace_scroller.canvas.yview_moveto(1.0)
 
     def _start_api_test(self) -> None:
-        if self.api_settings is None or self._busy_future is not None:
+        if self.api_settings is None or self._active_operation_id is not None:
             return
         self.api_status.configure(text="Bağlantı sınanıyor...")
         self.api_test_button.configure(state="disabled")
-        self._set_busy(True, "TESTING CONNECTION")
-        self._busy_future = self.controller.submit_background(
+        operation_id = self._begin_operation("TESTING CONNECTION")
+        if operation_id is None:
+            return
+        self._launch_operation(
+            operation_id,
             self.api_settings.test_connection(
                 self.api_provider.get(),
                 self.api_model.get(),
                 self.api_key.get(),
             ),
-            self._on_api_test_done,
+            "api_done",
         )
 
-    def _on_api_test_done(self, future: Future[Any]) -> None:
-        self.root.after(0, lambda: self._finish_api_test(future))
+    def _on_api_test_done(
+        self,
+        operation_id: int,
+        future: Future[Any],
+    ) -> None:
+        self._queue_ui_event(operation_id, "api_done", future)
 
-    def _finish_api_test(self, future: Future[Any]) -> None:
-        self._busy_future = None
+    def _finish_api_test(
+        self,
+        operation_id: int,
+        payload: object,
+    ) -> None:
+        if not isinstance(payload, Future):
+            raise TypeError("API completion payload must be a Future.")
         try:
-            result = future.result()
-            self.api_status.configure(
-                text=result.message,
-                fg=self._colors.ink if result.ok else self._colors.muted,
-            )
+            result = payload.result()
+            self._api_test_feedback = (result.message, bool(result.ok))
         except Exception as exc:
-            self.api_status.configure(
-                text=f"Bağlantı sınaması başarısız: {exc}", fg=self._colors.muted
+            self._api_test_feedback = (
+                f"Bağlantı sınaması başarısız: {exc}",
+                False,
             )
-        self.api_test_button.configure(state="normal")
-        self._set_busy(False, "LOCAL CORE READY")
+        finally:
+            self._complete_operation(operation_id)
+
+        if self.controller.state.screen is UIScreen.SETTINGS:
+            status = getattr(self, "api_status", None)
+            button = getattr(self, "api_test_button", None)
+            if status is not None and status.winfo_exists():
+                feedback, ok = self._api_test_feedback
+                status.configure(
+                    text=feedback,
+                    fg=self._colors.ink if ok else self._colors.muted,
+                )
+            if button is not None and button.winfo_exists():
+                button.configure(state="normal")
 
     def _save_api_settings(self) -> None:
         if self.api_settings is None or self._busy_future is not None:
@@ -2328,54 +2583,78 @@ class DesktopWindow:
             )
 
     def _start_voice(self) -> None:
-        if not self._snapshot.voice_available or self._busy_future is not None:
+        if (
+            not self._snapshot.voice_available
+            or self._active_operation_id is not None
+        ):
             messagebox.showinfo(
                 "Ses", "Sesli iletişim ayarlanmamış.", parent=self.root
             )
             return
-        self._set_busy(True, "LISTENING")
-        self._busy_future = self.controller.submit_background(
-            self.controller.run_voice(),
-            self._on_voice_done,
+        operation_id = self._begin_operation("LISTENING")
+        if operation_id is None:
+            return
+        self._launch_operation(
+            operation_id,
+            self.controller.run_voice(
+                message_callback=(
+                    lambda message, current=operation_id: (
+                        self._queue_ui_event(
+                            current,
+                            "voice_message",
+                            message,
+                        )
+                    )
+                ),
+                manage_state=False,
+            ),
+            "voice_done",
         )
+
+    def _apply_voice_message(
+        self,
+        operation_id: int,
+        payload: object,
+    ) -> None:
+        if operation_id != self._active_operation_id:
+            return
+        if not isinstance(payload, ChatMessage):
+            raise TypeError("Voice message payload must be a ChatMessage.")
+        self.controller.state.messages.append(payload)
+        if self.controller.state.screen is UIScreen.CHAT:
+            self.render(UIScreen.CHAT)
 
     def _on_voice_done(
         self,
+        operation_id: int,
         future: Future[Any],
     ) -> None:
-        self.root.after(
-            0,
-            lambda: self._finish_voice(
-                future
-            ),
-        )
+        self._queue_ui_event(operation_id, "voice_done", future)
 
     def _finish_voice(
         self,
-        future: Future[Any],
+        operation_id: int,
+        payload: object,
     ) -> None:
-        self._busy_future = None
-
+        if not isinstance(payload, Future):
+            raise TypeError("Voice completion payload must be a Future.")
         try:
-            future.result()
+            payload.result()
         except Exception as exc:
             messagebox.showerror(
                 "JARVIS sesli iletişimi başarısız",
                 str(exc),
                 parent=self.root,
             )
-
-        self._set_busy(
-            False,
-            "LOCAL CORE READY",
-        )
-
-        self.render(
-            UIScreen.CHAT
-        )
+        finally:
+            self._complete_operation(operation_id)
+        self.render(UIScreen.CHAT)
 
     def _start_vision(self) -> None:
-        if not self._snapshot.vision_available or self._busy_future is not None:
+        if (
+            not self._snapshot.vision_available
+            or self._active_operation_id is not None
+        ):
             messagebox.showinfo(
                 "Görüş", "Görsel analiz ayarlanmamış.", parent=self.root
             )
@@ -2391,60 +2670,82 @@ class DesktopWindow:
         )
         if not approved:
             return
-        self._set_busy(True, "CAPTURING")
-        self._busy_future = self.controller.submit_background(
-            self.controller.run_vision(purpose), self._on_aux_done
+        operation_id = self._begin_operation("CAPTURING")
+        if operation_id is None:
+            return
+        self._launch_operation(
+            operation_id,
+            self.controller.run_vision(purpose),
+            "aux_done",
         )
 
     def _start_research(self) -> None:
         query = self.research_entry.get().strip()
-        if not query or self._busy_future is not None:
+        if not query or self._active_operation_id is not None:
             return
-        self._set_busy(True, "RESEARCHING")
-        self._busy_future = self.controller.submit_background(
-            self.controller.run_research(query), self._on_research_done
+        operation_id = self._begin_operation("RESEARCHING")
+        if operation_id is None:
+            return
+        self._research_report = None
+        self._research_error = None
+        self._launch_operation(
+            operation_id,
+            self.controller.run_research(query),
+            "research_done",
         )
 
-    def _on_aux_done(self, future: Future[Any]) -> None:
-        self.root.after(0, lambda: self._finish_aux(future))
+    def _on_aux_done(
+        self,
+        operation_id: int,
+        future: Future[Any],
+    ) -> None:
+        self._queue_ui_event(operation_id, "aux_done", future)
 
-    def _finish_aux(self, future: Future[Any]) -> None:
-        self._busy_future = None
+    def _finish_aux(self, operation_id: int, payload: object) -> None:
+        if not isinstance(payload, Future):
+            raise TypeError("Auxiliary completion payload must be a Future.")
         try:
             messagebox.showinfo(
-                "JARVIS", str(future.result()), parent=self.root
+                "JARVIS", str(payload.result()), parent=self.root
             )
         except Exception as exc:
             messagebox.showerror(
                 "JARVIS işlemi başarısız", str(exc), parent=self.root
             )
-        self._set_busy(False, "LOCAL CORE READY")
+        finally:
+            self._complete_operation(operation_id)
 
-    def _on_research_done(self, future: Future[Any]) -> None:
-        self.root.after(0, lambda: self._finish_research(future))
+    def _on_research_done(
+        self,
+        operation_id: int,
+        future: Future[Any],
+    ) -> None:
+        self._queue_ui_event(operation_id, "research_done", future)
 
-    def _finish_research(self, future: Future[Any]) -> None:
-        self._busy_future = None
-        self._clear(self.research_results)
+    def _finish_research(
+        self,
+        operation_id: int,
+        payload: object,
+    ) -> None:
+        if not isinstance(payload, Future):
+            raise TypeError("Research completion payload must be a Future.")
         try:
-            report = future.result()
-            for claim in report.get("claims", []):
-                self._line(
-                    self.research_results,
-                    claim.get("text", ""),
-                    ", ".join(claim.get("citations", [])),
-                )
-            for uncertainty in report.get("uncertainties", []):
-                self._line(
-                    self.research_results, "BELİRSİZLİK", uncertainty
-                )
+            self._research_report = payload.result()
+            self._research_error = None
         except Exception as exc:
-            self._line(self.research_results, "Araştırma başarısız", str(exc))
-        self._set_busy(False, "LOCAL CORE READY")
+            self._research_report = None
+            self._research_error = str(exc)
+        finally:
+            self._complete_operation(operation_id)
+        if self.controller.state.screen is UIScreen.RESEARCH:
+            self.render(UIScreen.RESEARCH)
 
     def close(self) -> None:
         self._closing = True
         self._stop_orb_animation()
+        if self._ui_poll_job is not None:
+            self.root.after_cancel(self._ui_poll_job)
+            self._ui_poll_job = None
         if self._status_job is not None:
             self.root.after_cancel(self._status_job)
         if self._nav_job is not None:
@@ -2453,6 +2754,9 @@ class DesktopWindow:
             self.root.after_cancel(self._typewriter_job)
         if self._busy_future is not None:
             self._busy_future.cancel()
+        self._busy_future = None
+        self._active_operation_id = None
+        self._command_operation_id = None
         self.controller.close()
         self.root.destroy()
 

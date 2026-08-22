@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Coroutine
-from concurrent.futures import Future
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from threading import Thread
 from typing import Any
@@ -35,9 +35,34 @@ class AsyncRunner:
         if self._closed:
             return
         self._closed = True
-        self._loop.call_soon_threadsafe(self._loop.stop)
-        self._thread.join(timeout=2)
-        self._loop.close()
+
+        async def cancel_pending() -> None:
+            current = asyncio.current_task()
+            pending = [
+                task
+                for task in asyncio.all_tasks(self._loop)
+                if task is not current and not task.done()
+            ]
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+            await self._loop.shutdown_asyncgens()
+
+        try:
+            shutdown = asyncio.run_coroutine_threadsafe(
+                cancel_pending(),
+                self._loop,
+            )
+            shutdown.result(timeout=2)
+        except (FutureTimeoutError, RuntimeError):
+            pass
+        finally:
+            if self._loop.is_running():
+                self._loop.call_soon_threadsafe(self._loop.stop)
+            self._thread.join(timeout=2)
+            if not self._thread.is_alive() and not self._loop.is_closed():
+                self._loop.close()
 
 
 @dataclass(slots=True)
@@ -185,13 +210,15 @@ class DesktopController:
         text: str,
         *,
         stream_callback: Callable[[str], None] | None = None,
+        manage_state: bool = True,
     ) -> ChatMessage:
         normalized = text.strip()
         if not normalized:
             raise ValueError("Command cannot be empty.")
-        self.state.busy = True
-        self.state.status = "PROCESSING"
-        self.state.messages.append(ChatMessage("user", normalized))
+        if manage_state:
+            self.state.busy = True
+            self.state.status = "PROCESSING"
+            self.state.messages.append(ChatMessage("user", normalized))
         try:
             request = Request(
                 normalized,
@@ -210,11 +237,13 @@ class DesktopController:
                     stream_callback=stream_callback,
                 )
             message = ChatMessage("assistant", response.text or "No response text.")
-            self.state.messages.append(message)
-            self.state.status = "LOCAL CORE READY"
+            if manage_state:
+                self.state.messages.append(message)
+                self.state.status = "LOCAL CORE READY"
             return message
         except Exception as exc:
-            self.state.status = "RECOVERING"
+            if manage_state:
+                self.state.status = "RECOVERING"
 
             message = ChatMessage(
                 "system",
@@ -226,20 +255,26 @@ class DesktopController:
                 ),
             )
 
-            self.state.messages.append(
-                message
-            )
-
-            self.state.status = (
-                "LOCAL CORE READY"
-            )
+            if manage_state:
+                self.state.messages.append(
+                    message
+                )
+                self.state.status = (
+                    "LOCAL CORE READY"
+                )
 
             return message
 
         finally:
-            self.state.busy = False
+            if manage_state:
+                self.state.busy = False
 
-    async def run_voice(self) -> str:
+    async def run_voice(
+        self,
+        *,
+        message_callback: Callable[[ChatMessage], None] | None = None,
+        manage_state: bool = True,
+    ) -> str:
         if self.application.voice is None:
             raise RuntimeError(
                 "Voice is not enabled in configuration."
@@ -281,12 +316,14 @@ class DesktopController:
                 isinstance(transcript, str)
                 and transcript.strip()
             ):
-                self.state.messages.append(
-                    ChatMessage(
-                        "user",
-                        transcript.strip(),
-                    )
+                message = ChatMessage(
+                    "user",
+                    transcript.strip(),
                 )
+                if manage_state:
+                    self.state.messages.append(message)
+                if message_callback is not None:
+                    message_callback(message)
 
             response_text = getattr(
                 result,
@@ -302,12 +339,14 @@ class DesktopController:
                     response_text.strip()
                 )
 
-                self.state.messages.append(
-                    ChatMessage(
-                        "assistant",
-                        last_response,
-                    )
+                message = ChatMessage(
+                    "assistant",
+                    last_response,
                 )
+                if manage_state:
+                    self.state.messages.append(message)
+                if message_callback is not None:
+                    message_callback(message)
 
         if last_response is not None:
             return last_response

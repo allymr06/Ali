@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 from app.core.models import (
     Request,
     RiskLevel,
@@ -11,85 +13,177 @@ from app.tools.routing import (
 )
 
 
+TOOL_SCHEMAS = {
+    "list_memories": {
+        "active_only": {
+            "type": "boolean",
+        },
+        "limit": {
+            "type": "integer",
+        },
+    },
+    "search_memories": {
+        "query": {
+            "type": "string",
+        },
+        "limit": {
+            "type": "integer",
+        },
+    },
+    "list_windows_applications": {},
+    "list_windows_processes": {
+        "name": {
+            "type": "string",
+        },
+        "limit": {
+            "type": "integer",
+        },
+    },
+    "get_windows_system_info": {},
+    "list_tasks": {
+        "status": {
+            "type": "string",
+        },
+        "limit": {
+            "type": "integer",
+        },
+    },
+    "get_task": {
+        "task_id": {
+            "type": "string",
+        },
+    },
+    "diagnostics_health": {},
+    "diagnostics_events": {
+        "limit": {
+            "type": "integer",
+        },
+        "level": {
+            "type": "string",
+        },
+        "component": {
+            "type": "string",
+        },
+    },
+    "diagnostics_metrics": {},
+}
+
+
+REQUIRED = {
+    "search_memories": [
+        "query",
+    ],
+    "get_task": [
+        "task_id",
+    ],
+}
+
+
 def make_executor(
     *,
+    override_name: str | None = None,
     risk_level: RiskLevel = RiskLevel.READ_ONLY,
     requires_confirmation: bool = False,
 ) -> ToolExecutor:
     executor = ToolExecutor()
 
-    executor.register(
-        ToolDefinition(
-            name="get_windows_system_info",
-            description="Yerel Windows sistem bilgilerini oku.",
-            risk_level=risk_level,
-            requires_confirmation=requires_confirmation,
-        ),
-        lambda: {"release": "11"},
-    )
+    for name in TOOL_SCHEMAS:
+        risk = (
+            risk_level
+            if name == override_name
+            else RiskLevel.READ_ONLY
+        )
+
+        confirm = (
+            requires_confirmation
+            if name == override_name
+            else False
+        )
+
+        executor.register(
+            ToolDefinition(
+                name=name,
+                description=f"Test tool: {name}",
+                risk_level=risk,
+                requires_confirmation=confirm,
+            ),
+            lambda: None,
+        )
 
     return executor
 
 
-def make_schema(
-    *,
-    properties=None,
-    required=None,
-):
+def make_schemas():
     return [
         {
             "type": "function",
             "function": {
-                "name": "get_windows_system_info",
-                "description": "Sistem bilgilerini oku.",
+                "name": name,
+                "description": f"Test tool: {name}",
                 "parameters": {
                     "type": "object",
-                    "properties": (
-                        {}
-                        if properties is None
-                        else properties
+                    "properties": deepcopy(
+                        properties
                     ),
-                    "required": (
-                        []
-                        if required is None
-                        else required
+                    "required": deepcopy(
+                        REQUIRED.get(
+                            name,
+                            [],
+                        )
                     ),
                 },
             },
         }
+        for name, properties
+        in TOOL_SCHEMAS.items()
     ]
 
 
-def route(text, **kwargs):
+def route(
+    text: str,
+    *,
+    provider_name: str = "ollama",
+    executor: ToolExecutor | None = None,
+    schemas=None,
+    metadata=None,
+):
     return DeterministicToolRouter().route(
-        Request(text),
-        provider_name=kwargs.get(
-            "provider_name",
-            "ollama",
+        Request(
+            text,
+            metadata=dict(
+                metadata
+                or {}
+            ),
         ),
-        tool_executor=kwargs.get(
-            "tool_executor",
-            make_executor(),
+        provider_name=provider_name,
+        tool_executor=(
+            executor
+            or make_executor()
         ),
-        tool_schemas=kwargs.get(
-            "tool_schemas",
-            make_schema(),
+        tool_schemas=(
+            make_schemas()
+            if schemas is None
+            else schemas
         ),
     )
 
 
-def test_bu_bilgisayarin_sistem_bilgilerini_yonlendirir(
+def test_routes_windows_system_information(
 ) -> None:
     result = route(
-        "Bu bilgisayar\u0131n sistem bilgilerini g\u00f6ster."
+        "Bu bilgisayar\u0131n "
+        "sistem bilgilerini g\u00f6ster."
     )
 
     assert result is not None
-    assert result.tool_name == "get_windows_system_info"
+    assert (
+        result.tool_name
+        == "get_windows_system_info"
+    )
     assert result.parameters == {}
 
 
-def test_bilgisayarimin_ozelliklerini_yonlendirir(
+def test_routes_pc_specifications(
 ) -> None:
     result = route(
         "Bilgisayar\u0131m\u0131n "
@@ -97,129 +191,386 @@ def test_bilgisayarimin_ozelliklerini_yonlendirir(
     )
 
     assert result is not None
+    assert (
+        result.tool_name
+        == "get_windows_system_info"
+    )
 
 
-def test_pc_ozelliklerini_yonlendirir(
+def test_routes_approved_windows_applications(
 ) -> None:
     result = route(
-        "Bu PC'nin \u00f6zelliklerini g\u00f6ster."
+        "JARVIS'in a\u00e7abildi\u011fi "
+        "uygulamalar\u0131 listele."
     )
 
     assert result is not None
+    assert (
+        result.tool_name
+        == "list_windows_applications"
+    )
+    assert result.parameters == {}
 
 
-def test_sistem_bilgilerini_kontrol_et_istegini_yonlendirir(
+def test_routes_windows_processes(
 ) -> None:
     result = route(
-        "Sistem bilgilerini kontrol et."
+        "\u00c7al\u0131\u015fan Windows "
+        "i\u015flemlerini g\u00f6ster."
     )
 
     assert result is not None
+    assert (
+        result.tool_name
+        == "list_windows_processes"
+    )
+    assert result.parameters == {}
 
 
-def test_nasil_sorusunu_yonlendirmez(
+def test_routes_memory_list(
 ) -> None:
     result = route(
-        "Windows sistem bilgilerini nas\u0131l g\u00f6rebilirim?"
+        "Haf\u0131za kay\u0131tlar\u0131n\u0131 "
+        "g\u00f6ster."
+    )
+
+    assert result is not None
+    assert result.tool_name == "list_memories"
+    assert result.parameters == {}
+
+
+def test_routes_all_memory_records(
+) -> None:
+    result = route(
+        "T\u00fcm haf\u0131za "
+        "kay\u0131tlar\u0131n\u0131 g\u00f6ster."
+    )
+
+    assert result is not None
+    assert result.tool_name == "list_memories"
+    assert result.parameters == {
+        "active_only": False,
+    }
+
+
+def test_routes_explicit_memory_search(
+) -> None:
+    result = route(
+        "Haf\u0131zanda ara: "
+        "\u00e7ocuk n\u00f6rolojisi"
+    )
+
+    assert result is not None
+    assert (
+        result.tool_name
+        == "search_memories"
+    )
+    assert result.parameters == {
+        "query": (
+            "\u00e7ocuk n\u00f6rolojisi"
+        ),
+    }
+
+
+def test_routes_task_list(
+) -> None:
+    result = route(
+        "T\u00fcm g\u00f6revleri listele."
+    )
+
+    assert result is not None
+    assert result.tool_name == "list_tasks"
+    assert result.parameters == {}
+
+
+def test_routes_task_by_uuid(
+) -> None:
+    task_id = (
+        "12345678-1234-"
+        "5678-1234-"
+        "567812345678"
+    )
+
+    result = route(
+        (
+            "G\u00f6rev "
+            f"{task_id} "
+            "detaylar\u0131n\u0131 g\u00f6ster."
+        )
+    )
+
+    assert result is not None
+    assert result.tool_name == "get_task"
+    assert result.parameters == {
+        "task_id": task_id,
+    }
+
+
+def test_routes_diagnostics_health(
+) -> None:
+    result = route(
+        "JARVIS sa\u011fl\u0131\u011f\u0131n\u0131 "
+        "kontrol et."
+    )
+
+    assert result is not None
+    assert (
+        result.tool_name
+        == "diagnostics_health"
+    )
+
+
+def test_routes_diagnostics_events(
+) -> None:
+    result = route(
+        "Diagnostik olaylar\u0131 "
+        "listele."
+    )
+
+    assert result is not None
+    assert (
+        result.tool_name
+        == "diagnostics_events"
+    )
+
+
+def test_routes_diagnostics_metrics(
+) -> None:
+    result = route(
+        "JARVIS metriklerini g\u00f6ster."
+    )
+
+    assert result is not None
+    assert (
+        result.tool_name
+        == "diagnostics_metrics"
+    )
+
+
+def test_does_not_route_instructional_system_question(
+) -> None:
+    result = route(
+        "Windows sistem bilgilerini "
+        "nas\u0131l g\u00f6rebilirim?"
     )
 
     assert result is None
 
 
-def test_nedir_sorusunu_yonlendirmez(
+def test_does_not_route_generic_installed_application_request(
 ) -> None:
     result = route(
-        "Windows sistem bilgisi nedir?"
+        "Bilgisayardaki uygulamalar\u0131 "
+        "g\u00f6ster."
     )
 
     assert result is None
 
 
-def test_alakasiz_windows_sorusunu_yonlendirmez(
+def test_does_not_route_ambiguous_process_request(
 ) -> None:
     result = route(
-        "Windows 11 iyi mi?"
+        "\u0130\u015flemleri g\u00f6ster."
     )
 
     assert result is None
 
 
-def test_baska_provider_icin_yonlendirmez(
+def test_does_not_route_memory_search_without_query(
 ) -> None:
     result = route(
-        "Bu bilgisayar\u0131n sistem bilgilerini g\u00f6ster.",
+        "Haf\u0131zanda ara:"
+    )
+
+    assert result is None
+
+
+def test_does_not_route_passive_memory_filter(
+) -> None:
+    result = route(
+        "Pasif haf\u0131za "
+        "kay\u0131tlar\u0131n\u0131 g\u00f6ster."
+    )
+
+    assert result is None
+
+
+def test_does_not_route_filtered_task_list(
+) -> None:
+    result = route(
+        "Tamamlanan g\u00f6revleri "
+        "g\u00f6ster."
+    )
+
+    assert result is None
+
+
+def test_does_not_route_task_without_valid_uuid(
+) -> None:
+    result = route(
+        "G\u00f6rev abc123 "
+        "detaylar\u0131n\u0131 g\u00f6ster."
+    )
+
+    assert result is None
+
+
+def test_does_not_route_filtered_diagnostic_events(
+) -> None:
+    result = route(
+        "Hata diagnostik olaylar\u0131n\u0131 "
+        "g\u00f6ster."
+    )
+
+    assert result is None
+
+
+def test_does_not_route_for_other_provider(
+) -> None:
+    result = route(
+        "JARVIS metriklerini g\u00f6ster.",
         provider_name="openai",
     )
 
     assert result is None
 
 
-def test_istek_uzerinden_yonlendirme_kapatilabilir(
+def test_request_can_disable_routing(
 ) -> None:
-    request = Request(
-        "Bu bilgisayar\u0131n sistem bilgilerini g\u00f6ster.",
+    result = route(
+        "JARVIS metriklerini g\u00f6ster.",
         metadata={
             "deterministic_tool_routing": False,
         },
     )
 
-    result = DeterministicToolRouter().route(
-        request,
-        provider_name="ollama",
-        tool_executor=make_executor(),
-        tool_schemas=make_schema(),
+    assert result is None
+
+
+def test_does_not_route_unexposed_tool(
+) -> None:
+    schemas = [
+        schema
+        for schema in make_schemas()
+        if (
+            schema["function"]["name"]
+            != "diagnostics_metrics"
+        )
+    ]
+
+    result = route(
+        "JARVIS metriklerini g\u00f6ster.",
+        schemas=schemas,
     )
 
     assert result is None
 
 
-def test_expose_edilmeyen_araci_yonlendirmez(
+def test_does_not_route_non_read_only_tool(
 ) -> None:
+    executor = make_executor(
+        override_name="diagnostics_metrics",
+        risk_level=RiskLevel.LOW,
+    )
+
     result = route(
-        "Bu bilgisayar\u0131n sistem bilgilerini g\u00f6ster.",
-        tool_schemas=[],
+        "JARVIS metriklerini g\u00f6ster.",
+        executor=executor,
     )
 
     assert result is None
 
 
-def test_read_only_olmayan_araci_yonlendirmez(
+def test_does_not_route_confirmation_required_tool(
 ) -> None:
+    executor = make_executor(
+        override_name="diagnostics_health",
+        requires_confirmation=True,
+    )
+
     result = route(
-        "Bu bilgisayar\u0131n sistem bilgilerini g\u00f6ster.",
-        tool_executor=make_executor(
-            risk_level=RiskLevel.LOW,
-        ),
+        "JARVIS sa\u011fl\u0131\u011f\u0131n\u0131 "
+        "kontrol et.",
+        executor=executor,
     )
 
     assert result is None
 
 
-def test_parametreli_araci_yonlendirmez(
+def test_rejects_schema_missing_required_parameter(
 ) -> None:
+    schemas = make_schemas()
+
+    for schema in schemas:
+        function = schema["function"]
+
+        if (
+            function["name"]
+            == "search_memories"
+        ):
+            function[
+                "parameters"
+            ]["required"] = [
+                "query",
+                "limit",
+            ]
+
     result = route(
-        "Bu bilgisayar\u0131n sistem bilgilerini g\u00f6ster.",
-        tool_schemas=make_schema(
-            properties={
-                "hedef": {
-                    "type": "string",
-                }
-            },
-        ),
+        "Haf\u0131zanda ara: JARVIS",
+        schemas=schemas,
     )
 
     assert result is None
 
 
-
-def test_onay_gerektiren_araci_yonlendirmez(
+def test_rejects_candidate_parameter_not_in_schema(
 ) -> None:
+    schemas = make_schemas()
+
+    for schema in schemas:
+        function = schema["function"]
+
+        if (
+            function["name"]
+            == "search_memories"
+        ):
+            function[
+                "parameters"
+            ]["properties"].pop(
+                "query"
+            )
+            function[
+                "parameters"
+            ]["required"] = []
+
     result = route(
-        "Bu bilgisayar\u0131n "
-        "sistem bilgilerini g\u00f6ster.",
-        tool_executor=make_executor(
-            requires_confirmation=True,
-        ),
+        "Haf\u0131zanda ara: JARVIS",
+        schemas=schemas,
+    )
+
+    assert result is None
+
+
+def test_rejects_wrong_schema_parameter_type(
+) -> None:
+    schemas = make_schemas()
+
+    for schema in schemas:
+        function = schema["function"]
+
+        if (
+            function["name"]
+            == "search_memories"
+        ):
+            function[
+                "parameters"
+            ]["properties"][
+                "query"
+            ]["type"] = "integer"
+
+    result = route(
+        "Haf\u0131zanda ara: JARVIS",
+        schemas=schemas,
     )
 
     assert result is None

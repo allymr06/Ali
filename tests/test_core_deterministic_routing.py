@@ -365,3 +365,160 @@ def test_core_does_not_reexecute_deterministically_routed_tool(
     )
 
     assert response.text == "final response"
+
+
+
+def test_core_routes_parameterized_memory_search(
+) -> None:
+    registry = ProviderRegistry()
+    provider = OllamaLikeProvider()
+
+    registry.register(
+        provider,
+        make_default=True,
+    )
+
+    tool_executor = ToolExecutor()
+    captured = {}
+
+    def search_memories(
+        query: str,
+        limit: int = 10,
+    ):
+        captured["query"] = query
+        captured["limit"] = limit
+
+        return [
+            {
+                "content": query,
+            }
+        ]
+
+    tool_executor.register(
+        ToolDefinition(
+            name="search_memories",
+            description="Search memory records.",
+        ),
+        search_memories,
+    )
+
+    engine = CoreEngine(
+        registry,
+        MemoryManager(
+            InMemoryStore()
+        ),
+        tool_executor=tool_executor,
+    )
+
+    response = asyncio.run(
+        engine.handle(
+            Request(
+                "Haf\u0131zanda ara: "
+                "\u00e7ocuk n\u00f6rolojisi"
+            )
+        )
+    )
+
+    assert captured == {
+        "query": (
+            "\u00e7ocuk n\u00f6rolojisi"
+        ),
+        "limit": 10,
+    }
+
+    assert len(provider.calls) == 1
+
+    assert (
+        response.metadata[
+            "deterministic_tool_route"
+        ]
+        == "search_memories"
+    )
+
+    assert response.metadata[
+        "tool_calls"
+    ] == 1
+
+    assert response.metadata[
+        "invalid_tool_calls"
+    ] == 0
+
+
+def test_core_routes_get_task_with_exact_uuid(
+) -> None:
+    registry = ProviderRegistry()
+    provider = OllamaLikeProvider()
+
+    registry.register(
+        provider,
+        make_default=True,
+    )
+
+    tool_executor = ToolExecutor()
+    captured = {}
+
+    def get_task(
+        task_id: str,
+    ):
+        captured["task_id"] = task_id
+
+        return {
+            "task_id": task_id,
+            "status": "completed",
+        }
+
+    tool_executor.register(
+        ToolDefinition(
+            name="get_task",
+            description="Inspect one task.",
+        ),
+        get_task,
+    )
+
+    engine = CoreEngine(
+        registry,
+        MemoryManager(
+            InMemoryStore()
+        ),
+        tool_executor=tool_executor,
+    )
+
+    task_id = (
+        "12345678-1234-"
+        "5678-1234-"
+        "567812345678"
+    )
+
+    response = asyncio.run(
+        engine.handle(
+            Request(
+                (
+                    "G\u00f6rev "
+                    f"{task_id} "
+                    "detaylar\u0131n\u0131 "
+                    "g\u00f6ster."
+                )
+            )
+        )
+    )
+
+    assert captured[
+        "task_id"
+    ] == task_id
+
+    assert len(provider.calls) == 1
+
+    assert (
+        response.metadata[
+            "deterministic_tool_route"
+        ]
+        == "get_task"
+    )
+
+    assert response.metadata[
+        "tool_calls"
+    ] == 1
+
+    assert response.metadata[
+        "invalid_tool_calls"
+    ] == 0

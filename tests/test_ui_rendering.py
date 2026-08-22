@@ -112,7 +112,8 @@ def test_primary_screens_render_cards_and_composer_on_first_layout() -> None:
                 surfaces = _rounded_surfaces(window.workspace)
                 if surfaces and all(
                     surface.winfo_height() > 1
-                    and surface.content.winfo_ismapped()
+                    and surface.winfo_height()
+                    >= surface.content.winfo_reqheight()
                     for surface in surfaces
                 ):
                     break
@@ -126,7 +127,8 @@ def test_primary_screens_render_cards_and_composer_on_first_layout() -> None:
                 )
                 for surface in surfaces
                 if surface.winfo_height() <= 1
-                or not surface.content.winfo_ismapped()
+                or surface.winfo_height()
+                < surface.content.winfo_reqheight()
             ]
             assert not hidden, (screen, hidden)
 

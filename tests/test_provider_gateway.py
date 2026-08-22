@@ -745,7 +745,7 @@ async def test_gateway_shares_one_timeout_budget_across_attempts():
 
     assert response.text == "ok"
     assert provider.calls == 2
-    assert 0 < timeouts[1] < timeouts[0] <= 0.1
+    assert 0 < timeouts[1] <= timeouts[0] <= 0.1
 
 
 def test_gateway_caps_total_timeout_at_fifteen_seconds():

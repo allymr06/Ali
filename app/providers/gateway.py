@@ -161,7 +161,7 @@ class ProviderGateway:
                 "Provider request exceeded the total timeout budget.",
                 provider=provider,
             )
-        return remaining
+        return min(remaining, self._timeout_seconds)
 
     @staticmethod
     def _normalize_response(raw, expected_provider: str) -> ModelResponse:

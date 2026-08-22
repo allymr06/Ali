@@ -31,6 +31,8 @@ class VoiceService:
         self._session_factory = session_factory
         self._audio_input = audio_input
         self._audio_output = audio_output
+        # Optional live state observer, forwarded to every session.
+        self.state_callback = None
         self._stt_provider = (
             stt_provider.strip()
             if stt_provider
@@ -134,6 +136,8 @@ class VoiceService:
         async with self._lock:
             self.clear_retained_audio()
             session = self._session_factory()
+            if self.state_callback is not None:
+                session.state_callback = self.state_callback
             self._active_session = session
             try:
                 options = (

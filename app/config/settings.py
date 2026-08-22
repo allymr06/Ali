@@ -156,12 +156,14 @@ class Settings:
     voice_vad_enabled: bool = True
     voice_silence_threshold_rms: int = 350
     voice_min_speech_seconds: float = 0.15
-    voice_trailing_silence_seconds: float = 0.65
+    voice_trailing_silence_seconds: float = 0.5
     voice_start_timeout_seconds: float = 5.0
 
-    voice_gemini_stt_model: str = "gemini-3.7-flash"
+    # The lite model transcribes in ~1.3s where the thinking model
+    # spends ~11s reasoning before answering; transcription needs speed.
+    voice_gemini_stt_model: str = "gemini-3.5-flash-lite"
     voice_gemini_tts_model: str = "gemini-3.1-flash-tts-preview"
-    voice_gemini_tts_voice: str = "Kore"
+    voice_gemini_tts_voice: str = "Charon"
 
     vision_enabled: bool = False
     # Optional dedicated vision model. When unset, VISION requests route to
@@ -541,7 +543,7 @@ class Settings:
             ),
             voice_trailing_silence_seconds=_get_float(
                 "JARVIS_VOICE_TRAILING_SILENCE_SECONDS",
-                0.65,
+                0.5,
             ),
             voice_start_timeout_seconds=_get_float(
                 "JARVIS_VOICE_START_TIMEOUT_SECONDS",
@@ -549,7 +551,7 @@ class Settings:
             ),
             voice_gemini_stt_model=os.getenv(
                 "JARVIS_VOICE_GEMINI_STT_MODEL",
-                "gemini-3.7-flash",
+                "gemini-3.5-flash-lite",
             ),
             voice_gemini_tts_model=os.getenv(
                 "JARVIS_VOICE_GEMINI_TTS_MODEL",
@@ -557,7 +559,7 @@ class Settings:
             ),
             voice_gemini_tts_voice=os.getenv(
                 "JARVIS_VOICE_GEMINI_TTS_VOICE",
-                "Kore",
+                "Charon",
             ),
             vision_enabled=_get_bool("JARVIS_VISION_ENABLED"),
             vision_model=_get_vision_model_override(),

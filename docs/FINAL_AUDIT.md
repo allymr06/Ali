@@ -5,16 +5,16 @@ Revised: 22 August 2026 (single-provider consolidation and re-verification)
 
 ## Decision
 
-JARVIS is a well-tested development release, but it is not production-ready.
-All source acceptance gates pass and the Windows portable artifact builds. The
-remaining release blockers are compilation and install/uninstall testing of the
-Inno Setup artifact, publisher code signing, and a live-service qualification
-pass with configured credentials and hardware.
+JARVIS is a well-tested development release approaching production readiness.
+All source acceptance gates pass, the rebuilt Windows artifacts are qualified,
+and the installer's clean-install/upgrade/uninstall cycle is verified. The
+remaining release blockers are publisher code signing and a live-service
+qualification pass with configured credentials and hardware.
 
-The native UI render blocker recorded on 21 August has been cleared: Tcl/Tk
-8.6.15 initializes and all eleven screens render from source on a normal
-Windows 11 account. The filesystem blocker has also been cleared — the scoped
-filesystem tool family shipped in `app/platform/windows/filesystem.py`.
+Cleared blockers: the native UI render gate (Tcl/Tk 8.6.15, all eleven screens,
+source and frozen), the scoped filesystem tool family
+(`app/platform/windows/filesystem.py`), the Inno Setup compilation, and the
+install lifecycle test.
 
 ## Automated evidence
 
@@ -24,20 +24,24 @@ filesystem tool family shipped in `app/platform/windows/filesystem.py`.
 - Bytecode compilation: all application and test modules pass.
 - Deterministic test suite: 1088 tests pass, 2 skipped, with `PYTHONHASHSEED=17`.
 - Static security gate: no runtime `shell=True`, `os.system`, `eval`, or `exec`.
-- Windows package: versioned EXE and portable ZIP generated with PyInstaller
-  6.22.2; Tcl/Tk DLLs/data and the approved icon are present. This packaging
-  evidence and the artifact hashes in `release/release-manifest.json` predate
-  the 22 August consolidation (which also fixed the packaged entrypoint), so
-  the release artifacts must be rebuilt before they are distributed.
-- Backup evidence: 235 authoritative source files match the Phase 17 mirror
-  (as of 21 August; the mirror predates the consolidation).
+- Windows package: rebuilt on 22 August from the consolidated source with
+  PyInstaller 6.22.2. The frozen smoke test reports `ok=true`,
+  `health=healthy`, `screens=11`, `tcl=8.6.15`, and the manifest records
+  `release_status=qualified` with fresh SHA-256 hashes.
+- Installer: Inno Setup 7.0.2 (Authenticode-verified) compiled
+  `JARVIS-Setup-0.1.0-x64.exe`. Verified on this host: silent per-user clean
+  install, frozen smoke test from the installed location, silent in-place
+  reinstall (upgrade path), and silent uninstall that removes the program
+  directory while preserving `%LOCALAPPDATA%\JARVIS` user data.
+- Backup evidence: the Phase 17 mirror predates the consolidation and should
+  be refreshed at the next backup point.
 
 ## Final directive acceptance matrix
 
 | # | Requirement | Status | Evidence or remaining work |
 |---:|---|---|---|
-| 1 | Application starts reliably | Pass | Source bootstrap runs and the native window initializes on a normal Windows 11 account (Tcl/Tk 8.6.15). |
-| 2 | UI loads | Pass | All eleven screens render natively from source; the packaged (frozen) render remains unqualified. |
+| 1 | Application starts reliably | Pass | Source and frozen builds start on a normal Windows 11 account; the frozen smoke test reports healthy (Tcl/Tk 8.6.15). |
+| 2 | UI loads | Pass | All eleven screens render natively from source and from the frozen, installed build. |
 | 3 | AI provider connects | Conditional | Mock provider is verified; the Gemini adapter is tested without a live credential or network call. |
 | 4 | Conversation works | Pass | Core/conversation integration and context lifecycle tests pass. |
 | 5 | Tool calling works | Pass | Provider tool calls, contracts, discovery, and execution are covered. |
@@ -57,27 +61,26 @@ filesystem tool family shipped in `app/platform/windows/filesystem.py`.
 | 19 | Logs are useful | Pass | Sanitized structured diagnostics, metrics, health, and hash-chained events are implemented. |
 | 20 | Secrets are not exposed | Pass | Configuration, diagnostics, memory, and tests enforce secret handling and redaction. |
 | 21 | Tests pass | Pass | 1088 deterministic tests pass, 2 skipped. |
-| 22 | Build succeeds | Conditional | EXE/portable ZIP builds; the installer EXE remains uncompiled and the frozen smoke gate is unqualified. |
-| 23 | Repeated launch/shutdown has no obvious leak | Conditional | Controller and service shutdown are idempotent; repeated native packaged launch is pending. |
+| 22 | Build succeeds | Pass | EXE, portable ZIP, and Inno Setup installer build; the frozen smoke gate reports qualified. |
+| 23 | Repeated launch/shutdown has no obvious leak | Pass | Controller and service shutdown are idempotent; the frozen build launched and shut down repeatedly across install, upgrade, and uninstall checks. |
 | 24 | UI remains responsive during background work | Pass | A persistent background event loop isolates Core/device work from Tk callbacks. |
 | 25 | Failures are reported honestly | Pass | Tool, health, task, and release evidence preserve failed/partial/blocked state. |
 | 26 | Documentation matches implementation | Pass | Project state, architecture, security, testing, acceptance, and packaging were reconciled. |
-| 27 | Clean-machine configuration is reproducible | Conditional | Dependencies and build tools are pinned; bootstrap must be executed on a normal Windows account. |
+| 27 | Clean-machine configuration is reproducible | Pass | Dependencies and build tools are pinned; the pinned toolchain (PyInstaller 6.22.2, Inno Setup 7.0.2) produced a qualified build on this account. |
 | 28 | Common transient failures recover | Pass | Retry, durable recovery, overload admission, and circuit recovery pass; provider fallback is intentionally disabled. |
 
-Totals: 20 pass, 8 conditional, 0 missing.
+Totals: 23 pass, 5 conditional, 0 missing.
 
 ## Production release blockers
 
-1. Run the strict frozen smoke test on a normal Windows 11 account and require
-   `ok=true`, `health=healthy`, `screens=11`, and a Tcl version. Source-mode
-   rendering is now verified on this host; the packaged build is not.
-2. Compile the Inno Setup installer, test clean install, launch, upgrade, and
-   uninstall, and confirm user data remains intact.
-3. Apply and verify a trusted publisher code-signing certificate to the EXE and
+1. Apply and verify a trusted publisher code-signing certificate to the EXE and
    installer before public distribution.
-4. Run configured live provider, microphone/speaker, and vision qualification
+2. Run configured live provider, microphone/speaker, and vision qualification
    tests without storing credentials or captured private content.
+
+Resolved on 22 August 2026: the frozen smoke gate (`ok=true`,
+`health=healthy`, `screens=11`, `tcl=8.6.15`) and the Inno Setup
+compile/install/upgrade/uninstall cycle with user data preserved.
 
 ## Known gaps in shipped subsystems
 

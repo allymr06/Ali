@@ -7,7 +7,7 @@ Last verified: 22 August 2026
 - Completed implementation milestone: Phase 17 — Windows packaging and installer
 - Completed validation milestone: Phase 18 — final audit and delivery evidence
 - Completed maintenance milestone: single-provider (Gemini) consolidation
-- Next action: resolve the remaining release blockers in `docs/FINAL_AUDIT.md`
+- Next action: code signing and live-service qualification (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
 - Automated verification: 1088 tests passing, 2 skipped (`scripts/verify.py`)
@@ -58,6 +58,10 @@ Google's OpenAI-compatible API surface.
   Phase 13 and Phase 17 notes below does not apply to this machine.
 - `scripts/verify.py` passes dependency integrity, bytecode compilation, and the
   complete deterministic suite.
+- The full release pipeline ran end to end on 22 August: PyInstaller build,
+  frozen smoke test (`ok=true`, `screens=11`, `tcl=8.6.15`), portable ZIP,
+  Inno Setup installer compile, silent clean install, installed-location smoke
+  test, in-place reinstall, and silent uninstall with user data preserved.
 
 ## Implemented architecture
 

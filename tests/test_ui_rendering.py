@@ -105,10 +105,18 @@ def test_primary_screens_render_cards_and_composer_on_first_layout() -> None:
 
         for screen in (UIScreen.HOME, UIScreen.CHAT, UIScreen.SETTINGS):
             window.render(screen)
-            for _ in range(5):
+            surfaces: list[RoundedSurface] = []
+            deadline = time.monotonic() + 1.0
+            while time.monotonic() < deadline:
                 root.update()
-                time.sleep(0.005)
-            surfaces = _rounded_surfaces(window.workspace)
+                surfaces = _rounded_surfaces(window.workspace)
+                if surfaces and all(
+                    surface.winfo_height() > 1
+                    and surface.content.winfo_ismapped()
+                    for surface in surfaces
+                ):
+                    break
+                time.sleep(0.01)
             assert surfaces
             hidden = [
                 (

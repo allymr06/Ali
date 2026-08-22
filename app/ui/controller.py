@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Coroutine
-from concurrent.futures import Future
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from threading import Thread
 from typing import Any
 
 from app.conversation.models import ConversationStatus, MessageRole
 from app.core.models import Context, Request, RequestSource
+from app.security.interactive import InteractiveApprovalCallback
 from app.ui.models import ChatMessage, RuntimeSnapshot, UIState
 
 
@@ -35,9 +36,34 @@ class AsyncRunner:
         if self._closed:
             return
         self._closed = True
-        self._loop.call_soon_threadsafe(self._loop.stop)
-        self._thread.join(timeout=2)
-        self._loop.close()
+
+        async def cancel_pending() -> None:
+            current = asyncio.current_task()
+            pending = [
+                task
+                for task in asyncio.all_tasks(self._loop)
+                if task is not current and not task.done()
+            ]
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+            await self._loop.shutdown_asyncgens()
+
+        try:
+            shutdown = asyncio.run_coroutine_threadsafe(
+                cancel_pending(),
+                self._loop,
+            )
+            shutdown.result(timeout=2)
+        except (FutureTimeoutError, RuntimeError):
+            pass
+        finally:
+            if self._loop.is_running():
+                self._loop.call_soon_threadsafe(self._loop.stop)
+            self._thread.join(timeout=2)
+            if not self._thread.is_alive() and not self._loop.is_closed():
+                self._loop.close()
 
 
 @dataclass(slots=True)
@@ -45,6 +71,11 @@ class DesktopController:
     application: Any
     state: UIState = field(default_factory=UIState)
     context: Context = field(default_factory=Context)
+    voice_context: Context = field(default_factory=Context)
+    approval_callback: InteractiveApprovalCallback | None = field(
+        default=None,
+        repr=False,
+    )
     _runner: AsyncRunner | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -82,6 +113,7 @@ class DesktopController:
             ChatMessage(
                 turn.role.value,
                 turn.content,
+                metadata=dict(turn.metadata),
             )
             for turn
             in conversation.turns
@@ -154,6 +186,9 @@ class DesktopController:
         previous_conversation_id = (
             self.context.conversation_id
         )
+        previous_voice_conversation_id = (
+            self.voice_context.conversation_id
+        )
 
         self.application = application
 
@@ -171,6 +206,17 @@ class DesktopController:
                 )
             )
 
+        try:
+            self.application.conversation_engine.get(
+                previous_voice_conversation_id
+            )
+        except KeyError:
+            self.voice_context = Context()
+        else:
+            self.voice_context = Context(
+                conversation_id=previous_voice_conversation_id
+            )
+
         close = getattr(
             previous,
             "close",
@@ -185,92 +231,100 @@ class DesktopController:
         text: str,
         *,
         stream_callback: Callable[[str], None] | None = None,
+        manage_state: bool = True,
     ) -> ChatMessage:
         normalized = text.strip()
         if not normalized:
             raise ValueError("Command cannot be empty.")
-        self.state.busy = True
-        self.state.status = "PROCESSING"
-        self.state.messages.append(ChatMessage("user", normalized))
+        if manage_state:
+            self.state.busy = True
+            self.state.status = "PROCESSING"
+            self.state.messages.append(ChatMessage("user", normalized))
         try:
             request = Request(
                 normalized,
                 source=RequestSource.TEXT,
             )
 
+            approval_options = (
+                {"approval_callback": self.approval_callback}
+                if self.approval_callback is not None
+                else {}
+            )
             if stream_callback is None:
                 response = await self.application.engine.handle(
                     request,
                     self.context,
+                    **approval_options,
                 )
             else:
                 response = await self.application.engine.handle(
                     request,
                     self.context,
                     stream_callback=stream_callback,
+                    **approval_options,
                 )
-            message = ChatMessage("assistant", response.text or "No response text.")
-            self.state.messages.append(message)
-            self.state.status = "LOCAL CORE READY"
+            message = ChatMessage(
+                "assistant",
+                response.text or "No response text.",
+                metadata={
+                    key: response.metadata[key]
+                    for key in (
+                        "reasoning_level",
+                        "assurance_level",
+                        "uncertainty_summary",
+                    )
+                    if response.metadata.get(key) is not None
+                },
+            )
+            if manage_state:
+                self.state.messages.append(message)
+                self.state.status = "LOCAL CORE READY"
             return message
         except Exception as exc:
-            self.state.status = "RECOVERING"
+            if manage_state:
+                self.state.status = "RECOVERING"
 
             message = ChatMessage(
                 "system",
                 (
-                    "?stek tamamlanamad? "
+                    "İstek tamamlanamadı. "
                     f"({type(exc).__name__}). "
                     "JARVIS oturumu korundu; "
                     "tekrar deneyebilirsin."
                 ),
             )
 
-            self.state.messages.append(
-                message
-            )
-
-            self.state.status = (
-                "LOCAL CORE READY"
-            )
+            if manage_state:
+                self.state.messages.append(
+                    message
+                )
+                self.state.status = (
+                    "LOCAL CORE READY"
+                )
 
             return message
 
         finally:
-            self.state.busy = False
+            if manage_state:
+                self.state.busy = False
 
-    async def run_voice(self) -> str:
+    async def run_voice(
+        self,
+        *,
+        message_callback: Callable[[ChatMessage], None] | None = None,
+        manage_state: bool = True,
+    ) -> str:
         if self.application.voice is None:
             raise RuntimeError(
                 "Voice is not enabled in configuration."
             )
 
         voice = self.application.voice
-
-        run_continuous = getattr(
-            voice,
-            "run_continuous",
-            None,
-        )
-
-        if callable(run_continuous):
-            results = await run_continuous(
-                max_turns=100,
-                context=self.context,
-                max_consecutive_failures=2,
-            )
-        else:
-            # Compatibility path for older voice adapters
-            # and lightweight test doubles.
-            results = (
-                await voice.run_once(
-                    self.context
-                ),
-            )
-
         last_response: str | None = None
 
-        for result in results:
+        def record_result(result: object) -> None:
+            nonlocal last_response
             transcript = getattr(
                 result,
                 "transcript",
@@ -281,12 +335,14 @@ class DesktopController:
                 isinstance(transcript, str)
                 and transcript.strip()
             ):
-                self.state.messages.append(
-                    ChatMessage(
-                        "user",
-                        transcript.strip(),
-                    )
+                message = ChatMessage(
+                    "user",
+                    transcript.strip(),
                 )
+                if manage_state:
+                    self.state.voice_messages.append(message)
+                if message_callback is not None:
+                    message_callback(message)
 
             response_text = getattr(
                 result,
@@ -298,16 +354,42 @@ class DesktopController:
                 isinstance(response_text, str)
                 and response_text.strip()
             ):
-                last_response = (
-                    response_text.strip()
+                last_response = response_text.strip()
+                message = ChatMessage(
+                    "assistant",
+                    last_response,
                 )
+                if manage_state:
+                    self.state.voice_messages.append(message)
+                if message_callback is not None:
+                    message_callback(message)
 
-                self.state.messages.append(
-                    ChatMessage(
-                        "assistant",
-                        last_response,
-                    )
-                )
+        run_continuous = getattr(
+            voice,
+            "run_continuous",
+            None,
+        )
+
+        if callable(run_continuous):
+            options = {
+                "max_turns": 100,
+                "context": self.voice_context,
+                "max_consecutive_failures": 2,
+                "result_callback": record_result,
+            }
+            if self.approval_callback is not None:
+                options["approval_callback"] = self.approval_callback
+            results = await run_continuous(**options)
+        else:
+            # Compatibility path for older voice adapters
+            # and lightweight test doubles.
+            options = (
+                {"approval_callback": self.approval_callback}
+                if self.approval_callback is not None
+                else {}
+            )
+            results = (await voice.run_once(self.voice_context, **options),)
+            record_result(results[0])
 
         if last_response is not None:
             return last_response
@@ -335,6 +417,15 @@ class DesktopController:
                 return str(state)
 
         return "idle"
+
+    async def interrupt_voice(self) -> bool:
+        voice = self.application.voice
+        if voice is None:
+            return False
+        interrupt = getattr(voice, "interrupt_active", None)
+        if not callable(interrupt):
+            return False
+        return bool(await interrupt())
 
     async def run_research(
         self, query: str, *, max_sources: int = 5

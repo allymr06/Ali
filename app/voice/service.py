@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Callable
 
 from app.core.models import Context
+from app.security.interactive import InteractiveApprovalCallback
 from app.voice.base import AudioInput, AudioOutput, SpeechRecognizer, SpeechSynthesizer
 from app.voice.models import (
     AudioCapture,
@@ -122,7 +123,12 @@ class VoiceService:
             self._audio_output.list_devices()
         )
 
-    async def run_once(self, context: Context | None = None) -> VoiceSessionResult:
+    async def run_once(
+        self,
+        context: Context | None = None,
+        *,
+        approval_callback: InteractiveApprovalCallback | None = None,
+    ) -> VoiceSessionResult:
         if self._lock.locked():
             raise RuntimeError("Another voice session is already active.")
         async with self._lock:
@@ -130,7 +136,12 @@ class VoiceService:
             session = self._session_factory()
             self._active_session = session
             try:
-                return await session.run_once(context)
+                options = (
+                    {"approval_callback": approval_callback}
+                    if approval_callback is not None
+                    else {}
+                )
+                return await session.run_once(context, **options)
             finally:
                 self._last_session = session
                 self._active_session = None
@@ -141,6 +152,8 @@ class VoiceService:
         max_turns: int,
         context: Context | None = None,
         max_consecutive_failures: int = 2,
+        result_callback: Callable[[VoiceSessionResult], None] | None = None,
+        approval_callback: InteractiveApprovalCallback | None = None,
     ) -> tuple[VoiceSessionResult, ...]:
         if max_turns < 1 or max_turns > 100:
             raise ValueError(
@@ -159,9 +172,12 @@ class VoiceService:
 
         for _ in range(max_turns):
             result = await self.run_once(
-                context
+                context,
+                approval_callback=approval_callback,
             )
             results.append(result)
+            if result_callback is not None:
+                result_callback(result)
 
             if (
                 result.state

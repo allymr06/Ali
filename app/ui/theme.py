@@ -17,31 +17,40 @@ class ThemeTokens:
     hover: str
     focus: str
     faint: str
+    accent: str
+    accent_strong: str
+    warning: str
 
 
 DARK = ThemeTokens(
-    "#090909",
-    "#111111",
-    "#181818",
-    "#f4f4f4",
-    "#9b9b9b",
-    "#2d2d2d",
-    "#090909",
-    "#222222",
-    "#d8d8d8",
-    "#676767",
+    "#05080b",
+    "#091016",
+    "#111d25",
+    "#eaf8fb",
+    "#7f969e",
+    "#223640",
+    "#061014",
+    "#14252d",
+    "#45cde9",
+    "#5f7780",
+    "#a9efff",
+    "#45cde9",
+    "#efc37d",
 )
 LIGHT = ThemeTokens(
-    "#f4f4f4",
+    "#edf4f6",
+    "#f8fcfd",
+    "#e2edf0",
+    "#0a171c",
+    "#536970",
+    "#b7cbd1",
     "#ffffff",
-    "#e9e9e9",
-    "#111111",
-    "#666666",
-    "#cccccc",
-    "#ffffff",
-    "#dedede",
-    "#303030",
-    "#909090",
+    "#d7e8ec",
+    "#167f98",
+    "#789198",
+    "#0c667d",
+    "#168ba6",
+    "#9a651f",
 )
 
 

@@ -30,6 +30,20 @@ class FakeClient:
         )
 
 
+class FakeAsyncStream:
+    def __init__(self, events) -> None:
+        self._events = iter(events)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._events)
+        except StopIteration:
+            raise StopAsyncIteration
+
+
 def response(text: str = "Gemini response"):
     return SimpleNamespace(
         choices=[
@@ -56,6 +70,137 @@ async def test_gemini_provider_uses_gemini_identity_and_model() -> None:
     assert result.model == "gemini-test"
     assert result.text == "Gemini response"
     assert client.chat.completions.calls[0]["model"] == "gemini-test"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("text", "task_type", "expected"),
+    [
+        ("Merhaba", "simple", "minimal"),
+        ("Bu mimariyi değerlendir", "complex", "medium"),
+        ("Lütfen derin düşün", "simple", "high"),
+    ],
+)
+async def test_gemini_auto_reasoning_follows_request_contract(
+    text,
+    task_type,
+    expected,
+) -> None:
+    client = FakeClient(response())
+    provider = GeminiProvider(
+        Settings(
+            gemini_model="gemini-3.5-flash-lite",
+            gemini_reasoning_effort="auto",
+        ),
+        client=client,
+    )
+    request = Request(text, metadata={"task_type": task_type})
+
+    result = await provider.generate(request, Context())
+
+    assert client.chat.completions.calls[0]["reasoning_effort"] == expected
+    assert request.metadata["_reasoning_level"] == expected
+    assert result.metadata == {}
+
+
+@pytest.mark.asyncio
+async def test_gemini_prefers_semantic_complexity_over_agentic_route() -> None:
+    client = FakeClient(response())
+    provider = GeminiProvider(
+        Settings(
+            gemini_model="gemini-3.5-flash-lite",
+            gemini_reasoning_effort="auto",
+        ),
+        client=client,
+    )
+
+    await provider.generate(
+        Request(
+            "Yalnızca hazırım yaz",
+            metadata={
+                "task_type": "agentic",
+                "reasoning_task_type": "simple",
+            },
+        ),
+        Context(),
+    )
+
+    assert client.chat.completions.calls[0]["reasoning_effort"] == "minimal"
+
+
+@pytest.mark.asyncio
+async def test_gemini_generate_and_stream_use_same_reasoning_level_and_hide_raw_thoughts(
+) -> None:
+    hidden = "private chain of thought"
+    generate_response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content="Görünür yanıt",
+                    tool_calls=[],
+                    thoughts=[hidden],
+                    reasoning_content=hidden,
+                ),
+                finish_reason="stop",
+            )
+        ],
+        usage=None,
+    )
+    stream_response = FakeAsyncStream(
+        [
+            SimpleNamespace(
+                model="gemini-3.5-flash-lite",
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content="Görünür yanıt",
+                            tool_calls=[],
+                            thoughts=[hidden],
+                            reasoning_content=hidden,
+                        ),
+                        finish_reason="stop",
+                    )
+                ],
+                usage=None,
+            )
+        ]
+    )
+    settings = Settings(
+        gemini_model="gemini-3.5-flash-lite",
+        gemini_reasoning_effort="auto",
+    )
+    generate_client = FakeClient(generate_response)
+    stream_client = FakeClient(stream_response)
+    generate_provider = GeminiProvider(settings, client=generate_client)
+    stream_provider = GeminiProvider(settings, client=stream_client)
+
+    result = await generate_provider.generate(
+        Request("Mimariyi değerlendir", metadata={"task_type": "complex"}),
+        Context(),
+    )
+    chunks = [
+        chunk
+        async for chunk in stream_provider.stream(
+            Request(
+                "Mimariyi değerlendir",
+                metadata={"task_type": "complex"},
+            ),
+            Context(),
+        )
+    ]
+
+    assert generate_client.chat.completions.calls[0]["reasoning_effort"] == "medium"
+    assert stream_client.chat.completions.calls[0]["reasoning_effort"] == "medium"
+    assert result.text == "Görünür yanıt"
+    assert result.metadata == {}
+    assert not hasattr(result, "thoughts")
+    assert not hasattr(result, "reasoning_content")
+    assert [chunk.text for chunk in chunks] == ["Görünür yanıt"]
+    assert all(chunk.metadata == {} for chunk in chunks)
+    assert all(not hasattr(chunk, "thoughts") for chunk in chunks)
+    assert all(not hasattr(chunk, "reasoning_content") for chunk in chunks)
+    assert hidden not in repr(result)
+    assert all(hidden not in repr(chunk) for chunk in chunks)
 
 
 def test_gemini_provider_creates_compatible_client_from_settings() -> None:

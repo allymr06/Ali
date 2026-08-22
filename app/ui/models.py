@@ -27,12 +27,16 @@ class UITheme(StrEnum):
 class ChatMessage:
     role: str
     text: str
+    metadata: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.role not in {"user", "assistant", "system"}:
             raise ValueError("Chat role is invalid.")
         if not self.text.strip():
             raise ValueError("Chat text cannot be empty.")
+        if not isinstance(self.metadata, dict):
+            raise TypeError("Chat metadata must be a dictionary.")
+        object.__setattr__(self, "metadata", dict(self.metadata))
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,3 +68,6 @@ class UIState:
     context_collapsed: bool = False
     reduced_motion: bool = False
     messages: list[ChatMessage] = field(default_factory=list)
+    voice_active: bool = False
+    voice_status: str = "IDLE"
+    voice_messages: list[ChatMessage] = field(default_factory=list)

@@ -38,6 +38,11 @@ class OpenAIProvider(AIProvider):
             self._client = AsyncOpenAI(
                 api_key=self._settings.api_key,
                 base_url=self._settings.api_base_url or None,
+                timeout=self._settings.provider_timeout_seconds,
+                # ProviderGateway is the single retry owner. Disabling SDK
+                # retries prevents one gateway attempt from multiplying into
+                # several hidden HTTP requests.
+                max_retries=0,
             )
 
     @property
@@ -167,16 +172,22 @@ class OpenAIProvider(AIProvider):
         normalized: list[dict[str, Any]] = []
         for tool_call in getattr(message, "tool_calls", None) or []:
             function = getattr(tool_call, "function", None)
-            normalized.append(
-                {
-                    "id": getattr(tool_call, "id", None),
-                    "type": getattr(tool_call, "type", "function"),
-                    "function": {
-                        "name": getattr(function, "name", None),
-                        "arguments": getattr(function, "arguments", None),
-                    },
-                }
-            )
+            item = {
+                "id": getattr(tool_call, "id", None),
+                "type": getattr(tool_call, "type", "function"),
+                "function": {
+                    "name": getattr(function, "name", None),
+                    "arguments": getattr(function, "arguments", None),
+                },
+            }
+            extra_content = getattr(tool_call, "extra_content", None)
+            if extra_content is None:
+                model_extra = getattr(tool_call, "model_extra", None)
+                if isinstance(model_extra, dict):
+                    extra_content = model_extra.get("extra_content")
+            if extra_content is not None:
+                item["extra_content"] = extra_content
+            normalized.append(item)
         return normalized
 
     @staticmethod
@@ -248,6 +259,14 @@ class OpenAIProvider(AIProvider):
         """Provider-specific Chat Completions options."""
         return {}
 
+    def _chat_request_options_for_request(
+        self,
+        selected_model: str,
+        request: Request,
+    ) -> dict[str, Any]:
+        """Request-aware hook that preserves existing provider overrides."""
+        return self._chat_request_options(selected_model)
+
     async def generate(
         self,
         request: Request,
@@ -271,8 +290,9 @@ class OpenAIProvider(AIProvider):
             "tools": tools or None,
         }
         request_arguments.update(
-            self._chat_request_options(
-                selected_model
+            self._chat_request_options_for_request(
+                selected_model,
+                request,
             )
         )
         if response_format is not None:
@@ -331,8 +351,9 @@ class OpenAIProvider(AIProvider):
                 },
             }
             request_arguments.update(
-                self._chat_request_options(
-                    selected_model
+                self._chat_request_options_for_request(
+                    selected_model,
+                    request,
                 )
             )
             stream = await client.chat.completions.create(

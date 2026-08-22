@@ -100,11 +100,15 @@ class AgentLoop:
         step,
         task_id=None,
         plan_id=None,
+        request_id=None,
+        conversation_id=None,
     ):
         return self._approval_gate.evaluate(
             step=step,
             task_id=task_id,
             plan_id=plan_id,
+            request_id=request_id,
+            conversation_id=conversation_id,
         )
 
     def request_approval(
@@ -152,7 +156,16 @@ class AgentLoop:
     def _check_plan_approvals(
         self,
         plan: Plan,
+        *,
+        request_id=None,
+        conversation_id=None,
     ):
+        if "_approval_request_id" not in plan.metadata:
+            plan.metadata["_approval_request_id"] = request_id
+        if "_approval_conversation_id" not in plan.metadata:
+            plan.metadata["_approval_conversation_id"] = conversation_id
+        request_id = plan.metadata["_approval_request_id"]
+        conversation_id = plan.metadata["_approval_conversation_id"]
         pending = []
         denied = []
 
@@ -160,6 +173,8 @@ class AgentLoop:
             decision = self._approval_gate.evaluate(
                 step=step,
                 plan_id=plan.plan_id,
+                request_id=request_id,
+                conversation_id=conversation_id,
             )
 
             if decision.result.value == "pending":
@@ -289,8 +304,21 @@ class AgentLoop:
             active_context,
         )
 
+        approval_request_id = plan.metadata.setdefault(
+            "_approval_request_id",
+            request.request_id,
+        )
+        approval_conversation_id = plan.metadata.setdefault(
+            "_approval_conversation_id",
+            active_context.conversation_id,
+        )
+
         pending_approvals, denied_approvals = (
-            self._check_plan_approvals(plan)
+            self._check_plan_approvals(
+                plan,
+                request_id=approval_request_id,
+                conversation_id=approval_conversation_id,
+            )
         )
 
         if denied_approvals:
@@ -335,8 +363,8 @@ class AgentLoop:
             request.text,
             plan,
             cancel_event=cancel_event,
-            request_id=request.request_id,
-            conversation_id=active_context.conversation_id,
+            request_id=approval_request_id,
+            conversation_id=approval_conversation_id,
         )
 
         active_context.active_task_id = task.task_id

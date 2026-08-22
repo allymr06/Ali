@@ -64,7 +64,7 @@ def test_executor_accepts_valid_arguments() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "Baku: sunny"
-    assert result.verified is False
+    assert result.verified is True
 
 
 def test_executor_preserves_permission_gate_before_execution() -> None:
@@ -116,7 +116,7 @@ def test_executor_async_tool_still_works() -> None:
 
         assert result.status is ToolExecutionStatus.SUCCESS
         assert result.data == 42
-        assert result.verified is False
+        assert result.verified is True
 
     asyncio.run(run())
 

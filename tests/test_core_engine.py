@@ -1736,11 +1736,12 @@ async def test_core_engine_executes_plan_successfully():
         *,
         parameters=None,
     ):
-        return ToolResult(
-            status=ToolExecutionStatus.SUCCESS,
-            tool_name=tool_name,
-            data={"ok": True},
-        )
+            return ToolResult(
+                status=ToolExecutionStatus.SUCCESS,
+                tool_name=tool_name,
+                data={"ok": True},
+                verified=True,
+            )
 
     engine._tool_executor.execute = fake_execute
 

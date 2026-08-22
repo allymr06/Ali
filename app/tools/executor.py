@@ -8,8 +8,10 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from datetime import datetime
 from threading import RLock
 from typing import Any, get_type_hints
+from uuid import UUID
 
 from app.core.models import (
+    RiskLevel,
     ToolDefinition,
     ToolExecutionStatus,
     ToolResult,
@@ -75,6 +77,8 @@ class ToolExecutor:
             )
         self._active_execution_counts: dict[str, int] = {}
         self._execution_count_lock = RLock()
+        self._consumed_approval_ids: dict[UUID, datetime | None] = {}
+        self._approval_lock = RLock()
 
     def register(
         self,
@@ -92,6 +96,15 @@ class ToolExecutor:
 
         if not callable(handler):
             raise TypeError("Tool handler must be callable.")
+
+        if (
+            "windows" in definition.capabilities
+            and "read-only" not in definition.tags
+            and not definition.requires_confirmation
+        ):
+            raise ValueError(
+                "Mutating Windows tools must require explicit confirmation."
+            )
 
         self._registry.register(
             RegisteredTool(
@@ -434,14 +447,22 @@ class ToolExecutor:
 
             return value
 
+        read_only_observation = (
+            definition.risk_level is RiskLevel.READ_ONLY
+            and not definition.requires_confirmation
+        )
         return ToolResult(
             status=ToolExecutionStatus.SUCCESS,
             tool_name=definition.name,
-            message="Tool executed successfully; outcome is not yet verified.",
+            message=(
+                "Read-only tool observation completed."
+                if read_only_observation
+                else "Tool executed successfully; outcome is not yet verified."
+            ),
             data=value,
             started_at=started_at,
             finished_at=self._now(),
-            verified=False,
+            verified=read_only_observation,
         )
 
     def _interrupted_result(
@@ -529,7 +550,32 @@ class ToolExecutor:
                     verified=False,
                 )
 
+            if not self._consume_approval_grant(approval_grant):
+                return ToolResult(
+                    status=ToolExecutionStatus.BLOCKED,
+                    tool_name=definition.name,
+                    message="Approval grant has already been used.",
+                    error="Approval replay blocked.",
+                    verified=False,
+                )
+
         return None
+
+    def _consume_approval_grant(self, grant: ApprovalGrant) -> bool:
+        """Atomically consume one capability so concurrent replay fails closed."""
+        now = utc_now()
+        with self._approval_lock:
+            expired = tuple(
+                operation_id
+                for operation_id, expiry in self._consumed_approval_ids.items()
+                if expiry is not None and expiry <= now
+            )
+            for operation_id in expired:
+                self._consumed_approval_ids.pop(operation_id, None)
+            if grant.operation_id in self._consumed_approval_ids:
+                return False
+            self._consumed_approval_ids[grant.operation_id] = grant.expires_at
+            return True
 
     def execute(
         self,

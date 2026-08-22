@@ -259,6 +259,24 @@ class APISettingsService:
                 base.ollama_enabled
                 or provider == "ollama"
             ),
+            # A selected local provider should use the streaming/chat path
+            # without requiring hidden environment switches. Reuse the
+            # selected model unless an explicit chat model was configured.
+            ollama_hybrid_enabled=(
+                base.ollama_hybrid_enabled
+                or provider == "ollama"
+            ),
+            ollama_chat_model=(
+                base.ollama_chat_model
+                if "JARVIS_OLLAMA_CHAT_MODEL" in os.environ
+                else model
+                if provider == "ollama"
+                else base.ollama_chat_model
+            ),
+            ollama_warm_enabled=(
+                base.ollama_warm_enabled
+                or provider == "ollama"
+            ),
             voice_enabled=(
                 base.voice_enabled
                 if "JARVIS_VOICE_ENABLED" in os.environ
@@ -289,7 +307,7 @@ class APISettingsService:
         if selected_provider == "mock":
             return ConnectionTestResult(
                 True,
-                "Local mock provider is available.",
+                "Yerel deneme sağlayıcısı kullanılabilir.",
             )
 
         settings = (
@@ -319,7 +337,7 @@ class APISettingsService:
             if not secret_candidate:
                 return ConnectionTestResult(
                     False,
-                    "Enter an API key first.",
+                    "Önce bir API anahtarı gir.",
                 )
 
             client_arguments = {
@@ -340,7 +358,7 @@ class APISettingsService:
             resolved = getattr(model_record, "id", selected_model)
             return ConnectionTestResult(
                 True,
-                f"Connected successfully. Model: {resolved}",
+                f"Bağlantı başarılı. Model: {resolved}",
             )
         except Exception as exc:
             safe_message = str(exc)
@@ -355,7 +373,7 @@ class APISettingsService:
 
             return ConnectionTestResult(
                 False,
-                f"Connection failed: {safe_message}",
+                f"Bağlantı başarısız: {safe_message}",
             )
         finally:
             close = getattr(client, "close", None)

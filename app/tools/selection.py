@@ -400,6 +400,70 @@ class ToolSchemaSelector:
                 )
 
         # --------------------------------------------------
+        # Bounded filesystem
+        # --------------------------------------------------
+
+        filesystem_domain = self._has_stem(
+            tokens,
+            ("dosya", "klasor", "dizin", "file", "folder", "director"),
+        )
+
+        if filesystem_domain:
+            selected.add("list_allowed_file_roots")
+            if self._has_stem(tokens, self._DELETE):
+                pass
+            elif self._has_stem(tokens, ("kopyala", "copy")):
+                selected.add("copy_file")
+            elif self._has_stem(tokens, ("tasi", "move", "rename")):
+                selected.add("move_file")
+            elif self._has_stem(tokens, ("yaz", "kaydet", "write", "save")):
+                selected.add("write_text_file")
+            elif self._has_stem(tokens, ("olustur", "yarat", "create", "mkdir")):
+                if self._has_any(tokens, frozenset({"klasor", "dizin", "folder", "directory"})):
+                    selected.add("create_directory")
+                else:
+                    selected.add("write_text_file")
+            elif self._has_stem(tokens, self._LIST):
+                selected.add("list_directory")
+            elif self._has_stem(tokens, ("oku", "read", "ac")):
+                selected.add("read_text_file")
+
+        # --------------------------------------------------
+        # Clipboard
+        # --------------------------------------------------
+
+        clipboard_domain = self._has_stem(
+            tokens,
+            ("pano", "clipboard"),
+        )
+
+        if clipboard_domain:
+            if self._has_stem(tokens, ("temiz", "clear")):
+                selected.add("clear_windows_clipboard")
+            elif self._has_stem(tokens, ("yaz", "kopyala", "write", "copy")):
+                selected.add("write_windows_clipboard")
+            else:
+                selected.add("read_windows_clipboard")
+
+        # --------------------------------------------------
+        # Allowlisted windows
+        # --------------------------------------------------
+
+        window_domain = self._has_stem(
+            tokens,
+            ("pencere", "window"),
+        )
+
+        if window_domain:
+            selected.add("list_allowed_windows")
+            if self._has_stem(tokens, ("kucult", "minimize")):
+                selected.add("minimize_allowed_window")
+            elif self._has_stem(tokens, ("geri", "restore", "duzelt")):
+                selected.add("restore_allowed_window")
+            elif self._has_stem(tokens, ("odak", "etkin", "activate", "focus")):
+                selected.add("activate_allowed_window")
+
+        # --------------------------------------------------
         # Windows processes
         # --------------------------------------------------
 

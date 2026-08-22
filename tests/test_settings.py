@@ -1,12 +1,19 @@
 from __future__ import annotations
 
-from app.config.settings import Settings
+from app.config.settings import (
+    DEFAULT_CONVERSATION_SYSTEM_PROMPT,
+    Settings,
+)
 
 
-def test_settings_defaults(monkeypatch) -> None:
+def test_settings_defaults(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("JARVIS_STATE_DIRECTORY", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("JARVIS_CONVERSATION_DATABASE_PATH", raising=False)
     monkeypatch.delenv("JARVIS_MEMORY_DATABASE_PATH", raising=False)
     monkeypatch.delenv("JARVIS_TASK_DATABASE_PATH", raising=False)
     monkeypatch.delenv("JARVIS_TASK_RUNTIME_DIRECTORY", raising=False)
+    monkeypatch.delenv("JARVIS_RESEARCH_CACHE_DATABASE_PATH", raising=False)
     settings = Settings.from_environment()
 
     assert settings.app_name == "JARVIS"
@@ -20,17 +27,28 @@ def test_settings_defaults(monkeypatch) -> None:
     assert settings.gemini_base_url == (
         "https://generativelanguage.googleapis.com/v1beta/openai/"
     )
-    assert settings.provider_timeout_seconds == 30.0
-    assert settings.provider_max_retries == 2
+    assert settings.provider_timeout_seconds == 15.0
+    assert settings.provider_max_retries == 1
     assert settings.provider_retry_backoff_seconds == 0.25
     assert settings.provider_fallback_enabled is True
     assert settings.conversation_max_messages == 50
     assert settings.conversation_max_characters == 50_000
     assert settings.conversation_summary_max_characters == 4_000
-    assert settings.conversation_system_prompt is None
-    assert settings.memory_database_path == "data\\jarvis_memory.sqlite3"
-    assert settings.task_database_path == "data\\jarvis_tasks.sqlite3"
-    assert settings.task_runtime_directory == "data\\tasks"
+    assert (
+        settings.conversation_system_prompt
+        == DEFAULT_CONVERSATION_SYSTEM_PROMPT
+    )
+    state = tmp_path / "JARVIS"
+    assert settings.conversation_database_path == str(
+        state / "jarvis_conversations.sqlite3"
+    )
+    assert settings.memory_database_path == str(state / "jarvis_memory.sqlite3")
+    assert settings.task_database_path == str(state / "jarvis_tasks.sqlite3")
+    assert settings.task_runtime_directory == str(state / "tasks")
+    assert settings.research_cache_database_path == str(
+        state / "jarvis_research.sqlite3"
+    )
+    assert settings.research_cache_ttl_seconds == 86_400.0
     assert settings.approval_ttl_seconds == 300.0
     assert settings.permission_audit_capacity == 1000
     assert settings.windows_integrations_enabled is True
@@ -92,6 +110,11 @@ def test_settings_reads_environment(monkeypatch) -> None:
     monkeypatch.setenv("JARVIS_VISION_MAX_FRAME_AGE_SECONDS", "2")
     monkeypatch.setenv("JARVIS_VISION_REDACT_TASKBAR", "false")
     monkeypatch.setenv("JARVIS_VISION_TASKBAR_HEIGHT", "32")
+    monkeypatch.setenv(
+        "JARVIS_RESEARCH_CACHE_DATABASE_PATH",
+        "state/test-research.sqlite3",
+    )
+    monkeypatch.setenv("JARVIS_RESEARCH_CACHE_TTL_SECONDS", "3600")
 
     settings = Settings.from_environment()
 
@@ -135,6 +158,8 @@ def test_settings_reads_environment(monkeypatch) -> None:
     assert settings.vision_max_frame_age_seconds == 2.0
     assert settings.vision_redact_taskbar is False
     assert settings.vision_taskbar_height == 32
+    assert settings.research_cache_database_path == "state/test-research.sqlite3"
+    assert settings.research_cache_ttl_seconds == 3600.0
 
 
 def test_settings_rejects_invalid_voice_configuration() -> None:

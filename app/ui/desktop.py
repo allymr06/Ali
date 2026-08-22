@@ -1,44 +1,335 @@
 from __future__ import annotations
 
+import asyncio
+import ctypes
+import math
 import sys
 import tkinter as tk
-from concurrent.futures import Future
+from collections.abc import Coroutine
+from concurrent.futures import CancelledError, Future
+from dataclasses import dataclass
 from pathlib import Path
-from tkinter import messagebox, ttk
+from queue import Empty, SimpleQueue
+from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable
 
+from app.config.provider_preferences import DEFAULT_GEMINI_MODEL
+from app.core.time import utc_now
+from app.security.interactive import InteractiveApprovalRequest
 from app.ui.api_settings import APISettingsService, create_api_settings_service
 from app.ui.controller import DesktopController
-from app.ui.models import UIScreen, UITheme
+from app.ui.models import ChatMessage, UIScreen, UITheme
 from app.ui.theme import ThemeTokens, tokens
 
+DISPLAY_MODEL_NAME = "JARVIS 0.2"
+
+
+@dataclass(frozen=True, slots=True)
+class UIEvent:
+    operation_id: int
+    kind: str
+    payload: object
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalPrompt:
+    request: InteractiveApprovalRequest
+    response: Future[bool]
+
 NAVIGATION = (
-    (UIScreen.HOME, "01", "Overview"),
-    (UIScreen.CHAT, "02", "Conversation"),
-    (UIScreen.TASKS, "03", "Tasks"),
-    (UIScreen.MEMORY, "04", "Memory"),
-    (UIScreen.VOICE, "05", "Voice"),
-    (UIScreen.VISION, "06", "Vision"),
-    (UIScreen.RESEARCH, "07", "Research"),
-    (UIScreen.TOOLS, "08", "Tools"),
-    (UIScreen.INTEGRATIONS, "09", "Connections"),
-    (UIScreen.DIAGNOSTICS, "10", "Diagnostics"),
-    (UIScreen.SETTINGS, "11", "Settings"),
+    (UIScreen.HOME, "01", "Komuta Merkezi"),
+    (UIScreen.CHAT, "02", "Sohbet"),
+    (UIScreen.TASKS, "03", "Görevler"),
+    (UIScreen.MEMORY, "04", "Hafıza Ağı"),
+    (UIScreen.VOICE, "05", "Ses"),
+    (UIScreen.VISION, "06", "Görüş"),
+    (UIScreen.RESEARCH, "07", "Araştırma"),
+    (UIScreen.TOOLS, "08", "Yetenekler"),
+    (UIScreen.INTEGRATIONS, "09", "Güven ve Erişim"),
+    (UIScreen.DIAGNOSTICS, "10", "Tanılama"),
+    (UIScreen.SETTINGS, "11", "Ayarlar"),
 )
 
 SHORTCUTS = (
-    ("Enter", "Send the prompt from the command composer"),
-    ("Shift + Enter", "Insert a new line in the command composer"),
-    ("Ctrl + L", "Focus the command composer"),
-    ("Ctrl + ,", "Open Settings"),
-    ("Ctrl + Shift + T", "Toggle the light/dark grayscale theme"),
-    ("Ctrl + Shift + N", "Collapse or expand navigation"),
-    ("Alt + 1 ... 9", "Open navigation screens 1 through 9"),
-    ("Alt + 0", "Open Diagnostics"),
-    ("Alt + S", "Open Settings"),
-    ("F1", "Show keyboard shortcuts"),
-    ("Escape", "Return focus to the workspace"),
+    ("Enter", "Komutu gönder"),
+    ("Shift + Enter", "Yeni satır ekle"),
+    ("Ctrl + L", "Komut alanına odaklan"),
+    ("Ctrl + ,", "Ayarları aç"),
+    ("Ctrl + Shift + T", "Açık/koyu temayı değiştir"),
+    ("Ctrl + Shift + N", "Gezinmeyi daralt veya genişlet"),
+    ("Alt + 1 ... 9", "1 ile 9 arasındaki ekranları aç"),
+    ("Alt + 0", "Tanılamayı aç"),
+    ("Alt + S", "Ayarları aç"),
+    ("F1", "Klavye kısayollarını göster"),
+    ("Escape", "Çalışma alanına dön"),
 )
+
+STATUS_TEXT = {
+    "LOCAL CORE READY": "YEREL ÇEKİRDEK HAZIR",
+    "PROCESSING": "İŞLENİYOR",
+    "RESPONDING": "YANITLIYOR",
+    "TESTING CONNECTION": "BAĞLANTI SINANIYOR",
+    "LISTENING": "DİNLİYOR",
+    "CAPTURING": "GÖRÜNTÜ ALINIYOR",
+    "RESEARCHING": "ARAŞTIRIYOR",
+}
+
+TOKEN_TEXT = {
+    "pending": "BEKLİYOR",
+    "running": "ÇALIŞIYOR",
+    "active": "AKTİF",
+    "paused": "DURAKLATILDI",
+    "completed": "TAMAMLANDI",
+    "failed": "BAŞARISIZ",
+    "blocked": "ENGELLENDİ",
+    "cancelled": "İPTAL EDİLDİ",
+    "fresh": "GÜNCEL",
+    "stale": "ESKİ",
+    "low": "DÜŞÜK",
+    "medium": "ORTA",
+    "high": "YÜKSEK",
+    "critical": "KRİTİK",
+}
+
+
+def localize_token(value: object) -> str:
+    text = str(value)
+    return TOKEN_TEXT.get(text.strip().casefold(), text)
+
+
+def enable_high_dpi_rendering() -> bool:
+    """Ask Windows for crisp per-monitor rendering before Tk is created."""
+    if sys.platform != "win32":
+        return False
+    try:
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        if user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+            return True
+    except (AttributeError, OSError):
+        pass
+    try:
+        shcore = ctypes.WinDLL("shcore", use_last_error=True)
+        return shcore.SetProcessDpiAwareness(2) in {0, -2147024891}
+    except (AttributeError, OSError):
+        return False
+
+
+def next_typewriter_text(current: str, target: str) -> str:
+    """Advance rendered text smoothly toward the latest streamed value."""
+    if not target:
+        return current
+    if not target.startswith(current):
+        current = ""
+    remaining = len(target) - len(current)
+    step = max(1, min(10, (remaining + 17) // 18))
+    return target[: len(current) + step]
+
+
+class RoundedSurface(tk.Canvas):
+    """Vector rounded container that stays crisp at every DPI scale."""
+
+    def __init__(
+        self,
+        parent: tk.Widget,
+        *,
+        fill: str,
+        outline: str,
+        radius: int = 14,
+        padx: int = 0,
+        pady: int = 0,
+    ) -> None:
+        parent_bg = str(parent.cget("bg"))
+        super().__init__(
+            parent,
+            bg=parent_bg,
+            highlightthickness=0,
+            borderwidth=0,
+            height=1,
+        )
+        self._fill = fill
+        self._outline = outline
+        self._radius = radius
+        self._padx = padx
+        self._pady = pady
+        self._geometry_job: str | None = None
+        self._geometry_passes_remaining = 0
+        self.content = tk.Frame(self, bg=fill)
+        self._content_window = self.create_window(
+            padx,
+            pady,
+            anchor="nw",
+            window=self.content,
+        )
+        self.content.bind("<Configure>", self._fit_height)
+        self.bind("<Configure>", self._redraw)
+        self._schedule_geometry_sync()
+
+    def _fit_height(self, _event: tk.Event[Any]) -> None:
+        self._schedule_geometry_sync()
+
+    def _schedule_geometry_sync(self, passes: int = 3) -> None:
+        self._geometry_passes_remaining = max(
+            self._geometry_passes_remaining,
+            passes,
+        )
+        if self._geometry_job is None and self.winfo_exists():
+            self._geometry_job = self.after_idle(self._sync_geometry)
+
+    def _sync_geometry(self) -> None:
+        self._geometry_job = None
+        if not self.winfo_exists():
+            return
+        content_height = max(1, self.content.winfo_reqheight())
+        target_height = content_height + self._pady * 2
+        self.itemconfigure(self._content_window, height=content_height)
+        if int(float(self.cget("height"))) != target_height:
+            super().configure(height=target_height)
+
+        ancestor = self.master
+        while ancestor is not None:
+            if isinstance(ancestor, RoundedSurface):
+                ancestor._schedule_geometry_sync()
+                break
+            ancestor = getattr(ancestor, "master", None)
+
+        if self._geometry_passes_remaining > 0:
+            self._geometry_passes_remaining -= 1
+            self._geometry_job = self.after(1, self._sync_geometry)
+
+    def _redraw(self, event: tk.Event[Any]) -> None:
+        width = max(2, event.width)
+        height = max(2, event.height)
+        self.delete("surface")
+        radius = min(self._radius, width // 2, height // 2)
+        points = (
+            radius,
+            1,
+            width - radius,
+            1,
+            width - 1,
+            radius,
+            width - 1,
+            height - radius,
+            width - radius,
+            height - 1,
+            radius,
+            height - 1,
+            1,
+            height - radius,
+            1,
+            radius,
+        )
+        self.create_polygon(
+            points,
+            smooth=True,
+            splinesteps=18,
+            fill=self._fill,
+            outline=self._outline,
+            width=1,
+            tags=("surface",),
+        )
+        self.tag_lower("surface")
+        self.itemconfigure(
+            self._content_window,
+            width=max(1, width - self._padx * 2),
+        )
+        self._schedule_geometry_sync()
+
+
+class RoundedEntry(tk.Canvas):
+    """Rounded vector-backed text entry with the standard Entry contract."""
+
+    def __init__(
+        self,
+        parent: tk.Widget,
+        *,
+        colors: ThemeTokens,
+        textvariable: tk.StringVar | None = None,
+        show: str | None = None,
+    ) -> None:
+        super().__init__(
+            parent,
+            bg=str(parent.cget("bg")),
+            height=32,
+            highlightthickness=0,
+            borderwidth=0,
+        )
+        self._colors = colors
+        self.entry = tk.Entry(
+            self,
+            textvariable=textvariable,
+            show=show,
+            relief="flat",
+            borderwidth=0,
+            bg=colors.surface_alt,
+            fg=colors.ink,
+            insertbackground=colors.ink,
+            selectbackground=colors.faint,
+            font=("Segoe UI", 10),
+        )
+        self._entry_window = self.create_window(
+            10,
+            16,
+            anchor="w",
+            window=self.entry,
+        )
+        self.bind("<Configure>", self._draw_entry)
+
+    def _draw_entry(self, event: tk.Event[Any]) -> None:
+        self.delete("entry-surface")
+        width = max(2, event.width)
+        height = max(2, event.height)
+        radius = min(11, height // 2)
+        self.create_polygon(
+            (
+                radius,
+                1,
+                width - radius,
+                1,
+                width - 1,
+                radius,
+                width - 1,
+                height - radius,
+                width - radius,
+                height - 1,
+                radius,
+                height - 1,
+                1,
+                height - radius,
+                1,
+                radius,
+            ),
+            smooth=True,
+            splinesteps=16,
+            fill=self._colors.surface_alt,
+            outline=self._colors.line,
+            tags=("entry-surface",),
+        )
+        self.tag_lower("entry-surface")
+        self.itemconfigure(
+            self._entry_window,
+            width=max(1, width - 20),
+        )
+
+    def get(self) -> str:
+        return self.entry.get()
+
+    def cget(self, key: str) -> Any:
+        if key in {"show", "state"}:
+            return self.entry.cget(key)
+        return super().cget(key)
+
+    def configure(self, cnf: Any = None, **kwargs: Any) -> Any:
+        entry_options = {
+            key: kwargs.pop(key)
+            for key in tuple(kwargs)
+            if key in {"show", "state"}
+        }
+        if entry_options and hasattr(self, "entry"):
+            self.entry.configure(**entry_options)
+        return super().configure(cnf, **kwargs)
+
+    config = configure
 
 
 class ScrollableWorkspace(tk.Frame):
@@ -52,11 +343,11 @@ class ScrollableWorkspace(tk.Frame):
             highlightthickness=0,
             borderwidth=0,
         )
-        self.scrollbar = tk.Scrollbar(
+        self.scrollbar = ttk.Scrollbar(
             self,
             orient="vertical",
             command=self.canvas.yview,
-            relief="flat",
+            style="Jarvis.Vertical.TScrollbar",
         )
         self.body = tk.Frame(self.canvas, bg=colors.background)
         self._window = self.canvas.create_window(
@@ -77,14 +368,16 @@ class ScrollableWorkspace(tk.Frame):
                 self._window, width=event.width
             ),
         )
-        self.canvas.bind("<Enter>", self._bind_wheel)
-        self.canvas.bind("<Leave>", self._unbind_wheel)
+        self.canvas.bind("<MouseWheel>", self._on_wheel)
+        self.body.bind("<MouseWheel>", self._on_wheel)
 
-    def _bind_wheel(self, _event: tk.Event[Any]) -> None:
-        self.canvas.bind_all("<MouseWheel>", self._on_wheel)
-
-    def _unbind_wheel(self, _event: tk.Event[Any]) -> None:
-        self.canvas.unbind_all("<MouseWheel>")
+    def bind_wheel_tree(self) -> None:
+        """Keep wheel scrolling active over dynamically rendered child widgets."""
+        pending = [self.body]
+        while pending:
+            widget = pending.pop()
+            widget.bind("<MouseWheel>", self._on_wheel, add="+")
+            pending.extend(widget.winfo_children())
 
     def _on_wheel(self, event: tk.Event[Any]) -> None:
         self.canvas.yview_scroll(int(-event.delta / 120), "units")
@@ -107,19 +400,43 @@ class DesktopWindow:
         self.api_settings = api_settings
         self._colors = tokens(self.controller.state.theme)
         self._nav_buttons: dict[UIScreen, tk.Button] = {}
+        self._context_buttons: dict[str, tk.Button] = {}
         self._busy_future: Future[Any] | None = None
         self._streaming_text: str | None = None
+        self._stream_target_text = ""
         self._streaming_label: tk.Label | None = None
+        self._typewriter_job: str | None = None
+        self._typing_frame = 0
+        self._command_complete_pending = False
+        self._pending_user_text: str | None = None
         self._status_job: str | None = None
         self._nav_job: str | None = None
+        self._orb_job: str | None = None
+        self._orb_phase = 0
+        self._home_orb: tk.Canvas | None = None
         self._pulse_frame = 0
         self._closing = False
+        self._ui_events: SimpleQueue[UIEvent] = SimpleQueue()
+        self._pending_approvals: set[Future[bool]] = set()
+        self._ui_poll_job: str | None = None
+        self._operation_sequence = 0
+        self._active_operation_id: int | None = None
+        self._command_operation_id: int | None = None
+        self._voice_operation_id: int | None = None
+        self._voice_future: Future[Any] | None = None
+        self._voice_stop_future: Future[Any] | None = None
+        self._voice_stop_requested = False
+        self._api_test_feedback: tuple[str, bool] | None = None
+        self._research_report: dict[str, object] | None = None
+        self._research_error: str | None = None
         self._snapshot = self.controller.snapshot()
+        self.controller.approval_callback = self._request_tool_approval
         self._configure_window()
         self._build_shell()
         self._bind_shortcuts()
         self.render(UIScreen.HOME)
         self._animate_status()
+        self._schedule_ui_event_pump()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
     def _configure_window(self) -> None:
@@ -138,70 +455,114 @@ class DesktopWindow:
                 break
             except (AttributeError, tk.TclError):
                 continue
-        self.root.geometry("1360x840")
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        window_width = min(1600, max(1040, screen_width - 120))
+        window_height = min(900, max(700, screen_height - 100))
+        x = max(0, (screen_width - window_width) // 2)
+        y = max(0, (screen_height - window_height) // 2)
+        self.root.geometry(
+            f"{window_width}x{window_height}+{x}+{y}"
+        )
         self.root.minsize(1040, 700)
         self.root.configure(bg=self._colors.background)
         self.root.option_add("*Font", ("Segoe UI", 10))
+        if screen_width >= 1920 and screen_height >= 1080:
+            try:
+                self.root.state("zoomed")
+            except tk.TclError:
+                pass
 
     def _build_shell(self) -> None:
         c = self._colors
         self._configure_ttk()
-        topbar = tk.Frame(self.root, bg=c.background, height=68)
+        topbar = tk.Frame(self.root, bg=c.surface, height=48)
         topbar.pack(fill="x")
         topbar.pack_propagate(False)
-        brand = tk.Frame(topbar, bg=c.background)
-        brand.pack(side="left", padx=(22, 16), pady=14)
+        brand = tk.Frame(
+            topbar,
+            bg=c.surface,
+            width=230,
+            highlightbackground=c.line,
+            highlightthickness=1,
+        )
+        brand.pack(side="left", fill="y")
+        brand.pack_propagate(False)
         tk.Label(
             brand,
             text="J",
-            bg=c.ink,
-            fg=c.inverse,
-            font=("Segoe UI", 14, "bold"),
-            width=2,
-            pady=4,
-        ).pack(side="left")
-        copy = tk.Frame(brand, bg=c.background)
-        copy.pack(side="left", padx=10)
+            bg=c.surface_alt,
+            fg=c.accent,
+            font=("Segoe UI", 13, "bold"),
+            width=3,
+            pady=5,
+            highlightbackground=c.faint,
+            highlightthickness=1,
+        ).pack(side="left", padx=(13, 10), pady=8)
+        copy = tk.Frame(brand, bg=c.surface)
+        copy.pack(side="left", pady=7)
         tk.Label(
             copy,
-            text="J.A.R.V.I.S.",
-            bg=c.background,
+            text="JARVIS",
+            bg=c.surface,
             fg=c.ink,
-            font=("Segoe UI Semibold", 11),
+            font=("Segoe UI Semibold", 10),
         ).pack(anchor="w")
         tk.Label(
             copy,
-            text="BETA / LOCAL DESKTOP",
-            bg=c.background,
+            text="KİŞİSEL İŞLETİM KATMANI",
+            bg=c.surface,
             fg=c.muted,
-            font=("Segoe UI", 7),
+            font=("Segoe UI", 8),
         ).pack(anchor="w")
 
-        runtime = tk.Frame(topbar, bg=c.background)
-        runtime.pack(side="right", padx=22, pady=15)
+        runtime = tk.Frame(topbar, bg=c.surface)
+        runtime.pack(side="left", fill="both", expand=True, padx=18)
         self.status_dot = tk.Canvas(
             runtime,
-            width=12,
-            height=12,
-            bg=c.background,
+            width=14,
+            height=48,
+            bg=c.surface,
             highlightthickness=0,
         )
-        self.status_dot.pack(side="left", padx=(0, 8))
+        self.status_dot.pack(side="left", padx=(0, 6))
         self._status_oval = self.status_dot.create_oval(
-            2, 2, 10, 10, fill=c.muted, outline=""
+            3, 20, 10, 27, fill=c.accent_strong, outline=""
         )
         self.status_label = tk.Label(
             runtime,
-            text=self.controller.state.status,
-            bg=c.background,
+            text=STATUS_TEXT.get(
+                self.controller.state.status,
+                self.controller.state.status,
+            ),
+            bg=c.surface,
             fg=c.muted,
             font=("Segoe UI Semibold", 8),
         )
-        self.status_label.pack(side="left", padx=(0, 18))
-        self.provider_badge = self._badge(
-            runtime, self._snapshot.provider.upper()
+        self.status_label.pack(side="left", padx=(0, 16))
+        self.provider_badge = self._status_field(
+            runtime, "ÇEKİRDEK", self._snapshot.provider.upper()
         )
-        self.model_badge = self._badge(runtime, self._snapshot.model)
+        self.model_badge = self._status_field(
+            runtime, "MODEL", DISPLAY_MODEL_NAME
+        )
+        self._status_field(runtime, "GÜVEN", "SEVİYE 03")
+        self.voice_status_badge = self._status_field(
+            runtime,
+            "MİKROFON",
+            (
+                self.controller.state.voice_status
+                if self.controller.state.voice_active
+                else "PASİF"
+                if self._snapshot.voice_available
+                else "ÇEVRİMDIŞI"
+            ),
+        )
+        self._status_field(
+            runtime,
+            "GÖRÜŞ",
+            "ONAYLI" if self._snapshot.vision_available else "KİLİTLİ",
+        )
         tk.Frame(self.root, bg=c.line, height=1).pack(fill="x")
 
         self.shell = tk.Frame(self.root, bg=c.background)
@@ -213,12 +574,37 @@ class DesktopWindow:
         self.workspace_scroller.pack(
             fill="both",
             expand=True,
-            padx=(30, 18),
-            pady=(24, 132),
+            padx=(26, 18),
+            pady=(22, 142),
         )
         self.workspace = self.workspace_scroller.body
         self._build_composer()
         self._build_context()
+
+    def _status_field(
+        self,
+        parent: tk.Widget,
+        label: str,
+        value: str,
+    ) -> tk.Label:
+        block = tk.Frame(parent, bg=self._colors.surface)
+        block.pack(side="left", padx=(0, 16), pady=8)
+        tk.Label(
+            block,
+            text=label,
+            bg=self._colors.surface,
+            fg=self._colors.faint,
+            font=("Segoe UI Semibold", 8),
+        ).pack(anchor="w")
+        value_label = tk.Label(
+            block,
+            text=value,
+            bg=self._colors.surface,
+            fg=self._colors.ink,
+            font=("Segoe UI Semibold", 8),
+        )
+        value_label.pack(anchor="w")
+        return value_label
 
     def _configure_ttk(self) -> None:
         c = self._colors
@@ -243,6 +629,40 @@ class DesktopWindow:
             fieldbackground=[("readonly", c.surface_alt)],
             foreground=[("readonly", c.ink)],
         )
+        style.configure(
+            "Jarvis.Vertical.TScrollbar",
+            background=c.surface_alt,
+            troughcolor=c.background,
+            bordercolor=c.background,
+            lightcolor=c.surface_alt,
+            darkcolor=c.surface_alt,
+            arrowcolor=c.muted,
+            relief="flat",
+            borderwidth=0,
+            arrowsize=0,
+            width=7,
+        )
+        style.layout(
+            "Jarvis.Vertical.TScrollbar",
+            [
+                (
+                    "Vertical.Scrollbar.trough",
+                    {
+                        "sticky": "ns",
+                        "children": [
+                            (
+                                "Vertical.Scrollbar.thumb",
+                                {"expand": "1", "sticky": "nswe"},
+                            )
+                        ],
+                    },
+                )
+            ],
+        )
+        style.map(
+            "Jarvis.Vertical.TScrollbar",
+            background=[("active", c.faint)],
+        )
 
     def _badge(self, parent: tk.Widget, text: str) -> tk.Label:
         label = tk.Label(
@@ -250,25 +670,33 @@ class DesktopWindow:
             text=text,
             bg=self._colors.surface_alt,
             fg=self._colors.muted,
-            font=("Segoe UI Semibold", 7),
+            font=("Segoe UI Semibold", 8),
             padx=9,
             pady=4,
+            highlightbackground=self._colors.line,
+            highlightthickness=1,
         )
         label.pack(side="left", padx=3)
         return label
 
     def _build_navigation(self) -> None:
         c = self._colors
-        self.nav = tk.Frame(self.shell, bg=c.surface, width=218)
+        self.nav = tk.Frame(
+            self.shell,
+            bg=c.surface,
+            width=230,
+            highlightbackground=c.line,
+            highlightthickness=1,
+        )
         self.nav.pack(side="left", fill="y")
         self.nav.pack_propagate(False)
         tk.Label(
             self.nav,
-            text="WORKSPACE",
+            text="GÖREV KONTROLÜ",
             bg=c.surface,
-            fg=c.faint,
-            font=("Segoe UI Semibold", 7),
-        ).pack(anchor="w", padx=18, pady=(20, 9))
+            fg=c.accent_strong,
+            font=("Segoe UI Semibold", 8),
+        ).pack(anchor="w", padx=18, pady=(18, 10))
         for screen, index, label in NAVIGATION:
             button = tk.Button(
                 self.nav,
@@ -281,7 +709,7 @@ class DesktopWindow:
                 activebackground=c.hover,
                 activeforeground=c.ink,
                 padx=17,
-                pady=9,
+                pady=10,
                 font=("Segoe UI", 9),
                 cursor="hand2",
                 command=lambda value=screen: self.render(value),
@@ -292,7 +720,7 @@ class DesktopWindow:
         tk.Frame(self.nav, bg=c.surface).pack(fill="both", expand=True)
         self.nav_collapse_button = self._button(
             self.nav,
-            "COLLAPSE",
+            "DARALT",
             self._toggle_navigation,
             variant="ghost",
         )
@@ -300,20 +728,21 @@ class DesktopWindow:
 
     def _build_composer(self) -> None:
         c = self._colors
-        self.composer = tk.Frame(
+        self.composer_host = RoundedSurface(
             self.center,
-            bg=c.surface,
-            highlightbackground=c.line,
-            highlightthickness=1,
-            padx=12,
-            pady=10,
+            fill=c.surface,
+            outline=c.faint,
+            radius=18,
+            padx=10,
+            pady=8,
         )
-        self.composer.place(
-            relx=0.5, rely=1.0, anchor="s", relwidth=0.90, y=-20
+        self.composer_host.place(
+            relx=0.5, rely=1.0, anchor="s", relwidth=0.93, y=-18
         )
+        self.composer = self.composer_host.content
         self.command = tk.Text(
             self.composer,
-            height=3,
+            height=2,
             wrap="word",
             relief="flat",
             borderwidth=0,
@@ -321,8 +750,8 @@ class DesktopWindow:
             fg=c.ink,
             insertbackground=c.ink,
             selectbackground=c.faint,
-            padx=8,
-            pady=6,
+            padx=9,
+            pady=8,
             font=("Segoe UI", 10),
         )
         self.command.pack(fill="x")
@@ -330,55 +759,98 @@ class DesktopWindow:
         self.command.bind("<Shift-Return>", self._on_composer_newline)
         bar = tk.Frame(self.composer, bg=c.surface)
         bar.pack(fill="x", pady=(5, 0))
-        self._button(
-            bar, "MIC", self._start_voice, variant="ghost"
-        ).pack(side="left")
-        self._button(
-            bar, "VISION", self._start_vision, variant="ghost"
-        ).pack(side="left", padx=4)
-        tk.Label(
+        self.composer_voice_button = self._button(
             bar,
-            text="ENTER TO SEND  /  SHIFT + ENTER FOR NEW LINE",
+            (
+                "SESİ DURDUR"
+                if self.controller.state.voice_active
+                else "MİKROFON"
+            ),
+            self._start_voice,
+            variant="ghost",
+        )
+        self.composer_voice_button.pack(side="left")
+        self._button(
+            bar, "GÖRÜŞ", self._start_vision, variant="ghost"
+        ).pack(side="left", padx=4)
+        voice_bars = tk.Canvas(
+            bar,
+            width=18,
+            height=18,
+            bg=c.surface,
+            highlightthickness=0,
+        )
+        voice_bars.pack(side="left", padx=(6, 2))
+        for x, height in ((4, 6), (9, 12), (14, 8)):
+            voice_bars.create_line(
+                x,
+                15,
+                x,
+                15 - height,
+                fill=c.accent_strong,
+                width=2,
+            )
+        self.composer_voice_state_label = tk.Label(
+            bar,
+            text=(
+                self.controller.state.voice_status
+                if self.controller.state.voice_active
+                else "BEKLİYOR"
+            ),
             bg=c.surface,
             fg=c.faint,
-            font=("Segoe UI", 7),
-        ).pack(side="left", padx=10)
+            font=("Segoe UI", 8),
+        )
+        self.composer_voice_state_label.pack(side="left", padx=(2, 10))
+        self._badge(bar, DISPLAY_MODEL_NAME)
+        self._badge(
+            bar,
+            f"{self._snapshot.enabled_tools} YETENEK",
+        )
         self.send_button = self._button(
-            bar, "SEND", self._submit_command, variant="primary"
+            bar, "GÖNDER", self._submit_command, variant="primary"
         )
         self.send_button.pack(side="right")
 
     def _build_context(self) -> None:
         c = self._colors
-        self.context = tk.Frame(self.shell, bg=c.surface, width=288)
+        self.context = tk.Frame(
+            self.shell,
+            bg=c.surface,
+            width=330,
+            highlightbackground=c.line,
+            highlightthickness=1,
+        )
         self.context.pack(side="right", fill="y")
         self.context.pack_propagate(False)
         tk.Label(
             self.context,
-            text="LIVE CONTEXT",
+            text="GÖREV TELEMETRİSİ",
             bg=c.surface,
-            fg=c.faint,
-            font=("Segoe UI Semibold", 7),
+            fg=c.accent_strong,
+            font=("Segoe UI Semibold", 8),
         ).pack(anchor="w", padx=18, pady=(21, 4))
         tk.Label(
             self.context,
-            text="Runtime truth",
+            text="Çalışma durumu  ·  CANLI",
             bg=c.surface,
             fg=c.ink,
             font=("Segoe UI Semibold", 12),
         ).pack(anchor="w", padx=18)
         tabs = tk.Frame(self.context, bg=c.surface)
         tabs.pack(fill="x", padx=14, pady=14)
-        for label in ("TASK", "MEMORY", "TOOLS"):
-            self._button(
+        for label in ("YÜRÜTME", "HAFIZA", "ARAÇLAR"):
+            button = self._button(
                 tabs,
                 label,
                 lambda value=label: self._render_context(value),
                 variant="chip",
-            ).pack(side="left", padx=2)
+            )
+            button.pack(side="left", padx=2)
+            self._context_buttons[label] = button
         self.context_body = tk.Frame(self.context, bg=c.surface)
         self.context_body.pack(fill="both", expand=True, padx=18, pady=4)
-        self._render_context("TASK")
+        self._render_context("YÜRÜTME")
 
     def _bind_shortcuts(self) -> None:
         self.root.bind("<Control-l>", self._focus_composer)
@@ -427,7 +899,7 @@ class DesktopWindow:
 
     def _show_shortcuts(self, _event: tk.Event[Any] | None = None) -> str:
         messagebox.showinfo(
-            "JARVIS keyboard shortcuts",
+            "JARVIS klavye kısayolları",
             "\n".join(f"{key}  —  {description}" for key, description in SHORTCUTS),
             parent=self.root,
         )
@@ -447,7 +919,7 @@ class DesktopWindow:
     ) -> tk.Button:
         c = self._colors
         background, foreground, hover = {
-            "primary": (c.ink, c.inverse, c.focus),
+            "primary": (c.accent, c.inverse, c.accent_strong),
             "secondary": (c.surface_alt, c.ink, c.hover),
             "ghost": (c.surface, c.muted, c.hover),
             "chip": (c.surface_alt, c.muted, c.hover),
@@ -486,8 +958,8 @@ class DesktopWindow:
             self.workspace,
             text=eyebrow.upper(),
             bg=c.background,
-            fg=c.faint,
-            font=("Segoe UI Semibold", 7),
+            fg=c.accent_strong,
+            font=("Segoe UI Semibold", 8),
         ).pack(anchor="w")
         tk.Label(
             self.workspace,
@@ -513,20 +985,28 @@ class DesktopWindow:
         subtitle: str = "",
     ) -> tk.Frame:
         c = self._colors
-        frame = tk.Frame(
+        surface = RoundedSurface(
             parent,
-            bg=c.surface,
-            highlightbackground=c.line,
-            highlightthickness=1,
+            fill=c.surface,
+            outline=c.line,
+            radius=16,
             padx=18,
             pady=16,
         )
-        frame.pack(side=side, fill="both", expand=True, padx=6, pady=6)
+        surface.pack(side=side, fill="both", expand=True, padx=6, pady=6)
+        frame = surface.content
+        setattr(frame, "_rounded_host", surface)
+        tk.Frame(
+            frame,
+            bg=c.accent_strong,
+            width=42,
+            height=1,
+        ).place(x=0, y=0)
         tk.Label(
             frame,
             text=title.upper(),
             bg=c.surface,
-            fg=c.ink,
+            fg=c.muted,
             font=("Segoe UI Semibold", 8),
         ).pack(anchor="w")
         if subtitle:
@@ -543,12 +1023,20 @@ class DesktopWindow:
 
     def _line(self, parent: tk.Widget, primary: str, secondary: str = "") -> None:
         c = self._colors
-        row = tk.Frame(parent, bg=c.surface)
-        row.pack(fill="x", pady=6)
+        surface = RoundedSurface(
+            parent,
+            fill=c.surface_alt,
+            outline=c.line,
+            radius=10,
+            padx=10,
+            pady=8,
+        )
+        surface.pack(fill="x", pady=2)
+        row = surface.content
         tk.Label(
             row,
             text=primary,
-            bg=c.surface,
+            bg=c.surface_alt,
             fg=c.ink,
             anchor="w",
             justify="left",
@@ -558,7 +1046,7 @@ class DesktopWindow:
             tk.Label(
                 row,
                 text=secondary,
-                bg=c.surface,
+                bg=c.surface_alt,
                 fg=c.muted,
                 font=("Segoe UI", 8),
                 anchor="w",
@@ -582,22 +1070,178 @@ class DesktopWindow:
             text=label.upper(),
             bg=c.surface,
             fg=c.faint,
-            font=("Segoe UI Semibold", 7),
+            font=("Segoe UI Semibold", 8),
         ).pack(anchor="w", pady=(2, 0))
 
+    def _chip(
+        self,
+        parent: tk.Widget,
+        text: str,
+        *,
+        live: bool = False,
+        warning: bool = False,
+    ) -> tk.Label:
+        color = (
+            self._colors.warning
+            if warning
+            else self._colors.accent if live else self._colors.muted
+        )
+        chip = tk.Label(
+            parent,
+            text=text,
+            bg=self._colors.surface_alt,
+            fg=color,
+            font=("Segoe UI Semibold", 8),
+            padx=8,
+            pady=4,
+            highlightbackground=color if live or warning else self._colors.line,
+            highlightthickness=1,
+        )
+        chip.pack(side="left", padx=(0, 6))
+        return chip
+
+    def _build_core_visual(self, parent: tk.Widget) -> None:
+        c = self._colors
+        canvas = tk.Canvas(
+            parent,
+            width=290,
+            height=290,
+            bg=c.surface,
+            highlightthickness=0,
+            cursor="hand2",
+            takefocus=True,
+        )
+        canvas.pack(side="right", padx=(8, 2), pady=2)
+        center = 145
+        canvas.create_oval(
+            18,
+            18,
+            272,
+            272,
+            outline=c.line,
+            dash=(2, 6),
+        )
+        canvas.create_oval(
+            39,
+            39,
+            251,
+            251,
+            outline=c.faint,
+        )
+        canvas.create_oval(
+            61,
+            61,
+            229,
+            229,
+            outline=c.line,
+            dash=(6, 5),
+        )
+        canvas.create_oval(
+            73,
+            73,
+            217,
+            217,
+            fill=c.surface_alt,
+            outline=c.accent,
+            width=1,
+            tags=("core",),
+        )
+        for x, y in ((62, 56), (267, 146), (82, 242)):
+            canvas.create_oval(
+                x - 4,
+                y - 4,
+                x + 4,
+                y + 4,
+                fill=c.accent,
+                outline=c.accent_strong,
+            )
+        canvas.create_text(
+            center,
+            center - 5,
+            text="JARVIS",
+            fill=c.ink,
+            font=("Segoe UI Semibold", 12),
+        )
+        canvas.create_text(
+            center,
+            center + 15,
+            text="KONUŞMAK İÇİN TIKLA",
+            fill=c.muted,
+            font=("Segoe UI", 8),
+        )
+        canvas.bind("<Button-1>", lambda _event: self._start_voice())
+        canvas.bind("<Return>", lambda _event: self._start_voice())
+        canvas.bind(
+            "<Enter>",
+            lambda _event: canvas.itemconfigure(
+                "core", outline=c.accent_strong, width=2
+            ),
+        )
+        canvas.bind(
+            "<Leave>",
+            lambda _event: canvas.itemconfigure(
+                "core", outline=c.accent, width=1
+            ),
+        )
+        self._home_orb = canvas
+        self._animate_orb()
+
+    def _stop_orb_animation(self) -> None:
+        if self._orb_job is not None:
+            self.root.after_cancel(self._orb_job)
+            self._orb_job = None
+        self._home_orb = None
+
+    def _animate_orb(self) -> None:
+        canvas = self._home_orb
+        if (
+            self._closing
+            or canvas is None
+            or not canvas.winfo_exists()
+            or self.controller.state.screen is not UIScreen.HOME
+        ):
+            self._orb_job = None
+            return
+        if self.controller.state.reduced_motion:
+            canvas.coords("core", 73, 73, 217, 217)
+            self._orb_job = None
+            return
+        pulse = 2.5 * math.sin(self._orb_phase / 18)
+        canvas.coords(
+            "core",
+            73 - pulse,
+            73 - pulse,
+            217 + pulse,
+            217 + pulse,
+        )
+        self._orb_phase += 1
+        self._orb_job = self.root.after(16, self._animate_orb)
+
     def render(self, screen: UIScreen) -> None:
+        self._stop_orb_animation()
         self.controller.state.screen = screen
         self._snapshot = self.controller.snapshot()
         self._clear(self.workspace)
         self.workspace_scroller.reset()
         self.provider_badge.configure(text=self._snapshot.provider.upper())
-        self.model_badge.configure(text=self._snapshot.model)
+        self.model_badge.configure(text=DISPLAY_MODEL_NAME)
         for value, button in self._nav_buttons.items():
             selected = value is screen
-            normal = self._colors.ink if selected else self._colors.surface
+            index, label = next(
+                (item[1], item[2])
+                for item in NAVIGATION
+                if item[0] is value
+            )
+            collapsed = self.controller.state.nav_collapsed
+            normal = self._colors.hover if selected else self._colors.surface
             button.configure(
                 bg=normal,
-                fg=self._colors.inverse if selected else self._colors.muted,
+                fg=self._colors.accent if selected else self._colors.muted,
+                text=(
+                    index
+                    if collapsed
+                    else f"{'▎ ' if selected else ''}{index}    {label}"
+                ),
                 font=(
                     "Segoe UI Semibold" if selected else "Segoe UI",
                     9,
@@ -605,108 +1249,241 @@ class DesktopWindow:
             )
             self._bind_hover(
                 button,
-                self._colors.focus if selected else self._colors.hover,
+                self._colors.surface_alt if selected else self._colors.hover,
                 normal,
             )
         getattr(self, f"_render_{screen.value}")()
+        self.workspace_scroller.bind_wheel_tree()
 
     def _render_home(self) -> None:
         self._heading(
-            "LOCAL INTELLIGENCE",
-            "Good to see you.",
-            "A quiet view of the runtime, its capabilities, and current work.",
+            "GÖREV KOMUTASI",
+            "Komuta Merkezi",
+            "Canlı çalışma durumu, aktif hedefler ve sınırlı yetenekler.",
         )
+        active_task = self._snapshot.tasks[0] if self._snapshot.tasks else None
+        objective = (
+            str(active_task.get("goal", "Aktif görev"))
+            if active_task
+            else "Yeni hedefin için hazırım."
+        )
+        task_status = (
+            str(active_task.get("status", "active")).upper()
+            if active_task
+            else "BEKLİYOR"
+        )
+        core = self._card(
+            self.workspace,
+            "AKTİF HEDEF" if active_task else "YÜRÜTME ÇEKİRDEĞİ",
+        )
+        mission = tk.Frame(core, bg=self._colors.surface)
+        mission.pack(side="left", fill="both", expand=True, padx=(0, 12))
+        tk.Label(
+            mission,
+            text=(
+                "GÖREV SÜRÜYOR"
+                if active_task
+                else "ÇEKİRDEK SİSTEMLER NORMAL"
+            ),
+            bg=self._colors.surface,
+            fg=self._colors.accent_strong,
+            font=("Segoe UI Semibold", 8),
+        ).pack(anchor="w", pady=(14, 7))
+        tk.Label(
+            mission,
+            text=objective,
+            bg=self._colors.surface,
+            fg=self._colors.ink,
+            justify="left",
+            wraplength=530,
+            font=("Segoe UI Semibold", 25),
+        ).pack(anchor="w")
+        tk.Label(
+            mission,
+            text=(
+                "JARVIS görev ilerlerken kanıtları, izinleri ve bağlamı "
+                "korur."
+                if active_task
+                else "Başlamak için aşağıya bir hedef yaz veya Sohbet'i aç."
+            ),
+            bg=self._colors.surface,
+            fg=self._colors.muted,
+            justify="left",
+            wraplength=530,
+            font=("Segoe UI", 9),
+        ).pack(anchor="w", pady=(10, 12))
+        facts = tk.Frame(mission, bg=self._colors.surface)
+        facts.pack(anchor="w")
+        self._chip(facts, task_status, live=bool(active_task))
+        self._chip(facts, f"{self._snapshot.enabled_tools} YETENEK")
+        self._chip(facts, f"{self._snapshot.memory_count} HAFIZA")
+        actions = tk.Frame(mission, bg=self._colors.surface)
+        actions.pack(anchor="w", pady=(18, 0))
+        self._button(
+            actions,
+            "SOHBETİ AÇ",
+            lambda: self.render(UIScreen.CHAT),
+            variant="primary",
+        ).pack(side="left")
+        self._button(
+            actions,
+            "GÖREVLERİ GÖR",
+            lambda: self.render(UIScreen.TASKS),
+            variant="secondary",
+        ).pack(side="left", padx=7)
+        self._build_core_visual(core)
+
         if self._snapshot.provider == "mock":
             notice = self._card(
                 self.workspace,
-                "AI provider not configured",
-                subtitle="Mock mode cannot produce intelligent answers.",
+                "Yapay zekâ sağlayıcısı ayarlanmamış",
+                subtitle="Deneme modu akıllı yanıt üretemez.",
             )
             self._line(
                 notice,
-                "Connect an API provider to begin a real conversation.",
-                "The API key stays in Windows Credential Manager, never in project files.",
+                "Gerçek bir sohbet için API sağlayıcısı bağla.",
+                "API anahtarı proje dosyalarına değil Windows Kimlik Bilgisi Yöneticisi'ne kaydedilir.",
             )
             self._button(
                 notice,
-                "OPEN API SETTINGS",
+                "API AYARLARINI AÇ",
                 lambda: self.render(UIScreen.SETTINGS),
                 variant="primary",
             ).pack(anchor="w", pady=(10, 0))
-        metrics = self._card(self.workspace, "Runtime at a glance")
+        metrics = self._card(self.workspace, "Çalışma durumuna genel bakış")
         metric_row = tk.Frame(metrics, bg=self._colors.surface)
         metric_row.pack(fill="x")
-        self._metric(metric_row, str(self._snapshot.task_count), "Tasks")
+        self._metric(metric_row, str(self._snapshot.task_count), "Görevler")
         self._metric(
-            metric_row, str(self._snapshot.memory_count), "Memories"
+            metric_row, str(self._snapshot.memory_count), "Hafızalar"
         )
         self._metric(
-            metric_row, str(self._snapshot.enabled_tools), "Tools"
+            metric_row, str(self._snapshot.enabled_tools), "Yetenekler"
         )
         self._metric(
-            metric_row, self._snapshot.provider.upper(), "Provider"
+            metric_row, self._snapshot.provider.upper(), "Sağlayıcı"
         )
         row = tk.Frame(self.workspace, bg=self._colors.background)
         row.pack(fill="both", expand=True)
-        conversation = self._card(row, "Recent conversation", side="left")
+        conversation = self._card(row, "Son sohbet", side="left")
         messages = self.controller.state.messages[-3:]
         if not messages:
             self._line(
                 conversation,
-                "No conversation yet",
-                "Use the composer after connecting a provider.",
+                "Henüz sohbet yok",
+                "Sağlayıcıyı bağladıktan sonra komut alanını kullan.",
             )
         for message in messages:
             self._line(conversation, message.text, message.role.upper())
-        capabilities = self._card(row, "Capabilities", side="left")
+        capabilities = self._card(row, "Yetenekler", side="left")
         for name, available in (
             ("Windows", self._snapshot.windows_available),
-            ("Voice", self._snapshot.voice_available),
-            ("Vision", self._snapshot.vision_available),
-            ("Research", self._snapshot.research_available),
+            ("Ses", self._snapshot.voice_available),
+            ("Görüş", self._snapshot.vision_available),
+            ("Araştırma", self._snapshot.research_available),
         ):
             self._line(
                 capabilities,
                 name,
-                "AVAILABLE" if available else "NOT CONFIGURED",
+                "KULLANILABİLİR" if available else "AYARLANMAMIŞ",
             )
 
     def _render_chat(self) -> None:
         self._streaming_label = None
 
         self._heading(
-            "CONVERSATION",
-            "A focused dialogue.",
-            "Messages move through the bounded Core pipeline and preserve context.",
+            "İNSAN ARAYÜZÜ",
+            "Sohbet",
+            "Hafıza, kanıt ve sınırlı izinlerle desteklenen iletişim.",
         )
-        card = self._card(self.workspace, "Conversation")
+        layout = tk.Frame(self.workspace, bg=self._colors.background)
+        layout.pack(fill="both", expand=True)
+        thread = self._card(layout, "Geçerli sohbet", side="left")
+        thread_host = getattr(thread, "_rounded_host")
+        thread_host.pack_configure(fill="y", expand=False)
+        thread_host.configure(width=230)
+        self._line(
+            thread,
+            "Canlı sohbet",
+            f"{len(self.controller.state.messages)} mesaj",
+        )
+        self._line(
+            thread,
+            DISPLAY_MODEL_NAME,
+            f"{self._snapshot.provider.upper()} çalışma zamanı",
+        )
+        self._line(
+            thread,
+            "Bağlam korunuyor",
+            f"{self._snapshot.memory_count} kalıcı hafıza",
+        )
+        card = self._card(layout, "Canlı sohbet", side="left")
         if self._snapshot.provider == "mock":
             self._line(
                 card,
-                "AI provider not configured",
-                "Open Settings to add an API key. Mock echoes are disabled here.",
+                "Yapay zekâ sağlayıcısı ayarlanmamış",
+                "API anahtarı eklemek için Ayarlar'ı aç. Deneme tekrarları devre dışı.",
             )
             self._button(
                 card,
-                "OPEN SETTINGS",
+                "AYARLARI AÇ",
                 lambda: self.render(UIScreen.SETTINGS),
                 variant="primary",
             ).pack(anchor="w", pady=8)
             return
-        for message in self.controller.state.messages:
+        messages = list(self.controller.state.messages)
+        if (
+            self._pending_user_text
+            and not any(
+                message.role == "user"
+                and message.text == self._pending_user_text
+                for message in messages[-2:]
+            )
+        ):
+            messages.append(
+                ChatMessage("user", self._pending_user_text)
+            )
+        if (
+            self._streaming_text is not None
+            and self._busy_future is not None
+            and messages
+            and messages[-1].role == "assistant"
+        ):
+            messages = messages[:-1]
+
+        for message in messages:
             background = (
                 self._colors.surface_alt
-                if message.role == "user"
+                if message.role in {"user", "system"}
                 else self._colors.surface
             )
-            bubble = tk.Frame(card, bg=background, padx=12, pady=10)
-            bubble.pack(fill="x", pady=4)
+            role_color = (
+                self._colors.warning
+                if message.role == "system"
+                else self._colors.accent_strong
+                if message.role == "assistant"
+                else self._colors.muted
+            )
+            bubble_surface = RoundedSurface(
+                card,
+                fill=background,
+                outline=self._colors.line,
+                radius=12,
+                padx=12,
+                pady=10,
+            )
+            bubble_surface.pack(fill="x", pady=4)
+            bubble = bubble_surface.content
             tk.Label(
                 bubble,
-                text=message.role.upper(),
+                text={
+                    "user": "SEN",
+                    "assistant": "JARVIS",
+                    "system": "SİSTEM",
+                }[message.role],
                 bg=background,
-                fg=self._colors.faint,
-                font=("Segoe UI Semibold", 7),
+                fg=role_color,
+                font=("Segoe UI Semibold", 8),
             ).pack(anchor="w")
             tk.Label(
                 bubble,
@@ -716,24 +1493,69 @@ class DesktopWindow:
                 justify="left",
                 wraplength=720,
             ).pack(anchor="w", pady=(4, 0))
+            if message.role == "assistant" and message.metadata:
+                reasoning_labels = {
+                    "minimal": "HIZLI",
+                    "low": "HIZLI",
+                    "medium": "DENGELİ",
+                    "high": "DERİN",
+                }
+                assurance_labels = {
+                    "tool_verified": "ARAÇLA DOĞRULANDI",
+                    "research_supported": "KAYNAKLARLA DESTEKLENDİ",
+                    "unverified": "DOĞRULANMADI",
+                }
+                reasoning = reasoning_labels.get(
+                    str(message.metadata.get("reasoning_level", ""))
+                )
+                assurance = assurance_labels.get(
+                    str(message.metadata.get("assurance_level", ""))
+                )
+                labels = []
+                if reasoning:
+                    labels.append(f"DÜŞÜNME: {reasoning}")
+                if assurance:
+                    labels.append(f"GÜVEN: {assurance}")
+                if labels:
+                    tk.Label(
+                        bubble,
+                        text="  •  ".join(labels),
+                        bg=background,
+                        fg=self._colors.muted,
+                        font=("Segoe UI Semibold", 7),
+                    ).pack(anchor="w", pady=(6, 0))
+                uncertainty = message.metadata.get("uncertainty_summary")
+                if isinstance(uncertainty, str) and uncertainty.strip():
+                    tk.Label(
+                        bubble,
+                        text=f"Not: {uncertainty.strip()}",
+                        bg=background,
+                        fg=self._colors.muted,
+                        justify="left",
+                        wraplength=720,
+                        font=("Segoe UI", 7),
+                    ).pack(anchor="w", pady=(2, 0))
         if self._streaming_text is not None:
             background = self._colors.surface
-            bubble = tk.Frame(
+            bubble_surface = RoundedSurface(
                 card,
-                bg=background,
+                fill=background,
+                outline=self._colors.line,
+                radius=12,
                 padx=12,
                 pady=10,
             )
-            bubble.pack(
+            bubble_surface.pack(
                 fill="x",
                 pady=4,
             )
+            bubble = bubble_surface.content
 
             tk.Label(
                 bubble,
-                text="ASSISTANT",
+                text="JARVIS",
                 bg=background,
-                fg=self._colors.faint,
+                fg=self._colors.accent_strong,
                 font=(
                     "Segoe UI Semibold",
                     7,
@@ -763,80 +1585,115 @@ class DesktopWindow:
             not self.controller.state.messages
             and self._streaming_text is None
         ):
-            self._line(card, "No messages", "Write below to begin.")
+            self._line(card, "Henüz mesaj yok", "Başlamak için aşağıya yaz.")
 
     def _render_tasks(self) -> None:
         self._heading(
-            "DURABLE EXECUTION",
-            "Missions and tasks.",
-            "Persistent progress and recovery without visual noise.",
+            "KALICI YÜRÜTME",
+            "Görevler",
+            "Görsel karmaşa olmadan kalıcı ilerleme ve kurtarma.",
         )
-        card = self._card(self.workspace, "Task queue")
+        card = self._card(self.workspace, "Görev kuyruğu")
         for task in self._snapshot.tasks:
             self._line(
                 card,
                 str(task["goal"]),
-                f"{str(task['status']).upper()}  /  "
+                f"{localize_token(task['status'])}  /  "
                 f"{float(task['progress']) * 100:.0f}%  /  "
-                f"{task.get('current_step') or 'No active step'}",
+                f"{task.get('current_step') or 'Aktif adım yok'}",
             )
         if not self._snapshot.tasks:
             self._line(
                 card,
-                "No durable tasks",
-                "Tasks appear after Core creates them.",
+                "Kalıcı görev yok",
+                "Çekirdek görev oluşturduğunda burada görünür.",
             )
 
     def _render_memory(self) -> None:
         self._heading(
-            "PROVENANCE-AWARE MEMORY",
-            "What JARVIS remembers.",
-            "Origin, confidence, and freshness stay visible.",
+            "KAYNAK BİLİNÇLİ HAFIZA",
+            "JARVIS'in hatırladıkları",
+            "Kaynak, güven ve güncellik her zaman görünür kalır.",
         )
-        card = self._card(self.workspace, "Active memories")
+        card = self._card(self.workspace, "Aktif hafızalar")
         for memory in self._snapshot.memories:
             self._line(
                 card,
                 str(memory["content"]),
-                f"{memory['source']}  /  {memory['freshness']}  /  "
-                f"confidence {float(memory['confidence']):.2f}",
+                f"{memory['source']}  /  "
+                f"{localize_token(memory['freshness'])}  /  "
+                f"güven {float(memory['confidence']):.2f}",
             )
         if not self._snapshot.memories:
-            self._line(card, "No active memories")
+            self._line(card, "Aktif hafıza yok")
 
     def _render_voice(self) -> None:
         self._heading(
-            "VOICE",
-            "Calm and interruptible.",
-            "The microphone is used only after an explicit action.",
+            "SES",
+            "Sakin ve kesilebilir iletişim",
+            "Mikrofon yalnızca açık bir işlemden sonra kullanılır.",
         )
-        card = self._card(self.workspace, "Voice session")
+        card = self._card(self.workspace, "Ses oturumu")
         self._line(
             card,
-            "READY" if self._snapshot.voice_available else "NOT CONFIGURED",
-            "Current runtime state",
+            (
+                self.controller.state.voice_status
+                if self.controller.state.voice_active
+                else "HAZIR"
+                if self._snapshot.voice_available
+                else "AYARLANMAMIŞ"
+            ),
+            "Metin sohbetinden bağımsız ses çalışma durumu",
         )
-        button = self._button(
-            card, "START VOICE", self._start_voice, variant="primary"
+        self.voice_action_button = self._button(
+            card,
+            (
+                "SESLİ İLETİŞİMİ DURDUR"
+                if self.controller.state.voice_active
+                else "SESLİ İLETİŞİMİ BAŞLAT"
+            ),
+            self._start_voice,
+            variant=(
+                "ghost" if self.controller.state.voice_active else "primary"
+            ),
         )
-        button.configure(
+        self.voice_action_button.configure(
             state="normal" if self._snapshot.voice_available else "disabled"
         )
-        button.pack(anchor="w", pady=10)
+        self.voice_action_button.pack(anchor="w", pady=10)
+
+        history = self._card(self.workspace, "Ses oturumu geçmişi")
+        messages = self.controller.state.voice_messages[-10:]
+        if not messages:
+            self._line(
+                history,
+                "Henüz sesli konuşma yok",
+                "Ses transkriptleri normal sohbet geçmişine karışmaz.",
+            )
+        for message in messages:
+            self._line(
+                history,
+                message.text,
+                {
+                    "user": "SEN",
+                    "assistant": "JARVIS",
+                    "system": "SİSTEM",
+                }[message.role],
+            )
 
     def _render_vision(self) -> None:
         self._heading(
-            "VISION",
-            "Consent before capture.",
-            "Every screen capture requires one visible approval.",
+            "GÖRÜŞ",
+            "Görüntüden önce onay",
+            "Her ekran görüntüsü için görünür bir onay gerekir.",
         )
-        card = self._card(self.workspace, "Capture policy")
-        self._line(card, "Default", "Capture denied")
-        self._line(card, "Retention", "Discard after analysis")
-        self._line(card, "Taskbar", "Redacted before provider access")
+        card = self._card(self.workspace, "Görüntü alma ilkesi")
+        self._line(card, "Varsayılan", "Görüntü alma kapalı")
+        self._line(card, "Saklama", "Analizden sonra silinir")
+        self._line(card, "Görev çubuğu", "Sağlayıcı erişiminden önce gizlenir")
         button = self._button(
             card,
-            "REQUEST ONE CAPTURE",
+            "TEK GÖRÜNTÜ İSTE",
             self._start_vision,
             variant="primary",
         )
@@ -847,15 +1704,15 @@ class DesktopWindow:
 
     def _render_research(self) -> None:
         self._heading(
-            "RESEARCH",
-            "Evidence before synthesis.",
-            "Observed facts remain distinct from inference.",
+            "ARAŞTIRMA",
+            "Sentezden önce kanıt",
+            "Gözlenen gerçekler çıkarımlardan ayrı tutulur.",
         )
-        card = self._card(self.workspace, "Research brief")
+        card = self._card(self.workspace, "Araştırma özeti")
         self.research_entry = self._entry(card)
         self.research_entry.pack(fill="x", ipady=7, pady=5)
         button = self._button(
-            card, "RESEARCH", self._start_research, variant="primary"
+            card, "ARAŞTIR", self._start_research, variant="primary"
         )
         button.configure(
             state="normal"
@@ -868,33 +1725,55 @@ class DesktopWindow:
         if not self._snapshot.research_available:
             self._line(
                 self.research_results,
-                "Research is not configured",
-                "Configure a search provider before use.",
+                "Araştırma ayarlanmamış",
+                "Kullanmadan önce bir arama sağlayıcısı ayarla.",
             )
+        elif self._research_error:
+            self._line(
+                self.research_results,
+                "Araştırma başarısız",
+                self._research_error,
+            )
+        elif self._research_report is not None:
+            for claim in self._research_report.get("claims", []):
+                self._line(
+                    self.research_results,
+                    claim.get("text", ""),
+                    ", ".join(claim.get("citations", [])),
+                )
+            for uncertainty in self._research_report.get(
+                "uncertainties",
+                [],
+            ):
+                self._line(
+                    self.research_results,
+                    "BELİRSİZLİK",
+                    uncertainty,
+                )
 
     def _render_tools(self) -> None:
         self._heading(
-            "CAPABILITY REGISTRY",
-            "Tools and permissions.",
-            "Availability never implies authorization.",
+            "YETENEK KAYDI",
+            "Araçlar ve izinler",
+            "Kullanılabilirlik hiçbir zaman yetki anlamına gelmez.",
         )
-        card = self._card(self.workspace, "Registered tools")
+        card = self._card(self.workspace, "Kayıtlı araçlar")
         for tool in self._snapshot.tools:
             self._line(
                 card,
                 str(tool["name"]),
-                f"{str(tool['risk']).upper()}  /  "
-                f"{'ENABLED' if tool['enabled'] else 'DISABLED'}  /  "
+                f"{localize_token(tool['risk'])}  /  "
+                f"{'AÇIK' if tool['enabled'] else 'KAPALI'}  /  "
                 f"{tool['source']}",
             )
 
     def _render_integrations(self) -> None:
         self._heading(
-            "CONNECTIONS",
-            "Services at a glance.",
-            "Only live configuration is shown as connected.",
+            "GÜVEN VE ERİŞİM",
+            "Bağlantılar ve sınırlı bilgisayar yetkileri",
+            "Değiştirici her işlem ayrıca tek seferlik açık onay ister.",
         )
-        card = self._card(self.workspace, "Runtime connections")
+        card = self._card(self.workspace, "Çalışma zamanı bağlantıları")
         for name, ready in (
             ("Windows", self._snapshot.windows_available),
             ("OpenAI", bool(self.controller.application.settings.api_key)),
@@ -915,88 +1794,215 @@ class DesktopWindow:
                     )
                 ),
             ),
-            ("Voice", self._snapshot.voice_available),
-            ("Vision", self._snapshot.vision_available),
-            ("Web research", self._snapshot.research_available),
+            ("Ses", self._snapshot.voice_available),
+            ("Görüş", self._snapshot.vision_available),
+            ("Web araştırması", self._snapshot.research_available),
         ):
             self._line(
-                card, name, "CONNECTED" if ready else "NOT CONFIGURED"
+                card, name, "BAĞLI" if ready else "AYARLANMAMIŞ"
             )
+
+        access = self._card(
+            self.workspace,
+            "İzin verilen dosya kökleri",
+            subtitle=(
+                "JARVIS yalnız aşağıdaki klasörlerin içinde ve göreli "
+                "yollarla çalışabilir."
+            ),
+        )
+        windows = self.controller.application.windows
+        grants = (
+            windows.filesystem_root_grants()
+            if windows is not None
+            else ()
+        )
+        if not grants:
+            self._line(
+                access,
+                "DOSYA ERİŞİMİ KAPALI",
+                "Varsayılan olarak hiçbir klasöre erişim verilmez.",
+            )
+        for grant in grants:
+            row = RoundedSurface(
+                access,
+                fill=self._colors.surface_alt,
+                outline=self._colors.line,
+                radius=10,
+                padx=10,
+                pady=8,
+            )
+            row.pack(fill="x", pady=2)
+            content = row.content
+            details = tk.Frame(content, bg=self._colors.surface_alt)
+            details.pack(side="left", fill="x", expand=True)
+            tk.Label(
+                details,
+                text=grant.display_name,
+                bg=self._colors.surface_alt,
+                fg=self._colors.ink,
+                anchor="w",
+            ).pack(fill="x")
+            tk.Label(
+                details,
+                text=f"{grant.path}  /  Kimlik: {grant.root_id}",
+                bg=self._colors.surface_alt,
+                fg=self._colors.muted,
+                font=("Segoe UI", 8),
+                anchor="w",
+            ).pack(fill="x", pady=(2, 0))
+            self._button(
+                content,
+                "ERİŞİMİ KALDIR",
+                lambda current=grant: self._remove_filesystem_root(
+                    current.root_id,
+                    str(current.path),
+                ),
+                variant="ghost",
+            ).pack(side="right", padx=(8, 0))
+
+        controls = tk.Frame(access, bg=self._colors.surface)
+        controls.pack(fill="x", pady=(10, 2))
+        add_button = self._button(
+            controls,
+            "KLASÖR İZNİ EKLE",
+            self._add_filesystem_root,
+            variant="primary",
+        )
+        add_button.pack(side="left")
+        if windows is None:
+            add_button.configure(state="disabled")
+
+    def _add_filesystem_root(self) -> None:
+        windows = self.controller.application.windows
+        if windows is None:
+            return
+        selected = filedialog.askdirectory(
+            title="JARVIS için izin verilecek klasörü seç",
+            mustexist=True,
+            parent=self.root,
+        )
+        if not selected:
+            return
+        if not messagebox.askyesno(
+            "Klasör erişimi verilsin mi?",
+            f"JARVIS yalnız bu klasörün içinde çalışabilecek:\n\n{selected}\n\n"
+            "Araçların yapacağı her değişiklik yine ayrıca onaylanacak.",
+            icon="warning",
+            parent=self.root,
+        ):
+            return
+        try:
+            windows.grant_filesystem_root(selected)
+        except Exception as exc:
+            messagebox.showerror(
+                "Klasör izni eklenemedi",
+                str(exc),
+                parent=self.root,
+            )
+            return
+        self.render(UIScreen.INTEGRATIONS)
+
+    def _remove_filesystem_root(self, root_id: str, path: str) -> None:
+        windows = self.controller.application.windows
+        if windows is None:
+            return
+        if not messagebox.askyesno(
+            "Klasör erişimi kaldırılsın mı?",
+            f"JARVIS erişimi hemen kaybedecek:\n\n{path}",
+            parent=self.root,
+        ):
+            return
+        try:
+            removed = windows.revoke_filesystem_root(root_id)
+        except Exception as exc:
+            messagebox.showerror(
+                "Klasör izni kaldırılamadı",
+                str(exc),
+                parent=self.root,
+            )
+            return
+        if not removed:
+            messagebox.showinfo(
+                "Klasör izni",
+                "Bu izin zaten etkin değil.",
+                parent=self.root,
+            )
+        self.render(UIScreen.INTEGRATIONS)
 
     def _render_diagnostics(self) -> None:
         self._heading(
-            "SYSTEM HEALTH",
-            "Diagnostics without clutter.",
-            "Operational truth from live runtime inspection.",
+            "SİSTEM SAĞLIĞI",
+            "Karmaşasız tanılama",
+            "Canlı çalışma zamanı incelemesinden alınan gerçek durum.",
         )
-        card = self._card(self.workspace, "Current health")
-        self._line(card, "Core", "READY")
-        self._line(card, "Provider", self._snapshot.provider)
+        card = self._card(self.workspace, "Geçerli sağlık")
+        self._line(card, "Çekirdek", "HAZIR")
+        self._line(card, "Sağlayıcı", self._snapshot.provider)
         self._line(
             card,
-            "Tool registry",
-            f"{self._snapshot.enabled_tools}/{self._snapshot.tool_count} enabled",
+            "Araç kaydı",
+            f"{self._snapshot.enabled_tools}/{self._snapshot.tool_count} açık",
         )
-        self._line(card, "Durable tasks", str(self._snapshot.task_count))
+        self._line(card, "Kalıcı görevler", str(self._snapshot.task_count))
         self._line(
             card,
-            "Event ledger",
+            "Olay defteri",
             (
-                f"VALID  /  {self._snapshot.diagnostic_event_count} events"
+                f"GEÇERLİ  /  {self._snapshot.diagnostic_event_count} olay"
                 if self._snapshot.diagnostic_integrity_valid
-                else "INTEGRITY FAILURE"
+                else "BÜTÜNLÜK HATASI"
             ),
         )
 
     def _render_settings(self) -> None:
         self._heading(
-            "SETTINGS",
-            "Quiet controls, clear state.",
-            "Secrets remain outside the project and source control.",
+            "AYARLAR",
+            "Sade kontroller, açık durum",
+            "Gizli bilgiler proje ve kaynak kontrolü dışında kalır.",
         )
-        appearance = self._card(self.workspace, "Appearance")
+        appearance = self._card(self.workspace, "Görünüm")
         controls = tk.Frame(appearance, bg=self._colors.surface)
         controls.pack(fill="x")
         self._button(
-            controls, "TOGGLE THEME", self._toggle_theme
+            controls, "TEMAYI DEĞİŞTİR", self._toggle_theme
         ).pack(side="left")
         self._button(
             controls,
-            "REDUCE MOTION",
+            "HAREKETİ AZALT",
             self._toggle_motion,
             variant="ghost",
         ).pack(side="left", padx=5)
         self._button(
-            controls, "KEYBOARD SHORTCUTS", self._show_shortcuts, variant="ghost"
+            controls, "KLAVYE KISAYOLLARI", self._show_shortcuts, variant="ghost"
         ).pack(side="left")
         self._line(
             appearance,
-            "Motion",
-            "REDUCED"
+            "Hareket",
+            "AZALTILMIŞ"
             if self.controller.state.reduced_motion
-            else "SUBTLE",
+            else "YUMUŞAK",
         )
 
         api = self._card(
             self.workspace,
-            "API connection",
+            "Yapay zekâ sağlayıcısı ve API anahtarı",
             subtitle=(
-                "The key is stored in Windows Credential Manager and is "
-                "never shown again."
+                "Gemini veya OpenAI anahtarını buraya yapıştır. Anahtar proje "
+                "dosyalarına değil Windows Kimlik Bilgisi Yöneticisi'ne kaydedilir."
             ),
         )
         if self.api_settings is None:
             self._line(
                 api,
-                "API settings unavailable",
-                "The credential service was not initialized.",
+                "API ayarları kullanılamıyor",
+                "Kimlik bilgisi hizmeti başlatılmadı.",
             )
             return
         state = self.api_settings.snapshot()
         self.api_provider = tk.StringVar(value=state.provider)
         self.api_model = tk.StringVar(value=state.model)
         self.api_key = tk.StringVar()
-        self._field_label(api, "PROVIDER")
+        self._field_label(api, "SAĞLAYICI")
         provider_input = ttk.Combobox(
             api,
             textvariable=self.api_provider,
@@ -1010,44 +2016,55 @@ class DesktopWindow:
         self._entry(api, textvariable=self.api_model).pack(
             fill="x", ipady=7, pady=(0, 10)
         )
-        self._field_label(api, "API KEY")
+        self._field_label(api, "API ANAHTARI")
+        key_row = tk.Frame(api, bg=self._colors.surface)
+        key_row.pack(fill="x")
         self.api_key_entry = self._entry(
-            api,
+            key_row,
             textvariable=self.api_key,
             show="*",
         )
         self.api_key_entry.pack(
+            side="left",
             fill="x",
+            expand=True,
             ipady=7,
         )
+        self.api_key_visibility_button = self._button(
+            key_row,
+            "GÖSTER",
+            self._toggle_api_key_visibility,
+            variant="ghost",
+        )
+        self.api_key_visibility_button.pack(side="right", padx=(6, 0))
 
         if not state.credential_required:
             self.api_key_entry.configure(
                 state="disabled"
             )
+            self.api_key_visibility_button.configure(state="disabled")
             self._line(
                 api,
-                "No API key required",
+                "API anahtarı gerekmiyor",
                 (
-                    "Ollama uses the local Ollama service."
+                    "Ollama yerel Ollama hizmetini kullanır."
                     if state.provider == "ollama"
                     else (
-                        "This provider does not use "
-                        "an API credential."
+                        "Bu sağlayıcı API kimlik bilgisi kullanmaz."
                     )
                 ),
             )
         elif state.credential_configured:
             self._line(
                 api,
-                "Credential stored",
-                "Leave the field empty to keep the existing key.",
+                "Anahtar güvenle saklanıyor",
+                "Mevcut anahtarı korumak için alanı boş bırak.",
             )
         else:
             self._line(
                 api,
-                "No credential stored",
-                "Paste a key, test it, then save and activate.",
+                "Kayıtlı anahtar yok",
+                "Anahtarı yapıştır, sına, ardından kaydedip etkinleştir.",
             )
         self.api_status = tk.Label(
             api,
@@ -1058,21 +2075,27 @@ class DesktopWindow:
             wraplength=680,
         )
         self.api_status.pack(fill="x", pady=(4, 8))
+        if self._api_test_feedback is not None:
+            feedback, ok = self._api_test_feedback
+            self.api_status.configure(
+                text=feedback,
+                fg=self._colors.ink if ok else self._colors.muted,
+            )
         actions = tk.Frame(api, bg=self._colors.surface)
         actions.pack(fill="x")
         self.api_test_button = self._button(
-            actions, "TEST CONNECTION", self._start_api_test
+            actions, "BAĞLANTIYI SINA", self._start_api_test
         )
         self.api_test_button.pack(side="left")
         self._button(
             actions,
-            "SAVE AND ACTIVATE",
+            "KAYDET VE ETKİNLEŞTİR",
             self._save_api_settings,
             variant="primary",
         ).pack(side="left", padx=6)
         self.api_delete_button = self._button(
             actions,
-            "REMOVE KEY",
+            "ANAHTARI SİL",
             self._delete_api_key,
             variant="ghost",
         )
@@ -1096,21 +2119,12 @@ class DesktopWindow:
         *,
         textvariable: tk.StringVar | None = None,
         show: str | None = None,
-    ) -> tk.Entry:
-        return tk.Entry(
+    ) -> RoundedEntry:
+        return RoundedEntry(
             parent,
+            colors=self._colors,
             textvariable=textvariable,
             show=show,
-            relief="flat",
-            borderwidth=0,
-            bg=self._colors.surface_alt,
-            fg=self._colors.ink,
-            insertbackground=self._colors.ink,
-            selectbackground=self._colors.faint,
-            highlightbackground=self._colors.line,
-            highlightcolor=self._colors.focus,
-            highlightthickness=1,
-            font=("Segoe UI", 10),
         )
 
     def _field_label(self, parent: tk.Widget, text: str) -> None:
@@ -1119,12 +2133,12 @@ class DesktopWindow:
             text=text,
             bg=self._colors.surface,
             fg=self._colors.faint,
-            font=("Segoe UI Semibold", 7),
+            font=("Segoe UI Semibold", 8),
         ).pack(anchor="w", pady=(3, 5))
 
     def _on_api_provider_changed(self, _event: object | None = None) -> None:
         defaults = {
-            "gemini": "gemini-3.7-flash",
+            "gemini": DEFAULT_GEMINI_MODEL,
             "openai": "gpt-4o-mini",
             "ollama": "llama3.2:latest",
             "mock": "mock-model",
@@ -1161,6 +2175,18 @@ class DesktopWindow:
                 )
             )
 
+        visibility = getattr(
+            self,
+            "api_key_visibility_button",
+            None,
+        )
+        if visibility is not None and entry is not None:
+            visibility.configure(
+                state="normal" if required else "disabled",
+                text="GÖSTER",
+            )
+            entry.configure(show="*")
+
         delete = getattr(
             self,
             "api_delete_button",
@@ -1172,47 +2198,70 @@ class DesktopWindow:
                 state="disabled"
             )
 
+    def _toggle_api_key_visibility(self) -> None:
+        visible = self.api_key_entry.cget("show") == ""
+        self.api_key_entry.configure(show="*" if visible else "")
+        self.api_key_visibility_button.configure(
+            text="GÖSTER" if visible else "GİZLE"
+        )
+
     def _render_context(self, tab: str) -> None:
         self._clear(self.context_body)
-        if tab == "TASK":
+        for label, button in self._context_buttons.items():
+            selected = label == tab
+            normal = (
+                self._colors.hover
+                if selected
+                else self._colors.surface_alt
+            )
+            button.configure(
+                bg=normal,
+                fg=(
+                    self._colors.accent
+                    if selected
+                    else self._colors.muted
+                ),
+            )
+            self._bind_hover(button, self._colors.hover, normal)
+        if tab == "YÜRÜTME":
             for task in self._snapshot.tasks[:4]:
                 self._line(
                     self.context_body,
                     str(task["goal"]),
-                    str(task["status"]).upper(),
+                    localize_token(task["status"]),
                 )
             if not self._snapshot.tasks:
                 self._line(
-                    self.context_body, "No active task", "The queue is clear."
+                    self.context_body, "Aktif görev yok", "Kuyruk boş."
                 )
-        elif tab == "MEMORY":
+        elif tab == "HAFIZA":
             for memory in self._snapshot.memories[:6]:
                 self._line(
                     self.context_body,
                     str(memory["content"]),
-                    str(memory["freshness"]),
+                    localize_token(memory["freshness"]),
                 )
             if not self._snapshot.memories:
-                self._line(self.context_body, "No active memory")
+                self._line(self.context_body, "Aktif hafıza yok")
         else:
             for tool in self._snapshot.tools[:9]:
                 self._line(
                     self.context_body,
                     str(tool["name"]),
-                    "ON" if tool["enabled"] else "OFF",
+                    "AÇIK" if tool["enabled"] else "KAPALI",
                 )
 
     def _toggle_navigation(self) -> None:
         collapsed = not self.controller.state.nav_collapsed
         self.controller.state.nav_collapsed = collapsed
-        target = 68 if collapsed else 218
+        target = 64 if collapsed else 230
         for screen, index, label in NAVIGATION:
             self._nav_buttons[screen].configure(
                 text=index if collapsed else f"{index}    {label}",
                 anchor="center" if collapsed else "w",
             )
         self.nav_collapse_button.configure(
-            text="OPEN" if collapsed else "COLLAPSE"
+            text="AÇ" if collapsed else "DARALT"
         )
         self._animate_nav_width(target)
 
@@ -1252,6 +2301,7 @@ class DesktopWindow:
         self._colors = tokens(self.controller.state.theme)
         self.root.configure(bg=self._colors.background)
         self._nav_buttons.clear()
+        self._context_buttons.clear()
         self._build_shell()
         self.render(self.controller.state.screen)
         self._animate_status()
@@ -1280,69 +2330,454 @@ class DesktopWindow:
         self._pulse_frame += 1
         self._status_job = self.root.after(520, self._animate_status)
 
+    def _schedule_ui_event_pump(self) -> None:
+        if self._closing or self._ui_poll_job is not None:
+            return
+        self._ui_poll_job = self.root.after(16, self._drain_ui_events)
+
+    def _queue_ui_event(
+        self,
+        operation_id: int,
+        kind: str,
+        payload: object,
+    ) -> None:
+        self._ui_events.put(UIEvent(operation_id, kind, payload))
+
+    async def _request_tool_approval(
+        self,
+        request: InteractiveApprovalRequest,
+    ) -> bool:
+        if self._closing:
+            return False
+        voice_request = request.request_source == "voice"
+        operation_id = (
+            self._voice_operation_id
+            if voice_request
+            else self._active_operation_id
+        )
+        if operation_id is None:
+            return False
+        response: Future[bool] = Future()
+        self._pending_approvals.add(response)
+        self._queue_ui_event(
+            operation_id,
+            "voice_approval_request" if voice_request else "approval_request",
+            ApprovalPrompt(request, response),
+        )
+        try:
+            return bool(await asyncio.wrap_future(response))
+        finally:
+            self._pending_approvals.discard(response)
+
+    def _show_tool_approval(self, payload: object) -> None:
+        if not isinstance(payload, ApprovalPrompt):
+            raise TypeError("Approval event payload must be an ApprovalPrompt.")
+        response = payload.response
+        if response.done():
+            return
+        request = payload.request
+        if utc_now() >= request.expires_at:
+            response.set_result(False)
+            return
+        parameters = "\n".join(
+            f"• {name}: {value}"
+            for name, value in request.parameters.items()
+        ) or "• Parametre yok"
+        approved = messagebox.askyesno(
+            "JARVIS işlem onayı",
+            "JARVIS bilgisayarında bir değişiklik yapmak istiyor.\n\n"
+            f"İşlem: {request.tool_name}\n"
+            f"Risk: {localize_token(request.risk_level.value)}\n\n"
+            f"{parameters}\n\n"
+            "Yalnız bu tek işlem için izin verilsin mi?",
+            icon="warning",
+            parent=self.root,
+        )
+        if not response.done():
+            response.set_result(bool(approved))
+
+    @staticmethod
+    def _deny_approval_prompt(payload: object) -> None:
+        if (
+            isinstance(payload, ApprovalPrompt)
+            and not payload.response.done()
+        ):
+            payload.response.set_result(False)
+
+    def _deny_pending_approvals(self) -> None:
+        for approval in tuple(self._pending_approvals):
+            if not approval.done():
+                approval.set_result(False)
+
+    def _drain_ui_events(self) -> None:
+        self._ui_poll_job = None
+        if self._closing:
+            return
+        while True:
+            try:
+                event = self._ui_events.get_nowait()
+            except Empty:
+                break
+            voice_event = event.kind.startswith("voice_")
+            expected_operation = (
+                self._voice_operation_id
+                if voice_event
+                else self._active_operation_id
+            )
+            if event.operation_id != expected_operation:
+                self._deny_approval_prompt(event.payload)
+                continue
+            try:
+                if event.kind == "command_stream":
+                    self._apply_stream_text(
+                        event.operation_id,
+                        event.payload,
+                    )
+                elif event.kind == "command_done":
+                    self._finish_command(
+                        event.operation_id,
+                        event.payload,
+                    )
+                elif event.kind == "api_done":
+                    self._finish_api_test(
+                        event.operation_id,
+                        event.payload,
+                    )
+                elif event.kind == "voice_done":
+                    self._finish_voice(
+                        event.operation_id,
+                        event.payload,
+                    )
+                elif event.kind == "voice_message":
+                    self._apply_voice_message(
+                        event.operation_id,
+                        event.payload,
+                    )
+                elif event.kind == "voice_stop_done":
+                    self._finish_voice_stop(
+                        event.operation_id,
+                        event.payload,
+                    )
+                elif event.kind == "aux_done":
+                    self._finish_aux(
+                        event.operation_id,
+                        event.payload,
+                    )
+                elif event.kind == "research_done":
+                    self._finish_research(
+                        event.operation_id,
+                        event.payload,
+                    )
+                elif event.kind in {
+                    "approval_request",
+                    "voice_approval_request",
+                }:
+                    self._show_tool_approval(event.payload)
+                else:
+                    raise RuntimeError(f"Unknown UI event: {event.kind}")
+            except Exception as exc:
+                self._deny_approval_prompt(event.payload)
+                self._deny_pending_approvals()
+                if voice_event:
+                    self._recover_voice_operation(event.operation_id, exc)
+                else:
+                    self._recover_operation(event.operation_id, exc)
+        self._schedule_ui_event_pump()
+
+    def _begin_operation(self, status: str) -> int | None:
+        if self._active_operation_id is not None:
+            return None
+        self._operation_sequence += 1
+        operation_id = self._operation_sequence
+        self._active_operation_id = operation_id
+        self.controller.state.busy = True
+        self.controller.state.status = status
+        self._set_busy(True, status)
+        return operation_id
+
+    def _launch_operation(
+        self,
+        operation_id: int,
+        operation: Coroutine[Any, Any, Any],
+        done_event: str,
+    ) -> bool:
+        try:
+            future = self.controller.submit_background(
+                operation,
+                lambda result, value=operation_id, kind=done_event: (
+                    self._queue_ui_event(value, kind, result)
+                ),
+            )
+        except Exception as exc:
+            operation.close()
+            self._recover_operation(operation_id, exc)
+            return False
+        self._busy_future = future
+        return True
+
+    def _complete_operation(
+        self,
+        operation_id: int,
+        status: str = "LOCAL CORE READY",
+    ) -> bool:
+        if operation_id != self._active_operation_id:
+            return False
+        self._busy_future = None
+        self._active_operation_id = None
+        self.controller.state.busy = False
+        if self.controller.state.voice_active:
+            status = self.controller.state.voice_status
+        self.controller.state.status = status
+        self._set_busy(False, status)
+        return True
+
+    def _begin_voice_operation(self) -> int | None:
+        if self._voice_operation_id is not None:
+            return None
+        self._operation_sequence += 1
+        operation_id = self._operation_sequence
+        self._voice_operation_id = operation_id
+        self._voice_stop_requested = False
+        self.controller.state.voice_active = True
+        self.controller.state.voice_status = "DİNLİYOR"
+        if self._active_operation_id is None:
+            self.controller.state.status = "LISTENING"
+            self._set_busy(False, "LISTENING")
+        self._update_voice_controls()
+        return operation_id
+
+    def _launch_voice_operation(
+        self,
+        operation_id: int,
+        operation: Coroutine[Any, Any, Any],
+    ) -> bool:
+        try:
+            future = self.controller.submit_background(
+                operation,
+                lambda result, current=operation_id: self._queue_ui_event(
+                    current,
+                    "voice_done",
+                    result,
+                ),
+            )
+        except Exception as exc:
+            operation.close()
+            self._recover_voice_operation(operation_id, exc)
+            return False
+        self._voice_future = future
+        return True
+
+    def _complete_voice_operation(self, operation_id: int) -> bool:
+        if operation_id != self._voice_operation_id:
+            return False
+        self._voice_future = None
+        self._voice_stop_future = None
+        self._voice_operation_id = None
+        self._voice_stop_requested = False
+        self.controller.state.voice_active = False
+        self.controller.state.voice_status = "IDLE"
+        if self._active_operation_id is None:
+            self.controller.state.status = "LOCAL CORE READY"
+            self._set_busy(False, "LOCAL CORE READY")
+        self._update_voice_controls()
+        return True
+
+    def _update_voice_controls(self) -> None:
+        active = self.controller.state.voice_active
+        status = self.controller.state.voice_status if active else "BEKLİYOR"
+        try:
+            badge = getattr(self, "voice_status_badge", None)
+            if badge is not None and badge.winfo_exists():
+                badge.configure(
+                    text=(
+                        self.controller.state.voice_status
+                        if active
+                        else "PASİF"
+                        if self._snapshot.voice_available
+                        else "ÇEVRİMDIŞI"
+                    )
+                )
+            composer_button = getattr(
+                self,
+                "composer_voice_button",
+                None,
+            )
+            if composer_button is not None and composer_button.winfo_exists():
+                composer_button.configure(
+                    text="SESİ DURDUR" if active else "MİKROFON"
+                )
+            state_label = getattr(
+                self,
+                "composer_voice_state_label",
+                None,
+            )
+            if state_label is not None and state_label.winfo_exists():
+                state_label.configure(text=status)
+            action_button = getattr(self, "voice_action_button", None)
+            if action_button is not None and action_button.winfo_exists():
+                action_button.configure(
+                    text=(
+                        "SESLİ İLETİŞİMİ DURDUR"
+                        if active
+                        else "SESLİ İLETİŞİMİ BAŞLAT"
+                    )
+                )
+        except tk.TclError:
+            return
+
+    def _recover_voice_operation(
+        self,
+        operation_id: int,
+        error: Exception,
+    ) -> None:
+        if operation_id != self._voice_operation_id:
+            return
+        self._deny_pending_approvals()
+        stopped = self._voice_stop_requested
+        if self._voice_future is not None and not self._voice_future.done():
+            self._voice_future.cancel()
+        if not stopped:
+            self.controller.state.voice_messages.append(
+                ChatMessage(
+                    "system",
+                    "Ses oturumu güvenli biçimde durduruldu. "
+                    "Metin sohbeti kullanılabilir.",
+                )
+            )
+        self._complete_voice_operation(operation_id)
+        if self._closing:
+            return
+        if self.controller.state.screen is UIScreen.VOICE:
+            self.render(UIScreen.VOICE)
+        if not stopped:
+            try:
+                messagebox.showerror(
+                    "JARVIS sesli iletişimi başarısız",
+                    str(error),
+                    parent=self.root,
+                )
+            except tk.TclError:
+                return
+
+    def _recover_operation(self, operation_id: int, error: Exception) -> None:
+        if operation_id != self._active_operation_id:
+            return
+        if self._busy_future is not None and not self._busy_future.done():
+            self._busy_future.cancel()
+        self._deny_pending_approvals()
+        command_failed = operation_id == self._command_operation_id
+        if command_failed:
+            if self._typewriter_job is not None:
+                self.root.after_cancel(self._typewriter_job)
+                self._typewriter_job = None
+            self._streaming_text = None
+            self._stream_target_text = ""
+            self._streaming_label = None
+            self._command_complete_pending = False
+            self._pending_user_text = None
+            self._command_operation_id = None
+            self.controller.state.messages.append(
+                ChatMessage(
+                    "system",
+                    "İstek tamamlanamadı. JARVIS oturumu korundu; "
+                    "tekrar deneyebilirsin.",
+                )
+            )
+        self._complete_operation(operation_id)
+        if self._closing:
+            return
+        try:
+            if command_failed:
+                self.render(UIScreen.CHAT)
+            messagebox.showerror(
+                "JARVIS işlemi başarısız",
+                str(error),
+                parent=self.root,
+            )
+        except tk.TclError:
+            return
+
     def _set_busy(self, busy: bool, status: str) -> None:
-        self.status_label.configure(text=status)
-        self.send_button.configure(state="disabled" if busy else "normal")
+        try:
+            if self.status_label.winfo_exists():
+                self.status_label.configure(
+                    text=STATUS_TEXT.get(status, status)
+                )
+            if self.send_button.winfo_exists():
+                self.send_button.configure(
+                    state="disabled" if busy else "normal"
+                )
+        except tk.TclError:
+            return
 
     def _submit_command(self) -> str:
         text = self.command.get("1.0", "end").strip()
-        if not text or self._busy_future is not None:
+        if not text or self._active_operation_id is not None:
             return "break"
         if self._snapshot.provider == "mock":
             self.render(UIScreen.SETTINGS)
             messagebox.showinfo(
-                "Provider required",
-                "Select and activate a real provider in Settings before starting a conversation.",
+                "Sağlayıcı gerekli",
+                "Sohbete başlamadan önce Ayarlar'dan gerçek bir sağlayıcı seçip etkinleştir.",
                 parent=self.root,
             )
             return "break"
         self.command.delete("1.0", "end")
 
         self._streaming_text = ""
+        self._stream_target_text = ""
         self._streaming_label = None
+        self._typing_frame = 0
+        self._command_complete_pending = False
+        self._pending_user_text = None
 
-        self._set_busy(
-            True,
-            "PROCESSING",
-        )
+        operation_id = self._begin_operation("PROCESSING")
+        if operation_id is None:
+            return "break"
+        self._command_operation_id = operation_id
+        self.controller.state.messages.append(ChatMessage("user", text))
 
-        self._busy_future = self.controller.submit_background(
+        launched = self._launch_operation(
+            operation_id,
             self.controller.submit_command(
                 text,
-                stream_callback=self._on_stream_text,
+                stream_callback=(
+                    lambda value, current=operation_id: self._queue_ui_event(
+                        current,
+                        "command_stream",
+                        value,
+                    )
+                ),
+                manage_state=False,
             ),
-            self._on_command_done,
+            "command_done",
         )
+        if not launched:
+            return "break"
+        self.render(UIScreen.CHAT)
+        self._schedule_typewriter(180)
         return "break"
 
     def _on_stream_text(
         self,
+        operation_id: int,
         text: str,
     ) -> None:
-        if self._closing:
-            return
-
-        self.root.after(
-            0,
-            lambda value=text: (
-                self._apply_stream_text(
-                    value
-                )
-            ),
-        )
+        self._queue_ui_event(operation_id, "command_stream", text)
 
     def _apply_stream_text(
         self,
-        text: str,
+        operation_id: int,
+        text: object,
     ) -> None:
         if (
-            self._busy_future is None
+            operation_id != self._active_operation_id
             or not isinstance(text, str)
             or not text
         ):
             return
 
-        self._streaming_text = text
+        self._stream_target_text = text
 
         label = self._streaming_label
 
@@ -1364,64 +2799,191 @@ class DesktopWindow:
             label is not None
             and label.winfo_exists()
         ):
-            label.configure(
-                text=text
-            )
+            self._schedule_typewriter(0)
 
-            self.workspace_scroller.canvas.update_idletasks()
-            self.workspace_scroller.canvas.yview_moveto(
-                1.0
-            )
+    def _schedule_typewriter(self, delay: int = 16) -> None:
+        if self._closing or self._typewriter_job is not None:
+            return
+        self._typewriter_job = self.root.after(
+            delay,
+            self._animate_stream_text,
+        )
 
-    def _on_command_done(self, future: Future[Any]) -> None:
-        self.root.after(0, lambda: self._finish_command(future))
+    def _animate_stream_text(self) -> None:
+        self._typewriter_job = None
+        if self._busy_future is None or self._streaming_text is None:
+            return
 
-    def _finish_command(self, future: Future[Any]) -> None:
-        self._busy_future = None
-        self._streaming_text = None
-        self._streaming_label = None
+        label = self._streaming_label
+        if label is None or not label.winfo_exists():
+            self.render(UIScreen.CHAT)
+            label = self._streaming_label
 
+        target = self._stream_target_text
+        if target:
+            if self.controller.state.reduced_motion:
+                rendered = target
+            else:
+                rendered = next_typewriter_text(
+                    self._streaming_text,
+                    target,
+                )
+            self._streaming_text = rendered
+            if label is not None and label.winfo_exists():
+                label.configure(text=rendered)
+            if rendered != target:
+                self._schedule_typewriter()
+            elif self._command_complete_pending:
+                self._finalize_command()
+                return
+        else:
+            if (
+                label is not None
+                and label.winfo_exists()
+                and not self.controller.state.reduced_motion
+            ):
+                label.configure(text="." * (1 + self._typing_frame % 3))
+                self._typing_frame += 1
+            self._schedule_typewriter(180)
+
+        self.workspace_scroller.canvas.update_idletasks()
+        self.workspace_scroller.canvas.yview_moveto(1.0)
+
+    def _on_command_done(
+        self,
+        operation_id: int,
+        future: Future[Any],
+    ) -> None:
+        self._queue_ui_event(operation_id, "command_done", future)
+
+    def _finish_command(
+        self,
+        operation_id: int,
+        payload: object,
+    ) -> None:
+        if operation_id != self._active_operation_id:
+            return
+        if not isinstance(payload, Future):
+            raise TypeError("Command completion payload must be a Future.")
         try:
-            future.result()
+            message = payload.result()
         except Exception as exc:
-            messagebox.showerror(
-                "JARVIS request failed", str(exc), parent=self.root
+            self.controller.state.messages.append(
+                ChatMessage(
+                    "system",
+                    "İstek tamamlanamadı. JARVIS oturumu korundu; "
+                    "tekrar deneyebilirsin.",
+                )
             )
-        self._set_busy(False, self.controller.state.status)
+            self._finalize_command(operation_id)
+            messagebox.showerror(
+                "JARVIS isteği başarısız",
+                str(exc),
+                parent=self.root,
+            )
+            return
+
+        self._pending_user_text = None
+        if isinstance(message, ChatMessage):
+            self.controller.state.messages.append(message)
+        self.controller.state.status = "LOCAL CORE READY"
+
+        if (
+            not self._stream_target_text
+            and getattr(message, "role", None) == "assistant"
+            and isinstance(getattr(message, "text", None), str)
+        ):
+            self._stream_target_text = message.text
+
+        if (
+            self._stream_target_text
+            and self._streaming_text != self._stream_target_text
+            and not self.controller.state.reduced_motion
+        ):
+            self._command_complete_pending = True
+            self._set_busy(True, "RESPONDING")
+            self._schedule_typewriter(0)
+            return
+
+        self._finalize_command(operation_id)
+
+    def _finalize_command(self, operation_id: int | None = None) -> None:
+        operation_id = operation_id or self._command_operation_id
+        if operation_id is None or operation_id != self._active_operation_id:
+            return
+        if self._typewriter_job is not None:
+            self.root.after_cancel(self._typewriter_job)
+            self._typewriter_job = None
+        self._streaming_text = None
+        self._stream_target_text = ""
+        self._streaming_label = None
+        self._command_complete_pending = False
+        self._pending_user_text = None
+        self._command_operation_id = None
+        self._complete_operation(operation_id)
         self.render(UIScreen.CHAT)
+        self.root.after(0, self._scroll_chat_to_bottom)
+
+    def _scroll_chat_to_bottom(self) -> None:
+        if self.controller.state.screen is not UIScreen.CHAT:
+            return
+        self.workspace_scroller.canvas.update_idletasks()
+        self.workspace_scroller.canvas.yview_moveto(1.0)
 
     def _start_api_test(self) -> None:
-        if self.api_settings is None or self._busy_future is not None:
+        if self.api_settings is None or self._active_operation_id is not None:
             return
-        self.api_status.configure(text="Testing the connection...")
+        self.api_status.configure(text="Bağlantı sınanıyor...")
         self.api_test_button.configure(state="disabled")
-        self._set_busy(True, "TESTING CONNECTION")
-        self._busy_future = self.controller.submit_background(
+        operation_id = self._begin_operation("TESTING CONNECTION")
+        if operation_id is None:
+            return
+        self._launch_operation(
+            operation_id,
             self.api_settings.test_connection(
                 self.api_provider.get(),
                 self.api_model.get(),
                 self.api_key.get(),
             ),
-            self._on_api_test_done,
+            "api_done",
         )
 
-    def _on_api_test_done(self, future: Future[Any]) -> None:
-        self.root.after(0, lambda: self._finish_api_test(future))
+    def _on_api_test_done(
+        self,
+        operation_id: int,
+        future: Future[Any],
+    ) -> None:
+        self._queue_ui_event(operation_id, "api_done", future)
 
-    def _finish_api_test(self, future: Future[Any]) -> None:
-        self._busy_future = None
+    def _finish_api_test(
+        self,
+        operation_id: int,
+        payload: object,
+    ) -> None:
+        if not isinstance(payload, Future):
+            raise TypeError("API completion payload must be a Future.")
         try:
-            result = future.result()
-            self.api_status.configure(
-                text=result.message,
-                fg=self._colors.ink if result.ok else self._colors.muted,
-            )
+            result = payload.result()
+            self._api_test_feedback = (result.message, bool(result.ok))
         except Exception as exc:
-            self.api_status.configure(
-                text=f"Connection test failed: {exc}", fg=self._colors.muted
+            self._api_test_feedback = (
+                f"Bağlantı sınaması başarısız: {exc}",
+                False,
             )
-        self.api_test_button.configure(state="normal")
-        self._set_busy(False, "LOCAL CORE READY")
+        finally:
+            self._complete_operation(operation_id)
+
+        if self.controller.state.screen is UIScreen.SETTINGS:
+            status = getattr(self, "api_status", None)
+            button = getattr(self, "api_test_button", None)
+            if status is not None and status.winfo_exists():
+                feedback, ok = self._api_test_feedback
+                status.configure(
+                    text=feedback,
+                    fg=self._colors.ink if ok else self._colors.muted,
+                )
+            if button is not None and button.winfo_exists():
+                button.configure(state="normal")
 
     def _save_api_settings(self) -> None:
         if self.api_settings is None or self._busy_future is not None:
@@ -1442,22 +3004,22 @@ class DesktopWindow:
             self._snapshot = self.controller.snapshot()
             self.render(UIScreen.SETTINGS)
             self.api_status.configure(
-                text="Settings saved. The live runtime is now active.",
+                text="Ayarlar kaydedildi. Canlı çalışma zamanı etkin.",
                 fg=self._colors.ink,
             )
             self._set_busy(False, "LOCAL CORE READY")
         except Exception as exc:
             messagebox.showerror(
-                "Could not save API settings", str(exc), parent=self.root
+                "API ayarları kaydedilemedi", str(exc), parent=self.root
             )
 
     def _delete_api_key(self) -> None:
         if self.api_settings is None:
             return
         if not messagebox.askyesno(
-            "Remove API key?",
-            "This removes the JARVIS API credential from Windows Credential "
-            "Manager and returns the desktop to mock mode.",
+            "API anahtarı silinsin mi?",
+            "Bu işlem JARVIS API anahtarını Windows Kimlik Bilgisi "
+            "Yöneticisi'nden siler ve uygulamayı deneme moduna döndürür.",
             parent=self.root,
         ):
             return
@@ -1472,136 +3034,254 @@ class DesktopWindow:
             self._snapshot = self.controller.snapshot()
             self.render(UIScreen.SETTINGS)
             self.api_status.configure(
-                text="Credential removed. Mock mode is active."
+                text="Anahtar silindi. Deneme modu etkin."
             )
         except Exception as exc:
             messagebox.showerror(
-                "Could not remove API key", str(exc), parent=self.root
+                "API anahtarı silinemedi", str(exc), parent=self.root
             )
 
     def _start_voice(self) -> None:
-        if not self._snapshot.voice_available or self._busy_future is not None:
+        if self._voice_operation_id is not None:
+            self._stop_voice()
+            return
+        if not self._snapshot.voice_available:
             messagebox.showinfo(
-                "Voice", "Voice is not configured.", parent=self.root
+                "Ses", "Sesli iletişim ayarlanmamış.", parent=self.root
             )
             return
-        self._set_busy(True, "LISTENING")
-        self._busy_future = self.controller.submit_background(
-            self.controller.run_voice(),
-            self._on_voice_done,
-        )
-
-    def _on_voice_done(
-        self,
-        future: Future[Any],
-    ) -> None:
-        self.root.after(
-            0,
-            lambda: self._finish_voice(
-                future
+        operation_id = self._begin_voice_operation()
+        if operation_id is None:
+            return
+        self._launch_voice_operation(
+            operation_id,
+            self.controller.run_voice(
+                message_callback=(
+                    lambda message, current=operation_id: (
+                        self._queue_ui_event(
+                            current,
+                            "voice_message",
+                            message,
+                        )
+                    )
+                ),
+                manage_state=False,
             ),
         )
 
-    def _finish_voice(
+    def _stop_voice(self) -> None:
+        operation_id = self._voice_operation_id
+        if operation_id is None or self._voice_stop_requested:
+            return
+        self._voice_stop_requested = True
+        self.controller.state.voice_status = "DURDURULUYOR"
+        self._update_voice_controls()
+        operation = self.controller.interrupt_voice()
+        try:
+            self._voice_stop_future = self.controller.submit_background(
+                operation,
+                lambda result, current=operation_id: self._queue_ui_event(
+                    current,
+                    "voice_stop_done",
+                    result,
+                ),
+            )
+        except Exception:
+            operation.close()
+            if self._voice_future is not None:
+                self._voice_future.cancel()
+
+    def _finish_voice_stop(
         self,
+        operation_id: int,
+        payload: object,
+    ) -> None:
+        if operation_id != self._voice_operation_id:
+            return
+        if not isinstance(payload, Future):
+            raise TypeError("Voice stop payload must be a Future.")
+        try:
+            interrupted = bool(payload.result())
+        except Exception:
+            interrupted = False
+        self._voice_stop_future = None
+        if not interrupted and self._voice_future is not None:
+            self._voice_future.cancel()
+
+    def _apply_voice_message(
+        self,
+        operation_id: int,
+        payload: object,
+    ) -> None:
+        if operation_id != self._voice_operation_id:
+            return
+        if not isinstance(payload, ChatMessage):
+            raise TypeError("Voice message payload must be a ChatMessage.")
+        self.controller.state.voice_messages.append(payload)
+        self.controller.state.voice_status = "DİNLİYOR"
+        self._update_voice_controls()
+        if self.controller.state.screen is UIScreen.VOICE:
+            self.render(UIScreen.VOICE)
+
+    def _on_voice_done(
+        self,
+        operation_id: int,
         future: Future[Any],
     ) -> None:
-        self._busy_future = None
+        self._queue_ui_event(operation_id, "voice_done", future)
 
+    def _finish_voice(
+        self,
+        operation_id: int,
+        payload: object,
+    ) -> None:
+        if not isinstance(payload, Future):
+            raise TypeError("Voice completion payload must be a Future.")
         try:
-            future.result()
+            payload.result()
+        except CancelledError:
+            if not self._voice_stop_requested:
+                self.controller.state.voice_messages.append(
+                    ChatMessage(
+                        "system",
+                        "Ses oturumu beklenmedik biçimde kesildi.",
+                    )
+                )
         except Exception as exc:
-            messagebox.showerror(
-                "JARVIS voice failed",
-                str(exc),
-                parent=self.root,
+            self.controller.state.voice_messages.append(
+                ChatMessage(
+                    "system",
+                    f"Ses oturumu durdu: {type(exc).__name__}.",
+                )
             )
-
-        self._set_busy(
-            False,
-            "LOCAL CORE READY",
-        )
-
-        self.render(
-            UIScreen.CHAT
-        )
+            if not self._voice_stop_requested:
+                messagebox.showerror(
+                    "JARVIS sesli iletişimi başarısız",
+                    str(exc),
+                    parent=self.root,
+                )
+        finally:
+            self._complete_voice_operation(operation_id)
+        if self.controller.state.screen is UIScreen.VOICE:
+            self.render(UIScreen.VOICE)
 
     def _start_vision(self) -> None:
-        if not self._snapshot.vision_available or self._busy_future is not None:
+        if (
+            not self._snapshot.vision_available
+            or self._active_operation_id is not None
+        ):
             messagebox.showinfo(
-                "Vision", "Vision is not configured.", parent=self.root
+                "Görüş", "Görsel analiz ayarlanmamış.", parent=self.root
             )
             return
         purpose = (
-            "Describe the current screen and answer the user's visible question."
+            "Geçerli ekranı açıkla ve kullanıcının görünür sorusunu yanıtla."
         )
         approved = messagebox.askyesno(
-            "Allow one screen capture?",
-            "JARVIS will capture once, redact the taskbar, send the processed "
-            "image to the configured provider, and discard it after analysis.",
+            "Tek ekran görüntüsüne izin verilsin mi?",
+            "JARVIS bir kez görüntü alır, görev çubuğunu gizler, işlenmiş "
+            "görseli ayarlı sağlayıcıya yollar ve analizden sonra siler.",
             parent=self.root,
         )
         if not approved:
             return
-        self._set_busy(True, "CAPTURING")
-        self._busy_future = self.controller.submit_background(
-            self.controller.run_vision(purpose), self._on_aux_done
+        operation_id = self._begin_operation("CAPTURING")
+        if operation_id is None:
+            return
+        self._launch_operation(
+            operation_id,
+            self.controller.run_vision(purpose),
+            "aux_done",
         )
 
     def _start_research(self) -> None:
         query = self.research_entry.get().strip()
-        if not query or self._busy_future is not None:
+        if not query or self._active_operation_id is not None:
             return
-        self._set_busy(True, "RESEARCHING")
-        self._busy_future = self.controller.submit_background(
-            self.controller.run_research(query), self._on_research_done
+        operation_id = self._begin_operation("RESEARCHING")
+        if operation_id is None:
+            return
+        self._research_report = None
+        self._research_error = None
+        self._launch_operation(
+            operation_id,
+            self.controller.run_research(query),
+            "research_done",
         )
 
-    def _on_aux_done(self, future: Future[Any]) -> None:
-        self.root.after(0, lambda: self._finish_aux(future))
+    def _on_aux_done(
+        self,
+        operation_id: int,
+        future: Future[Any],
+    ) -> None:
+        self._queue_ui_event(operation_id, "aux_done", future)
 
-    def _finish_aux(self, future: Future[Any]) -> None:
-        self._busy_future = None
+    def _finish_aux(self, operation_id: int, payload: object) -> None:
+        if not isinstance(payload, Future):
+            raise TypeError("Auxiliary completion payload must be a Future.")
         try:
             messagebox.showinfo(
-                "JARVIS", str(future.result()), parent=self.root
+                "JARVIS", str(payload.result()), parent=self.root
             )
         except Exception as exc:
             messagebox.showerror(
-                "JARVIS operation failed", str(exc), parent=self.root
+                "JARVIS işlemi başarısız", str(exc), parent=self.root
             )
-        self._set_busy(False, "LOCAL CORE READY")
+        finally:
+            self._complete_operation(operation_id)
 
-    def _on_research_done(self, future: Future[Any]) -> None:
-        self.root.after(0, lambda: self._finish_research(future))
+    def _on_research_done(
+        self,
+        operation_id: int,
+        future: Future[Any],
+    ) -> None:
+        self._queue_ui_event(operation_id, "research_done", future)
 
-    def _finish_research(self, future: Future[Any]) -> None:
-        self._busy_future = None
-        self._clear(self.research_results)
+    def _finish_research(
+        self,
+        operation_id: int,
+        payload: object,
+    ) -> None:
+        if not isinstance(payload, Future):
+            raise TypeError("Research completion payload must be a Future.")
         try:
-            report = future.result()
-            for claim in report.get("claims", []):
-                self._line(
-                    self.research_results,
-                    claim.get("text", ""),
-                    ", ".join(claim.get("citations", [])),
-                )
-            for uncertainty in report.get("uncertainties", []):
-                self._line(
-                    self.research_results, "UNCERTAINTY", uncertainty
-                )
+            self._research_report = payload.result()
+            self._research_error = None
         except Exception as exc:
-            self._line(self.research_results, "Research failed", str(exc))
-        self._set_busy(False, "LOCAL CORE READY")
+            self._research_report = None
+            self._research_error = str(exc)
+        finally:
+            self._complete_operation(operation_id)
+        if self.controller.state.screen is UIScreen.RESEARCH:
+            self.render(UIScreen.RESEARCH)
 
     def close(self) -> None:
         self._closing = True
+        self.controller.approval_callback = None
+        self._deny_pending_approvals()
+        self._pending_approvals.clear()
+        self._stop_orb_animation()
+        if self._ui_poll_job is not None:
+            self.root.after_cancel(self._ui_poll_job)
+            self._ui_poll_job = None
         if self._status_job is not None:
             self.root.after_cancel(self._status_job)
         if self._nav_job is not None:
             self.root.after_cancel(self._nav_job)
+        if self._typewriter_job is not None:
+            self.root.after_cancel(self._typewriter_job)
         if self._busy_future is not None:
             self._busy_future.cancel()
+        if self._voice_stop_future is not None:
+            self._voice_stop_future.cancel()
+        if self._voice_future is not None:
+            self._voice_future.cancel()
+        self._busy_future = None
+        self._voice_stop_future = None
+        self._voice_future = None
+        self._active_operation_id = None
+        self._command_operation_id = None
+        self._voice_operation_id = None
         self.controller.close()
         self.root.destroy()
 
@@ -1612,6 +3292,7 @@ class DesktopWindow:
 def launch_desktop() -> None:
     from app.bootstrap import create_application
 
+    enable_high_dpi_rendering()
     api_settings = create_api_settings_service()
     application = create_application(api_settings.build_runtime_settings())
     DesktopWindow(

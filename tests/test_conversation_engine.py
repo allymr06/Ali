@@ -127,6 +127,37 @@ def test_complete_response_is_idempotent_by_response_id():
     assert len(engine.get(context.conversation_id).turns) == 2
 
 
+def test_complete_response_persists_assurance_and_reasoning_metadata():
+    engine = ConversationEngine()
+    context = Context()
+    request = Request("kanıtlı yanıt")
+    response = Response(
+        "yanıt",
+        request_id=request.request_id,
+        metadata={
+            "provider": "gemini",
+            "model": "gemini-test",
+            "outcome": "completed",
+            "reasoning_level": "medium",
+            "assurance_level": "research_supported",
+            "uncertainty_summary": "Yayın tarihi bilinmiyor.",
+        },
+    )
+    engine.prepare_request(request, context)
+
+    turn = engine.complete_response(request, response, context)
+
+    assert turn is not None
+    assert turn.metadata == {
+        "outcome": "completed",
+        "provider": "gemini",
+        "model": "gemini-test",
+        "reasoning_level": "medium",
+        "assurance_level": "research_supported",
+        "uncertainty_summary": "Yayın tarihi bilinmiyor.",
+    }
+
+
 def test_engine_preserves_atomic_tool_chain():
     engine = ConversationEngine(max_context_messages=2)
     context = Context()
@@ -150,6 +181,32 @@ def test_engine_preserves_atomic_tool_chain():
         "assistant",
         "tool",
     ]
+
+
+def test_sensitive_tool_content_is_ephemeral_for_provider_only():
+    store = InMemoryConversationStore()
+    engine = ConversationEngine(store)
+    context = Context()
+    request = Request("panoyu oku")
+    engine.prepare_request(request, context)
+    engine.add_assistant_tool_calls(
+        context,
+        request_id=request.request_id,
+        content=None,
+        tool_calls=[{"id": "call", "function": {"name": "clipboard"}}],
+    )
+    engine.add_tool_result(
+        context,
+        request_id=request.request_id,
+        tool_call_id="call",
+        content="Sensitive output was not retained.",
+        provider_content="çok gizli pano metni",
+    )
+
+    assert context.values["messages"][-1]["content"] == "çok gizli pano metni"
+    persisted = store.get(context.conversation_id)
+    assert persisted.turns[-1].content == "Sensitive output was not retained."
+    assert "çok gizli" not in repr(persisted)
 
 
 def test_context_budget_summarizes_omitted_turn_groups_without_deleting_history():

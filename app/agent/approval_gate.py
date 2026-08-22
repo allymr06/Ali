@@ -71,6 +71,8 @@ class ApprovalGate:
         step,
         task_id: UUID | None = None,
         plan_id: UUID | None = None,
+        request_id: UUID | None = None,
+        conversation_id: UUID | None = None,
     ) -> ApprovalGateDecision:
         operation = str(
             step.metadata.get(
@@ -137,6 +139,8 @@ class ApprovalGate:
                 plan_id=plan_id,
                 step_id=step.step_id,
                 tool_version=tool_version,
+                request_id=request_id,
+                conversation_id=conversation_id,
             )
         except ValueError as exc:
             return ApprovalGateDecision(

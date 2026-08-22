@@ -4,6 +4,18 @@ import math
 import os
 from dataclasses import dataclass
 
+from app.config.paths import default_state_path
+
+
+DEFAULT_CONVERSATION_SYSTEM_PROMPT = (
+    "You are JARVIS, a personal AI assistant. When the user writes in "
+    "Turkish, answer in fluent, modern, natural Turkish. Sound warm, "
+    "concise, and conversational, never robotic. Do not mix languages "
+    "unless the user asks. Avoid formulaic introductions, unnecessary "
+    "numbered lists, and translated-sounding phrases. If uncertain, say "
+    "so directly."
+)
+
 
 def _get_bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
@@ -89,7 +101,7 @@ class Settings:
     default_model: str = "mock-model"
     openai_model: str | None = None
     gemini_model: str | None = None
-    gemini_reasoning_effort: str = "low"
+    gemini_reasoning_effort: str = "auto"
 
     ollama_model: str | None = None
     ollama_base_url: str = "http://localhost:11434/v1/"
@@ -99,7 +111,7 @@ class Settings:
     # Gemma handles conversation; the primary Ollama
     # model remains responsible for structured tool use.
     ollama_hybrid_enabled: bool = False
-    ollama_chat_model: str = "gemma3:4b"
+    ollama_chat_model: str = "llama3.2:latest"
 
     # Keep the local Ollama model hot without blocking
     # JARVIS application startup.
@@ -109,15 +121,15 @@ class Settings:
     ollama_warm_retry_seconds: float = 15.0
     ollama_warmup_timeout_seconds: float = 30.0
 
-    provider_timeout_seconds: float = 30.0
-    provider_max_retries: int = 2
+    provider_timeout_seconds: float = 15.0
+    provider_max_retries: int = 1
     provider_retry_backoff_seconds: float = 0.25
     provider_fallback_enabled: bool = True
 
     conversation_max_messages: int = 50
     conversation_max_characters: int = 50_000
     conversation_summary_max_characters: int = 4_000
-    conversation_system_prompt: str | None = None
+    conversation_system_prompt: str | None = DEFAULT_CONVERSATION_SYSTEM_PROMPT
     conversation_database_path: str | None = None
 
     memory_database_path: str | None = None
@@ -185,6 +197,8 @@ class Settings:
     research_max_sources: int = 5
     research_max_concurrency: int = 3
     research_user_agent: str = "JARVIS/0.1"
+    research_cache_database_path: str | None = None
+    research_cache_ttl_seconds: float = 86_400.0
 
     diagnostics_event_capacity: int = 2_000
     diagnostics_metric_capacity: int = 200
@@ -243,9 +257,15 @@ class Settings:
                 "less than ollama_keep_alive_seconds."
             )
 
-        if self.gemini_reasoning_effort not in {"low", "medium", "high"}:
+        if self.gemini_reasoning_effort not in {
+            "auto",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+        }:
             raise ValueError(
-                "gemini_reasoning_effort must be low, medium, or high."
+                "gemini_reasoning_effort must be auto, minimal, low, medium, or high."
             )
         if not self.gemini_base_url.strip():
             raise ValueError("gemini_base_url cannot be empty.")
@@ -387,6 +407,15 @@ class Settings:
             raise ValueError("research_max_concurrency must be between 1 and 8.")
         if not self.research_user_agent.strip():
             raise ValueError("research_user_agent cannot be empty.")
+        if (
+            self.research_cache_database_path is not None
+            and not self.research_cache_database_path.strip()
+        ):
+            raise ValueError(
+                "research_cache_database_path cannot be empty when set."
+            )
+        if self.research_cache_ttl_seconds <= 0:
+            raise ValueError("research_cache_ttl_seconds must be positive.")
         if min(
             self.diagnostics_event_capacity,
             self.diagnostics_metric_capacity,
@@ -447,7 +476,7 @@ class Settings:
             ),
             ollama_chat_model=os.getenv(
                 "JARVIS_OLLAMA_CHAT_MODEL",
-                "gemma3:4b",
+                "llama3.2:latest",
             ),
             ollama_warm_enabled=_get_bool(
                 "JARVIS_OLLAMA_WARM_ENABLED",
@@ -471,15 +500,15 @@ class Settings:
             ),
             gemini_reasoning_effort=os.getenv(
                 "JARVIS_GEMINI_REASONING_EFFORT",
-                "low",
+                "auto",
             ).strip().lower(),
             provider_timeout_seconds=_get_float(
                 "JARVIS_PROVIDER_TIMEOUT",
-                30.0,
+                15.0,
             ),
             provider_max_retries=_get_non_negative_int(
                 "JARVIS_PROVIDER_MAX_RETRIES",
-                2,
+                1,
             ),
             provider_retry_backoff_seconds=_get_float(
                 "JARVIS_PROVIDER_RETRY_BACKOFF",
@@ -502,26 +531,24 @@ class Settings:
                 4_000,
             ),
             conversation_system_prompt=os.getenv(
-                "JARVIS_CONVERSATION_SYSTEM_PROMPT"
+                "JARVIS_CONVERSATION_SYSTEM_PROMPT",
+                DEFAULT_CONVERSATION_SYSTEM_PROMPT,
             ),
             conversation_database_path=os.getenv(
                 "JARVIS_CONVERSATION_DATABASE_PATH",
-                os.path.join(
-                    "data",
-                    "jarvis_conversations.sqlite3",
-                ),
+                default_state_path("jarvis_conversations.sqlite3"),
             ),
             memory_database_path=os.getenv(
                 "JARVIS_MEMORY_DATABASE_PATH",
-                os.path.join("data", "jarvis_memory.sqlite3"),
+                default_state_path("jarvis_memory.sqlite3"),
             ),
             task_database_path=os.getenv(
                 "JARVIS_TASK_DATABASE_PATH",
-                os.path.join("data", "jarvis_tasks.sqlite3"),
+                default_state_path("jarvis_tasks.sqlite3"),
             ),
             task_runtime_directory=os.getenv(
                 "JARVIS_TASK_RUNTIME_DIRECTORY",
-                os.path.join("data", "tasks"),
+                default_state_path("tasks"),
             ),
             approval_ttl_seconds=_get_float(
                 "JARVIS_APPROVAL_TTL_SECONDS",
@@ -673,6 +700,13 @@ class Settings:
             research_user_agent=os.getenv(
                 "JARVIS_RESEARCH_USER_AGENT", "JARVIS/0.1"
             ),
+            research_cache_database_path=os.getenv(
+                "JARVIS_RESEARCH_CACHE_DATABASE_PATH",
+                default_state_path("jarvis_research.sqlite3"),
+            ),
+            research_cache_ttl_seconds=_get_float(
+                "JARVIS_RESEARCH_CACHE_TTL_SECONDS", 86_400.0
+            ),
             diagnostics_event_capacity=_get_positive_int(
                 "JARVIS_DIAGNOSTICS_EVENT_CAPACITY", 2_000
             ),
@@ -708,4 +742,3 @@ class Settings:
                 "https://generativelanguage.googleapis.com/v1beta/openai/",
             ),
         )
-

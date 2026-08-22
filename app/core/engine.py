@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 from collections.abc import Callable
+from datetime import timedelta
 from uuid import uuid4
 
 from app.conversation.engine import ConversationEngine
@@ -14,7 +15,9 @@ from app.core.models import (
     ToolExecutionStatus,
     ToolResult,
 )
+from app.core.assurance import summarize_assurance
 from app.core.interaction_policy import InteractionPolicy
+from app.core.time import utc_now
 from app.execution.context import ExecutionContext
 from app.execution.models import ExecutionLimits, ExecutionUsage, RetryPolicy
 from app.execution.service import ExecutionService
@@ -29,7 +32,6 @@ from app.planning.models import Plan, PlanStep
 from app.planning.executor import PlanExecutor
 from app.memory.policy import MemoryPolicy
 from app.providers.base import ModelResponse
-from app.providers.base import ModelResponse
 from app.providers.registry import ProviderRegistry
 from app.providers.ollama_hybrid import OllamaHybridPolicy
 from app.reliability.admission import (
@@ -43,6 +45,17 @@ from app.tools.executor import ToolExecutor
 from app.tools.fast_actions import ApprovedApplicationFastRouter
 from app.tools.selection import ToolSchemaSelector
 from app.tools.routing import DeterministicToolRouter
+from app.security.approval import (
+    ApprovalExecutionContext,
+    ApprovalGrant,
+    approval_binding_digest,
+)
+from app.security.interactive import (
+    InteractiveApprovalCallback,
+    InteractiveApprovalRequest,
+    safe_approval_parameters,
+)
+from app.security.permissions import PermissionDecision
 
 
 class _ExecutionCancelled(Exception):
@@ -334,6 +347,128 @@ class CoreEngine:
             verified=False,
         )
 
+    async def _execute_tool_with_interactive_approval(
+        self,
+        *,
+        tool_name: str,
+        parameters: dict[str, object],
+        request: Request,
+        context: Context,
+        approval_callback: InteractiveApprovalCallback | None,
+        approval_timeout_seconds: float,
+        cancel_event=None,
+    ) -> ToolResult:
+        """Execute one call only after a bound, user-originated approval."""
+        try:
+            registered = self._tool_executor.get(tool_name)
+        except KeyError:
+            return await self._tool_executor.execute(
+                tool_name,
+                parameters=parameters,
+                cancel_event=cancel_event,
+            )
+
+        definition = registered.definition
+        permission = self._tool_executor.permission_engine.evaluate(
+            definition,
+            operation=tool_name,
+            parameters=parameters,
+        )
+
+        approval_grant = None
+        approval_context = None
+
+        if permission.decision is PermissionDecision.CONFIRM:
+            if approval_callback is None:
+                return ToolResult(
+                    status=ToolExecutionStatus.BLOCKED,
+                    tool_name=tool_name,
+                    message=permission.reason,
+                    error="User confirmation required.",
+                    data={"approval_status": "required"},
+                    verified=False,
+                )
+
+            operation_id = uuid4()
+            expires_at = utc_now() + timedelta(minutes=5)
+            approval_request = InteractiveApprovalRequest(
+                operation_id=operation_id,
+                request_id=request.request_id,
+                conversation_id=context.conversation_id,
+                request_source=request.source.value,
+                tool_name=tool_name,
+                operation=permission.operation,
+                risk_level=permission.risk_level,
+                reason=permission.reason,
+                parameters=safe_approval_parameters(parameters),
+                expires_at=expires_at,
+            )
+
+            try:
+                approved = await asyncio.wait_for(
+                    approval_callback(approval_request),
+                    timeout=max(0.1, min(300.0, approval_timeout_seconds)),
+                )
+            except (TimeoutError, asyncio.CancelledError):
+                raise
+            except Exception:
+                approved = False
+
+            if approved is not True:
+                return ToolResult(
+                    status=ToolExecutionStatus.BLOCKED,
+                    tool_name=tool_name,
+                    message="Operation was not approved by the user.",
+                    error="User denied the operation.",
+                    data={"approval_status": "denied"},
+                    verified=False,
+                )
+
+            approval_context = ApprovalExecutionContext(
+                task_id=None,
+                plan_id=None,
+                step_id=operation_id,
+                conversation_id=context.conversation_id,
+                request_id=request.request_id,
+                approval_operation_id=operation_id,
+            )
+            try:
+                binding_digest = approval_binding_digest(
+                    operation=permission.operation,
+                    tool_name=tool_name,
+                    parameters=parameters,
+                    task_id=None,
+                    plan_id=None,
+                    step_id=operation_id,
+                    tool_version=definition.version,
+                    conversation_id=context.conversation_id,
+                    request_id=request.request_id,
+                )
+            except ValueError as exc:
+                return ToolResult(
+                    status=ToolExecutionStatus.BLOCKED,
+                    tool_name=tool_name,
+                    message="Operation approval could not be bound safely.",
+                    error=str(exc),
+                    verified=False,
+                )
+
+            approval_grant = ApprovalGrant(
+                operation_id=operation_id,
+                binding_digest=binding_digest,
+                expires_at=expires_at,
+                task_id=None,
+            )
+
+        return await self._tool_executor.execute(
+            tool_name,
+            operation=permission.operation,
+            parameters=parameters,
+            approval_grant=approval_grant,
+            approval_context=approval_context,
+            cancel_event=cancel_event,
+        )
+
     @staticmethod
     def _tool_message(tool_call_id, result: ToolResult) -> dict[str, object]:
         return {
@@ -345,6 +480,26 @@ class CoreEngine:
                 else (result.error or result.message)
             ),
         }
+
+    def _tool_output_is_sensitive(self, tool_name: str) -> bool:
+        try:
+            definition = self._tool_executor.get(tool_name).definition
+        except KeyError:
+            return False
+        return definition.metadata.get("sensitive_output") is True
+
+    @staticmethod
+    def _persistent_tool_content(
+        message: dict[str, object],
+        *,
+        sensitive: bool,
+    ) -> str:
+        if sensitive:
+            return (
+                "Sensitive tool output was used for this request "
+                "but was not retained."
+            )
+        return str(message["content"])
 
     @staticmethod
     def _tool_filter_values(
@@ -747,6 +902,7 @@ class CoreEngine:
         cancel_event=None,
         limits: ExecutionLimits | None = None,
         stream_callback: Callable[[str], None] | None = None,
+        approval_callback: InteractiveApprovalCallback | None = None,
     ) -> Response:
         try:
             lease = await self._admission.acquire()
@@ -770,6 +926,7 @@ class CoreEngine:
                 cancel_event=cancel_event,
                 limits=limits,
                 stream_callback=stream_callback,
+                approval_callback=approval_callback,
             )
 
     async def _handle_admitted(
@@ -780,6 +937,7 @@ class CoreEngine:
         cancel_event=None,
         limits: ExecutionLimits | None = None,
         stream_callback: Callable[[str], None] | None = None,
+        approval_callback: InteractiveApprovalCallback | None = None,
     ) -> Response:
         """
         Process one request through the JARVIS orchestration pipeline.
@@ -1084,8 +1242,6 @@ class CoreEngine:
 
         if (
             self._tool_schema_selector is not None
-            and hybrid_model_decision is not None
-            and hybrid_model_decision.role == "tool"
             and deterministic_tool_name is None
             and fast_action_tool_name is None
         ):
@@ -1273,9 +1429,11 @@ class CoreEngine:
                 try:
                     stream_chat = (
                         stream_callback is not None
-                        and hybrid_model_decision is not None
-                        and hybrid_model_decision.role == "chat"
                         and not tool_schemas
+                        and (
+                            hybrid_model_decision is None
+                            or hybrid_model_decision.role == "chat"
+                        )
                     )
 
                     if stream_chat:
@@ -1405,12 +1563,26 @@ class CoreEngine:
                         tool_call_id,
                         processed_tool_calls[tool_call_id],
                     )
+                    sensitive_output = self._tool_output_is_sensitive(
+                        processed_tool_calls[tool_call_id].tool_name
+                    )
                     self._conversation_engine.add_tool_result(
                         active_context,
                         request_id=request.request_id,
                         tool_call_id=str(tool_call_id),
-                        content=str(message["content"]),
-                        metadata={"duplicate": True},
+                        content=self._persistent_tool_content(
+                            message,
+                            sensitive=sensitive_output,
+                        ),
+                        metadata={
+                            "duplicate": True,
+                            "sensitive_output_not_retained": sensitive_output,
+                        },
+                        provider_content=(
+                            str(message["content"])
+                            if sensitive_output
+                            else None
+                        ),
                     )
                     continue
 
@@ -1471,9 +1643,13 @@ class CoreEngine:
                         try:
                             executed_tool_calls += 1
                             result = await asyncio.wait_for(
-                                self._tool_executor.execute(
-                                    tool_name,
+                                self._execute_tool_with_interactive_approval(
+                                    tool_name=tool_name,
                                     parameters=arguments,
+                                    request=request,
+                                    context=active_context,
+                                    approval_callback=approval_callback,
+                                    approval_timeout_seconds=remaining,
                                     cancel_event=cancel_event,
                                 ),
                                 timeout=remaining,
@@ -1489,26 +1665,52 @@ class CoreEngine:
                     processed_tool_calls[tool_call_id] = result
 
                 message = self._tool_message(tool_call_id, result)
+                sensitive_output = self._tool_output_is_sensitive(
+                    result.tool_name
+                )
                 self._conversation_engine.add_tool_result(
                     active_context,
                     request_id=request.request_id,
                     tool_call_id=str(tool_call_id),
-                    content=str(message["content"]),
+                    content=self._persistent_tool_content(
+                        message,
+                        sensitive=sensitive_output,
+                    ),
                     metadata={
                         "tool_name": result.tool_name,
                         "status": result.status.value,
                         "verified": self._verification_engine.verify(
                             result
                         ).passed,
+                        "sensitive_output_not_retained": sensitive_output,
                     },
+                    provider_content=(
+                        str(message["content"])
+                        if sensitive_output
+                        else None
+                    ),
                 )
+
+                approval_status = (
+                    result.data.get("approval_status")
+                    if isinstance(result.data, dict)
+                    else None
+                )
+                if approval_status in {"required", "denied"}:
+                    outcome = f"approval_{approval_status}"
+                    break
 
             if deterministic_tool_name is not None:
                 exposed_tool_names.discard(
                     deterministic_tool_name
                 )
 
-            if outcome in {"budget_exhausted", "cancelled"}:
+            if outcome in {
+                "budget_exhausted",
+                "cancelled",
+                "approval_required",
+                "approval_denied",
+            }:
                 break
 
             if not new_tool_call_found:
@@ -1533,8 +1735,24 @@ class CoreEngine:
             and failed_tools == 0
             and verified_tools == len(tool_results)
         )
+        assurance = summarize_assurance(tool_results, outcome=outcome)
 
-        if model_response is None:
+        if outcome == "approval_required":
+            response_text = (
+                "Bu işlem açık onay gerektiriyor; hiçbir değişiklik yapılmadı."
+            )
+            provider_name = provider.name
+            model_name = getattr(model_response, "model", None)
+        elif outcome == "approval_denied":
+            response_text = (
+                "Reddedilen işlem yapılmadı; daha önce ayrı ayrı onayladığın "
+                "işlemler tamamlanmış olabilir."
+                if successful_tools
+                else "İşlem iptal edildi; bilgisayarında değişiklik yapılmadı."
+            )
+            provider_name = provider.name
+            model_name = getattr(model_response, "model", None)
+        elif model_response is None:
             response_text = (
                 "Request cancelled."
                 if outcome == "cancelled"
@@ -1554,6 +1772,17 @@ class CoreEngine:
                     else "Execution stopped before verified completion."
                 )
 
+        raw_reasoning_level = (
+            model_response.metadata.get("reasoning_level")
+            if model_response is not None
+            else None
+        )
+        reasoning_level = (
+            raw_reasoning_level
+            if raw_reasoning_level in {"minimal", "low", "medium", "high"}
+            else None
+        )
+
         response = Response(
             text=response_text,
             request_id=request.request_id,
@@ -1570,6 +1799,9 @@ class CoreEngine:
                 "conversation_id": str(active_context.conversation_id),
                 "outcome": outcome,
                 "completion_verified": completion_verified,
+                "reasoning_level": reasoning_level,
+                "assurance_level": assurance.level.value,
+                "uncertainty_summary": assurance.uncertainty,
                 "budget_reason": budget_reason,
                 "tool_calls": executed_tool_calls,
                 "tool_call_attempts": usage.tool_calls,

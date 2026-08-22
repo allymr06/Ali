@@ -5,7 +5,10 @@ import os
 import platform
 import shutil
 from dataclasses import dataclass
-from pathlib import Path
+from app.config.paths import (
+    default_state_directory,
+    migrate_default_file,
+)
 
 from app.core.models import (
     RiskLevel,
@@ -14,8 +17,18 @@ from app.core.models import (
     ToolResult,
 )
 from app.platform.windows.applications import WindowsApplicationRegistry
+from app.platform.windows.clipboard import WindowsClipboardService
+from app.platform.windows.filesystem import BoundedFilesystemService
 from app.platform.windows.launcher import WindowsApplicationLauncher
 from app.platform.windows.processes import WindowsProcessInspector
+from app.platform.windows.root_grants import (
+    FilesystemRootGrant,
+    FilesystemRootGrantStore,
+)
+from app.platform.windows.window_control import (
+    AllowedWindowApplication,
+    WindowsWindowControlService,
+)
 from app.tools.executor import ToolExecutor
 
 
@@ -40,6 +53,10 @@ class WindowsIntegrationService:
     applications: WindowsApplicationRegistry
     processes: WindowsProcessInspector
     launcher: WindowsApplicationLauncher
+    filesystem: BoundedFilesystemService | None = None
+    clipboard: WindowsClipboardService | None = None
+    window_control: WindowsWindowControlService | None = None
+    root_grants: FilesystemRootGrantStore | None = None
 
     @classmethod
     def create_default(
@@ -51,10 +68,9 @@ class WindowsIntegrationService:
             raise OSError("Windows integrations require Windows.")
         applications = WindowsApplicationRegistry.with_windows_defaults()
 
-        applications.load_snapshot(
-            Path("data")
-            / "windows_app_registry.local.json"
-        )
+        snapshot = default_state_directory() / "windows_app_registry.local.json"
+        migrate_default_file(snapshot, "windows_app_registry.local.json")
+        applications.load_snapshot(snapshot)
 
         processes = WindowsProcessInspector()
         launcher = WindowsApplicationLauncher(
@@ -62,7 +78,78 @@ class WindowsIntegrationService:
             processes,
             verification_timeout_seconds=verification_timeout_seconds,
         )
-        return cls(applications, processes, launcher)
+        root_grants = FilesystemRootGrantStore.create_default()
+        filesystem = BoundedFilesystemService()
+        for grant in root_grants.list():
+            try:
+                filesystem.allow_root(grant.root_id, grant.path)
+            except ValueError:
+                continue
+
+        clipboard = WindowsClipboardService.create_default()
+        allowed_windows = []
+        for application in applications.list():
+            try:
+                executable = applications.resolve_executable(application)
+            except ValueError:
+                executable_paths = frozenset()
+            else:
+                executable_paths = frozenset({executable})
+            allowed_windows.append(
+                AllowedWindowApplication(
+                    application_id=application.application_id,
+                    process_names=application.expected_process_names,
+                    executable_paths=executable_paths,
+                )
+            )
+        window_control = WindowsWindowControlService.create_default(
+            allowed_windows
+        )
+        return cls(
+            applications,
+            processes,
+            launcher,
+            filesystem=filesystem,
+            clipboard=clipboard,
+            window_control=window_control,
+            root_grants=root_grants,
+        )
+
+    def filesystem_root_grants(self) -> tuple[FilesystemRootGrant, ...]:
+        if self.root_grants is None:
+            return ()
+        return self.root_grants.list()
+
+    def grant_filesystem_root(self, path: str) -> FilesystemRootGrant:
+        if self.root_grants is None or self.filesystem is None:
+            raise RuntimeError("Bounded filesystem access is unavailable.")
+        existing_ids = {
+            item.root_id for item in self.root_grants.list()
+        }
+        grant = self.root_grants.grant(path)
+        active = self.filesystem.list_allowed_roots().data or {}
+        active_ids = {
+            item.get("root_id")
+            for item in active.get("roots", [])
+            if isinstance(item, dict)
+        }
+        if grant.root_id in active_ids:
+            return grant
+        try:
+            self.filesystem.allow_root(grant.root_id, grant.path)
+        except Exception:
+            if grant.root_id not in existing_ids:
+                self.root_grants.revoke(grant.root_id)
+            raise
+        return grant
+
+    def revoke_filesystem_root(self, root_id: str) -> bool:
+        if self.root_grants is None or self.filesystem is None:
+            return False
+        if not self.root_grants.revoke(root_id):
+            return False
+        self.filesystem.revoke_root(root_id)
+        return True
 
     def list_applications(self) -> list[dict[str, object]]:
         return [
@@ -202,6 +289,12 @@ class WindowsIntegrationService:
             list_windows_applications,
             source="platform:windows",
         )
+        if self.filesystem is not None:
+            self.filesystem.register_tools(executor)
+        if self.clipboard is not None:
+            self.clipboard.register_tools(executor)
+        if self.window_control is not None:
+            self.window_control.register_tools(executor)
         executor.register(
             ToolDefinition(
                 name="list_windows_processes",
@@ -210,7 +303,10 @@ class WindowsIntegrationService:
                 capabilities=frozenset({"windows", "processes", "observe"}),
                 tags=frozenset({"windows", "read-only"}),
                 timeout_seconds=10.0,
-                metadata={"verification_strategy": "native_observation"},
+                metadata={
+                    "verification_strategy": "native_observation",
+                    "sensitive_output": True,
+                },
             ),
             list_windows_processes,
             source="platform:windows",
@@ -222,7 +318,10 @@ class WindowsIntegrationService:
                 version="1.0.0",
                 capabilities=frozenset({"windows", "system", "observe"}),
                 tags=frozenset({"windows", "read-only"}),
-                metadata={"verification_strategy": "native_observation"},
+                metadata={
+                    "verification_strategy": "native_observation",
+                    "sensitive_output": True,
+                },
             ),
             get_windows_system_info,
             source="platform:windows",
@@ -231,7 +330,8 @@ class WindowsIntegrationService:
             ToolDefinition(
                 name="launch_windows_application",
                 description="Launch an approved Windows application by registry ID.",
-                risk_level=RiskLevel.LOW,
+                risk_level=RiskLevel.MEDIUM,
+                requires_confirmation=True,
                 version="1.0.0",
                 capabilities=frozenset({"windows", "applications", "launch"}),
                 tags=frozenset({"windows", "action"}),

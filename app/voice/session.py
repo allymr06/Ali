@@ -9,6 +9,7 @@ from typing import TypeVar
 
 from app.core.engine import CoreEngine
 from app.core.models import Context, Request, RequestSource
+from app.security.interactive import InteractiveApprovalCallback
 from app.voice.base import AudioInput, AudioOutput, SpeechRecognizer, SpeechSynthesizer
 from app.voice.errors import (
     VoiceConfigurationError,
@@ -97,7 +98,12 @@ class VoiceSession:
             await self._audio_output.stop()
         return True
 
-    async def run_once(self, context: Context | None = None) -> VoiceSessionResult:
+    async def run_once(
+        self,
+        context: Context | None = None,
+        *,
+        approval_callback: InteractiveApprovalCallback | None = None,
+    ) -> VoiceSessionResult:
         if self._active or self._finished:
             raise VoiceConfigurationError("A voice session can only be run once.")
         self._active = True
@@ -152,6 +158,11 @@ class VoiceSession:
 
             self._record(VoiceSessionState.PROCESSING)
             stage_started = time.monotonic()
+            approval_options = (
+                {"approval_callback": approval_callback}
+                if approval_callback is not None
+                else {}
+            )
             response = await self._await_interruptible(
                 self._engine.handle(
                     Request(
@@ -161,6 +172,7 @@ class VoiceSession:
                     ),
                     context,
                     cancel_event=self._interrupt_event,
+                    **approval_options,
                 )
             )
             metadata["core_latency_seconds"] = (

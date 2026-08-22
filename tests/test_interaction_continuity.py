@@ -534,6 +534,47 @@ async def test_gemini_chat_defaults_to_low_reasoning_effort(
 
 
 @pytest.mark.asyncio
+async def test_gemini_flash_lite_uses_minimal_reasoning_effort(
+) -> None:
+    client = FakeGeminiClient()
+    provider = GeminiProvider(
+        Settings(
+            gemini_model="gemini-3.5-flash-lite",
+            gemini_reasoning_effort="minimal",
+        ),
+        client=client,
+    )
+
+    from app.core.models import Context, Request
+
+    await provider.generate(Request("quick response"), Context())
+
+    assert (
+        client.chat.completions.calls[0]["reasoning_effort"]
+        == "minimal"
+    )
+
+
+@pytest.mark.asyncio
+async def test_gemini_37_normalizes_unsupported_minimal_to_low(
+) -> None:
+    client = FakeGeminiClient()
+    provider = GeminiProvider(
+        Settings(
+            gemini_model="gemini-3.7-flash",
+            gemini_reasoning_effort="minimal",
+        ),
+        client=client,
+    )
+
+    from app.core.models import Context, Request
+
+    await provider.generate(Request("quick response"), Context())
+
+    assert client.chat.completions.calls[0]["reasoning_effort"] == "low"
+
+
+@pytest.mark.asyncio
 async def test_gemini_stream_also_uses_low_reasoning_effort(
 ) -> None:
     captured = {}
@@ -623,7 +664,10 @@ def test_gemini_reasoning_effort_rejects_invalid_value(
 
 def test_environment_defaults_to_durable_conversation_store(
     monkeypatch,
+    tmp_path,
 ) -> None:
+    monkeypatch.delenv("JARVIS_STATE_DIRECTORY", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.delenv(
         "JARVIS_CONVERSATION_DATABASE_PATH",
         raising=False,
@@ -635,11 +679,11 @@ def test_environment_defaults_to_durable_conversation_store(
 
     assert (
         settings.conversation_database_path
-        == "data\\jarvis_conversations.sqlite3"
+        == str(tmp_path / "JARVIS" / "jarvis_conversations.sqlite3")
     )
 
 
-def test_environment_defaults_gemini_to_low_reasoning(
+def test_environment_defaults_gemini_to_auto_reasoning(
     monkeypatch,
 ) -> None:
     monkeypatch.delenv(
@@ -653,5 +697,5 @@ def test_environment_defaults_gemini_to_low_reasoning(
 
     assert (
         settings.gemini_reasoning_effort
-        == "low"
+        == "auto"
     )

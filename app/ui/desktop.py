@@ -132,7 +132,9 @@ class RoundedSurface(tk.Canvas):
         self._radius = radius
         self._padx = padx
         self._pady = pady
-        self.content = tk.Frame(self, bg=fill, padx=padx, pady=pady)
+        self._geometry_job: str | None = None
+        self._geometry_passes_remaining = 0
+        self.content = tk.Frame(self, bg=fill)
         self._content_window = self.create_window(
             padx,
             pady,
@@ -141,11 +143,39 @@ class RoundedSurface(tk.Canvas):
         )
         self.content.bind("<Configure>", self._fit_height)
         self.bind("<Configure>", self._redraw)
+        self._schedule_geometry_sync()
 
     def _fit_height(self, _event: tk.Event[Any]) -> None:
-        height = self.content.winfo_reqheight() + self._pady * 2
-        if int(float(self.cget("height"))) != height:
-            self.configure(height=height)
+        self._schedule_geometry_sync()
+
+    def _schedule_geometry_sync(self, passes: int = 3) -> None:
+        self._geometry_passes_remaining = max(
+            self._geometry_passes_remaining,
+            passes,
+        )
+        if self._geometry_job is None and self.winfo_exists():
+            self._geometry_job = self.after_idle(self._sync_geometry)
+
+    def _sync_geometry(self) -> None:
+        self._geometry_job = None
+        if not self.winfo_exists():
+            return
+        content_height = max(1, self.content.winfo_reqheight())
+        target_height = content_height + self._pady * 2
+        self.itemconfigure(self._content_window, height=content_height)
+        if int(float(self.cget("height"))) != target_height:
+            super().configure(height=target_height)
+
+        ancestor = self.master
+        while ancestor is not None:
+            if isinstance(ancestor, RoundedSurface):
+                ancestor._schedule_geometry_sync()
+                break
+            ancestor = getattr(ancestor, "master", None)
+
+        if self._geometry_passes_remaining > 0:
+            self._geometry_passes_remaining -= 1
+            self._geometry_job = self.after(1, self._sync_geometry)
 
     def _redraw(self, event: tk.Event[Any]) -> None:
         width = max(2, event.width)
@@ -184,6 +214,7 @@ class RoundedSurface(tk.Canvas):
             self._content_window,
             width=max(1, width - self._padx * 2),
         )
+        self._schedule_geometry_sync()
 
 
 class RoundedEntry(tk.Canvas):
@@ -446,7 +477,7 @@ class DesktopWindow:
             text="KİŞİSEL İŞLETİM KATMANI",
             bg=c.surface,
             fg=c.muted,
-            font=("Segoe UI", 7),
+            font=("Segoe UI", 8),
         ).pack(anchor="w")
 
         runtime = tk.Frame(topbar, bg=c.surface)
@@ -470,7 +501,7 @@ class DesktopWindow:
             ),
             bg=c.surface,
             fg=c.muted,
-            font=("Segoe UI Semibold", 7),
+            font=("Segoe UI Semibold", 8),
         )
         self.status_label.pack(side="left", padx=(0, 16))
         self.provider_badge = self._status_field(
@@ -521,14 +552,14 @@ class DesktopWindow:
             text=label,
             bg=self._colors.surface,
             fg=self._colors.faint,
-            font=("Segoe UI Semibold", 6),
+            font=("Segoe UI Semibold", 8),
         ).pack(anchor="w")
         value_label = tk.Label(
             block,
             text=value,
             bg=self._colors.surface,
             fg=self._colors.ink,
-            font=("Segoe UI Semibold", 7),
+            font=("Segoe UI Semibold", 8),
         )
         value_label.pack(anchor="w")
         return value_label
@@ -597,7 +628,7 @@ class DesktopWindow:
             text=text,
             bg=self._colors.surface_alt,
             fg=self._colors.muted,
-            font=("Segoe UI Semibold", 7),
+            font=("Segoe UI Semibold", 8),
             padx=9,
             pady=4,
             highlightbackground=self._colors.line,
@@ -622,7 +653,7 @@ class DesktopWindow:
             text="GÖREV KONTROLÜ",
             bg=c.surface,
             fg=c.accent_strong,
-            font=("Segoe UI Semibold", 7),
+            font=("Segoe UI Semibold", 8),
         ).pack(anchor="w", padx=18, pady=(18, 10))
         for screen, index, label in NAVIGATION:
             button = tk.Button(
@@ -714,7 +745,7 @@ class DesktopWindow:
             text="BEKLİYOR",
             bg=c.surface,
             fg=c.faint,
-            font=("Segoe UI", 7),
+            font=("Segoe UI", 8),
         ).pack(side="left", padx=(2, 10))
         self._badge(bar, DISPLAY_MODEL_NAME)
         self._badge(
@@ -742,7 +773,7 @@ class DesktopWindow:
             text="GÖREV TELEMETRİSİ",
             bg=c.surface,
             fg=c.accent_strong,
-            font=("Segoe UI Semibold", 7),
+            font=("Segoe UI Semibold", 8),
         ).pack(anchor="w", padx=18, pady=(21, 4))
         tk.Label(
             self.context,
@@ -873,7 +904,7 @@ class DesktopWindow:
             text=eyebrow.upper(),
             bg=c.background,
             fg=c.accent_strong,
-            font=("Segoe UI Semibold", 7),
+            font=("Segoe UI Semibold", 8),
         ).pack(anchor="w")
         tk.Label(
             self.workspace,
@@ -984,7 +1015,7 @@ class DesktopWindow:
             text=label.upper(),
             bg=c.surface,
             fg=c.faint,
-            font=("Segoe UI Semibold", 7),
+            font=("Segoe UI Semibold", 8),
         ).pack(anchor="w", pady=(2, 0))
 
     def _chip(
@@ -1005,7 +1036,7 @@ class DesktopWindow:
             text=text,
             bg=self._colors.surface_alt,
             fg=color,
-            font=("Segoe UI Semibold", 7),
+            font=("Segoe UI Semibold", 8),
             padx=8,
             pady=4,
             highlightbackground=color if live or warning else self._colors.line,
@@ -1081,7 +1112,7 @@ class DesktopWindow:
             center + 15,
             text="KONUŞMAK İÇİN TIKLA",
             fill=c.muted,
-            font=("Segoe UI", 6),
+            font=("Segoe UI", 8),
         )
         canvas.bind("<Button-1>", lambda _event: self._start_voice())
         canvas.bind("<Return>", lambda _event: self._start_voice())
@@ -1189,7 +1220,6 @@ class DesktopWindow:
             self.workspace,
             "AKTİF HEDEF" if active_task else "YÜRÜTME ÇEKİRDEĞİ",
         )
-        core.configure(padx=22, pady=18)
         mission = tk.Frame(core, bg=self._colors.surface)
         mission.pack(side="left", fill="both", expand=True, padx=(0, 12))
         tk.Label(
@@ -1201,7 +1231,7 @@ class DesktopWindow:
             ),
             bg=self._colors.surface,
             fg=self._colors.accent_strong,
-            font=("Segoe UI Semibold", 7),
+            font=("Segoe UI Semibold", 8),
         ).pack(anchor="w", pady=(14, 7))
         tk.Label(
             mission,
@@ -1397,7 +1427,7 @@ class DesktopWindow:
                 }[message.role],
                 bg=background,
                 fg=role_color,
-                font=("Segoe UI Semibold", 7),
+                font=("Segoe UI Semibold", 8),
             ).pack(anchor="w")
             tk.Label(
                 bubble,
@@ -1816,7 +1846,7 @@ class DesktopWindow:
             text=text,
             bg=self._colors.surface,
             fg=self._colors.faint,
-            font=("Segoe UI Semibold", 7),
+            font=("Segoe UI Semibold", 8),
         ).pack(anchor="w", pady=(3, 5))
 
     def _on_api_provider_changed(self, _event: object | None = None) -> None:

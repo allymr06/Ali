@@ -45,11 +45,11 @@ def test_chat_message_validates_role_and_text() -> None:
 def test_theme_tokens_match_mission_interface_palette() -> None:
     assert tokens(UITheme.DARK) is DARK
     assert tokens(UITheme.LIGHT) is LIGHT
-    assert DARK.background == "#05080b"
-    assert DARK.accent == "#a9efff"
-    assert DARK.accent_strong == "#45cde9"
-    assert DARK.warning == "#efc37d"
-    assert LIGHT.background == "#edf4f6"
+    assert DARK.background == "#05090f"
+    assert DARK.accent == "#7ee8ff"
+    assert DARK.accent_strong == "#38c8e8"
+    assert DARK.warning == "#f0c684"
+    assert LIGHT.background == "#eef4f7"
     for palette in (DARK, LIGHT):
         for value in (
             palette.background,
@@ -65,6 +65,9 @@ def test_theme_tokens_match_mission_interface_palette() -> None:
             palette.accent,
             palette.accent_strong,
             palette.warning,
+            palette.line_soft,
+            palette.glow,
+            palette.success,
         ):
             assert value.startswith("#")
             assert len(value) == 7

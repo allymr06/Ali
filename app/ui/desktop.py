@@ -4,13 +4,14 @@ import asyncio
 import ctypes
 import math
 import sys
+import time
 import tkinter as tk
 from collections.abc import Coroutine
 from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
 from pathlib import Path
 from queue import Empty, SimpleQueue
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 from typing import Any, Callable
 
 from app.core.time import utc_now
@@ -35,19 +36,33 @@ class ApprovalPrompt:
     request: InteractiveApprovalRequest
     response: Future[bool]
 
+# Each entry: screen, legacy index (kept for Alt+N shortcuts and icon-font
+# fallback), Turkish label, Segoe Fluent/MDL2 icon glyph.
 NAVIGATION = (
-    (UIScreen.HOME, "01", "Komuta Merkezi"),
-    (UIScreen.CHAT, "02", "Sohbet"),
-    (UIScreen.TASKS, "03", "Görevler"),
-    (UIScreen.MEMORY, "04", "Hafıza Ağı"),
-    (UIScreen.VOICE, "05", "Ses"),
-    (UIScreen.VISION, "06", "Görüş"),
-    (UIScreen.RESEARCH, "07", "Araştırma"),
-    (UIScreen.TOOLS, "08", "Yetenekler"),
-    (UIScreen.INTEGRATIONS, "09", "Güven ve Erişim"),
-    (UIScreen.DIAGNOSTICS, "10", "Tanılama"),
-    (UIScreen.SETTINGS, "11", "Ayarlar"),
+    (UIScreen.HOME, "01", "Komuta Merkezi", ""),
+    (UIScreen.CHAT, "02", "Sohbet", ""),
+    (UIScreen.TASKS, "03", "Görevler", ""),
+    (UIScreen.MEMORY, "04", "Hafıza Ağı", ""),
+    (UIScreen.VOICE, "05", "Ses", ""),
+    (UIScreen.VISION, "06", "Görüş", ""),
+    (UIScreen.RESEARCH, "07", "Araştırma", ""),
+    (UIScreen.TOOLS, "08", "Yetenekler", ""),
+    (UIScreen.INTEGRATIONS, "09", "Güven ve Erişim", ""),
+    (UIScreen.DIAGNOSTICS, "10", "Tanılama", ""),
+    (UIScreen.SETTINGS, "11", "Ayarlar", ""),
 )
+
+
+def icon_font_family(root: tk.Misc) -> str | None:
+    """Pick the crispest installed Windows icon font, if any."""
+    try:
+        families = set(tkfont.families(root))
+    except tk.TclError:
+        return None
+    for name in ("Segoe Fluent Icons", "Segoe MDL2 Assets"):
+        if name in families:
+            return name
+    return None
 
 SHORTCUTS = (
     ("Enter", "Komutu gönder"),
@@ -61,6 +76,9 @@ SHORTCUTS = (
     ("Alt + S", "Ayarları aç"),
     ("F1", "Klavye kısayollarını göster"),
     ("Escape", "Çalışma alanına dön"),
+    ("↑ / ↓", "Ekranı satır satır kaydır"),
+    ("Page Up / Page Down", "Ekranı sayfa sayfa kaydır"),
+    ("Home / End", "Ekranın başına veya sonuna git"),
 )
 
 STATUS_TEXT = {
@@ -124,6 +142,176 @@ def next_typewriter_text(current: str, target: str) -> str:
     return target[: len(current) + step]
 
 
+def ease_out_cubic(progress: float) -> float:
+    inverted = 1.0 - progress
+    return 1.0 - inverted * inverted * inverted
+
+
+def ease_in_out_cubic(progress: float) -> float:
+    if progress < 0.5:
+        return 4.0 * progress * progress * progress
+    inverted = -2.0 * progress + 2.0
+    return 1.0 - (inverted * inverted * inverted) / 2.0
+
+
+def mix_colors(start: str, end: str, progress: float) -> str:
+    """Blend two #rrggbb colors; progress 0 returns start, 1 returns end."""
+    p = min(1.0, max(0.0, progress))
+    channels = (
+        round(
+            int(start[i : i + 2], 16)
+            + (int(end[i : i + 2], 16) - int(start[i : i + 2], 16)) * p
+        )
+        for i in (1, 3, 5)
+    )
+    return "#{:02x}{:02x}{:02x}".format(*channels)
+
+
+@dataclass(slots=True)
+class _Tween:
+    duration: float
+    elapsed: float
+    easing: Callable[[float], float]
+    on_update: Callable[[float], None]
+    on_done: Callable[[], None] | None
+
+
+class AnimationEngine:
+    """Single delta-timed ticker driving every animation at a 120 Hz budget.
+
+    Windows timers default to ~15.6 ms granularity, which caps Tk `after`
+    callbacks near 64 Hz. The engine raises the system timer resolution to
+    1 ms while the window lives so the 8 ms frame budget is actually
+    reachable, and every tween advances by measured wall-clock delta so
+    motion speed stays identical at any achieved frame rate.
+    """
+
+    FRAME_MS = 8
+
+    def __init__(
+        self,
+        root: tk.Misc,
+        *,
+        reduced_motion: Callable[[], bool],
+    ) -> None:
+        self.root = root
+        self._reduced_motion = reduced_motion
+        self._tweens: dict[str, _Tween] = {}
+        self._loops: dict[str, Callable[[float], None]] = {}
+        self._job: str | None = None
+        self._last_frame: float | None = None
+        self._closed = False
+        self._timer_raised = False
+        if sys.platform == "win32":
+            try:
+                ctypes.WinDLL("winmm").timeBeginPeriod(1)
+                self._timer_raised = True
+            except (OSError, AttributeError):
+                self._timer_raised = False
+
+    def close(self) -> None:
+        self._closed = True
+        self._tweens.clear()
+        self._loops.clear()
+        if self._job is not None:
+            try:
+                self.root.after_cancel(self._job)
+            except tk.TclError:
+                pass
+            self._job = None
+        if self._timer_raised:
+            try:
+                ctypes.WinDLL("winmm").timeEndPeriod(1)
+            except (OSError, AttributeError):
+                pass
+            self._timer_raised = False
+
+    def tween(
+        self,
+        key: str,
+        *,
+        duration_ms: float,
+        on_update: Callable[[float], None],
+        easing: Callable[[float], float] = ease_out_cubic,
+        on_done: Callable[[], None] | None = None,
+    ) -> None:
+        """Animate an eased 0..1 progress; the caller maps it to values."""
+        self._tweens.pop(key, None)
+        if self._closed or self._reduced_motion() or duration_ms <= 0:
+            self._safe_update(on_update, 1.0)
+            if on_done is not None:
+                on_done()
+            return
+        self._tweens[key] = _Tween(
+            duration=duration_ms / 1000.0,
+            elapsed=0.0,
+            easing=easing,
+            on_update=on_update,
+            on_done=on_done,
+        )
+        self._ensure_ticker()
+
+    def loop(self, key: str, on_frame: Callable[[float], None]) -> None:
+        """Run a continuous per-frame callback receiving elapsed seconds."""
+        if self._closed:
+            return
+        self._loops[key] = on_frame
+        self._ensure_ticker()
+
+    def stop(self, key: str) -> None:
+        self._tweens.pop(key, None)
+        self._loops.pop(key, None)
+
+    def _ensure_ticker(self) -> None:
+        if self._job is None and not self._closed:
+            self._last_frame = None
+            self._job = self.root.after(self.FRAME_MS, self._tick)
+
+    @staticmethod
+    def _safe_update(
+        callback: Callable[[float], None], value: float
+    ) -> None:
+        try:
+            callback(value)
+        except tk.TclError:
+            # The animated widget was destroyed mid-flight; the tween
+            # ends with it.
+            pass
+
+    def _tick(self) -> None:
+        self._job = None
+        if self._closed:
+            return
+        now = time.perf_counter()
+        delta = (
+            self.FRAME_MS / 1000.0
+            if self._last_frame is None
+            else min(0.1, now - self._last_frame)
+        )
+        self._last_frame = now
+
+        for key, frame in list(self._loops.items()):
+            if key in self._loops:
+                self._safe_update(frame, now)
+
+        finished: list[str] = []
+        for key, tween in list(self._tweens.items()):
+            tween.elapsed += delta
+            progress = min(1.0, tween.elapsed / tween.duration)
+            self._safe_update(tween.on_update, tween.easing(progress))
+            if progress >= 1.0:
+                finished.append(key)
+        for key in finished:
+            tween = self._tweens.pop(key, None)
+            if tween is not None and tween.on_done is not None:
+                tween.on_done()
+
+        if (self._tweens or self._loops) and not self._closed:
+            self._job = self.root.after(self.FRAME_MS, self._tick)
+        else:
+            self._last_frame = None
+
+
 class RoundedSurface(tk.Canvas):
     """Vector rounded container that stays crisp at every DPI scale."""
 
@@ -136,6 +324,7 @@ class RoundedSurface(tk.Canvas):
         radius: int = 14,
         padx: int = 0,
         pady: int = 0,
+        shadow: str | None = None,
     ) -> None:
         parent_bg = str(parent.cget("bg"))
         super().__init__(
@@ -145,11 +334,14 @@ class RoundedSurface(tk.Canvas):
             borderwidth=0,
             height=1,
         )
+        self._parent_bg = parent_bg
         self._fill = fill
         self._outline = outline
         self._radius = radius
         self._padx = padx
         self._pady = pady
+        self._shadow = shadow
+        self._shadow_drop = 4 if shadow else 0
         self._geometry_job: str | None = None
         self._geometry_passes_remaining = 0
         self.content = tk.Frame(self, bg=fill)
@@ -179,7 +371,9 @@ class RoundedSurface(tk.Canvas):
         if not self.winfo_exists():
             return
         content_height = max(1, self.content.winfo_reqheight())
-        target_height = content_height + self._pady * 2
+        target_height = (
+            content_height + self._pady * 2 + self._shadow_drop
+        )
         self.itemconfigure(self._content_window, height=content_height)
         if int(float(self.cget("height"))) != target_height:
             super().configure(height=target_height)
@@ -195,33 +389,62 @@ class RoundedSurface(tk.Canvas):
             self._geometry_passes_remaining -= 1
             self._geometry_job = self.after(1, self._sync_geometry)
 
+    @staticmethod
+    def rounded_rect_points(
+        x1: float, y1: float, x2: float, y2: float, radius: float
+    ) -> tuple[float, ...]:
+        """Control points that smooth ONLY the corners.
+
+        A smooth polygon bows long straight segments unless each edge is
+        pinned by duplicated on-edge points, so every edge contributes its
+        two endpoints and each corner contributes its apex as the single
+        curved control point.
+        """
+        r = radius
+        return (
+            x1 + r, y1, x1 + r, y1, x2 - r, y1, x2 - r, y1, x2, y1,
+            x2, y1 + r, x2, y1 + r, x2, y2 - r, x2, y2 - r, x2, y2,
+            x2 - r, y2, x2 - r, y2, x1 + r, y2, x1 + r, y2, x1, y2,
+            x1, y2 - r, x1, y2 - r, x1, y1 + r, x1, y1 + r, x1, y1,
+        )
+
     def _redraw(self, event: tk.Event[Any]) -> None:
         width = max(2, event.width)
-        height = max(2, event.height)
+        height = max(2, event.height - self._shadow_drop)
         self.delete("surface")
         radius = min(self._radius, width // 2, height // 2)
-        points = (
-            radius,
-            1,
-            width - radius,
-            1,
-            width - 1,
-            radius,
-            width - 1,
-            height - radius,
-            width - radius,
-            height - 1,
-            radius,
-            height - 1,
-            1,
-            height - radius,
-            1,
-            radius,
+        if self._shadow is not None:
+            drop = self._shadow_drop
+            self.create_polygon(
+                self.rounded_rect_points(
+                    3, 1 + drop, width - 1, height - 1 + drop, radius
+                ),
+                smooth=True,
+                splinesteps=36,
+                fill=self._shadow,
+                outline=self._shadow,
+                width=2,
+                tags=("surface",),
+            )
+        # A blended halo hugs the edge before the crisp face is drawn,
+        # softening the aliased polygon staircase.
+        self.create_polygon(
+            self.rounded_rect_points(
+                1, 1, width - 1, height - 1, radius
+            ),
+            smooth=True,
+            splinesteps=36,
+            fill="",
+            outline=mix_colors(self._parent_bg, self._outline, 0.55),
+            width=3,
+            tags=("surface",),
         )
         self.create_polygon(
-            points,
+            self.rounded_rect_points(
+                1, 1, width - 1, height - 1, radius
+            ),
             smooth=True,
-            splinesteps=18,
+            splinesteps=36,
             fill=self._fill,
             outline=self._outline,
             width=1,
@@ -233,6 +456,11 @@ class RoundedSurface(tk.Canvas):
             width=max(1, width - self._padx * 2),
         )
         self._schedule_geometry_sync()
+
+    def set_outline(self, color: str) -> None:
+        """Recolor the border, e.g. for an animated focus ring."""
+        self._outline = color
+        self.itemconfigure("surface", outline=color)
 
 
 class RoundedEntry(tk.Canvas):
@@ -280,26 +508,11 @@ class RoundedEntry(tk.Canvas):
         height = max(2, event.height)
         radius = min(11, height // 2)
         self.create_polygon(
-            (
-                radius,
-                1,
-                width - radius,
-                1,
-                width - 1,
-                radius,
-                width - 1,
-                height - radius,
-                width - radius,
-                height - 1,
-                radius,
-                height - 1,
-                1,
-                height - radius,
-                1,
-                radius,
+            RoundedSurface.rounded_rect_points(
+                1, 1, width - 1, height - 1, radius
             ),
             smooth=True,
-            splinesteps=16,
+            splinesteps=32,
             fill=self._colors.surface_alt,
             outline=self._colors.line,
             tags=("entry-surface",),
@@ -331,55 +544,437 @@ class RoundedEntry(tk.Canvas):
     config = configure
 
 
-class ScrollableWorkspace(tk.Frame):
-    """Borderless vertical workspace for screens with dense content."""
+class RoundedButton(tk.Canvas):
+    """Vector rounded button with soft edges and eased hover states.
 
-    def __init__(self, parent: tk.Widget, colors: ThemeTokens) -> None:
+    Tk canvases draw aliased polygons, so the surface is layered: a wide
+    blended outline hugs the shape first and the crisp fill sits on top,
+    which reads as an anti-aliased edge at normal viewing distance.
+    """
+
+    _VARIANTS = {
+        "primary": ("accent", "inverse", "accent_strong"),
+        "secondary": ("surface_alt", "ink", "hover"),
+        "ghost": ("surface", "muted", "hover"),
+        "chip": ("surface_alt", "muted", "hover"),
+    }
+
+    def __init__(
+        self,
+        parent: tk.Widget,
+        *,
+        text: str,
+        command: Callable[[], Any],
+        colors: ThemeTokens,
+        engine: AnimationEngine | None = None,
+        variant: str = "secondary",
+        font: tuple[Any, ...] = ("Segoe UI Semibold", 8),
+        radius: int = 11,
+        padx: int = 14,
+        pady: int = 8,
+    ) -> None:
+        self._parent_bg = str(parent.cget("bg"))
+        super().__init__(
+            parent,
+            bg=self._parent_bg,
+            highlightthickness=0,
+            borderwidth=0,
+            cursor="hand2",
+            takefocus=True,
+        )
+        self._colors = colors
+        self._engine = engine
+        self._command = command
+        self._variant = variant
+        self._font = tkfont.Font(font=font)
+        self._radius = radius
+        self._padx = padx
+        self._pady = pady
+        self._text = text
+        self._state = "normal"
+        self._hover = 0.0
+        self._pressed = False
+        self._selected = False
+        self._resize_to_text()
+        self.bind("<Enter>", lambda _e: self._tween_hover(1.0))
+        self.bind("<Leave>", lambda _e: self._tween_hover(0.0))
+        self.bind("<ButtonPress-1>", self._on_press)
+        self.bind("<ButtonRelease-1>", self._on_release)
+        self.bind("<Return>", lambda _e: self.invoke())
+        self.bind("<space>", lambda _e: self.invoke())
+        self.bind("<Configure>", lambda _e: self._draw())
+
+    def _resize_to_text(self) -> None:
+        width = self._font.measure(self._text) + self._padx * 2
+        height = self._font.metrics("linespace") + self._pady * 2
+        super().configure(width=width, height=height)
+        self._draw()
+
+    def _palette(self) -> tuple[str, str]:
+        c = self._colors
+        fill_name, fg_name, hover_name = self._VARIANTS[self._variant]
+        fill = getattr(c, fill_name)
+        fg = getattr(c, fg_name)
+        hover = getattr(c, hover_name)
+        if self._state == "disabled":
+            return (
+                mix_colors(self._parent_bg, fill, 0.45),
+                mix_colors(fill, fg, 0.45),
+            )
+        if self._selected:
+            fill = mix_colors(hover, c.glow, 0.55)
+            fg = c.accent
+        blended = mix_colors(fill, hover, self._hover)
+        if self._pressed:
+            blended = mix_colors(blended, self._colors.inverse, 0.16)
+        return blended, fg
+
+    def _draw(self) -> None:
+        self.delete("all")
+        width = max(2, self.winfo_width() or int(self.cget("width")))
+        height = max(
+            2, self.winfo_height() or int(self.cget("height"))
+        )
+        radius = min(self._radius, height // 2, width // 2)
+        fill, fg = self._palette()
+        points = RoundedSurface.rounded_rect_points(
+            1.5, 1.5, width - 1.5, height - 1.5, radius
+        )
+        # Soft blended halo first, crisp fill second.
+        self.create_polygon(
+            points,
+            smooth=True,
+            splinesteps=32,
+            fill="",
+            outline=mix_colors(self._parent_bg, fill, 0.55),
+            width=3,
+        )
+        self.create_polygon(
+            points,
+            smooth=True,
+            splinesteps=32,
+            fill=fill,
+            outline=fill,
+            width=1,
+        )
+        self.create_text(
+            width / 2,
+            height / 2,
+            text=self._text,
+            fill=fg,
+            font=self._font,
+        )
+
+    def _tween_hover(self, target: float) -> None:
+        if self._state == "disabled":
+            return
+        if self._engine is None:
+            self._hover = target
+            self._draw()
+            return
+        start = self._hover
+
+        def frame(progress: float) -> None:
+            if self.winfo_exists():
+                self._hover = start + (target - start) * progress
+                self._draw()
+
+        self._engine.tween(
+            f"btn:{id(self)}", duration_ms=130, on_update=frame
+        )
+
+    def _on_press(self, _event: tk.Event[Any]) -> None:
+        if self._state == "disabled":
+            return
+        self._pressed = True
+        self._draw()
+
+    def _on_release(self, event: tk.Event[Any]) -> None:
+        if self._state == "disabled":
+            return
+        was_pressed = self._pressed
+        self._pressed = False
+        self._draw()
+        inside = (
+            0 <= event.x <= self.winfo_width()
+            and 0 <= event.y <= self.winfo_height()
+        )
+        if was_pressed and inside:
+            self.invoke()
+
+    def invoke(self) -> None:
+        if self._state != "disabled":
+            self._command()
+
+    def set_selected(self, selected: bool) -> None:
+        self._selected = selected
+        self._draw()
+
+    def configure(self, cnf: Any = None, **kwargs: Any) -> Any:
+        text = kwargs.pop("text", None)
+        state = kwargs.pop("state", None)
+        command = kwargs.pop("command", None)
+        if command is not None:
+            self._command = command
+        if state is not None:
+            self._state = str(state)
+            if self._state == "disabled":
+                self._hover = 0.0
+                self._pressed = False
+            super().configure(
+                cursor=(
+                    "arrow" if self._state == "disabled" else "hand2"
+                )
+            )
+        if text is not None and str(text) != self._text:
+            self._text = str(text)
+            self._resize_to_text()
+        elif state is not None:
+            self._draw()
+        if cnf or kwargs:
+            return super().configure(cnf, **kwargs)
+        return None
+
+    config = configure
+
+    def cget(self, key: str) -> Any:
+        if key == "state":
+            return self._state
+        if key == "text":
+            return self._text
+        return super().cget(key)
+
+
+class NavButton(tk.Frame):
+    """Icon-led navigation row with eased hover and selection states."""
+
+    def __init__(
+        self,
+        parent: tk.Widget,
+        *,
+        icon: str,
+        fallback: str,
+        label: str,
+        colors: ThemeTokens,
+        engine: AnimationEngine | None,
+        icon_family: str | None,
+        command: Callable[[], Any],
+    ) -> None:
+        super().__init__(parent, bg=colors.surface, cursor="hand2")
+        self._colors = colors
+        self._engine = engine
+        self._selected = False
+        self._collapsed = False
+        self._hover = 0.0
+        icon_text = icon if icon_family else fallback
+        icon_font = (
+            (icon_family, 11) if icon_family else ("Segoe UI Semibold", 9)
+        )
+        self.icon = tk.Label(
+            self,
+            text=icon_text,
+            bg=colors.surface,
+            fg=colors.muted,
+            font=icon_font,
+            width=2,
+        )
+        self.icon.pack(side="left", padx=(14, 8), pady=9)
+        self.text = tk.Label(
+            self,
+            text=label,
+            bg=colors.surface,
+            fg=colors.muted,
+            font=("Segoe UI", 9),
+            anchor="w",
+        )
+        self.text.pack(side="left", fill="x", expand=True, pady=9)
+        for widget in (self, self.icon, self.text):
+            widget.bind("<Button-1>", lambda _e: command(), add="+")
+        self.bind("<Enter>", lambda _e: self._tween_hover(1.0), add="+")
+        self.bind("<Leave>", self._on_leave, add="+")
+
+    def _on_leave(self, event: tk.Event[Any]) -> None:
+        # Moving onto the child labels fires <Leave> on the row; only
+        # fade out when the pointer genuinely left the row rectangle.
+        x, y = event.x_root, event.y_root
+        inside = (
+            self.winfo_rootx() <= x < self.winfo_rootx() + self.winfo_width()
+            and self.winfo_rooty() <= y < self.winfo_rooty() + self.winfo_height()
+        )
+        if not inside:
+            self._tween_hover(0.0)
+
+    def _base_bg(self) -> str:
+        return (
+            self._colors.hover
+            if self._selected
+            else self._colors.surface
+        )
+
+    def _apply_bg(self) -> None:
+        color = mix_colors(
+            self._base_bg(), self._colors.hover, self._hover
+        )
+        if self._selected:
+            color = mix_colors(
+                self._colors.hover,
+                self._colors.glow,
+                0.35 + 0.3 * self._hover,
+            )
+        for widget in (self, self.icon, self.text):
+            if widget.winfo_exists():
+                widget.configure(bg=color)
+
+    def _tween_hover(self, target: float) -> None:
+        if self._engine is None:
+            self._hover = target
+            self._apply_bg()
+            return
+        start = self._hover
+
+        def frame(progress: float) -> None:
+            if self.winfo_exists():
+                self._hover = start + (target - start) * progress
+                self._apply_bg()
+
+        self._engine.tween(
+            f"nav:{id(self)}", duration_ms=140, on_update=frame
+        )
+
+    def apply(self, *, selected: bool, collapsed: bool) -> None:
+        self._selected = selected
+        self._collapsed = collapsed
+        c = self._colors
+        self.icon.configure(
+            fg=c.accent if selected else c.muted,
+        )
+        self.text.configure(
+            fg=c.ink if selected else c.muted,
+            font=(
+                ("Segoe UI Semibold", 9)
+                if selected
+                else ("Segoe UI", 9)
+            ),
+        )
+        if collapsed:
+            self.text.pack_forget()
+            self.icon.pack_configure(padx=(0, 0), pady=9)
+            self.icon.pack(side="top", expand=True)
+        else:
+            self.icon.pack_configure(side="left", padx=(14, 8), pady=9)
+            if not self.text.winfo_ismapped():
+                self.text.pack(
+                    side="left", fill="x", expand=True, pady=9
+                )
+        self._apply_bg()
+
+
+class ScrollableWorkspace(tk.Frame):
+    """Smooth pixel-scrolled workspace with a minimal overlay scrollbar.
+
+    Wheel handling is application-wide and pointer-routed because Windows
+    Tk 8.6 delivers <MouseWheel> to the keyboard-focused widget, not the
+    widget under the pointer. Raw deltas accumulate in pixels so precision
+    touchpads (which report deltas far below 120) scroll as smoothly as a
+    notched wheel, and the offset eases toward its target on the shared
+    120 Hz animation engine.
+    """
+
+    _SELF_SCROLLING = (tk.Text, tk.Listbox)
+    _PIXELS_PER_DELTA = 0.55
+    _BAR_WIDTH = 9
+
+    def __init__(
+        self,
+        parent: tk.Widget,
+        colors: ThemeTokens,
+        engine: AnimationEngine | None = None,
+    ) -> None:
         super().__init__(parent, bg=colors.background)
+        self._colors = colors
+        self._engine = engine
         self.canvas = tk.Canvas(
             self,
             bg=colors.background,
             highlightthickness=0,
             borderwidth=0,
-        )
-        self.scrollbar = ttk.Scrollbar(
-            self,
-            orient="vertical",
-            command=self.canvas.yview,
-            style="Jarvis.Vertical.TScrollbar",
+            yscrollincrement=1,
         )
         self.body = tk.Frame(self.canvas, bg=colors.background)
         self._window = self.canvas.create_window(
             (0, 0), window=self.body, anchor="nw"
         )
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
         self.canvas.pack(side="left", fill="both", expand=True)
-        # The minimal trough+thumb layout requests a 1px width in clam,
-        # so the grabbable width comes from internal packing padding.
-        self.scrollbar.pack(side="right", fill="y", ipadx=5)
-        self.body.bind(
-            "<Configure>",
-            lambda _event: self.canvas.configure(
-                scrollregion=self.canvas.bbox("all")
-            ),
+
+        self.scrollbar = tk.Canvas(
+            self,
+            width=self._BAR_WIDTH,
+            bg=colors.background,
+            highlightthickness=0,
+            borderwidth=0,
+            cursor="hand2",
         )
-        self.canvas.bind(
-            "<Configure>",
-            lambda event: self.canvas.itemconfigure(
-                self._window, width=event.width
-            ),
+        self.scrollbar.pack(side="right", fill="y", padx=(3, 0))
+        self._thumb_visible = 0.0
+        self._drag_anchor: tuple[int, float] | None = None
+        self.scrollbar.bind("<ButtonPress-1>", self._on_thumb_press)
+        self.scrollbar.bind("<B1-Motion>", self._on_thumb_drag)
+        self.scrollbar.bind(
+            "<ButtonRelease-1>", lambda _e: self._fade_thumb_later()
         )
-        # Windows Tk 8.6 delivers <MouseWheel> to the keyboard-focused
-        # widget, not the widget under the pointer, so per-widget bindings
-        # miss the wheel whenever focus sits outside the workspace. One
-        # application-wide binding resolves the widget under the pointer
-        # and scrolls only when it lives inside this workspace and does
-        # not scroll itself.
+        self.scrollbar.bind(
+            "<Enter>", lambda _e: self._show_thumb(hold=True)
+        )
+        self.scrollbar.bind(
+            "<Leave>", lambda _e: self._fade_thumb_later()
+        )
+
+        self._target = 0.0
+        self._offset = 0.0
+        self._text_wheel_accumulator: dict[str, float] = {}
+        self._thumb_fade_job: str | None = None
+
+        self.body.bind("<Configure>", self._on_content_change)
+        self.canvas.bind("<Configure>", self._on_viewport_change)
         self.canvas.bind_all(
             "<MouseWheel>", self._on_wheel_anywhere, add="+"
         )
 
-    _SELF_SCROLLING = (tk.Text, tk.Listbox)
+    # -- geometry -----------------------------------------------------
+
+    def _content_height(self) -> int:
+        return max(1, self.body.winfo_reqheight())
+
+    def _viewport_height(self) -> int:
+        return max(1, self.canvas.winfo_height())
+
+    def _max_offset(self) -> float:
+        return float(
+            max(0, self._content_height() - self._viewport_height())
+        )
+
+    def _on_content_change(self, _event: tk.Event[Any]) -> None:
+        self.canvas.configure(
+            scrollregion=(0, 0, 1, self._content_height())
+        )
+        self._clamp_and_apply()
+
+    def _on_viewport_change(self, event: tk.Event[Any]) -> None:
+        self.canvas.itemconfigure(self._window, width=event.width)
+        self._clamp_and_apply()
+
+    def _clamp_and_apply(self) -> None:
+        maximum = self._max_offset()
+        self._target = min(max(0.0, self._target), maximum)
+        self._offset = min(max(0.0, self._offset), maximum)
+        self._apply_offset()
+
+    def _apply_offset(self) -> None:
+        height = float(self._content_height())
+        self.canvas.yview_moveto(self._offset / height)
+        self._draw_thumb()
+
+    # -- wheel routing ------------------------------------------------
 
     def _on_wheel_anywhere(self, event: tk.Event[Any]) -> None:
         widget: tk.Misc | None = self.winfo_containing(
@@ -387,16 +982,200 @@ class ScrollableWorkspace(tk.Frame):
         )
         while widget is not None:
             if isinstance(widget, self._SELF_SCROLLING):
+                self._scroll_text_widget(widget, event.delta)
                 return
             if widget is self:
-                self.canvas.yview_scroll(
-                    int(-event.delta / 120), "units"
-                )
+                self.scroll_by(-event.delta * self._PIXELS_PER_DELTA)
                 return
             widget = widget.master
 
+    def scroll_page(self, direction: int) -> None:
+        self.scroll_by(direction * self._viewport_height() * 0.85)
+
+    def scroll_to_edge(self, *, top: bool) -> None:
+        self._target = 0.0 if top else self._max_offset()
+        self._show_thumb()
+        start = self._offset
+        distance = self._target - start
+
+        def frame(progress: float) -> None:
+            self._offset = start + distance * progress
+            self._apply_offset()
+
+        if self._engine is None:
+            self._offset = self._target
+            self._apply_offset()
+        else:
+            self._engine.tween(
+                f"scroll:{id(self)}",
+                duration_ms=260,
+                on_update=frame,
+            )
+        self._fade_thumb_later()
+
+    def _scroll_text_widget(self, widget: tk.Misc, delta: float) -> None:
+        """Scroll a Text/Listbox under the pointer, honoring tiny deltas."""
+        key = str(widget)
+        accumulated = self._text_wheel_accumulator.get(key, 0.0) - delta
+        lines = int(accumulated / 40.0)
+        self._text_wheel_accumulator[key] = accumulated - lines * 40.0
+        if lines:
+            try:
+                widget.yview_scroll(lines, "units")
+            except tk.TclError:
+                self._text_wheel_accumulator.pop(key, None)
+
+    def scroll_by(self, pixels: float) -> None:
+        """Ease the viewport by a signed pixel distance."""
+        self._target = min(
+            max(0.0, self._target + pixels), self._max_offset()
+        )
+        self._show_thumb()
+        if self._engine is None:
+            self._offset = self._target
+            self._apply_offset()
+            return
+        start = self._offset
+        distance = self._target - start
+
+        def frame(progress: float) -> None:
+            self._offset = start + distance * progress
+            self._apply_offset()
+
+        self._engine.tween(
+            f"scroll:{id(self)}",
+            duration_ms=190,
+            on_update=frame,
+        )
+        self._fade_thumb_later()
+
+    # -- overlay thumb ------------------------------------------------
+
+    def _thumb_geometry(self) -> tuple[float, float] | None:
+        maximum = self._max_offset()
+        if maximum <= 0:
+            return None
+        viewport = float(self._viewport_height())
+        content = float(self._content_height())
+        length = max(34.0, viewport * viewport / content)
+        travel = viewport - length
+        top = travel * (self._offset / maximum) if maximum else 0.0
+        return top, length
+
+    def _draw_thumb(self) -> None:
+        bar = self.scrollbar
+        bar.delete("thumb")
+        geometry = self._thumb_geometry()
+        if geometry is None or self._thumb_visible <= 0.01:
+            return
+        top, length = geometry
+        color = mix_colors(
+            self._colors.background,
+            self._colors.faint,
+            self._thumb_visible,
+        )
+        width = self._BAR_WIDTH
+        radius = width / 2
+        bar.create_oval(
+            0, top, width, top + width,
+            fill=color, outline="", tags=("thumb",),
+        )
+        bar.create_oval(
+            0, top + length - width, width, top + length,
+            fill=color, outline="", tags=("thumb",),
+        )
+        bar.create_rectangle(
+            0, top + radius, width, top + length - radius,
+            fill=color, outline="", tags=("thumb",),
+        )
+
+    def _set_thumb_visibility(self, value: float) -> None:
+        self._thumb_visible = value
+        self._draw_thumb()
+
+    def _show_thumb(self, *, hold: bool = False) -> None:
+        if self._thumb_fade_job is not None:
+            try:
+                self.after_cancel(self._thumb_fade_job)
+            except tk.TclError:
+                pass
+            self._thumb_fade_job = None
+        if self._engine is None:
+            self._set_thumb_visibility(1.0)
+        else:
+            start = self._thumb_visible
+            self._engine.tween(
+                f"thumb-show:{id(self)}",
+                duration_ms=110,
+                on_update=lambda p: self._set_thumb_visibility(
+                    start + (1.0 - start) * p
+                ),
+            )
+        if not hold:
+            self._fade_thumb_later()
+
+    def _fade_thumb_later(self) -> None:
+        if self._thumb_fade_job is not None:
+            try:
+                self.after_cancel(self._thumb_fade_job)
+            except tk.TclError:
+                pass
+        self._thumb_fade_job = self.after(900, self._fade_thumb)
+
+    def _fade_thumb(self) -> None:
+        self._thumb_fade_job = None
+        start = self._thumb_visible
+        if self._engine is None:
+            self._set_thumb_visibility(0.0)
+            return
+        self._engine.tween(
+            f"thumb-show:{id(self)}",
+            duration_ms=420,
+            on_update=lambda p: self._set_thumb_visibility(
+                start * (1.0 - p)
+            ),
+        )
+
+    def _on_thumb_press(self, event: tk.Event[Any]) -> None:
+        geometry = self._thumb_geometry()
+        if geometry is None:
+            return
+        top, length = geometry
+        if top <= event.y <= top + length:
+            self._drag_anchor = (event.y, self._offset)
+        else:
+            viewport = float(self._viewport_height())
+            fraction = min(1.0, max(0.0, event.y / viewport))
+            self._jump_to(self._max_offset() * fraction)
+            self._drag_anchor = (event.y, self._offset)
+        self._show_thumb(hold=True)
+
+    def _on_thumb_drag(self, event: tk.Event[Any]) -> None:
+        if self._drag_anchor is None:
+            return
+        geometry = self._thumb_geometry()
+        if geometry is None:
+            return
+        _top, length = geometry
+        travel = max(1.0, self._viewport_height() - length)
+        anchor_y, anchor_offset = self._drag_anchor
+        delta = (event.y - anchor_y) / travel * self._max_offset()
+        self._jump_to(anchor_offset + delta)
+
+    def _jump_to(self, offset: float) -> None:
+        if self._engine is not None:
+            self._engine.stop(f"scroll:{id(self)}")
+        self._offset = min(max(0.0, offset), self._max_offset())
+        self._target = self._offset
+        self._apply_offset()
+
     def reset(self) -> None:
+        if self._engine is not None:
+            self._engine.stop(f"scroll:{id(self)}")
+        self._offset = 0.0
+        self._target = 0.0
         self.canvas.yview_moveto(0)
+        self._draw_thumb()
 
 
 class DesktopWindow:
@@ -412,7 +1191,7 @@ class DesktopWindow:
         self.root = root or tk.Tk()
         self.api_settings = api_settings
         self._colors = tokens(self.controller.state.theme)
-        self._nav_buttons: dict[UIScreen, tk.Button] = {}
+        self._nav_buttons: dict[UIScreen, NavButton] = {}
         self._context_buttons: dict[str, tk.Button] = {}
         self._busy_future: Future[Any] | None = None
         self._streaming_text: str | None = None
@@ -444,6 +1223,10 @@ class DesktopWindow:
         self._research_error: str | None = None
         self._snapshot = self.controller.snapshot()
         self.controller.approval_callback = self._request_tool_approval
+        self.engine = AnimationEngine(
+            self.root,
+            reduced_motion=lambda: self.controller.state.reduced_motion,
+        )
         self._configure_window()
         self._build_shell()
         self._bind_shortcuts()
@@ -480,16 +1263,35 @@ class DesktopWindow:
         self.root.minsize(1040, 700)
         self.root.configure(bg=self._colors.background)
         self.root.option_add("*Font", ("Segoe UI", 10))
+        self._sync_tk_scaling_to_dpi()
         if screen_width >= 1920 and screen_height >= 1080:
             try:
                 self.root.state("zoomed")
             except tk.TclError:
                 pass
 
+    def _sync_tk_scaling_to_dpi(self) -> None:
+        """Match Tk's point-to-pixel scaling to the real monitor DPI.
+
+        The process is per-monitor DPI aware, so without this Tk keeps
+        rendering point-sized fonts at an assumed 96 DPI and text looks
+        soft or undersized on high-density displays.
+        """
+        if sys.platform != "win32":
+            return
+        try:
+            self.root.update_idletasks()
+            user32 = ctypes.WinDLL("user32")
+            dpi = user32.GetDpiForWindow(self.root.winfo_id())
+            if dpi > 0:
+                self.root.tk.call("tk", "scaling", dpi / 72.0)
+        except (AttributeError, OSError, tk.TclError):
+            pass
+
     def _build_shell(self) -> None:
         c = self._colors
         self._configure_ttk()
-        topbar = tk.Frame(self.root, bg=c.surface, height=48)
+        topbar = tk.Frame(self.root, bg=c.surface, height=64)
         topbar.pack(fill="x")
         topbar.pack_propagate(False)
         brand = tk.Frame(
@@ -508,12 +1310,12 @@ class DesktopWindow:
             fg=c.accent,
             font=("Segoe UI", 13, "bold"),
             width=3,
-            pady=5,
+            pady=6,
             highlightbackground=c.faint,
             highlightthickness=1,
-        ).pack(side="left", padx=(13, 10), pady=8)
+        ).pack(side="left", padx=(13, 10), pady=11)
         copy = tk.Frame(brand, bg=c.surface)
-        copy.pack(side="left", pady=7)
+        copy.pack(side="left", pady=11)
         tk.Label(
             copy,
             text="JARVIS",
@@ -534,13 +1336,13 @@ class DesktopWindow:
         self.status_dot = tk.Canvas(
             runtime,
             width=14,
-            height=48,
+            height=64,
             bg=c.surface,
             highlightthickness=0,
         )
         self.status_dot.pack(side="left", padx=(0, 6))
         self._status_oval = self.status_dot.create_oval(
-            3, 20, 10, 27, fill=c.accent_strong, outline=""
+            3, 28, 10, 35, fill=c.accent_strong, outline=""
         )
         self.status_label = tk.Label(
             runtime,
@@ -583,7 +1385,9 @@ class DesktopWindow:
         self._build_navigation()
         self.center = tk.Frame(self.shell, bg=c.background)
         self.center.pack(side="left", fill="both", expand=True)
-        self.workspace_scroller = ScrollableWorkspace(self.center, c)
+        self.workspace_scroller = ScrollableWorkspace(
+            self.center, c, self.engine
+        )
         self.workspace_scroller.pack(
             fill="both",
             expand=True,
@@ -601,7 +1405,7 @@ class DesktopWindow:
         value: str,
     ) -> tk.Label:
         block = tk.Frame(parent, bg=self._colors.surface)
-        block.pack(side="left", padx=(0, 16), pady=8)
+        block.pack(side="left", padx=(0, 18), pady=14)
         tk.Label(
             block,
             text=label,
@@ -703,32 +1507,27 @@ class DesktopWindow:
         )
         self.nav.pack(side="left", fill="y")
         self.nav.pack_propagate(False)
-        tk.Label(
+        self.nav_header = tk.Label(
             self.nav,
             text="GÖREV KONTROLÜ",
             bg=c.surface,
             fg=c.accent_strong,
             font=("Segoe UI Semibold", 8),
-        ).pack(anchor="w", padx=18, pady=(18, 10))
-        for screen, index, label in NAVIGATION:
-            button = tk.Button(
+        )
+        self.nav_header.pack(anchor="w", padx=18, pady=(18, 10))
+        icon_family = icon_font_family(self.root)
+        for screen, index, label, icon in NAVIGATION:
+            button = NavButton(
                 self.nav,
-                text=f"{index}    {label}",
-                anchor="w",
-                relief="flat",
-                borderwidth=0,
-                bg=c.surface,
-                fg=c.muted,
-                activebackground=c.hover,
-                activeforeground=c.ink,
-                padx=17,
-                pady=10,
-                font=("Segoe UI", 9),
-                cursor="hand2",
+                icon=icon,
+                fallback=index,
+                label=label,
+                colors=c,
+                engine=self.engine,
+                icon_family=icon_family,
                 command=lambda value=screen: self.render(value),
             )
             button.pack(fill="x", padx=8, pady=1)
-            self._bind_hover(button, c.hover, c.surface)
             self._nav_buttons[screen] = button
         tk.Frame(self.nav, bg=c.surface).pack(fill="both", expand=True)
         self.nav_collapse_button = self._button(
@@ -738,39 +1537,126 @@ class DesktopWindow:
             variant="ghost",
         )
         self.nav_collapse_button.pack(fill="x", padx=10, pady=12)
+        # Sliding selection indicator: a slim accent bar that glides to
+        # the active navigation entry instead of snapping.
+        self.nav_indicator = tk.Frame(self.nav, bg=c.accent, width=3)
+        self._nav_indicator_y = 0.0
+
+    def _nav_indicator_target(self) -> tuple[int, int] | None:
+        button = self._nav_buttons.get(self.controller.state.screen)
+        if button is None or not button.winfo_exists():
+            return None
+        self.nav.update_idletasks()
+        return button.winfo_y(), max(24, button.winfo_height())
+
+    def _sync_nav_indicator(self) -> None:
+        target = self._nav_indicator_target()
+        if target is None:
+            self.nav_indicator.place_forget()
+            return
+        y, height = target
+        self._nav_indicator_y = float(y)
+        self.nav_indicator.place(x=0, y=y, width=3, height=height)
+
+    def _glide_nav_indicator(self) -> None:
+        target = self._nav_indicator_target()
+        if target is None:
+            self.nav_indicator.place_forget()
+            return
+        y, height = target
+        start = self._nav_indicator_y
+        if not self.nav_indicator.winfo_ismapped():
+            self._sync_nav_indicator()
+            return
+
+        def frame(progress: float) -> None:
+            if self.nav_indicator.winfo_exists():
+                self._nav_indicator_y = start + (y - start) * progress
+                self.nav_indicator.place(
+                    x=0,
+                    y=round(self._nav_indicator_y),
+                    width=3,
+                    height=height,
+                )
+
+        self.engine.tween(
+            "nav-indicator", duration_ms=240, on_update=frame
+        )
 
     def _build_composer(self) -> None:
         c = self._colors
         self.composer_host = RoundedSurface(
             self.center,
-            fill=c.surface,
-            outline=c.faint,
+            fill=mix_colors(c.surface, c.surface_alt, 0.45),
+            outline=c.line,
             radius=18,
-            padx=10,
-            pady=8,
+            padx=12,
+            pady=10,
+            shadow=mix_colors(c.background, "#000000", 0.5),
         )
         self.composer_host.place(
             relx=0.5, rely=1.0, anchor="s", relwidth=0.93, y=-18
         )
         self.composer = self.composer_host.content
-        self.command = tk.Text(
+        input_host = RoundedSurface(
             self.composer,
+            fill=c.surface_alt,
+            outline=c.line_soft,
+            radius=12,
+            padx=6,
+            pady=4,
+        )
+        input_host.pack(fill="x")
+        self.command = tk.Text(
+            input_host.content,
             height=2,
             wrap="word",
             relief="flat",
             borderwidth=0,
-            bg=c.surface,
+            bg=c.surface_alt,
             fg=c.ink,
-            insertbackground=c.ink,
+            insertbackground=c.accent,
+            insertwidth=2,
             selectbackground=c.faint,
             padx=9,
             pady=8,
             font=("Segoe UI", 10),
         )
         self.command.pack(fill="x")
+        self.composer_placeholder = tk.Label(
+            input_host.content,
+            text="Bir hedef yaz…   Enter gönderir, Shift+Enter satır ekler",
+            bg=c.surface_alt,
+            fg=mix_colors(c.surface_alt, c.muted, 0.75),
+            font=("Segoe UI", 10),
+        )
+        self.composer_placeholder.place(x=10, y=9)
+        self.composer_placeholder.bind(
+            "<Button-1>", lambda _e: self.command.focus_set()
+        )
+        self.command.bind(
+            "<<Modified>>", self._sync_composer_placeholder, add="+"
+        )
+        self.command.bind(
+            "<FocusIn>", self._sync_composer_placeholder, add="+"
+        )
+        self.command.bind(
+            "<FocusOut>", self._sync_composer_placeholder, add="+"
+        )
         self.command.bind("<Return>", self._on_composer_enter)
         self.command.bind("<Shift-Return>", self._on_composer_newline)
-        bar = tk.Frame(self.composer, bg=c.surface)
+        self.command.bind(
+            "<FocusIn>",
+            lambda _e: self._tween_composer_ring(c.accent_strong),
+            add="+",
+        )
+        self.command.bind(
+            "<FocusOut>",
+            lambda _e: self._tween_composer_ring(c.faint),
+            add="+",
+        )
+        composer_fill = mix_colors(c.surface, c.surface_alt, 0.45)
+        bar = tk.Frame(self.composer, bg=composer_fill)
         bar.pack(fill="x", pady=(5, 0))
         self.composer_voice_button = self._button(
             bar,
@@ -790,7 +1676,7 @@ class DesktopWindow:
             bar,
             width=18,
             height=18,
-            bg=c.surface,
+            bg=composer_fill,
             highlightthickness=0,
         )
         voice_bars.pack(side="left", padx=(6, 2))
@@ -810,7 +1696,7 @@ class DesktopWindow:
                 if self.controller.state.voice_active
                 else "BEKLİYOR"
             ),
-            bg=c.surface,
+            bg=composer_fill,
             fg=c.faint,
             font=("Segoe UI", 8),
         )
@@ -824,6 +1710,32 @@ class DesktopWindow:
             bar, "GÖNDER", self._submit_command, variant="primary"
         )
         self.send_button.pack(side="right")
+
+    def _sync_composer_placeholder(
+        self, _event: tk.Event[Any] | None = None
+    ) -> None:
+        try:
+            self.command.edit_modified(False)
+            empty = not self.command.get("1.0", "end-1c").strip()
+            focused = self.root.focus_get() is self.command
+        except (tk.TclError, KeyError):
+            return
+        if empty and not focused:
+            self.composer_placeholder.place(x=10, y=9)
+        else:
+            self.composer_placeholder.place_forget()
+
+    def _tween_composer_ring(self, target: str) -> None:
+        host = self.composer_host
+        start = host._outline
+
+        def frame(progress: float) -> None:
+            if host.winfo_exists():
+                host.set_outline(mix_colors(start, target, progress))
+
+        self.engine.tween(
+            "composer-ring", duration_ms=180, on_update=frame
+        )
 
     def _build_context(self) -> None:
         c = self._colors
@@ -870,7 +1782,7 @@ class DesktopWindow:
         self.root.bind("<Control-comma>", self._open_settings)
         self.root.bind("<Control-Shift-T>", self._shortcut_theme)
         self.root.bind("<Control-Shift-N>", self._shortcut_navigation)
-        for index, (screen, _number, _label) in enumerate(
+        for index, (screen, _number, _label, _icon) in enumerate(
             NAVIGATION[:9], start=1
         ):
             self.root.bind(
@@ -886,6 +1798,47 @@ class DesktopWindow:
         )
         self.root.bind("<F1>", self._show_shortcuts)
         self.root.bind("<Escape>", self._focus_workspace)
+        self.root.bind(
+            "<Up>", lambda e: self._keyboard_scroll(lines=-1)
+        )
+        self.root.bind(
+            "<Down>", lambda e: self._keyboard_scroll(lines=1)
+        )
+        self.root.bind(
+            "<Prior>", lambda e: self._keyboard_scroll(page=-1)
+        )
+        self.root.bind(
+            "<Next>", lambda e: self._keyboard_scroll(page=1)
+        )
+        self.root.bind(
+            "<Home>", lambda e: self._keyboard_scroll(edge="top")
+        )
+        self.root.bind(
+            "<End>", lambda e: self._keyboard_scroll(edge="bottom")
+        )
+
+    def _keyboard_scroll(
+        self,
+        *,
+        lines: int = 0,
+        page: int = 0,
+        edge: str | None = None,
+    ) -> str | None:
+        """Scroll the workspace with the keyboard unless the user is
+        editing text, in which case the keys keep their editing meaning."""
+        focus = self.root.focus_get()
+        if isinstance(
+            focus, (tk.Text, tk.Entry, tk.Spinbox, ttk.Combobox)
+        ):
+            return None
+        scroller = self.workspace_scroller
+        if edge is not None:
+            scroller.scroll_to_edge(top=edge == "top")
+        elif page:
+            scroller.scroll_page(page)
+        elif lines:
+            scroller.scroll_by(lines * 72)
+        return "break"
 
     def _on_composer_enter(self, _event: tk.Event[Any]) -> str:
         return self._submit_command()
@@ -929,36 +1882,39 @@ class DesktopWindow:
         command: Callable[[], Any],
         *,
         variant: str = "secondary",
-    ) -> tk.Button:
-        c = self._colors
-        background, foreground, hover = {
-            "primary": (c.accent, c.inverse, c.accent_strong),
-            "secondary": (c.surface_alt, c.ink, c.hover),
-            "ghost": (c.surface, c.muted, c.hover),
-            "chip": (c.surface_alt, c.muted, c.hover),
-        }[variant]
-        button = tk.Button(
+    ) -> RoundedButton:
+        return RoundedButton(
             parent,
             text=text,
             command=command,
-            relief="flat",
-            borderwidth=0,
-            bg=background,
-            fg=foreground,
-            activebackground=hover,
-            activeforeground=c.inverse if variant == "primary" else c.ink,
-            padx=12,
-            pady=7,
-            font=("Segoe UI Semibold", 8),
-            cursor="hand2",
+            colors=self._colors,
+            engine=self.engine,
+            variant=variant,
+            radius=9 if variant == "chip" else 11,
         )
-        self._bind_hover(button, hover, background)
-        return button
 
-    @staticmethod
-    def _bind_hover(widget: tk.Widget, hover: str, normal: str) -> None:
-        widget.bind("<Enter>", lambda _event: widget.configure(bg=hover))
-        widget.bind("<Leave>", lambda _event: widget.configure(bg=normal))
+    def _bind_hover(
+        self, widget: tk.Widget, hover: str, normal: str
+    ) -> None:
+        key = f"hover:{id(widget)}"
+
+        def tween_to(target: str) -> None:
+            start = str(widget.cget("bg"))
+
+            def frame(progress: float) -> None:
+                if widget.winfo_exists():
+                    widget.configure(
+                        bg=mix_colors(start, target, progress)
+                    )
+
+            self.engine.tween(key, duration_ms=140, on_update=frame)
+
+        widget.bind(
+            "<Enter>", lambda _event: tween_to(hover), add="+"
+        )
+        widget.bind(
+            "<Leave>", lambda _event: tween_to(normal), add="+"
+        )
 
     @staticmethod
     def _clear(frame: tk.Widget) -> None:
@@ -1140,6 +2096,7 @@ class DesktopWindow:
             251,
             251,
             outline=c.faint,
+            tags=("halo",),
         )
         canvas.create_oval(
             61,
@@ -1159,7 +2116,7 @@ class DesktopWindow:
             width=1,
             tags=("core",),
         )
-        for x, y in ((62, 56), (267, 146), (82, 242)):
+        for index, (x, y) in enumerate(((62, 56), (267, 146), (82, 242))):
             canvas.create_oval(
                 x - 4,
                 y - 4,
@@ -1167,6 +2124,7 @@ class DesktopWindow:
                 y + 4,
                 fill=c.accent,
                 outline=c.accent_strong,
+                tags=(f"sat{index}",),
             )
         canvas.create_text(
             center,
@@ -1200,35 +2158,60 @@ class DesktopWindow:
         self._animate_orb()
 
     def _stop_orb_animation(self) -> None:
+        self.engine.stop("home-orb")
         if self._orb_job is not None:
             self.root.after_cancel(self._orb_job)
             self._orb_job = None
         self._home_orb = None
 
     def _animate_orb(self) -> None:
-        canvas = self._home_orb
-        if (
-            self._closing
-            or canvas is None
-            or not canvas.winfo_exists()
-            or self.controller.state.screen is not UIScreen.HOME
-        ):
-            self._orb_job = None
-            return
-        if self.controller.state.reduced_motion:
-            canvas.coords("core", 73, 73, 217, 217)
-            self._orb_job = None
-            return
-        pulse = 2.5 * math.sin(self._orb_phase / 18)
-        canvas.coords(
-            "core",
-            73 - pulse,
-            73 - pulse,
-            217 + pulse,
-            217 + pulse,
-        )
-        self._orb_phase += 1
-        self._orb_job = self.root.after(16, self._animate_orb)
+        """Time-based breathing and halo rotation for the home orb."""
+
+        def frame(now: float) -> None:
+            canvas = self._home_orb
+            if (
+                self._closing
+                or canvas is None
+                or not canvas.winfo_exists()
+                or self.controller.state.screen is not UIScreen.HOME
+            ):
+                self.engine.stop("home-orb")
+                return
+            if self.controller.state.reduced_motion:
+                canvas.coords("core", 73, 73, 217, 217)
+                self.engine.stop("home-orb")
+                return
+            pulse = 3.0 * math.sin(now * 1.9)
+            canvas.coords(
+                "core",
+                73 - pulse,
+                73 - pulse,
+                217 + pulse,
+                217 + pulse,
+            )
+            halo = 1.5 * math.sin(now * 1.9 + math.pi / 3)
+            if canvas.find_withtag("halo"):
+                canvas.coords(
+                    "halo",
+                    39 - halo,
+                    39 - halo,
+                    251 + halo,
+                    251 + halo,
+                )
+            # Three telemetry satellites drift slowly around the core,
+            # each on its own radius and phase.
+            for index, (radius, speed, phase) in enumerate(
+                ((116.0, 0.21, 0.0), (105.0, -0.16, 2.1), (127.0, 0.11, 4.2))
+            ):
+                tag = f"sat{index}"
+                if not canvas.find_withtag(tag):
+                    continue
+                angle = now * speed * 2 * math.pi + phase
+                x = 145 + radius * math.cos(angle)
+                y = 145 + radius * math.sin(angle)
+                canvas.coords(tag, x - 4, y - 4, x + 4, y + 4)
+
+        self.engine.loop("home-orb", frame)
 
     def render(self, screen: UIScreen) -> None:
         self._stop_orb_animation()
@@ -1238,34 +2221,26 @@ class DesktopWindow:
         self.workspace_scroller.reset()
         self.provider_badge.configure(text=self._snapshot.provider.upper())
         self.model_badge.configure(text=DISPLAY_MODEL_NAME)
+        collapsed = self.controller.state.nav_collapsed
         for value, button in self._nav_buttons.items():
-            selected = value is screen
-            index, label = next(
-                (item[1], item[2])
-                for item in NAVIGATION
-                if item[0] is value
-            )
-            collapsed = self.controller.state.nav_collapsed
-            normal = self._colors.hover if selected else self._colors.surface
-            button.configure(
-                bg=normal,
-                fg=self._colors.accent if selected else self._colors.muted,
-                text=(
-                    index
-                    if collapsed
-                    else f"{'▎ ' if selected else ''}{index}    {label}"
-                ),
-                font=(
-                    "Segoe UI Semibold" if selected else "Segoe UI",
-                    9,
-                ),
-            )
-            self._bind_hover(
-                button,
-                self._colors.surface_alt if selected else self._colors.hover,
-                normal,
-            )
+            button.apply(selected=value is screen, collapsed=collapsed)
         getattr(self, f"_render_{screen.value}")()
+        self._play_screen_transition()
+        self.root.after_idle(self._glide_nav_indicator)
+
+    def _play_screen_transition(self) -> None:
+        """Glide the freshly built screen up into place."""
+        scroller = self.workspace_scroller
+        canvas = scroller.canvas
+        window = scroller._window
+
+        def frame(progress: float) -> None:
+            if canvas.winfo_exists():
+                canvas.coords(window, 0, round(18 * (1.0 - progress)))
+
+        self.engine.tween(
+            "screen-enter", duration_ms=280, on_update=frame
+        )
 
     def _render_home(self) -> None:
         self._heading(
@@ -2120,21 +3095,7 @@ class DesktopWindow:
     def _render_context(self, tab: str) -> None:
         self._clear(self.context_body)
         for label, button in self._context_buttons.items():
-            selected = label == tab
-            normal = (
-                self._colors.hover
-                if selected
-                else self._colors.surface_alt
-            )
-            button.configure(
-                bg=normal,
-                fg=(
-                    self._colors.accent
-                    if selected
-                    else self._colors.muted
-                ),
-            )
-            self._bind_hover(button, self._colors.hover, normal)
+            button.set_selected(label == tab)
         if tab == "YÜRÜTME":
             for task in self._snapshot.tasks[:4]:
                 self._line(
@@ -2167,36 +3128,42 @@ class DesktopWindow:
         collapsed = not self.controller.state.nav_collapsed
         self.controller.state.nav_collapsed = collapsed
         target = 64 if collapsed else 230
-        for screen, index, label in NAVIGATION:
-            self._nav_buttons[screen].configure(
-                text=index if collapsed else f"{index}    {label}",
-                anchor="center" if collapsed else "w",
+        active = self.controller.state.screen
+        for screen, button in self._nav_buttons.items():
+            button.apply(
+                selected=screen is active, collapsed=collapsed
             )
         self.nav_collapse_button.configure(
             text="AÇ" if collapsed else "DARALT"
         )
+        self.nav_header.configure(
+            text="•••" if collapsed else "GÖREV KONTROLÜ",
+            padx=0 if collapsed else 2,
+            anchor="center" if collapsed else "w",
+        )
+        self.nav_header.pack_configure(
+            anchor="center" if collapsed else "w",
+            padx=0 if collapsed else 18,
+        )
         self._animate_nav_width(target)
 
     def _animate_nav_width(self, target: int) -> None:
-        if self._nav_job is not None:
-            self.root.after_cancel(self._nav_job)
-            self._nav_job = None
-        if self.controller.state.reduced_motion:
-            self.nav.configure(width=target)
+        start = int(self.nav.cget("width"))
+        if start == target:
             return
-        current = int(self.nav.cget("width"))
-        if current == target:
-            self._nav_job = None
-            return
-        delta = max(8, abs(target - current) // 4)
-        value = (
-            min(target, current + delta)
-            if target > current
-            else max(target, current - delta)
-        )
-        self.nav.configure(width=value)
-        self._nav_job = self.root.after(
-            14, lambda: self._animate_nav_width(target)
+
+        def frame(progress: float) -> None:
+            if self.nav.winfo_exists():
+                self.nav.configure(
+                    width=round(start + (target - start) * progress)
+                )
+
+        self.engine.tween(
+            "nav-width",
+            duration_ms=260,
+            on_update=frame,
+            easing=ease_in_out_cubic,
+            on_done=self._sync_nav_indicator,
         )
 
     def _toggle_theme(self) -> None:
@@ -2225,22 +3192,28 @@ class DesktopWindow:
         self.render(UIScreen.SETTINGS)
 
     def _animate_status(self) -> None:
+        """Breathe the status dot with a smooth 120 Hz sine pulse."""
         if self._closing:
             return
-        colors = (
-            self._colors.faint,
-            self._colors.muted,
-            self._colors.ink,
-            self._colors.muted,
-        )
-        color = (
-            colors[0]
-            if self.controller.state.reduced_motion
-            else colors[self._pulse_frame % len(colors)]
-        )
-        self.status_dot.itemconfigure(self._status_oval, fill=color)
-        self._pulse_frame += 1
-        self._status_job = self.root.after(520, self._animate_status)
+
+        def frame(now: float) -> None:
+            if self._closing or not self.status_dot.winfo_exists():
+                self.engine.stop("status-pulse")
+                return
+            if self.controller.state.reduced_motion:
+                color = self._colors.accent_strong
+            else:
+                wave = (math.sin(now * 2.4) + 1.0) / 2.0
+                color = mix_colors(
+                    self._colors.faint,
+                    self._colors.accent,
+                    0.25 + 0.75 * wave,
+                )
+            self.status_dot.itemconfigure(
+                self._status_oval, fill=color
+            )
+
+        self.engine.loop("status-pulse", frame)
 
     def _schedule_ui_event_pump(self) -> None:
         if self._closing or self._ui_poll_job is not None:
@@ -3173,6 +4146,7 @@ class DesktopWindow:
         self._deny_pending_approvals()
         self._pending_approvals.clear()
         self._stop_orb_animation()
+        self.engine.close()
         if self._ui_poll_job is not None:
             self.root.after_cancel(self._ui_poll_job)
             self._ui_poll_job = None

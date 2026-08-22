@@ -343,6 +343,14 @@ class DesktopController:
         error_code = getattr(result, "error_code", None)
         if isinstance(error_code, str):
             return cls._VOICE_ERROR_NOTICES.get(error_code)
+        if (
+            isinstance(metadata, dict)
+            and metadata.get("ignored_reason") == "no_speech"
+        ):
+            return (
+                "Ses algılanmadığı için sesli modu kapattım. "
+                "Mikrofon düğmesiyle yeniden başlatabilirsin."
+            )
         return None
 
     async def run_voice(

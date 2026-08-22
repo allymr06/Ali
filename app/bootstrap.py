@@ -42,6 +42,8 @@ from app.tasks.manager import TaskManager
 from app.tasks.sqlite import SQLiteTaskStore
 from app.tasks.service import TaskControlService
 from app.tools.executor import ToolExecutor
+from app.tools.fast_actions import ApprovedApplicationFastRouter
+from app.tools.selection import ToolSchemaSelector
 from app.voice.registry import (
     VoiceProviderRegistry,
     create_default_voice_provider_registry,
@@ -299,6 +301,52 @@ def create_application(
     )
     task_manager = TaskManager(task_store)
 
+    fast_action_router = None
+
+    if (
+        windows is not None
+        and active_settings.ollama_hybrid_enabled
+        and (
+            active_settings
+            .default_provider
+            .strip()
+            .casefold()
+            == "ollama"
+        )
+    ):
+        launch_aliases = {}
+
+        for application in (
+            windows.applications.list()
+        ):
+            target = (
+                application.application_id,
+                application.display_name,
+            )
+
+            launch_aliases[
+                application.application_id
+            ] = target
+
+            launch_aliases[
+                application.display_name
+            ] = target
+
+            for alias in (
+                application.aliases
+            ):
+                launch_aliases[
+                    alias
+                ] = target
+
+        fast_action_router = (
+            ApprovedApplicationFastRouter(
+                launch_aliases
+            )
+        )
+
+    tool_schema_selector = ToolSchemaSelector()
+
     engine = CoreEngine(
         provider_registry=provider_registry,
         memory_manager=memory_manager,
@@ -306,6 +354,8 @@ def create_application(
         task_manager=task_manager,
         provider_gateway=provider_gateway,
         ollama_hybrid_policy=ollama_hybrid_policy,
+        fast_action_router=fast_action_router,
+        tool_schema_selector=tool_schema_selector,
         conversation_engine=conversation_engine,
         task_runtime_directory=active_settings.task_runtime_directory,
         diagnostics=diagnostics,

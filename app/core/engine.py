@@ -40,6 +40,8 @@ from app.providers.gateway import ProviderGateway
 from app.tasks.manager import TaskManager
 from app.tasks.runtime import DurableTaskRuntime
 from app.tools.executor import ToolExecutor
+from app.tools.fast_actions import ApprovedApplicationFastRouter
+from app.tools.selection import ToolSchemaSelector
 from app.tools.routing import DeterministicToolRouter
 
 
@@ -66,6 +68,8 @@ class CoreEngine:
         execution_limits: ExecutionLimits | None = None,
         provider_gateway: ProviderGateway | None = None,
         ollama_hybrid_policy: OllamaHybridPolicy | None = None,
+        fast_action_router: ApprovedApplicationFastRouter | None = None,
+        tool_schema_selector: ToolSchemaSelector | None = None,
         conversation_engine: ConversationEngine | None = None,
         task_runtime_directory: str | None = None,
         diagnostics=None,
@@ -99,6 +103,8 @@ class CoreEngine:
             max_retries=0,
         )
         self._ollama_hybrid_policy = ollama_hybrid_policy
+        self._fast_action_router = fast_action_router
+        self._tool_schema_selector = tool_schema_selector
         self._conversation_engine = conversation_engine or ConversationEngine()
         self._diagnostics = diagnostics
         self._admission = AdmissionController(
@@ -602,6 +608,23 @@ class CoreEngine:
             for item in tool_schemas
             if isinstance(item.get("function"), dict)
         }
+        fast_action_route = None
+
+        if (
+            self._fast_action_router
+            is not None
+            and interaction_decision.expose_tools
+        ):
+            fast_action_route = (
+                self._fast_action_router
+                .route(
+                    request,
+                    available_tool_names=(
+                        exposed_tool_names
+                    ),
+                )
+            )
+
         tool_results: list[ToolResult] = []
         processed_tool_calls: dict[str, ToolResult] = {}
         duplicate_tool_calls = 0
@@ -669,6 +692,66 @@ class CoreEngine:
                 )
             ]
 
+        fast_action_tool_name = None
+
+        if (
+            deterministic_route is None
+            and fast_action_route is not None
+        ):
+            fast_action_tool_name = (
+                fast_action_route.tool_name
+            )
+
+            pending_tool_calls = [
+                {
+                    "id": (
+                        "fast-action-"
+                        f"{uuid4()}"
+                    ),
+                    "type": "function",
+                    "function": {
+                        "name": (
+                            fast_action_tool_name
+                        ),
+                        "arguments": json.dumps(
+                            (
+                                fast_action_route
+                                .parameters
+                            ),
+                            separators=(
+                                ",",
+                                ":",
+                            ),
+                            sort_keys=True,
+                        ),
+                    },
+                }
+            ]
+
+            tool_schemas = [
+                schema
+                for schema
+                in tool_schemas
+                if (
+                    isinstance(
+                        schema.get(
+                            "function"
+                        ),
+                        dict,
+                    )
+                    and schema[
+                        "function"
+                    ].get(
+                        "name"
+                    )
+                    == fast_action_tool_name
+                )
+            ]
+
+            exposed_tool_names = {
+                fast_action_tool_name
+            }
+
         hybrid_model_decision = None
         provider_model_override = None
         provider_system_prompt = (
@@ -710,6 +793,65 @@ class CoreEngine:
                 else:
                     provider_system_prompt = hybrid_prompt
 
+        tool_schema_count_before = len(
+            tool_schemas
+        )
+        tool_schema_selection_reason = None
+        tool_schema_selection_names: list[str] = []
+
+        if (
+            self._tool_schema_selector is not None
+            and hybrid_model_decision is not None
+            and hybrid_model_decision.role == "tool"
+            and deterministic_tool_name is None
+            and fast_action_tool_name is None
+        ):
+            selection = (
+                self._tool_schema_selector.select(
+                    request,
+                    available_names=(
+                        exposed_tool_names
+                    ),
+                )
+            )
+
+            selected_names = set(
+                selection.names
+            )
+
+            tool_schemas = [
+                schema
+                for schema in tool_schemas
+                if (
+                    isinstance(
+                        schema.get("function"),
+                        dict,
+                    )
+                    and schema[
+                        "function"
+                    ].get(
+                        "name"
+                    )
+                    in selected_names
+                )
+            ]
+
+            exposed_tool_names.intersection_update(
+                selected_names
+            )
+
+            tool_schema_selection_reason = (
+                selection.reason
+            )
+
+            tool_schema_selection_names = sorted(
+                selected_names
+            )
+
+        tool_schema_count_after = len(
+            tool_schemas
+        )
+
         while usage.model_iterations < active_limits.max_model_iterations:
             if interaction_decision.direct_response is not None:
                 model_response = ModelResponse(
@@ -745,6 +887,70 @@ class CoreEngine:
                 pending_tool_calls = None
                 assistant_tool_content = None
             else:
+                if (
+                    fast_action_route
+                    is not None
+                    and fast_action_tool_name
+                    is not None
+                    and tool_results
+                    and (
+                        tool_results[-1]
+                        .tool_name
+                        == fast_action_tool_name
+                    )
+                ):
+                    latest_fast_result = (
+                        tool_results[-1]
+                    )
+
+                    fast_verified = (
+                        self._verification_engine
+                        .verify(
+                            latest_fast_result
+                        )
+                        .passed
+                    )
+
+                    fast_success = (
+                        latest_fast_result.succeeded
+                        and fast_verified
+                    )
+
+                    model_response = (
+                        ModelResponse(
+                            text=(
+                                fast_action_route
+                                .display_name
+                                + (
+                                    " a\u00e7\u0131ld\u0131."
+                                    if fast_success
+                                    else (
+                                        " a\u00e7\u0131lamad\u0131."
+                                    )
+                                )
+                            ),
+                            model=(
+                                "jarvis-fast-action"
+                            ),
+                            provider="core",
+                            finish_reason="stop",
+                            tool_calls=[],
+                            usage={},
+                            metadata={
+                                "fast_action": (
+                                    fast_action_tool_name
+                                ),
+                                "generation_skipped": True,
+                                "verified": (
+                                    fast_verified
+                                ),
+                            },
+                        )
+                    )
+
+                    outcome = "completed"
+                    break
+
                 deterministic_final = None
 
                 if (
@@ -1089,6 +1295,27 @@ class CoreEngine:
                 ),
                 "deterministic_tool_route_reason": (
                     deterministic_tool_reason
+                ),
+                "fast_action_route": (
+                    fast_action_tool_name
+                ),
+                "fast_action_route_reason": (
+                    fast_action_route.reason
+                    if fast_action_route
+                    is not None
+                    else None
+                ),
+                "tool_schema_count_before": (
+                    tool_schema_count_before
+                ),
+                "tool_schema_count_after": (
+                    tool_schema_count_after
+                ),
+                "tool_schema_selection_reason": (
+                    tool_schema_selection_reason
+                ),
+                "tool_schema_selection_names": (
+                    tool_schema_selection_names
                 ),
                 "interaction_kind": (
                     interaction_decision.kind

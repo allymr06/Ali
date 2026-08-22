@@ -381,6 +381,29 @@ async def test_gateway_retries_only_retryable_errors():
 
 
 @pytest.mark.asyncio
+async def test_gateway_caps_retry_chain_to_one_controlled_retry():
+    provider = StaticProvider(
+        "limited",
+        errors=[
+            ProviderUnavailableError("first"),
+            ProviderUnavailableError("second"),
+            ProviderUnavailableError("must not run"),
+        ],
+    )
+    gateway = ProviderGateway(
+        registry_with(provider),
+        max_retries=5,
+        retry_backoff_seconds=0,
+        fallback_enabled=False,
+    )
+
+    with pytest.raises(ProviderUnavailableError, match="second"):
+        await gateway.generate(Request("hello"), Context())
+
+    assert provider.calls == 2
+
+
+@pytest.mark.asyncio
 async def test_gateway_falls_back_and_records_health():
     primary = StaticProvider(
         "primary",
@@ -403,6 +426,37 @@ async def test_gateway_falls_back_and_records_health():
     assert response.metadata["fallback_count"] == 1
     assert gateway.health("primary").failures == 1
     assert gateway.health("secondary").successes == 1
+
+
+@pytest.mark.asyncio
+async def test_gateway_limits_retry_and_fallbacks_to_two_total_attempts():
+    primary = StaticProvider(
+        "primary",
+        errors=[ProviderAuthenticationError("primary rejected")],
+    )
+    secondary = StaticProvider(
+        "secondary",
+        errors=[ProviderAuthenticationError("secondary rejected")],
+    )
+    tertiary = StaticProvider("tertiary")
+    registry = registry_with(primary, secondary, tertiary, default="primary")
+    catalog = ModelCatalog()
+    catalog.register(profile("primary", "primary-model", priority=1))
+    catalog.register(profile("secondary", "secondary-model", priority=2))
+    catalog.register(profile("tertiary", "tertiary-model", priority=3))
+    gateway = ProviderGateway(
+        registry,
+        router=ModelRouter(registry, catalog),
+        max_retries=5,
+        retry_backoff_seconds=0,
+    )
+
+    with pytest.raises(ProviderAuthenticationError, match="secondary"):
+        await gateway.generate(Request("hello"), Context())
+
+    assert primary.calls == 1
+    assert secondary.calls == 1
+    assert tertiary.calls == 0
 
 
 @pytest.mark.asyncio
@@ -571,6 +625,53 @@ async def test_gateway_timeout_cancels_provider_operation():
 
 
 @pytest.mark.asyncio
+async def test_gateway_shares_one_timeout_budget_across_attempts():
+    timeouts: list[float] = []
+
+    class SlowRetryProvider(StaticProvider):
+        async def generate(self, *args, **kwargs):
+            self.calls += 1
+            await asyncio.sleep(0.01)
+            if self.calls == 1:
+                raise ProviderUnavailableError("retry")
+            return ModelResponse(text="ok", model="m", provider=self.name)
+
+    provider = SlowRetryProvider("slow-retry")
+    gateway = ProviderGateway(
+        registry_with(provider),
+        timeout_seconds=0.1,
+        max_retries=1,
+        retry_backoff_seconds=0,
+    )
+    original_await = gateway._await_operation
+
+    async def observe_timeout(awaitable, cancel_event, *, timeout_seconds=None):
+        timeouts.append(timeout_seconds)
+        return await original_await(
+            awaitable,
+            cancel_event,
+            timeout_seconds=timeout_seconds,
+        )
+
+    gateway._await_operation = observe_timeout
+
+    response = await gateway.generate(Request("hello"), Context())
+
+    assert response.text == "ok"
+    assert provider.calls == 2
+    assert 0 < timeouts[1] < timeouts[0] <= 0.1
+
+
+def test_gateway_caps_total_timeout_at_fifteen_seconds():
+    gateway = ProviderGateway(
+        registry_with(StaticProvider("primary")),
+        timeout_seconds=90,
+    )
+
+    assert gateway._timeout_seconds == 15.0
+
+
+@pytest.mark.asyncio
 async def test_gateway_cancel_event_stops_provider_operation():
     started = asyncio.Event()
     stopped = asyncio.Event()
@@ -660,6 +761,30 @@ async def test_gateway_retries_stream_only_before_first_chunk():
     ]
 
     assert [chunk.text for chunk in chunks] == ["ok"]
+    assert provider.stream_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_gateway_caps_stream_chain_to_one_controlled_retry():
+    provider = StreamingProvider(
+        "stream",
+        [
+            ProviderUnavailableError("first"),
+            ProviderUnavailableError("second"),
+            [ModelStreamChunk(text="must not run", model="m", provider="stream")],
+        ],
+    )
+    gateway = ProviderGateway(
+        registry_with(provider),
+        max_retries=5,
+        retry_backoff_seconds=0,
+        fallback_enabled=False,
+    )
+
+    with pytest.raises(ProviderUnavailableError, match="second"):
+        async for _ in gateway.stream(Request("hello"), Context()):
+            pass
+
     assert provider.stream_calls == 2
 
 

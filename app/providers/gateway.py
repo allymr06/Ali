@@ -65,8 +65,8 @@ class ProviderGateway:
             raise ValueError("Circuit breaker limits are invalid.")
         self._registry = registry
         self._router = router or ModelRouter(registry)
-        self._timeout_seconds = timeout_seconds
-        self._max_retries = max_retries
+        self._timeout_seconds = min(timeout_seconds, 15.0)
+        self._max_retries = min(max_retries, 1)
         self._retry_backoff_seconds = retry_backoff_seconds
         self._max_retry_delay_seconds = max_retry_delay_seconds
         self._fallback_enabled = fallback_enabled
@@ -101,7 +101,22 @@ class ProviderGateway:
             ),
         )
 
-    async def _await_operation(self, awaitable, cancel_event):
+    async def _await_operation(
+        self,
+        awaitable,
+        cancel_event,
+        *,
+        timeout_seconds: float | None = None,
+    ):
+        timeout = (
+            self._timeout_seconds
+            if timeout_seconds is None
+            else min(self._timeout_seconds, timeout_seconds)
+        )
+        if timeout <= 0:
+            if hasattr(awaitable, "close"):
+                awaitable.close()
+            raise ProviderTimeoutError("Provider request timed out.")
         operation = asyncio.create_task(awaitable)
         cancellation = (
             asyncio.create_task(cancel_event.wait())
@@ -114,7 +129,7 @@ class ProviderGateway:
         try:
             done, _ = await asyncio.wait(
                 waiters,
-                timeout=self._timeout_seconds,
+                timeout=timeout,
                 return_when=asyncio.FIRST_COMPLETED,
             )
             if operation in done:
@@ -134,6 +149,19 @@ class ProviderGateway:
                 cancellation.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await cancellation
+
+    def _remaining_budget(
+        self,
+        deadline: float,
+        provider: str,
+    ) -> float:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ProviderTimeoutError(
+                "Provider request exceeded the total timeout budget.",
+                provider=provider,
+            )
+        return remaining
 
     @staticmethod
     def _normalize_response(raw, expected_provider: str) -> ModelResponse:
@@ -186,6 +214,8 @@ class ProviderGateway:
         attempt: int,
         cancel_event,
         retry_after_seconds: float | None = None,
+        *,
+        deadline: float | None = None,
     ) -> None:
         delay = (
             retry_after_seconds
@@ -193,6 +223,8 @@ class ProviderGateway:
             else self._retry_backoff_seconds * (2 ** max(0, attempt - 1))
         )
         delay = min(delay, self._max_retry_delay_seconds)
+        if deadline is not None:
+            delay = min(delay, max(0.0, deadline - time.monotonic()))
         if delay <= 0:
             return
         if cancel_event is None:
@@ -317,10 +349,18 @@ class ProviderGateway:
         )
         last_error: Exception | None = None
         fallback_count = 0
+        candidates = self._candidates(decision)
+        deadline = time.monotonic() + self._timeout_seconds
+        max_attempts = 1 + int(
+            self._max_retries > 0 or self._fallback_enabled
+        )
+        total_attempts = 0
 
         for candidate_index, (provider_name, selected_model) in enumerate(
-            self._candidates(decision)
+            candidates
         ):
+            if total_attempts >= max_attempts:
+                break
             provider_instance = self._registry.get(provider_name)
             if not provider_instance.capabilities.supports(required):
                 continue
@@ -328,6 +368,8 @@ class ProviderGateway:
             breaker = self._breaker(provider_name)
 
             for attempt in range(1, self._max_retries + 2):
+                if total_attempts >= max_attempts:
+                    break
                 if not breaker.allow():
                     last_error = ProviderUnavailableError(
                         f"Provider '{provider_name}' circuit is open.",
@@ -337,6 +379,8 @@ class ProviderGateway:
                     break
                 if cancel_event is not None and cancel_event.is_set():
                     raise asyncio.CancelledError
+                remaining = self._remaining_budget(deadline, provider_name)
+                total_attempts += 1
                 started = time.monotonic()
                 try:
                     provider_kwargs = {
@@ -353,6 +397,7 @@ class ProviderGateway:
                             **provider_kwargs,
                         ),
                         cancel_event,
+                        timeout_seconds=remaining,
                     )
                     response = self._normalize_response(raw, provider_name)
                 except _GatewayCancelled as exc:
@@ -370,12 +415,14 @@ class ProviderGateway:
                     if (
                         self._is_retryable(error)
                         and attempt <= self._max_retries
+                        and total_attempts < max_attempts
                     ):
                         try:
                             await self._backoff(
                                 attempt,
                                 cancel_event,
                                 error.retry_after_seconds,
+                                deadline=deadline,
                             )
                         except _GatewayCancelled as cancel_exc:
                             raise asyncio.CancelledError from cancel_exc
@@ -391,6 +438,7 @@ class ProviderGateway:
                 response.metadata.update(
                     {
                         "gateway_attempt": attempt,
+                        "gateway_total_attempts": total_attempts,
                         "fallback_count": fallback_count,
                         "routing_reason": decision.reason,
                         "task_type": decision.task_type.value,
@@ -406,9 +454,15 @@ class ProviderGateway:
                 )
                 return response
 
-            if candidate_index + 1 < len(self._candidates(decision)):
+            if total_attempts >= max_attempts:
+                break
+            if candidate_index + 1 < len(candidates):
                 fallback_count += 1
 
+        if time.monotonic() >= deadline:
+            raise ProviderTimeoutError(
+                "Provider request exceeded the total timeout budget.",
+            )
         if last_error is not None:
             raise last_error
         raise ProviderUnavailableError(
@@ -443,10 +497,18 @@ class ProviderGateway:
         )
         last_error: Exception | None = None
         fallback_count = 0
+        candidates = self._candidates(decision)
+        deadline = time.monotonic() + self._timeout_seconds
+        max_attempts = 1 + int(
+            self._max_retries > 0 or self._fallback_enabled
+        )
+        total_attempts = 0
 
         for candidate_index, (provider_name, selected_model) in enumerate(
-            self._candidates(decision)
+            candidates
         ):
+            if total_attempts >= max_attempts:
+                break
             provider_instance = self._registry.get(provider_name)
             if not provider_instance.capabilities.supports(required):
                 continue
@@ -454,6 +516,8 @@ class ProviderGateway:
             breaker = self._breaker(provider_name)
 
             for attempt in range(1, self._max_retries + 2):
+                if total_attempts >= max_attempts:
+                    break
                 if not breaker.allow():
                     last_error = ProviderUnavailableError(
                         f"Provider '{provider_name}' circuit is open.",
@@ -462,9 +526,11 @@ class ProviderGateway:
                     health.circuit_state = CircuitState.OPEN
                     break
                 emitted = False
+                remaining = self._remaining_budget(deadline, provider_name)
+                total_attempts += 1
                 started = time.monotonic()
                 try:
-                    async with asyncio.timeout(self._timeout_seconds):
+                    async with asyncio.timeout(remaining):
                         async for chunk in provider_instance.stream(
                             request,
                             context,
@@ -488,6 +554,7 @@ class ProviderGateway:
                             chunk.metadata.update(
                                 {
                                     "gateway_attempt": attempt,
+                                    "gateway_total_attempts": total_attempts,
                                     "fallback_count": fallback_count,
                                     "routing_reason": decision.reason,
                                     "task_type": decision.task_type.value,
@@ -524,21 +591,32 @@ class ProviderGateway:
 
                 if emitted:
                     raise error
-                if self._is_retryable(error) and attempt <= self._max_retries:
+                if (
+                    self._is_retryable(error)
+                    and attempt <= self._max_retries
+                    and total_attempts < max_attempts
+                ):
                     try:
                         await self._backoff(
                             attempt,
                             cancel_event,
                             error.retry_after_seconds,
+                            deadline=deadline,
                         )
                     except _GatewayCancelled as cancel_exc:
                         raise asyncio.CancelledError from cancel_exc
                     continue
                 break
 
-            if candidate_index + 1 < len(self._candidates(decision)):
+            if total_attempts >= max_attempts:
+                break
+            if candidate_index + 1 < len(candidates):
                 fallback_count += 1
 
+        if time.monotonic() >= deadline:
+            raise ProviderTimeoutError(
+                "Provider stream exceeded the total timeout budget.",
+            )
         if last_error is not None:
             raise last_error
         raise ProviderUnavailableError(

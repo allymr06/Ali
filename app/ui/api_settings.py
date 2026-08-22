@@ -259,6 +259,24 @@ class APISettingsService:
                 base.ollama_enabled
                 or provider == "ollama"
             ),
+            # A selected local provider should use the streaming/chat path
+            # without requiring hidden environment switches. Reuse the
+            # selected model unless an explicit chat model was configured.
+            ollama_hybrid_enabled=(
+                base.ollama_hybrid_enabled
+                or provider == "ollama"
+            ),
+            ollama_chat_model=(
+                base.ollama_chat_model
+                if "JARVIS_OLLAMA_CHAT_MODEL" in os.environ
+                else model
+                if provider == "ollama"
+                else base.ollama_chat_model
+            ),
+            ollama_warm_enabled=(
+                base.ollama_warm_enabled
+                or provider == "ollama"
+            ),
             voice_enabled=(
                 base.voice_enabled
                 if "JARVIS_VOICE_ENABLED" in os.environ

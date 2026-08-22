@@ -688,3 +688,33 @@ async def test_gateway_does_not_restart_stream_after_output():
 
     assert received == ["partial"]
     assert provider.stream_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_gateway_caps_provider_retry_after_delay(monkeypatch):
+    delays = []
+
+    async def fake_sleep(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr("app.providers.gateway.asyncio.sleep", fake_sleep)
+    gateway = ProviderGateway(
+        registry_with(StaticProvider("primary")),
+        max_retry_delay_seconds=2.0,
+    )
+
+    await gateway._backoff(
+        attempt=1,
+        cancel_event=None,
+        retry_after_seconds=120.0,
+    )
+
+    assert delays == [2.0]
+
+
+def test_gateway_rejects_negative_retry_delay_cap():
+    with pytest.raises(ValueError, match="max_retry_delay_seconds"):
+        ProviderGateway(
+            registry_with(StaticProvider("primary")),
+            max_retry_delay_seconds=-1,
+        )

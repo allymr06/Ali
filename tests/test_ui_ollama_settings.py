@@ -172,6 +172,9 @@ def test_ollama_runtime_settings_activate_local_provider(
     assert settings.default_model == DEFAULT_OLLAMA_MODEL
     assert settings.ollama_model == DEFAULT_OLLAMA_MODEL
     assert settings.ollama_enabled is True
+    assert settings.ollama_hybrid_enabled is True
+    assert settings.ollama_chat_model == DEFAULT_OLLAMA_MODEL
+    assert settings.ollama_warm_enabled is True
 
 
 @pytest.mark.asyncio

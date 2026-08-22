@@ -409,6 +409,66 @@ def test_core_tool_route_does_not_stream(
         == "tool"
     )
 
+
+def test_core_streams_chat_for_non_ollama_provider() -> None:
+    class StreamingGemini(AIProvider):
+        @property
+        def name(self) -> str:
+            return "gemini"
+
+        @property
+        def capabilities(self) -> ModelCapabilities:
+            return ModelCapabilities(
+                text=True,
+                streaming=True,
+            )
+
+        @property
+        def is_configured(self) -> bool:
+            return True
+
+        async def generate(self, *_args, **_kwargs):
+            raise AssertionError("Chat should use the streaming path.")
+
+        async def stream(self, *_args, **_kwargs):
+            yield ModelStreamChunk(
+                text="Doğal ",
+                model="gemini-test",
+                provider="gemini",
+            )
+            yield ModelStreamChunk(
+                text="Türkçe",
+                model="gemini-test",
+                provider="gemini",
+                finish_reason="stop",
+            )
+
+    provider = StreamingGemini()
+    registry = ProviderRegistry(default_provider="gemini")
+    registry.register(provider)
+    engine = CoreEngine(
+        provider_registry=registry,
+        memory_manager=MemoryManager(InMemoryStore()),
+        tool_executor=ToolExecutor(),
+        provider_gateway=ProviderGateway(
+            registry,
+            max_retries=0,
+            fallback_enabled=False,
+        ),
+    )
+    updates = []
+
+    response = asyncio.run(
+        engine.handle(
+            Request("Benimle doğal konuş."),
+            Context(),
+            stream_callback=updates.append,
+        )
+    )
+
+    assert updates == ["Doğal ", "Doğal Türkçe"]
+    assert response.text == "Doğal Türkçe"
+
 def test_hybrid_settings_load_from_environment(
     monkeypatch,
 ) -> None:

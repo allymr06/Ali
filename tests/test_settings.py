@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from app.config.settings import Settings
+from app.config.settings import (
+    DEFAULT_CONVERSATION_SYSTEM_PROMPT,
+    Settings,
+)
 
 
 def test_settings_defaults(monkeypatch) -> None:
@@ -20,14 +23,17 @@ def test_settings_defaults(monkeypatch) -> None:
     assert settings.gemini_base_url == (
         "https://generativelanguage.googleapis.com/v1beta/openai/"
     )
-    assert settings.provider_timeout_seconds == 30.0
-    assert settings.provider_max_retries == 2
+    assert settings.provider_timeout_seconds == 15.0
+    assert settings.provider_max_retries == 1
     assert settings.provider_retry_backoff_seconds == 0.25
     assert settings.provider_fallback_enabled is True
     assert settings.conversation_max_messages == 50
     assert settings.conversation_max_characters == 50_000
     assert settings.conversation_summary_max_characters == 4_000
-    assert settings.conversation_system_prompt is None
+    assert (
+        settings.conversation_system_prompt
+        == DEFAULT_CONVERSATION_SYSTEM_PROMPT
+    )
     assert settings.memory_database_path == "data\\jarvis_memory.sqlite3"
     assert settings.task_database_path == "data\\jarvis_tasks.sqlite3"
     assert settings.task_runtime_directory == "data\\tasks"

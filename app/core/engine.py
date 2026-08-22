@@ -29,6 +29,7 @@ from app.planning.executor import PlanExecutor
 from app.memory.policy import MemoryPolicy
 from app.providers.base import ModelResponse
 from app.providers.registry import ProviderRegistry
+from app.providers.ollama_hybrid import OllamaHybridPolicy
 from app.reliability.admission import (
     AdmissionController,
     AdmissionRejectedError,
@@ -62,6 +63,7 @@ class CoreEngine:
         task_manager: TaskManager | None = None,
         execution_limits: ExecutionLimits | None = None,
         provider_gateway: ProviderGateway | None = None,
+        ollama_hybrid_policy: OllamaHybridPolicy | None = None,
         conversation_engine: ConversationEngine | None = None,
         task_runtime_directory: str | None = None,
         diagnostics=None,
@@ -94,6 +96,7 @@ class CoreEngine:
             provider_registry,
             max_retries=0,
         )
+        self._ollama_hybrid_policy = ollama_hybrid_policy
         self._conversation_engine = conversation_engine or ConversationEngine()
         self._diagnostics = diagnostics
         self._admission = AdmissionController(
@@ -566,6 +569,47 @@ class CoreEngine:
                 )
             ]
 
+        hybrid_model_decision = None
+        provider_model_override = None
+        provider_system_prompt = (
+            interaction_decision.system_prompt
+        )
+
+        if self._ollama_hybrid_policy is not None:
+            hybrid_model_decision = (
+                self._ollama_hybrid_policy.route(
+                    request,
+                    provider_name=provider.name,
+                    interaction_kind=interaction_decision.kind,
+                    deterministic_tool_name=(
+                        deterministic_tool_name
+                    ),
+                )
+            )
+
+        if hybrid_model_decision is not None:
+            provider_model_override = (
+                hybrid_model_decision.model
+            )
+
+            if not hybrid_model_decision.expose_tools:
+                tool_schemas = []
+                exposed_tool_names.clear()
+
+            hybrid_prompt = (
+                hybrid_model_decision.system_prompt
+            )
+
+            if hybrid_prompt:
+                if provider_system_prompt:
+                    provider_system_prompt = (
+                        provider_system_prompt
+                        + "\n\n"
+                        + hybrid_prompt
+                    )
+                else:
+                    provider_system_prompt = hybrid_prompt
+
         while usage.model_iterations < active_limits.max_model_iterations:
             if interaction_decision.direct_response is not None:
                 model_response = ModelResponse(
@@ -634,10 +678,9 @@ class CoreEngine:
                         self._provider_gateway.generate(
                             request,
                             active_context,
+                            model=provider_model_override,
+                            system_prompt=provider_system_prompt,
                             tools=tool_schemas or None,
-                            system_prompt=(
-                                interaction_decision.system_prompt
-                            ),
                         ),
                         cancel_event=cancel_event,
                         timeout=remaining,
@@ -936,6 +979,21 @@ class CoreEngine:
                     blocked_plaintext_tool_call
                 ),
                 "elapsed_seconds": usage.elapsed_seconds,
+                "hybrid_model_role": (
+                    hybrid_model_decision.role
+                    if hybrid_model_decision is not None
+                    else None
+                ),
+                "hybrid_model_reason": (
+                    hybrid_model_decision.reason
+                    if hybrid_model_decision is not None
+                    else None
+                ),
+                "hybrid_model_tools_exposed": (
+                    hybrid_model_decision.expose_tools
+                    if hybrid_model_decision is not None
+                    else None
+                ),
                 "provider_metadata": (
                     dict(model_response.metadata)
                     if model_response is not None

@@ -95,6 +95,12 @@ class Settings:
     ollama_base_url: str = "http://localhost:11434/v1/"
     ollama_enabled: bool = False
 
+    # Hybrid local Ollama routing:
+    # Gemma handles conversation; the primary Ollama
+    # model remains responsible for structured tool use.
+    ollama_hybrid_enabled: bool = False
+    ollama_chat_model: str = "gemma3:4b"
+
     # Keep the local Ollama model hot without blocking
     # JARVIS application startup.
     ollama_warm_enabled: bool = False
@@ -208,6 +214,8 @@ class Settings:
             raise ValueError("gemini_model cannot be empty when set.")
         if self.ollama_model is not None and not self.ollama_model.strip():
             raise ValueError("ollama_model cannot be empty when set.")
+        if not self.ollama_chat_model.strip():
+            raise ValueError("ollama_chat_model cannot be empty.")
         if not self.ollama_base_url.strip():
             raise ValueError("ollama_base_url cannot be empty.")
         if not self.ollama_base_url.startswith(
@@ -432,6 +440,14 @@ class Settings:
             ollama_enabled=_get_bool(
                 "JARVIS_OLLAMA_ENABLED",
                 False,
+            ),
+            ollama_hybrid_enabled=_get_bool(
+                "JARVIS_OLLAMA_HYBRID_ENABLED",
+                False,
+            ),
+            ollama_chat_model=os.getenv(
+                "JARVIS_OLLAMA_CHAT_MODEL",
+                "gemma3:4b",
             ),
             ollama_warm_enabled=_get_bool(
                 "JARVIS_OLLAMA_WARM_ENABLED",

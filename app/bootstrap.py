@@ -18,10 +18,12 @@ from app.memory.manager import MemoryManager
 from app.memory.service import MemoryService
 from app.memory.sqlite import SQLiteMemoryStore
 from app.platform.windows import WindowsIntegrationService
+from app.providers.base import ModelCapabilities
 from app.providers.mock import MockProvider
 from app.providers.openai import OpenAIProvider
 from app.providers.gemini import GeminiProvider
 from app.providers.ollama import OllamaProvider
+from app.providers.ollama_hybrid import OllamaHybridPolicy
 from app.providers.ollama_warm import OllamaWarmKeeper
 from app.providers.catalog import ModelCatalog
 from app.providers.gateway import ProviderGateway
@@ -70,6 +72,7 @@ class JARVISApplication:
     vision: VisionService | None = None
     research: ResearchService | None = None
     ollama_warm_keeper: OllamaWarmKeeper | None = None
+    ollama_chat_warm_keeper: OllamaWarmKeeper | None = None
 
     @property
     def agent_loop(self):
@@ -83,6 +86,9 @@ class JARVISApplication:
 
     def close(self) -> None:
         """Release durable stores owned by the application runtime."""
+        if self.ollama_chat_warm_keeper is not None:
+            self.ollama_chat_warm_keeper.close()
+
         if self.ollama_warm_keeper is not None:
             self.ollama_warm_keeper.close()
 
@@ -183,6 +189,10 @@ def create_application(
         active_settings.ollama_model
         or "llama3.2:latest"
     )
+
+    ollama_chat_model = (
+        active_settings.ollama_chat_model.strip()
+    )
     model_catalog.register(
         ModelProfile(
             provider="ollama",
@@ -190,6 +200,39 @@ def create_application(
             capabilities=ollama_provider.capabilities,
             priority=90,
         )
+    )
+
+    if (
+        active_settings.ollama_hybrid_enabled
+        and ollama_chat_model != ollama_model
+    ):
+        model_catalog.register(
+            ModelProfile(
+                provider="ollama",
+                model=ollama_chat_model,
+                capabilities=ModelCapabilities(
+                    text=True,
+                    streaming=True,
+                    structured_output=False,
+                    tool_calling=False,
+                    vision=False,
+                ),
+                task_types=frozenset(
+                    {
+                        TaskType.SIMPLE,
+                        TaskType.STANDARD,
+                        TaskType.COMPLEX,
+                        TaskType.LONG_RUNNING,
+                    }
+                ),
+                priority=80,
+            )
+        )
+
+    ollama_hybrid_policy = OllamaHybridPolicy(
+        enabled=active_settings.ollama_hybrid_enabled,
+        chat_model=ollama_chat_model,
+        tool_model=ollama_model,
     )
 
     provider_gateway = ProviderGateway(
@@ -262,6 +305,7 @@ def create_application(
         tool_executor=tool_executor,
         task_manager=task_manager,
         provider_gateway=provider_gateway,
+        ollama_hybrid_policy=ollama_hybrid_policy,
         conversation_engine=conversation_engine,
         task_runtime_directory=active_settings.task_runtime_directory,
         diagnostics=diagnostics,
@@ -426,6 +470,7 @@ def create_application(
         research.register_tools(tool_executor)
 
     ollama_warm_keeper = None
+    ollama_chat_warm_keeper = None
 
     if (
         active_settings.ollama_warm_enabled
@@ -452,6 +497,31 @@ def create_application(
         # The potentially slow model load runs in a daemon
         # background thread.
         ollama_warm_keeper.start()
+
+        if (
+            active_settings.ollama_hybrid_enabled
+            and ollama_chat_model != ollama_model
+        ):
+            ollama_chat_warm_keeper = OllamaWarmKeeper(
+                base_url=active_settings.ollama_base_url,
+                model=ollama_chat_model,
+                keep_alive_seconds=(
+                    active_settings.ollama_keep_alive_seconds
+                ),
+                refresh_seconds=(
+                    active_settings.ollama_warm_refresh_seconds
+                ),
+                retry_seconds=(
+                    active_settings.ollama_warm_retry_seconds
+                ),
+                timeout_seconds=(
+                    active_settings.ollama_warmup_timeout_seconds
+                ),
+            )
+
+            # Model loading remains off the synchronous
+            # JARVIS bootstrap path.
+            ollama_chat_warm_keeper.start()
 
     health_timeout = active_settings.diagnostics_health_timeout_seconds
     diagnostics.health.register(
@@ -566,6 +636,12 @@ def create_application(
             "ollama_warm_enabled": (
                 ollama_warm_keeper is not None
             ),
+            "ollama_hybrid_enabled": (
+                active_settings.ollama_hybrid_enabled
+            ),
+            "ollama_chat_warm_enabled": (
+                ollama_chat_warm_keeper is not None
+            ),
         },
     )
 
@@ -588,4 +664,5 @@ def create_application(
         vision=vision,
         research=research,
         ollama_warm_keeper=ollama_warm_keeper,
+        ollama_chat_warm_keeper=ollama_chat_warm_keeper,
     )

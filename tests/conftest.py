@@ -12,6 +12,11 @@ def isolate_runtime_memory_database(monkeypatch, tmp_path) -> None:
     )
 
     monkeypatch.setenv(
+        "JARVIS_OLLAMA_HYBRID_ENABLED",
+        "false",
+    )
+
+    monkeypatch.setenv(
         "JARVIS_MEMORY_DATABASE_PATH",
         str(tmp_path / "runtime-memory.sqlite3"),
     )

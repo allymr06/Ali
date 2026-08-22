@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 from copy import deepcopy
 from datetime import datetime
@@ -17,6 +18,10 @@ from app.conversation.models import (
 from app.conversation.store import ConversationStore
 
 
+class ConversationPersistenceError(RuntimeError):
+    """Raised when durable conversation state is unreadable or incompatible."""
+
+
 class SQLiteConversationStore(ConversationStore):
     """
     Durable SQLite conversation history.
@@ -28,11 +33,13 @@ class SQLiteConversationStore(ConversationStore):
     - fail explicitly on corrupted rows
     """
 
+    SCHEMA_VERSION = 1
+
     def __init__(
         self,
         path: str | Path,
     ) -> None:
-        self.path = Path(path)
+        self.path = Path(path).expanduser().resolve()
 
         self.path.parent.mkdir(
             parents=True,
@@ -42,28 +49,42 @@ class SQLiteConversationStore(ConversationStore):
         self._lock = RLock()
         self._closed = False
 
-        self._connection = sqlite3.connect(
-            str(self.path),
-            check_same_thread=False,
-        )
+        try:
+            self._connection = sqlite3.connect(
+                str(self.path),
+                timeout=5.0,
+                check_same_thread=False,
+            )
+            self._connection.row_factory = sqlite3.Row
+            self._connection.execute("PRAGMA foreign_keys = ON")
+            self._connection.execute("PRAGMA journal_mode = WAL")
+            self._connection.execute("PRAGMA synchronous = FULL")
+            self._connection.execute("PRAGMA busy_timeout = 5000")
+            self._migrate()
+            self._validate_schema()
+            self.check_integrity()
+        except (sqlite3.DatabaseError, ConversationPersistenceError) as exc:
+            connection = getattr(self, "_connection", None)
+            if connection is not None:
+                connection.close()
+            if isinstance(exc, ConversationPersistenceError):
+                raise
+            raise ConversationPersistenceError(
+                f"Conversation database is unreadable: {self.path}"
+            ) from exc
 
-        self._connection.row_factory = sqlite3.Row
-
-        self._connection.execute(
-            "PRAGMA foreign_keys = ON"
+    def _migrate(self) -> None:
+        version = int(
+            self._connection.execute("PRAGMA user_version").fetchone()[0]
         )
-        self._connection.execute(
-            "PRAGMA journal_mode = WAL"
-        )
-        self._connection.execute(
-            "PRAGMA synchronous = NORMAL"
-        )
-
-        self._create_schema()
-
-    def _create_schema(self) -> None:
-        with self._connection:
-            self._connection.executescript(
+        if version > self.SCHEMA_VERSION:
+            raise ConversationPersistenceError(
+                f"Conversation schema {version} is newer than supported "
+                f"version {self.SCHEMA_VERSION}."
+            )
+        if version == 0:
+            with self._connection:
+                self._connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS conversations (
                     conversation_id TEXT PRIMARY KEY,
@@ -105,8 +126,97 @@ class SQLiteConversationStore(ConversationStore):
                 ON conversations(
                     updated_at DESC
                 );
+                PRAGMA user_version = 1;
                 """
+                )
+
+    def _validate_schema(self) -> None:
+        expected = {
+            "conversations": {
+                "conversation_id", "status", "summary", "summary_turn_count",
+                "metadata_json", "created_at", "updated_at",
+            },
+            "conversation_turns": {
+                "turn_id", "conversation_id", "role", "content", "request_id",
+                "response_id", "tool_call_id", "tool_calls_json",
+                "metadata_json", "created_at", "ordinal",
+            },
+        }
+        for table, required_columns in expected.items():
+            rows = self._connection.execute(
+                f"PRAGMA table_info({table})"
+            ).fetchall()
+            columns = {str(row[1]) for row in rows}
+            missing = required_columns - columns
+            if missing:
+                raise ConversationPersistenceError(
+                    f"Conversation table '{table}' is missing columns: "
+                    f"{', '.join(sorted(missing))}."
+                )
+
+    def check_integrity(self) -> None:
+        with self._lock:
+            quick_check = self._connection.execute(
+                "PRAGMA quick_check"
+            ).fetchone()[0]
+            foreign_key_errors = self._connection.execute(
+                "PRAGMA foreign_key_check"
+            ).fetchall()
+        if quick_check != "ok":
+            raise ConversationPersistenceError(
+                f"Conversation database integrity check failed: {quick_check}"
             )
+        if foreign_key_errors:
+            raise ConversationPersistenceError(
+                "Conversation database contains invalid turn references."
+            )
+
+    def backup_to(self, destination: str | Path) -> Path:
+        self._ensure_open()
+        backup_path = Path(destination).expanduser().resolve()
+        if backup_path == self.path:
+            raise ValueError("Backup destination must differ from the live database.")
+        backup_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = backup_path.with_suffix(backup_path.suffix + ".tmp")
+        temporary.unlink(missing_ok=True)
+        target = sqlite3.connect(temporary, timeout=5.0)
+        try:
+            with self._lock:
+                self._connection.backup(target)
+            if target.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                raise ConversationPersistenceError(
+                    "Conversation backup failed its integrity check."
+                )
+        finally:
+            target.close()
+        temporary.replace(backup_path)
+        return backup_path
+
+    @classmethod
+    def restore_from_backup(
+        cls,
+        backup: str | Path,
+        destination: str | Path,
+    ) -> SQLiteConversationStore:
+        backup_path = Path(backup).expanduser().resolve()
+        destination_path = Path(destination).expanduser().resolve()
+        if not backup_path.is_file():
+            raise FileNotFoundError(backup_path)
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination_path.with_suffix(
+            destination_path.suffix + ".restore"
+        )
+        shutil.copy2(backup_path, temporary)
+        probe = sqlite3.connect(temporary, timeout=5.0)
+        try:
+            if probe.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                raise ConversationPersistenceError(
+                    "Conversation backup failed its integrity check."
+                )
+        finally:
+            probe.close()
+        temporary.replace(destination_path)
+        return cls(destination_path)
 
     @staticmethod
     def _json(value) -> str:

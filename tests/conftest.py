@@ -7,6 +7,10 @@ import pytest
 def isolate_runtime_memory_database(monkeypatch, tmp_path) -> None:
     """Prevent application bootstrap tests from sharing durable user state."""
     monkeypatch.setenv(
+        "JARVIS_STATE_DIRECTORY",
+        str(tmp_path / "runtime-state"),
+    )
+    monkeypatch.setenv(
         "JARVIS_OLLAMA_WARM_ENABLED",
         "false",
     )
@@ -17,8 +21,16 @@ def isolate_runtime_memory_database(monkeypatch, tmp_path) -> None:
     )
 
     monkeypatch.setenv(
+        "JARVIS_CONVERSATION_DATABASE_PATH",
+        str(tmp_path / "runtime-conversations.sqlite3"),
+    )
+    monkeypatch.setenv(
         "JARVIS_MEMORY_DATABASE_PATH",
         str(tmp_path / "runtime-memory.sqlite3"),
+    )
+    monkeypatch.setenv(
+        "JARVIS_RESEARCH_CACHE_DATABASE_PATH",
+        str(tmp_path / "runtime-research.sqlite3"),
     )
     monkeypatch.setenv(
         "JARVIS_TASK_DATABASE_PATH",

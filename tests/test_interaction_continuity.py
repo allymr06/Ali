@@ -664,7 +664,10 @@ def test_gemini_reasoning_effort_rejects_invalid_value(
 
 def test_environment_defaults_to_durable_conversation_store(
     monkeypatch,
+    tmp_path,
 ) -> None:
+    monkeypatch.delenv("JARVIS_STATE_DIRECTORY", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.delenv(
         "JARVIS_CONVERSATION_DATABASE_PATH",
         raising=False,
@@ -676,7 +679,7 @@ def test_environment_defaults_to_durable_conversation_store(
 
     assert (
         settings.conversation_database_path
-        == "data\\jarvis_conversations.sqlite3"
+        == str(tmp_path / "JARVIS" / "jarvis_conversations.sqlite3")
     )
 
 

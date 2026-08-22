@@ -4,6 +4,8 @@ import math
 import os
 from dataclasses import dataclass
 
+from app.config.paths import default_state_path
+
 
 DEFAULT_CONVERSATION_SYSTEM_PROMPT = (
     "You are JARVIS, a personal AI assistant. When the user writes in "
@@ -195,6 +197,8 @@ class Settings:
     research_max_sources: int = 5
     research_max_concurrency: int = 3
     research_user_agent: str = "JARVIS/0.1"
+    research_cache_database_path: str | None = None
+    research_cache_ttl_seconds: float = 86_400.0
 
     diagnostics_event_capacity: int = 2_000
     diagnostics_metric_capacity: int = 200
@@ -402,6 +406,15 @@ class Settings:
             raise ValueError("research_max_concurrency must be between 1 and 8.")
         if not self.research_user_agent.strip():
             raise ValueError("research_user_agent cannot be empty.")
+        if (
+            self.research_cache_database_path is not None
+            and not self.research_cache_database_path.strip()
+        ):
+            raise ValueError(
+                "research_cache_database_path cannot be empty when set."
+            )
+        if self.research_cache_ttl_seconds <= 0:
+            raise ValueError("research_cache_ttl_seconds must be positive.")
         if min(
             self.diagnostics_event_capacity,
             self.diagnostics_metric_capacity,
@@ -522,22 +535,19 @@ class Settings:
             ),
             conversation_database_path=os.getenv(
                 "JARVIS_CONVERSATION_DATABASE_PATH",
-                os.path.join(
-                    "data",
-                    "jarvis_conversations.sqlite3",
-                ),
+                default_state_path("jarvis_conversations.sqlite3"),
             ),
             memory_database_path=os.getenv(
                 "JARVIS_MEMORY_DATABASE_PATH",
-                os.path.join("data", "jarvis_memory.sqlite3"),
+                default_state_path("jarvis_memory.sqlite3"),
             ),
             task_database_path=os.getenv(
                 "JARVIS_TASK_DATABASE_PATH",
-                os.path.join("data", "jarvis_tasks.sqlite3"),
+                default_state_path("jarvis_tasks.sqlite3"),
             ),
             task_runtime_directory=os.getenv(
                 "JARVIS_TASK_RUNTIME_DIRECTORY",
-                os.path.join("data", "tasks"),
+                default_state_path("tasks"),
             ),
             approval_ttl_seconds=_get_float(
                 "JARVIS_APPROVAL_TTL_SECONDS",
@@ -688,6 +698,13 @@ class Settings:
             ),
             research_user_agent=os.getenv(
                 "JARVIS_RESEARCH_USER_AGENT", "JARVIS/0.1"
+            ),
+            research_cache_database_path=os.getenv(
+                "JARVIS_RESEARCH_CACHE_DATABASE_PATH",
+                default_state_path("jarvis_research.sqlite3"),
+            ),
+            research_cache_ttl_seconds=_get_float(
+                "JARVIS_RESEARCH_CACHE_TTL_SECONDS", 86_400.0
             ),
             diagnostics_event_capacity=_get_positive_int(
                 "JARVIS_DIAGNOSTICS_EVENT_CAPACITY", 2_000

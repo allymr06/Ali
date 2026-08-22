@@ -20,6 +20,10 @@ def _state_directory(override: str | None = None) -> Path:
 def configure_state(directory: Path) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault(
+        "JARVIS_CONVERSATION_DATABASE_PATH",
+        str(directory / "jarvis_conversations.sqlite3"),
+    )
+    os.environ.setdefault(
         "JARVIS_MEMORY_DATABASE_PATH",
         str(directory / "jarvis_memory.sqlite3"),
     )
@@ -30,6 +34,10 @@ def configure_state(directory: Path) -> None:
     os.environ.setdefault(
         "JARVIS_TASK_RUNTIME_DIRECTORY",
         str(directory / "tasks"),
+    )
+    os.environ.setdefault(
+        "JARVIS_RESEARCH_CACHE_DATABASE_PATH",
+        str(directory / "jarvis_research.sqlite3"),
     )
 
 

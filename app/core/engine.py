@@ -35,6 +35,7 @@ from app.providers.gateway import ProviderGateway
 from app.tasks.manager import TaskManager
 from app.tasks.runtime import DurableTaskRuntime
 from app.tools.executor import ToolExecutor
+from app.tools.routing import DeterministicToolRouter
 
 
 class _ExecutionCancelled(Exception):
@@ -74,6 +75,9 @@ class CoreEngine:
             tool_executor
             if tool_executor is not None
             else ToolExecutor()
+        )
+        self._deterministic_tool_router = (
+            DeterministicToolRouter()
         )
         self._task_manager = (
             task_manager
@@ -491,6 +495,62 @@ class CoreEngine:
         budget_reason: str | None = None
         model_response = None
 
+        deterministic_route = (
+            self._deterministic_tool_router.route(
+                request,
+                provider_name=provider.name,
+                tool_executor=self._tool_executor,
+                tool_schemas=tool_schemas,
+            )
+        )
+
+        pending_tool_calls = None
+        deterministic_tool_name = None
+        deterministic_tool_reason = None
+
+        if deterministic_route is not None:
+            deterministic_tool_name = (
+                deterministic_route.tool_name
+            )
+            deterministic_tool_reason = (
+                deterministic_route.reason
+            )
+
+            pending_tool_calls = [
+                {
+                    "id": (
+                        "deterministic-"
+                        f"{uuid4()}"
+                    ),
+                    "type": "function",
+                    "function": {
+                        "name": (
+                            deterministic_route.tool_name
+                        ),
+                        "arguments": json.dumps(
+                            deterministic_route.parameters,
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        ),
+                    },
+                }
+            ]
+
+            tool_schemas = [
+                schema
+                for schema in tool_schemas
+                if (
+                    isinstance(
+                        schema.get("function"),
+                        dict,
+                    )
+                    and schema["function"].get(
+                        "name"
+                    )
+                    != deterministic_route.tool_name
+                )
+            ]
+
         while usage.model_iterations < active_limits.max_model_iterations:
             if cancel_event is not None and cancel_event.is_set():
                 outcome = "cancelled"
@@ -503,47 +563,71 @@ class CoreEngine:
                 budget_reason = "time"
                 break
 
-            usage.model_iterations += 1
+            if pending_tool_calls is not None:
+                tool_calls = pending_tool_calls
+                pending_tool_calls = None
+                assistant_tool_content = None
+            else:
+                usage.model_iterations += 1
 
-            try:
-                model_response = await self._await_provider(
-                    self._provider_gateway.generate(
-                        request,
-                        active_context,
-                        tools=tool_schemas or None,
-                    ),
-                    cancel_event=cancel_event,
-                    timeout=remaining,
+                try:
+                    model_response = await self._await_provider(
+                        self._provider_gateway.generate(
+                            request,
+                            active_context,
+                            tools=tool_schemas or None,
+                        ),
+                        cancel_event=cancel_event,
+                        timeout=remaining,
+                    )
+                except _ExecutionCancelled:
+                    outcome = "cancelled"
+                    break
+                except TimeoutError:
+                    outcome = "budget_exhausted"
+                    budget_reason = "time"
+                    break
+                except Exception as exc:
+                    self._record_diagnostic(
+                        "request.failed",
+                        "Core provider request failed.",
+                        level=DiagnosticLevel.ERROR,
+                        trace_id=str(request.request_id),
+                        attributes={
+                            "error_type": type(exc).__name__
+                        },
+                    )
+                    raise
+
+                usage.model_tokens += self._model_token_usage(
+                    model_response
                 )
-            except _ExecutionCancelled:
-                outcome = "cancelled"
-                break
-            except TimeoutError:
-                outcome = "budget_exhausted"
-                budget_reason = "time"
-                break
-            except Exception as exc:
-                self._record_diagnostic(
-                    "request.failed",
-                    "Core provider request failed.",
-                    level=DiagnosticLevel.ERROR,
-                    trace_id=str(request.request_id),
-                    attributes={"error_type": type(exc).__name__},
+
+                if (
+                    usage.model_tokens
+                    > active_limits.max_model_tokens
+                ):
+                    outcome = "budget_exhausted"
+                    budget_reason = "model_tokens"
+                    break
+
+                tool_calls = (
+                    getattr(
+                        model_response,
+                        "tool_calls",
+                        [],
+                    )
+                    or []
                 )
-                raise
 
-            usage.model_tokens += self._model_token_usage(model_response)
+                if not tool_calls:
+                    outcome = "completed"
+                    break
 
-            if usage.model_tokens > active_limits.max_model_tokens:
-                outcome = "budget_exhausted"
-                budget_reason = "model_tokens"
-                break
-
-            tool_calls = getattr(model_response, "tool_calls", []) or []
-
-            if not tool_calls:
-                outcome = "completed"
-                break
+                assistant_tool_content = (
+                    model_response.text
+                    or None
+                )
 
             tool_iterations += 1
             normalized_tool_calls = []
@@ -560,7 +644,7 @@ class CoreEngine:
             self._conversation_engine.add_assistant_tool_calls(
                 active_context,
                 request_id=request.request_id,
-                content=model_response.text or None,
+                content=assistant_tool_content,
                 tool_calls=tool_calls,
             )
             new_tool_call_found = False
@@ -672,6 +756,11 @@ class CoreEngine:
                     },
                 )
 
+            if deterministic_tool_name is not None:
+                exposed_tool_names.discard(
+                    deterministic_tool_name
+                )
+
             if outcome in {"budget_exhausted", "cancelled"}:
                 break
 
@@ -745,6 +834,12 @@ class CoreEngine:
                 "failed_tool_calls": failed_tools,
                 "invalid_tool_calls": invalid_tool_calls,
                 "duplicate_tool_calls": duplicate_tool_calls,
+                "deterministic_tool_route": (
+                    deterministic_tool_name
+                ),
+                "deterministic_tool_route_reason": (
+                    deterministic_tool_reason
+                ),
                 "elapsed_seconds": usage.elapsed_seconds,
                 "provider_metadata": (
                     dict(model_response.metadata)

@@ -673,3 +673,61 @@ class VoiceEarcons:
 
     def play_close(self) -> None:
         self._play(self._close_wav)
+
+
+async def speak_text_with_windows_sapi(
+    text: str,
+    *,
+    timeout_seconds: float = 45.0,
+) -> bool:
+    """Best-effort local speech through the built-in Windows SAPI voice.
+
+    Used only when cloud synthesis is unavailable (for example an
+    exhausted provider quota) so JARVIS always answers audibly. A
+    Turkish voice is selected when one is installed. Returns True only
+    when the voice actually spoke.
+    """
+    if sys.platform != "win32":
+        return False
+    normalized = text.strip()
+    if not normalized:
+        return False
+
+    import base64 as _base64
+    import subprocess
+
+    encoded = _base64.b64encode(
+        normalized.encode("utf-8")
+    ).decode("ascii")
+    script = (
+        "$t=[Text.Encoding]::UTF8.GetString("
+        f"[Convert]::FromBase64String('{encoded}'));"
+        "$v=New-Object -ComObject SAPI.SpVoice;"
+        "$tr=@($v.GetVoices() | Where-Object {"
+        " $_.GetAttribute('Language') -eq '41F' }) |"
+        " Select-Object -First 1;"
+        "if($tr){$v.Voice=$tr};"
+        "[void]$v.Speak($t)"
+    )
+
+    def run() -> bool:
+        completed = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                script,
+            ],
+            capture_output=True,
+            timeout=timeout_seconds,
+            creationflags=getattr(
+                subprocess, "CREATE_NO_WINDOW", 0
+            ),
+        )
+        return completed.returncode == 0
+
+    try:
+        return await asyncio.to_thread(run)
+    except Exception:
+        return False

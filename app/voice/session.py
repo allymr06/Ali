@@ -175,6 +175,7 @@ class VoiceSession:
         capture: AudioCapture | None = None
         transcript: str | None = None
         wake_detected: bool | None = None
+        response = None
         metadata: dict[str, object] = {}
         try:
             self._record(VoiceSessionState.LISTENING)
@@ -261,54 +262,73 @@ class VoiceSession:
             # Sentence-pipelined speech: the first chunk reaches the
             # speakers while later chunks are still being synthesized,
             # so time-to-first-audio no longer scales with reply length.
-            chunks = split_speech_chunks(response.text)
-            self._record(VoiceSessionState.SYNTHESIZING)
-            stage_started = time.monotonic()
-            speech = await self._await_interruptible(
-                self._synthesizer.synthesize(chunks[0])
-            )
-            metadata["synthesis_latency_seconds"] = (
-                time.monotonic() - stage_started
-            )
-            metadata["speech_chunks"] = len(chunks)
-            metadata.update(
-                synthesis_provider=speech.provider,
-                synthesis_model=speech.model,
-                synthesis_voice=speech.voice,
-            )
-
-            self._record(VoiceSessionState.SPEAKING)
-            stage_started = time.monotonic()
-            pending: asyncio.Task | None = None
+            # If cloud synthesis fails (for example an exhausted quota),
+            # the reply is never lost: the local Windows voice speaks it
+            # and the text still reaches the conversation.
             try:
-                for index in range(len(chunks)):
-                    if index + 1 < len(chunks):
-                        pending = asyncio.create_task(
-                            self._synthesizer.synthesize(
-                                chunks[index + 1]
+                chunks = split_speech_chunks(response.text)
+                self._record(VoiceSessionState.SYNTHESIZING)
+                stage_started = time.monotonic()
+                speech = await self._await_interruptible(
+                    self._synthesizer.synthesize(chunks[0])
+                )
+                metadata["synthesis_latency_seconds"] = (
+                    time.monotonic() - stage_started
+                )
+                metadata["speech_chunks"] = len(chunks)
+                metadata.update(
+                    synthesis_provider=speech.provider,
+                    synthesis_model=speech.model,
+                    synthesis_voice=speech.voice,
+                )
+
+                self._record(VoiceSessionState.SPEAKING)
+                stage_started = time.monotonic()
+                pending: asyncio.Task | None = None
+                try:
+                    for index in range(len(chunks)):
+                        if index + 1 < len(chunks):
+                            pending = asyncio.create_task(
+                                self._synthesizer.synthesize(
+                                    chunks[index + 1]
+                                )
+                            )
+                        await self._await_interruptible(
+                            self._audio_output.play(
+                                speech,
+                                cancel_event=self._interrupt_event,
                             )
                         )
-                    await self._await_interruptible(
-                        self._audio_output.play(
-                            speech,
-                            cancel_event=self._interrupt_event,
-                        )
-                    )
+                        if pending is not None:
+                            speech = await self._await_interruptible(
+                                _await_task(pending)
+                            )
+                            pending = None
+                finally:
                     if pending is not None:
-                        speech = await self._await_interruptible(
-                            _await_task(pending)
-                        )
-                        pending = None
-            finally:
-                if pending is not None:
-                    pending.cancel()
-                    with contextlib.suppress(
-                        asyncio.CancelledError, Exception
-                    ):
-                        await pending
-            metadata["playback_latency_seconds"] = (
-                time.monotonic() - stage_started
-            )
+                        pending.cancel()
+                        with contextlib.suppress(
+                            asyncio.CancelledError, Exception
+                        ):
+                            await pending
+                metadata["playback_latency_seconds"] = (
+                    time.monotonic() - stage_started
+                )
+            except (VoiceProviderError, VoiceConfigurationError):
+                metadata["speech_error"] = "provider"
+                self._record(VoiceSessionState.SPEAKING, "fallback")
+                spoke = await self._speak_with_local_fallback(
+                    response.text
+                )
+                if not spoke:
+                    return self._failed(
+                        "synthesis",
+                        transcript,
+                        wake_detected,
+                        metadata,
+                        response_text=response.text,
+                    )
+                metadata["speech_fallback"] = "windows-sapi"
             self._record(VoiceSessionState.COMPLETED)
             return self._result(
                 transcript=transcript,
@@ -343,11 +363,35 @@ class VoiceSession:
                 metadata=metadata,
             )
         except VoiceConfigurationError:
-            return self._failed("configuration", transcript, wake_detected, metadata)
+            return self._failed(
+                "configuration",
+                transcript,
+                wake_detected,
+                metadata,
+                response_text=(
+                    response.text if response is not None else None
+                ),
+            )
         except VoiceDeviceError:
-            return self._failed("device", transcript, wake_detected, metadata)
+            return self._failed(
+                "device",
+                transcript,
+                wake_detected,
+                metadata,
+                response_text=(
+                    response.text if response is not None else None
+                ),
+            )
         except VoiceProviderError:
-            return self._failed("provider", transcript, wake_detected, metadata)
+            return self._failed(
+                "provider",
+                transcript,
+                wake_detected,
+                metadata,
+                response_text=(
+                    response.text if response is not None else None
+                ),
+            )
         except asyncio.CancelledError:
             self._interrupt_event.set()
             with contextlib.suppress(Exception):
@@ -355,7 +399,15 @@ class VoiceSession:
             self._record(VoiceSessionState.INTERRUPTED)
             raise
         except Exception:
-            return self._failed("unexpected", transcript, wake_detected, metadata)
+            return self._failed(
+                "unexpected",
+                transcript,
+                wake_detected,
+                metadata,
+                response_text=(
+                    response.text if response is not None else None
+                ),
+            )
         finally:
             if capture is not None and not self._retain_audio:
                 capture.clear()
@@ -368,14 +420,32 @@ class VoiceSession:
         transcript: str | None,
         wake_word_detected: bool | None,
         metadata: dict[str, object],
+        *,
+        response_text: str | None = None,
     ) -> VoiceSessionResult:
         self._record(VoiceSessionState.FAILED, error_code)
         return self._result(
             transcript=transcript,
+            response_text=response_text,
             wake_word_detected=wake_word_detected,
             error_code=error_code,
             metadata=metadata,
         )
+
+    async def _speak_with_local_fallback(self, text: str) -> bool:
+        """Speak through the built-in Windows voice, best effort."""
+        try:
+            from app.voice.audio import (
+                speak_text_with_windows_sapi,
+            )
+
+            return await self._await_interruptible(
+                speak_text_with_windows_sapi(text)
+            )
+        except VoiceInterrupted:
+            raise
+        except Exception:
+            return False
 
     def _record(self, state: VoiceSessionState, detail: str | None = None) -> None:
         self._state = state

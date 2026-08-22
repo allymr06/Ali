@@ -156,7 +156,10 @@ class Settings:
     voice_vad_enabled: bool = True
     voice_silence_threshold_rms: int = 350
     voice_min_speech_seconds: float = 0.15
-    voice_trailing_silence_seconds: float = 0.5
+    # Long enough that natural mid-sentence pauses do not end the
+    # capture; end-of-turn detection cost is worth not cutting people
+    # off.
+    voice_trailing_silence_seconds: float = 0.9
     voice_start_timeout_seconds: float = 5.0
 
     # The lite model transcribes in ~1.3s where the thinking model
@@ -543,7 +546,7 @@ class Settings:
             ),
             voice_trailing_silence_seconds=_get_float(
                 "JARVIS_VOICE_TRAILING_SILENCE_SECONDS",
-                0.5,
+                0.9,
             ),
             voice_start_timeout_seconds=_get_float(
                 "JARVIS_VOICE_START_TIMEOUT_SECONDS",

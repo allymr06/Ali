@@ -1,6 +1,21 @@
 from __future__ import annotations
 
+import gc
+
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def finalize_tk_objects_on_main_thread():
+    """Collect garbage on the main thread after every test.
+
+    Tcl aborts the process with a native breakpoint exception when a
+    Tk object's finalizer runs on a foreign thread, which happens when
+    a later test's worker thread triggers the garbage collector while
+    UI-test leftovers are still uncollected.
+    """
+    yield
+    gc.collect()
 
 
 @pytest.fixture(autouse=True)

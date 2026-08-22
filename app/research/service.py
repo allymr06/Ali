@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from contextlib import contextmanager
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from threading import Lock
+from typing import Iterator
 from urllib.parse import urlsplit
 
 from app.core.models import ToolDefinition, ToolExecutionStatus, ToolResult
 from app.research.citations import validate_citations
+from app.research.errors import FetchError, SearchError
 from app.research.fetcher import SafeWebFetcher
 from app.research.models import (
     Freshness,
@@ -19,10 +23,17 @@ from app.research.models import (
     WebDocument,
 )
 from app.research.search import SearchProvider
+from app.research.sqlite_cache import SQLiteResearchCache
 from app.tools.executor import ToolExecutor
 
 _SENTENCE = re.compile(r"(?<=[.!?])\s+")
 _WORD = re.compile(r"[a-zA-Z0-9À-ž]{3,}")
+
+
+@dataclass(slots=True)
+class _KeyLock:
+    lock: Lock = field(default_factory=Lock)
+    users: int = 0
 
 
 def _tokens(text: str) -> frozenset[str]:
@@ -61,6 +72,9 @@ class ResearchService:
     max_sources: int = 5
     max_concurrency: int = 3
     operation_timeout_seconds: float = 45.0
+    cache: SQLiteResearchCache | None = None
+    _cache_guard: Lock = field(default_factory=Lock, init=False, repr=False)
+    _cache_locks: dict[str, _KeyLock] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not 1 <= self.max_sources <= 10:
@@ -75,6 +89,8 @@ class ResearchService:
         query: str,
         max_sources: int | None = None,
         time_range: str | None = None,
+        *,
+        refresh: bool = False,
     ) -> ResearchReport:
         question = query.strip()
         if not question or len(question) > 500:
@@ -82,6 +98,82 @@ class ResearchService:
         limit = max_sources if max_sources is not None else self.max_sources
         if not 1 <= limit <= self.max_sources:
             raise ValueError(f"max_sources must be between 1 and {self.max_sources}.")
+        if self.cache is None:
+            return self._research_uncached(question, limit, time_range)
+
+        baseline = self.cache.get(question, limit, time_range, allow_stale=True)
+        if not refresh:
+            fresh = self.cache.get(question, limit, time_range)
+            if fresh is not None:
+                return fresh
+
+        cache_key = self.cache.key_for(question, limit, time_range)
+        with self._single_flight(cache_key):
+            fresh = self.cache.get(question, limit, time_range)
+            if not refresh and fresh is not None:
+                return fresh
+            if refresh and fresh is not None and (
+                baseline is None or fresh.cached_at != baseline.cached_at
+            ):
+                return fresh
+            try:
+                report = self._research_uncached(question, limit, time_range)
+            except (FetchError, SearchError, OSError, TimeoutError) as exc:
+                stale = self.cache.get(
+                    question,
+                    limit,
+                    time_range,
+                    allow_stale=True,
+                )
+                if stale is None:
+                    raise
+                uncertainty = (
+                    "Live research was unavailable; cached evidence was returned and may "
+                    f"be outdated ({type(exc).__name__})."
+                )
+                return replace(
+                    stale,
+                    stale=True,
+                    uncertainties=tuple((*stale.uncertainties, uncertainty)),
+                )
+            if not report.sources and baseline is not None:
+                return replace(
+                    baseline,
+                    stale=True,
+                    uncertainties=tuple(
+                        (
+                            *baseline.uncertainties,
+                            "Live research returned no usable sources; cached evidence "
+                            "was returned and may be outdated.",
+                        )
+                    ),
+                )
+            return self.cache.put(question, limit, time_range, report)
+
+    @contextmanager
+    def _single_flight(self, cache_key: str) -> Iterator[None]:
+        with self._cache_guard:
+            entry = self._cache_locks.get(cache_key)
+            if entry is None:
+                entry = _KeyLock()
+                self._cache_locks[cache_key] = entry
+            entry.users += 1
+        entry.lock.acquire()
+        try:
+            yield
+        finally:
+            entry.lock.release()
+            with self._cache_guard:
+                entry.users -= 1
+                if entry.users == 0:
+                    self._cache_locks.pop(cache_key, None)
+
+    def _research_uncached(
+        self,
+        question: str,
+        limit: int,
+        time_range: str | None,
+    ) -> ResearchReport:
         stages = [ResearchStage.QUESTION, ResearchStage.SEARCH]
         hits = self.search_provider.search(question, limit=limit * 2, time_range=time_range)
         stages.extend((ResearchStage.COLLECT, ResearchStage.FILTER))
@@ -179,8 +271,14 @@ class ResearchService:
             query: str,
             max_sources: int = 5,
             time_range: str | None = None,
+            refresh: bool = False,
         ) -> ToolResult:
-            report = self.research(query, max_sources=max_sources, time_range=time_range)
+            report = self.research(
+                query,
+                max_sources=max_sources,
+                time_range=time_range,
+                refresh=refresh,
+            )
             return ToolResult(
                 status=ToolExecutionStatus.SUCCESS,
                 tool_name="research_web",

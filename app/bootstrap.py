@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import timedelta
 
 from app.config.provider_preferences import DEFAULT_GEMINI_MODEL
+from app.config.paths import migrate_default_directory, migrate_default_sqlite
 from app.config.settings import Settings
 from app.conversation.engine import ConversationEngine
 from app.conversation.sqlite import SQLiteConversationStore
@@ -33,6 +35,7 @@ from app.providers.registry import ProviderRegistry
 from app.providers.router import ModelRouter
 from app.research import (
     ResearchService,
+    SQLiteResearchCache,
     SafeWebFetcher,
     SearXNGSearchProvider,
     URLPolicy,
@@ -254,6 +257,23 @@ def create_application(
             active_settings.provider_circuit_recovery_seconds
         ),
     )
+    migrate_default_sqlite(
+        active_settings.conversation_database_path,
+        "jarvis_conversations.sqlite3",
+    )
+    migrate_default_sqlite(
+        active_settings.memory_database_path,
+        "jarvis_memory.sqlite3",
+    )
+    migrate_default_sqlite(
+        active_settings.task_database_path,
+        "jarvis_tasks.sqlite3",
+    )
+    migrate_default_directory(
+        active_settings.task_runtime_directory,
+        "tasks",
+    )
+
     conversation_store = (
         SQLiteConversationStore(
             active_settings.conversation_database_path
@@ -516,6 +536,16 @@ def create_application(
             max_concurrency=active_settings.research_max_concurrency,
             operation_timeout_seconds=(
                 active_settings.research_operation_timeout_seconds
+            ),
+            cache=(
+                SQLiteResearchCache(
+                    active_settings.research_cache_database_path,
+                    ttl=timedelta(
+                        seconds=active_settings.research_cache_ttl_seconds
+                    ),
+                )
+                if active_settings.research_cache_database_path is not None
+                else None
             ),
         )
         research.register_tools(tool_executor)

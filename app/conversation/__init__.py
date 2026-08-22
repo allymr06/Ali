@@ -5,12 +5,16 @@ from app.conversation.models import (
     ConversationTurn,
     MessageRole,
 )
-from app.conversation.sqlite import SQLiteConversationStore
+from app.conversation.sqlite import (
+    ConversationPersistenceError,
+    SQLiteConversationStore,
+)
 from app.conversation.store import ConversationStore, InMemoryConversationStore
 
 __all__ = [
     "Conversation",
     "ConversationEngine",
+    "ConversationPersistenceError",
     "ConversationStatus",
     "ConversationStore",
     "ConversationTurn",

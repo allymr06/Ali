@@ -64,3 +64,6 @@ class UIState:
     context_collapsed: bool = False
     reduced_motion: bool = False
     messages: list[ChatMessage] = field(default_factory=list)
+    voice_active: bool = False
+    voice_status: str = "IDLE"
+    voice_messages: list[ChatMessage] = field(default_factory=list)

@@ -252,8 +252,13 @@ async def test_voice_service_serializes_sessions_lists_devices_and_runs_bounded(
         audio_input=input_device,
         audio_output=output_device,
     )
-    results = await service.run_continuous(max_turns=2)
+    observed = []
+    results = await service.run_continuous(
+        max_turns=2,
+        result_callback=observed.append,
+    )
     assert len(results) == 2
+    assert observed == list(results)
     assert all(result.state is VoiceSessionState.COMPLETED for result in results)
     assert {device.kind for device in service.list_devices()} == {
         AudioDeviceKind.INPUT,

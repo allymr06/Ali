@@ -5,7 +5,7 @@ import math
 import sys
 import tkinter as tk
 from collections.abc import Coroutine
-from concurrent.futures import Future
+from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
 from pathlib import Path
 from queue import Empty, SimpleQueue
@@ -410,6 +410,10 @@ class DesktopWindow:
         self._operation_sequence = 0
         self._active_operation_id: int | None = None
         self._command_operation_id: int | None = None
+        self._voice_operation_id: int | None = None
+        self._voice_future: Future[Any] | None = None
+        self._voice_stop_future: Future[Any] | None = None
+        self._voice_stop_requested = False
         self._api_test_feedback: tuple[str, bool] | None = None
         self._research_report: dict[str, object] | None = None
         self._research_error: str | None = None
@@ -530,10 +534,16 @@ class DesktopWindow:
             runtime, "MODEL", DISPLAY_MODEL_NAME
         )
         self._status_field(runtime, "GÜVEN", "SEVİYE 03")
-        self._status_field(
+        self.voice_status_badge = self._status_field(
             runtime,
             "MİKROFON",
-            "PASİF" if self._snapshot.voice_available else "ÇEVRİMDIŞI",
+            (
+                self.controller.state.voice_status
+                if self.controller.state.voice_active
+                else "PASİF"
+                if self._snapshot.voice_available
+                else "ÇEVRİMDIŞI"
+            ),
         )
         self._status_field(
             runtime,
@@ -736,9 +746,17 @@ class DesktopWindow:
         self.command.bind("<Shift-Return>", self._on_composer_newline)
         bar = tk.Frame(self.composer, bg=c.surface)
         bar.pack(fill="x", pady=(5, 0))
-        self._button(
-            bar, "MİKROFON", self._start_voice, variant="ghost"
-        ).pack(side="left")
+        self.composer_voice_button = self._button(
+            bar,
+            (
+                "SESİ DURDUR"
+                if self.controller.state.voice_active
+                else "MİKROFON"
+            ),
+            self._start_voice,
+            variant="ghost",
+        )
+        self.composer_voice_button.pack(side="left")
         self._button(
             bar, "GÖRÜŞ", self._start_vision, variant="ghost"
         ).pack(side="left", padx=4)
@@ -759,13 +777,18 @@ class DesktopWindow:
                 fill=c.accent_strong,
                 width=2,
             )
-        tk.Label(
+        self.composer_voice_state_label = tk.Label(
             bar,
-            text="BEKLİYOR",
+            text=(
+                self.controller.state.voice_status
+                if self.controller.state.voice_active
+                else "BEKLİYOR"
+            ),
             bg=c.surface,
             fg=c.faint,
             font=("Segoe UI", 8),
-        ).pack(side="left", padx=(2, 10))
+        )
+        self.composer_voice_state_label.pack(side="left", padx=(2, 10))
         self._badge(bar, DISPLAY_MODEL_NAME)
         self._badge(
             bar,
@@ -1557,16 +1580,50 @@ class DesktopWindow:
         card = self._card(self.workspace, "Ses oturumu")
         self._line(
             card,
-            "HAZIR" if self._snapshot.voice_available else "AYARLANMAMIŞ",
-            "Geçerli çalışma durumu",
+            (
+                self.controller.state.voice_status
+                if self.controller.state.voice_active
+                else "HAZIR"
+                if self._snapshot.voice_available
+                else "AYARLANMAMIŞ"
+            ),
+            "Metin sohbetinden bağımsız ses çalışma durumu",
         )
-        button = self._button(
-            card, "SESLİ İLETİŞİMİ BAŞLAT", self._start_voice, variant="primary"
+        self.voice_action_button = self._button(
+            card,
+            (
+                "SESLİ İLETİŞİMİ DURDUR"
+                if self.controller.state.voice_active
+                else "SESLİ İLETİŞİMİ BAŞLAT"
+            ),
+            self._start_voice,
+            variant=(
+                "ghost" if self.controller.state.voice_active else "primary"
+            ),
         )
-        button.configure(
+        self.voice_action_button.configure(
             state="normal" if self._snapshot.voice_available else "disabled"
         )
-        button.pack(anchor="w", pady=10)
+        self.voice_action_button.pack(anchor="w", pady=10)
+
+        history = self._card(self.workspace, "Ses oturumu geçmişi")
+        messages = self.controller.state.voice_messages[-10:]
+        if not messages:
+            self._line(
+                history,
+                "Henüz sesli konuşma yok",
+                "Ses transkriptleri normal sohbet geçmişine karışmaz.",
+            )
+        for message in messages:
+            self._line(
+                history,
+                message.text,
+                {
+                    "user": "SEN",
+                    "assistant": "JARVIS",
+                    "system": "SİSTEM",
+                }[message.role],
+            )
 
     def _render_vision(self) -> None:
         self._heading(
@@ -2112,7 +2169,13 @@ class DesktopWindow:
                 event = self._ui_events.get_nowait()
             except Empty:
                 break
-            if event.operation_id != self._active_operation_id:
+            voice_event = event.kind.startswith("voice_")
+            expected_operation = (
+                self._voice_operation_id
+                if voice_event
+                else self._active_operation_id
+            )
+            if event.operation_id != expected_operation:
                 continue
             try:
                 if event.kind == "command_stream":
@@ -2140,6 +2203,11 @@ class DesktopWindow:
                         event.operation_id,
                         event.payload,
                     )
+                elif event.kind == "voice_stop_done":
+                    self._finish_voice_stop(
+                        event.operation_id,
+                        event.payload,
+                    )
                 elif event.kind == "aux_done":
                     self._finish_aux(
                         event.operation_id,
@@ -2153,7 +2221,10 @@ class DesktopWindow:
                 else:
                     raise RuntimeError(f"Unknown UI event: {event.kind}")
             except Exception as exc:
-                self._recover_operation(event.operation_id, exc)
+                if voice_event:
+                    self._recover_voice_operation(event.operation_id, exc)
+                else:
+                    self._recover_operation(event.operation_id, exc)
         self._schedule_ui_event_pump()
 
     def _begin_operation(self, status: str) -> int | None:
@@ -2197,9 +2268,138 @@ class DesktopWindow:
         self._busy_future = None
         self._active_operation_id = None
         self.controller.state.busy = False
+        if self.controller.state.voice_active:
+            status = self.controller.state.voice_status
         self.controller.state.status = status
         self._set_busy(False, status)
         return True
+
+    def _begin_voice_operation(self) -> int | None:
+        if self._voice_operation_id is not None:
+            return None
+        self._operation_sequence += 1
+        operation_id = self._operation_sequence
+        self._voice_operation_id = operation_id
+        self._voice_stop_requested = False
+        self.controller.state.voice_active = True
+        self.controller.state.voice_status = "DİNLİYOR"
+        if self._active_operation_id is None:
+            self.controller.state.status = "LISTENING"
+            self._set_busy(False, "LISTENING")
+        self._update_voice_controls()
+        return operation_id
+
+    def _launch_voice_operation(
+        self,
+        operation_id: int,
+        operation: Coroutine[Any, Any, Any],
+    ) -> bool:
+        try:
+            future = self.controller.submit_background(
+                operation,
+                lambda result, current=operation_id: self._queue_ui_event(
+                    current,
+                    "voice_done",
+                    result,
+                ),
+            )
+        except Exception as exc:
+            operation.close()
+            self._recover_voice_operation(operation_id, exc)
+            return False
+        self._voice_future = future
+        return True
+
+    def _complete_voice_operation(self, operation_id: int) -> bool:
+        if operation_id != self._voice_operation_id:
+            return False
+        self._voice_future = None
+        self._voice_stop_future = None
+        self._voice_operation_id = None
+        self._voice_stop_requested = False
+        self.controller.state.voice_active = False
+        self.controller.state.voice_status = "IDLE"
+        if self._active_operation_id is None:
+            self.controller.state.status = "LOCAL CORE READY"
+            self._set_busy(False, "LOCAL CORE READY")
+        self._update_voice_controls()
+        return True
+
+    def _update_voice_controls(self) -> None:
+        active = self.controller.state.voice_active
+        status = self.controller.state.voice_status if active else "BEKLİYOR"
+        try:
+            badge = getattr(self, "voice_status_badge", None)
+            if badge is not None and badge.winfo_exists():
+                badge.configure(
+                    text=(
+                        self.controller.state.voice_status
+                        if active
+                        else "PASİF"
+                        if self._snapshot.voice_available
+                        else "ÇEVRİMDIŞI"
+                    )
+                )
+            composer_button = getattr(
+                self,
+                "composer_voice_button",
+                None,
+            )
+            if composer_button is not None and composer_button.winfo_exists():
+                composer_button.configure(
+                    text="SESİ DURDUR" if active else "MİKROFON"
+                )
+            state_label = getattr(
+                self,
+                "composer_voice_state_label",
+                None,
+            )
+            if state_label is not None and state_label.winfo_exists():
+                state_label.configure(text=status)
+            action_button = getattr(self, "voice_action_button", None)
+            if action_button is not None and action_button.winfo_exists():
+                action_button.configure(
+                    text=(
+                        "SESLİ İLETİŞİMİ DURDUR"
+                        if active
+                        else "SESLİ İLETİŞİMİ BAŞLAT"
+                    )
+                )
+        except tk.TclError:
+            return
+
+    def _recover_voice_operation(
+        self,
+        operation_id: int,
+        error: Exception,
+    ) -> None:
+        if operation_id != self._voice_operation_id:
+            return
+        stopped = self._voice_stop_requested
+        if self._voice_future is not None and not self._voice_future.done():
+            self._voice_future.cancel()
+        if not stopped:
+            self.controller.state.voice_messages.append(
+                ChatMessage(
+                    "system",
+                    "Ses oturumu güvenli biçimde durduruldu. "
+                    "Metin sohbeti kullanılabilir.",
+                )
+            )
+        self._complete_voice_operation(operation_id)
+        if self._closing:
+            return
+        if self.controller.state.screen is UIScreen.VOICE:
+            self.render(UIScreen.VOICE)
+        if not stopped:
+            try:
+                messagebox.showerror(
+                    "JARVIS sesli iletişimi başarısız",
+                    str(error),
+                    parent=self.root,
+                )
+            except tk.TclError:
+                return
 
     def _recover_operation(self, operation_id: int, error: Exception) -> None:
         if operation_id != self._active_operation_id:
@@ -2583,18 +2783,18 @@ class DesktopWindow:
             )
 
     def _start_voice(self) -> None:
-        if (
-            not self._snapshot.voice_available
-            or self._active_operation_id is not None
-        ):
+        if self._voice_operation_id is not None:
+            self._stop_voice()
+            return
+        if not self._snapshot.voice_available:
             messagebox.showinfo(
                 "Ses", "Sesli iletişim ayarlanmamış.", parent=self.root
             )
             return
-        operation_id = self._begin_operation("LISTENING")
+        operation_id = self._begin_voice_operation()
         if operation_id is None:
             return
-        self._launch_operation(
+        self._launch_voice_operation(
             operation_id,
             self.controller.run_voice(
                 message_callback=(
@@ -2608,21 +2808,61 @@ class DesktopWindow:
                 ),
                 manage_state=False,
             ),
-            "voice_done",
         )
+
+    def _stop_voice(self) -> None:
+        operation_id = self._voice_operation_id
+        if operation_id is None or self._voice_stop_requested:
+            return
+        self._voice_stop_requested = True
+        self.controller.state.voice_status = "DURDURULUYOR"
+        self._update_voice_controls()
+        operation = self.controller.interrupt_voice()
+        try:
+            self._voice_stop_future = self.controller.submit_background(
+                operation,
+                lambda result, current=operation_id: self._queue_ui_event(
+                    current,
+                    "voice_stop_done",
+                    result,
+                ),
+            )
+        except Exception:
+            operation.close()
+            if self._voice_future is not None:
+                self._voice_future.cancel()
+
+    def _finish_voice_stop(
+        self,
+        operation_id: int,
+        payload: object,
+    ) -> None:
+        if operation_id != self._voice_operation_id:
+            return
+        if not isinstance(payload, Future):
+            raise TypeError("Voice stop payload must be a Future.")
+        try:
+            interrupted = bool(payload.result())
+        except Exception:
+            interrupted = False
+        self._voice_stop_future = None
+        if not interrupted and self._voice_future is not None:
+            self._voice_future.cancel()
 
     def _apply_voice_message(
         self,
         operation_id: int,
         payload: object,
     ) -> None:
-        if operation_id != self._active_operation_id:
+        if operation_id != self._voice_operation_id:
             return
         if not isinstance(payload, ChatMessage):
             raise TypeError("Voice message payload must be a ChatMessage.")
-        self.controller.state.messages.append(payload)
-        if self.controller.state.screen is UIScreen.CHAT:
-            self.render(UIScreen.CHAT)
+        self.controller.state.voice_messages.append(payload)
+        self.controller.state.voice_status = "DİNLİYOR"
+        self._update_voice_controls()
+        if self.controller.state.screen is UIScreen.VOICE:
+            self.render(UIScreen.VOICE)
 
     def _on_voice_done(
         self,
@@ -2640,15 +2880,31 @@ class DesktopWindow:
             raise TypeError("Voice completion payload must be a Future.")
         try:
             payload.result()
+        except CancelledError:
+            if not self._voice_stop_requested:
+                self.controller.state.voice_messages.append(
+                    ChatMessage(
+                        "system",
+                        "Ses oturumu beklenmedik biçimde kesildi.",
+                    )
+                )
         except Exception as exc:
-            messagebox.showerror(
-                "JARVIS sesli iletişimi başarısız",
-                str(exc),
-                parent=self.root,
+            self.controller.state.voice_messages.append(
+                ChatMessage(
+                    "system",
+                    f"Ses oturumu durdu: {type(exc).__name__}.",
+                )
             )
+            if not self._voice_stop_requested:
+                messagebox.showerror(
+                    "JARVIS sesli iletişimi başarısız",
+                    str(exc),
+                    parent=self.root,
+                )
         finally:
-            self._complete_operation(operation_id)
-        self.render(UIScreen.CHAT)
+            self._complete_voice_operation(operation_id)
+        if self.controller.state.screen is UIScreen.VOICE:
+            self.render(UIScreen.VOICE)
 
     def _start_vision(self) -> None:
         if (
@@ -2754,9 +3010,16 @@ class DesktopWindow:
             self.root.after_cancel(self._typewriter_job)
         if self._busy_future is not None:
             self._busy_future.cancel()
+        if self._voice_stop_future is not None:
+            self._voice_stop_future.cancel()
+        if self._voice_future is not None:
+            self._voice_future.cancel()
         self._busy_future = None
+        self._voice_stop_future = None
+        self._voice_future = None
         self._active_operation_id = None
         self._command_operation_id = None
+        self._voice_operation_id = None
         self.controller.close()
         self.root.destroy()
 

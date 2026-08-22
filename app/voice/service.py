@@ -141,6 +141,7 @@ class VoiceService:
         max_turns: int,
         context: Context | None = None,
         max_consecutive_failures: int = 2,
+        result_callback: Callable[[VoiceSessionResult], None] | None = None,
     ) -> tuple[VoiceSessionResult, ...]:
         if max_turns < 1 or max_turns > 100:
             raise ValueError(
@@ -162,6 +163,8 @@ class VoiceService:
                 context
             )
             results.append(result)
+            if result_callback is not None:
+                result_callback(result)
 
             if (
                 result.state

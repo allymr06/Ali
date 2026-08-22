@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.core.models import (
     RiskLevel,
@@ -49,6 +50,12 @@ class WindowsIntegrationService:
         if os.name != "nt":
             raise OSError("Windows integrations require Windows.")
         applications = WindowsApplicationRegistry.with_windows_defaults()
+
+        applications.load_snapshot(
+            Path("data")
+            / "windows_app_registry.local.json"
+        )
+
         processes = WindowsProcessInspector()
         launcher = WindowsApplicationLauncher(
             applications,

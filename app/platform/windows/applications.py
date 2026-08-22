@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import ctypes
+import hashlib
+import json
 import os
+import re
 import shutil
+import unicodedata
 from pathlib import Path
 from threading import RLock
 
@@ -76,6 +81,354 @@ class WindowsApplicationRegistry:
         if not normalized:
             raise ValueError("Windows application name cannot be empty.")
         return normalized
+
+
+    @staticmethod
+    def _discovery_slug(
+        value: str,
+    ) -> str:
+        decomposed = unicodedata.normalize(
+            "NFKD",
+            value.casefold(),
+        )
+
+        ascii_value = "".join(
+            character
+            for character in decomposed
+            if ord(character) < 128
+        )
+
+        slug = re.sub(
+            r"[^a-z0-9]+",
+            "-",
+            ascii_value,
+        ).strip("-")
+
+        return slug or "app"
+
+    @staticmethod
+    def _windows_arguments(
+        raw: str,
+    ) -> tuple[str, ...]:
+        if not isinstance(raw, str):
+            raise TypeError(
+                "Shortcut arguments must be a string."
+            )
+
+        raw = raw.strip()
+
+        if not raw:
+            return ()
+
+        if os.name != "nt":
+            raise OSError(
+                "Windows argument parsing "
+                "requires Windows."
+            )
+
+        shell32 = ctypes.WinDLL(
+            "shell32",
+            use_last_error=True,
+        )
+
+        kernel32 = ctypes.WinDLL(
+            "kernel32",
+            use_last_error=True,
+        )
+
+        shell32.CommandLineToArgvW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.POINTER(
+                ctypes.c_int
+            ),
+        ]
+
+        shell32.CommandLineToArgvW.restype = (
+            ctypes.POINTER(
+                ctypes.c_wchar_p
+            )
+        )
+
+        kernel32.LocalFree.argtypes = [
+            ctypes.c_void_p,
+        ]
+
+        kernel32.LocalFree.restype = (
+            ctypes.c_void_p
+        )
+
+        argc = ctypes.c_int()
+
+        command_line = (
+            "jarvis-shortcut.exe "
+            + raw
+        )
+
+        argv = (
+            shell32.CommandLineToArgvW(
+                command_line,
+                ctypes.byref(
+                    argc
+                ),
+            )
+        )
+
+        if not argv:
+            raise OSError(
+                ctypes.get_last_error(),
+                "CommandLineToArgvW failed.",
+            )
+
+        try:
+            return tuple(
+                argv[index]
+                for index
+                in range(
+                    1,
+                    argc.value,
+                )
+            )
+
+        finally:
+            kernel32.LocalFree(
+                ctypes.cast(
+                    argv,
+                    ctypes.c_void_p,
+                )
+            )
+
+    def load_snapshot(
+        self,
+        path: str | Path,
+    ) -> int:
+        """
+        Load machine-local applications discovered from
+        verified Windows shortcuts.
+
+        Stale, malformed, non-executable and network
+        entries are ignored.
+        """
+        snapshot = Path(
+            path
+        )
+
+        if not snapshot.is_file():
+            return 0
+
+        payload = json.loads(
+            snapshot.read_text(
+                encoding="utf-8-sig",
+            )
+        )
+
+        if not isinstance(
+            payload,
+            list,
+        ):
+            raise ValueError(
+                "Windows application snapshot "
+                "must contain a JSON array."
+            )
+
+        loaded = 0
+
+        for record in payload:
+            if not isinstance(
+                record,
+                dict,
+            ):
+                continue
+
+            try:
+                name = str(
+                    record.get(
+                        "name",
+                        "",
+                    )
+                ).strip()
+
+                executable = os.path.expandvars(
+                    str(
+                        record.get(
+                            "executable",
+                            "",
+                        )
+                    ).strip()
+                )
+
+                shortcut = str(
+                    record.get(
+                        "shortcut",
+                        "",
+                    )
+                ).strip()
+
+                if (
+                    not name
+                    or not executable
+                ):
+                    continue
+
+                executable_path = Path(
+                    executable
+                )
+
+                if (
+                    not executable_path.is_absolute()
+                    or str(
+                        executable_path
+                    ).startswith(
+                        (
+                            r"\\",
+                            "//",
+                        )
+                    )
+                    or executable_path.suffix.casefold()
+                    != ".exe"
+                    or not executable_path.is_file()
+                ):
+                    continue
+
+                explicit_arguments = (
+                    record.get(
+                        "arguments"
+                    )
+                )
+
+                if explicit_arguments is not None:
+                    if (
+                        not isinstance(
+                            explicit_arguments,
+                            list,
+                        )
+                        or not all(
+                            isinstance(
+                                argument,
+                                str,
+                            )
+                            for argument
+                            in explicit_arguments
+                        )
+                    ):
+                        continue
+
+                    arguments = tuple(
+                        explicit_arguments
+                    )
+
+                else:
+                    arguments = (
+                        self._windows_arguments(
+                            str(
+                                record.get(
+                                    "arguments_raw",
+                                    "",
+                                )
+                            )
+                        )
+                    )
+
+                resolved = str(
+                    executable_path.resolve()
+                )
+
+                fingerprint = "\0".join(
+                    (
+                        name,
+                        resolved,
+                        "\0".join(
+                            arguments
+                        ),
+                        shortcut,
+                    )
+                )
+
+                digest = hashlib.sha256(
+                    fingerprint.encode(
+                        "utf-8"
+                    )
+                ).hexdigest()[:10]
+
+                slug = (
+                    self._discovery_slug(
+                        name
+                    )
+                )
+
+                application_id = (
+                    f"{slug[:48]}-{digest}"
+                )
+
+                aliases = set()
+
+                candidates = (
+                    name.casefold(),
+                    slug,
+                )
+
+                for candidate in candidates:
+                    candidate = (
+                        candidate.strip()
+                    )
+
+                    if (
+                        candidate
+                        and candidate
+                        != application_id
+                        and not self.contains(
+                            candidate
+                        )
+                    ):
+                        aliases.add(
+                            candidate
+                        )
+
+                application = (
+                    WindowsApplication(
+                        application_id=(
+                            application_id
+                        ),
+                        display_name=name,
+                        executable=resolved,
+                        aliases=frozenset(
+                            aliases
+                        ),
+                        arguments=arguments,
+                        process_names=frozenset(
+                            {
+                                executable_path
+                                .name
+                                .casefold()
+                            }
+                        ),
+                        capabilities=frozenset(
+                            {
+                                "applications",
+                                "launch",
+                                "discovered",
+                                "shortcut",
+                            }
+                        ),
+                        source=(
+                            "windows:shortcut"
+                        ),
+                    )
+                )
+
+                self.register(
+                    application
+                )
+
+            except (
+                OSError,
+                TypeError,
+                ValueError,
+            ):
+                continue
+
+            loaded += 1
+
+        return loaded
 
     @staticmethod
     def resolve_executable(application: WindowsApplication) -> str:

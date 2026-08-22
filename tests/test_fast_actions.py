@@ -289,3 +289,55 @@ def test_exact_launch_skips_model():
         ]
         is True
     )
+
+
+def test_conflicting_fast_aliases_fail_closed_without_startup_error():
+    router = ApprovedApplicationFastRouter(
+        {
+            "Foo App": (
+                "first-id",
+                "First",
+            ),
+            "foo-app": (
+                "second-id",
+                "Second",
+            ),
+            "first-id": (
+                "first-id",
+                "First",
+            ),
+            "second-id": (
+                "second-id",
+                "Second",
+            ),
+        }
+    )
+
+    ambiguous = router.route(
+        Request(
+            "Foo App ac"
+        ),
+        available_tool_names={
+            "launch_windows_application",
+        },
+    )
+
+    assert ambiguous is None
+
+    unique = router.route(
+        Request(
+            "first-id ac"
+        ),
+        available_tool_names={
+            "launch_windows_application",
+        },
+    )
+
+    assert unique is not None
+
+    assert (
+        unique.parameters[
+            "application"
+        ]
+        == "first-id"
+    )

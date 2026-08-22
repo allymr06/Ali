@@ -79,6 +79,8 @@ class ApprovedApplicationFastRouter:
             tuple[str, str],
         ] = {}
 
+        ambiguous: set[str] = set()
+
         for raw_name, target in (
             applications.items()
         ):
@@ -121,6 +123,12 @@ class ApprovedApplicationFastRouter:
                 target[1].strip(),
             )
 
+            if not normalized:
+                continue
+
+            if normalized in ambiguous:
+                continue
+
             existing = aliases.get(
                 normalized
             )
@@ -129,9 +137,16 @@ class ApprovedApplicationFastRouter:
                 existing is not None
                 and existing != canonical
             ):
-                raise ValueError(
-                    "Application alias collision."
+                aliases.pop(
+                    normalized,
+                    None,
                 )
+
+                ambiguous.add(
+                    normalized
+                )
+
+                continue
 
             aliases[
                 normalized
@@ -152,9 +167,15 @@ class ApprovedApplicationFastRouter:
         )
 
         cleaned = re.sub(
-            r"[^a-z0-9]+",
+            r"[^\w]+",
             " ",
             translated,
+            flags=re.UNICODE,
+        )
+
+        cleaned = cleaned.replace(
+            "_",
+            " ",
         )
 
         return " ".join(

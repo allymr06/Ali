@@ -368,6 +368,278 @@ class CoreEngine:
 
         return {item.strip() for item in values if item.strip()}
 
+
+    @staticmethod
+    def _hybrid_context_enabled(
+        request: Request,
+    ) -> bool:
+        return (
+            request.metadata.get(
+                "low_latency_context"
+            )
+            is not False
+        )
+
+    @staticmethod
+    def _needs_chat_history(
+        request: Request,
+    ) -> bool:
+        normalized = " ".join(
+            request.text
+            .casefold()
+            .strip()
+            .split()
+        )
+
+        exact = {
+            "neden",
+            "neden?",
+            "niye",
+            "niye?",
+            "nasil yani",
+            "nas\u0131l yani",
+            "peki",
+            "peki?",
+            "devam",
+            "devam et",
+            "biraz daha",
+            "daha fazla",
+            "daha detayli",
+            "daha detayl\u0131",
+            "ne demek",
+            "ne demek?",
+        }
+
+        if normalized in exact:
+            return True
+
+        markers = (
+            "peki ",
+            "neden ",
+            "niye ",
+            "biraz daha",
+            "daha detay",
+            "devam et",
+            "onu ",
+            "onun ",
+            "bunu ",
+            "bunun ",
+            "bundan ",
+            "az once",
+            "az \u00f6nce",
+            "demin ",
+            "dedigin",
+            "dedi\u011fin",
+            "soyledigin",
+            "s\u00f6yledi\u011fin",
+        )
+
+        return any(
+            marker in normalized
+            for marker in markers
+        )
+
+    @staticmethod
+    def _current_request_message_index(
+        request: Request,
+        messages: list[dict[str, object]],
+    ) -> int | None:
+        for index in range(
+            len(messages) - 1,
+            -1,
+            -1,
+        ):
+            message = messages[index]
+
+            if (
+                message.get("role") == "user"
+                and message.get("content")
+                == request.text
+            ):
+                return index
+
+        return None
+
+    @classmethod
+    def _chat_provider_messages(
+        cls,
+        request: Request,
+        context: Context,
+    ) -> list[dict[str, object]]:
+        raw_messages = context.values.get(
+            "messages",
+            [],
+        )
+
+        if not isinstance(raw_messages, list):
+            return [
+                {
+                    "role": "user",
+                    "content": request.text,
+                }
+            ]
+
+        messages = [
+            dict(message)
+            for message in raw_messages
+            if isinstance(message, dict)
+        ]
+
+        current_index = (
+            cls._current_request_message_index(
+                request,
+                messages,
+            )
+        )
+
+        if current_index is None:
+            return [
+                {
+                    "role": "user",
+                    "content": request.text,
+                }
+            ]
+
+        current = [
+            dict(messages[current_index])
+        ]
+
+        if not cls._needs_chat_history(request):
+            return current
+
+        previous = messages[:current_index]
+
+        previous_assistant = None
+        previous_user = None
+
+        for message in reversed(previous):
+            role = message.get("role")
+            content = message.get("content")
+
+            if (
+                role == "assistant"
+                and previous_assistant is None
+                and isinstance(content, str)
+                and content.strip()
+                and not message.get("tool_calls")
+            ):
+                previous_assistant = dict(message)
+                continue
+
+            if (
+                previous_assistant is not None
+                and role == "user"
+                and isinstance(content, str)
+                and content.strip()
+            ):
+                previous_user = dict(message)
+                break
+
+        selected = []
+
+        if previous_user is not None:
+            selected.append(previous_user)
+
+        if previous_assistant is not None:
+            selected.append(previous_assistant)
+
+        selected.extend(current)
+
+        return selected
+
+    @classmethod
+    def _tool_provider_messages(
+        cls,
+        request: Request,
+        context: Context,
+    ) -> list[dict[str, object]]:
+        raw_messages = context.values.get(
+            "messages",
+            [],
+        )
+
+        if not isinstance(raw_messages, list):
+            return [
+                {
+                    "role": "user",
+                    "content": request.text,
+                }
+            ]
+
+        messages = [
+            dict(message)
+            for message in raw_messages
+            if isinstance(message, dict)
+        ]
+
+        current_index = (
+            cls._current_request_message_index(
+                request,
+                messages,
+            )
+        )
+
+        if current_index is None:
+            return [
+                {
+                    "role": "user",
+                    "content": request.text,
+                }
+            ]
+
+        return [
+            dict(message)
+            for message in messages[current_index:]
+        ]
+
+    @classmethod
+    def _low_latency_provider_context(
+        cls,
+        request: Request,
+        context: Context,
+        hybrid_decision,
+    ) -> Context:
+        if (
+            hybrid_decision is None
+            or not cls._hybrid_context_enabled(request)
+            or request.metadata.get("images")
+            or request.metadata.get("vision")
+        ):
+            return context
+
+        if hybrid_decision.role == "chat":
+            messages = cls._chat_provider_messages(
+                request,
+                context,
+            )
+            mode = "chat"
+
+        elif hybrid_decision.role == "tool":
+            messages = cls._tool_provider_messages(
+                request,
+                context,
+            )
+            mode = "tool"
+
+        else:
+            return context
+
+        values = dict(context.values)
+
+        values["messages"] = messages
+        values["low_latency_context_mode"] = mode
+        values[
+            "low_latency_context_message_count"
+        ] = len(messages)
+
+        return Context(
+            conversation_id=context.conversation_id,
+            user_id=context.user_id,
+            active_task_id=context.active_task_id,
+            values=values,
+            memories=[],
+        )
+
     async def _collect_streamed_response(
         self,
         request: Request,
@@ -784,14 +1056,25 @@ class CoreEngine:
             )
 
             if hybrid_prompt:
-                if provider_system_prompt:
+                if (
+                    hybrid_model_decision.role
+                    == "chat"
+                ):
+                    provider_system_prompt = (
+                        hybrid_prompt
+                    )
+
+                elif provider_system_prompt:
                     provider_system_prompt = (
                         provider_system_prompt
                         + "\n\n"
                         + hybrid_prompt
                     )
+
                 else:
-                    provider_system_prompt = hybrid_prompt
+                    provider_system_prompt = (
+                        hybrid_prompt
+                    )
 
         tool_schema_count_before = len(
             tool_schemas
@@ -979,6 +1262,14 @@ class CoreEngine:
 
                 usage.model_iterations += 1
 
+                provider_context = (
+                    self._low_latency_provider_context(
+                        request,
+                        active_context,
+                        hybrid_model_decision,
+                    )
+                )
+
                 try:
                     stream_chat = (
                         stream_callback is not None
@@ -991,7 +1282,7 @@ class CoreEngine:
                         model_response = await self._await_provider(
                             self._collect_streamed_response(
                                 request,
-                                active_context,
+                                provider_context,
                                 model=provider_model_override,
                                 system_prompt=provider_system_prompt,
                                 callback=stream_callback,
@@ -1004,7 +1295,7 @@ class CoreEngine:
                         model_response = await self._await_provider(
                             self._provider_gateway.generate(
                                 request,
-                                active_context,
+                                provider_context,
                                 model=provider_model_override,
                                 system_prompt=provider_system_prompt,
                                 tools=tool_schemas or None,
@@ -1346,6 +1637,22 @@ class CoreEngine:
                     dict(model_response.metadata)
                     if model_response is not None
                     else {}
+                ),
+                "low_latency_context_mode": (
+                    provider_context.values.get(
+                        "low_latency_context_mode"
+                    )
+                    if "provider_context"
+                    in locals()
+                    else None
+                ),
+                "low_latency_context_message_count": (
+                    provider_context.values.get(
+                        "low_latency_context_message_count"
+                    )
+                    if "provider_context"
+                    in locals()
+                    else None
                 ),
             },
         )

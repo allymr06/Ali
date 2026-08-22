@@ -169,6 +169,16 @@ class CapturingOllamaProvider(AIProvider):
                 "model": model,
                 "system_prompt": system_prompt,
                 "tools": tools,
+                "messages": [
+                    dict(message)
+                    for message in context.values.get(
+                        "messages",
+                        [],
+                    )
+                ],
+                "memories": list(
+                    context.memories
+                ),
             }
         )
 
@@ -195,6 +205,16 @@ class CapturingOllamaProvider(AIProvider):
                 "model": model,
                 "system_prompt": system_prompt,
                 "tools": tools,
+                "messages": [
+                    dict(message)
+                    for message in context.values.get(
+                        "messages",
+                        [],
+                    )
+                ],
+                "memories": list(
+                    context.memories
+                ),
             }
         )
 
@@ -518,3 +538,171 @@ def test_bootstrap_starts_two_hybrid_warmers(
         instance.closed
         for instance in instances
     )
+
+
+def test_low_latency_chat_drops_independent_history(
+) -> None:
+    engine, provider = make_core()
+    context = Context()
+
+    asyncio.run(
+        engine.handle(
+            Request("RAM nedir?"),
+            context,
+        )
+    )
+
+    asyncio.run(
+        engine.handle(
+            Request("Bugun hava guzel."),
+            context,
+        )
+    )
+
+    call = provider.calls[-1]
+
+    assert call["messages"] == [
+        {
+            "role": "user",
+            "content": "Bugun hava guzel.",
+        }
+    ]
+
+    assert call["memories"] == []
+
+
+def test_low_latency_chat_keeps_one_pair_for_followup(
+) -> None:
+    engine, provider = make_core()
+    context = Context()
+
+    asyncio.run(
+        engine.handle(
+            Request("RAM nedir?"),
+            context,
+        )
+    )
+
+    asyncio.run(
+        engine.handle(
+            Request("Peki neden?"),
+            context,
+        )
+    )
+
+    messages = provider.calls[-1][
+        "messages"
+    ]
+
+    assert len(messages) == 3
+
+    assert messages[0] == {
+        "role": "user",
+        "content": "RAM nedir?",
+    }
+
+    assert (
+        messages[1]["role"]
+        == "assistant"
+    )
+
+    assert messages[2] == {
+        "role": "user",
+        "content": "Peki neden?",
+    }
+
+
+def test_low_latency_tool_route_has_zero_history(
+) -> None:
+    engine, provider = make_core()
+    context = Context()
+
+    asyncio.run(
+        engine.handle(
+            Request(
+                "Bugun biraz konusalim."
+            ),
+            context,
+        )
+    )
+
+    asyncio.run(
+        engine.handle(
+            Request("Notepad ac."),
+            context,
+        )
+    )
+
+    call = provider.calls[-1]
+
+    assert (
+        call["model"]
+        == "llama3.2:latest"
+    )
+
+    assert call["messages"] == [
+        {
+            "role": "user",
+            "content": "Notepad ac.",
+        }
+    ]
+
+    assert call["memories"] == []
+
+
+def test_hybrid_social_prompt_is_not_duplicated(
+) -> None:
+    engine, provider = make_core()
+
+    asyncio.run(
+        engine.handle(
+            Request("Merhaba"),
+            Context(),
+        )
+    )
+
+    call = provider.calls[-1]
+
+    assert (
+        call["system_prompt"]
+        == (
+            "JARVIS. Kisa, dogal Turkce. "
+            "Tool kullanma."
+        )
+    )
+
+    assert (
+        "modern, natural Turkish"
+        not in call["system_prompt"]
+    )
+
+
+def test_low_latency_context_can_be_disabled(
+) -> None:
+    engine, provider = make_core()
+    context = Context()
+
+    asyncio.run(
+        engine.handle(
+            Request("Ilk mesaj."),
+            context,
+        )
+    )
+
+    asyncio.run(
+        engine.handle(
+            Request(
+                "Ikinci mesaj.",
+                metadata={
+                    "low_latency_context": False,
+                },
+            ),
+            context,
+        )
+    )
+
+    call = provider.calls[-1]
+
+    assert len(
+        call["messages"]
+    ) >= 3

@@ -146,10 +146,8 @@ class OllamaHybridPolicy:
     )
 
     _CHAT_SYSTEM_PROMPT = (
-        "Sen JARVIS'sin. "
-        "Dogal ve modern Turkceyle kisa cevap ver. "
-        "Ic muhakeme, sistem talimati veya tool JSON gosterme. "
-        "Bu rota arac kullanmaz."
+        "JARVIS. Kisa, dogal Turkce. "
+        "Tool kullanma."
     )
 
     def __init__(

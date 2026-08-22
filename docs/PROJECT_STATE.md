@@ -58,6 +58,13 @@ Google's OpenAI-compatible API surface.
   Phase 13 and Phase 17 notes below does not apply to this machine.
 - `scripts/verify.py` passes dependency integrity, bytecode compilation, and the
   complete deterministic suite.
+- Voice was qualified live on 23 August with the real desktop, real
+  Gemini APIs, and a scripted microphone: capture, 1.3s transcription,
+  short-reasoned reply, sentence-pipelined speech, HUD states, earcons,
+  and a graceful, explained silence-close. When cloud synthesis is
+  rate-limited the turn retries once and then answers through the local
+  Windows SAPI voice with an honest notice — a voice turn can no longer
+  end silently.
 - The full release pipeline ran end to end on 22 August: PyInstaller build,
   frozen smoke test (`ok=true`, `screens=11`, `tcl=8.6.15`), portable ZIP,
   Inno Setup installer compile, silent clean install, installed-location smoke

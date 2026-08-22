@@ -121,11 +121,37 @@ class APISettingsService:
         model = os.getenv(provider_model_env) or os.getenv(
             "JARVIS_DEFAULT_MODEL"
         ) or profile.model
-        stored_key = (
-            self._credential_store(provider).read()
-            if provider in {"gemini", "openai"}
+        voice_provider_names = {
+            base.voice_stt_provider.strip().casefold(),
+            base.voice_tts_provider.strip().casefold(),
+        }
+
+        needs_openai = (
+            provider == "openai"
+            or "openai" in voice_provider_names
+        )
+
+        needs_gemini = (
+            provider == "gemini"
+            or "gemini" in voice_provider_names
+        )
+
+        stored_openai_key = (
+            self._credential_store(
+                "openai"
+            ).read()
+            if needs_openai
             else None
         )
+
+        stored_gemini_key = (
+            self._credential_store(
+                "gemini"
+            ).read()
+            if needs_gemini
+            else None
+        )
+
         return replace(
             base,
             default_provider=provider,
@@ -137,10 +163,16 @@ class APISettingsService:
                 if "JARVIS_VOICE_ENABLED" in os.environ
                 else provider in {"gemini", "openai"}
             ),
-            api_key=(base.api_key or stored_key) if provider == "openai" else base.api_key,
+            api_key=(
+                base.api_key
+                or stored_openai_key
+                if needs_openai
+                else base.api_key
+            ),
             gemini_api_key=(
-                base.gemini_api_key or stored_key
-                if provider == "gemini"
+                base.gemini_api_key
+                or stored_gemini_key
+                if needs_gemini
                 else base.gemini_api_key
             ),
         )

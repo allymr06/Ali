@@ -24,10 +24,22 @@ class VoiceService:
         session_factory: Callable[[], VoiceSession],
         audio_input: AudioInput,
         audio_output: AudioOutput,
+        stt_provider: str | None = None,
+        tts_provider: str | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._audio_input = audio_input
         self._audio_output = audio_output
+        self._stt_provider = (
+            stt_provider.strip()
+            if stt_provider
+            else None
+        )
+        self._tts_provider = (
+            tts_provider.strip()
+            if tts_provider
+            else None
+        )
         self._lock = asyncio.Lock()
         self._active_session: VoiceSession | None = None
         self._last_session: VoiceSession | None = None
@@ -41,6 +53,8 @@ class VoiceService:
         audio_output: AudioOutput,
         recognizer: SpeechRecognizer,
         synthesizer: SpeechSynthesizer,
+        stt_provider: str | None = None,
+        tts_provider: str | None = None,
         wake_word: str = "jarvis",
         max_recording_seconds: float = 30.0,
         operation_timeout_seconds: float = 60.0,
@@ -67,7 +81,17 @@ class VoiceService:
             session_factory=factory,
             audio_input=audio_input,
             audio_output=audio_output,
+            stt_provider=stt_provider,
+            tts_provider=tts_provider,
         )
+
+    @property
+    def stt_provider(self) -> str | None:
+        return self._stt_provider
+
+    @property
+    def tts_provider(self) -> str | None:
+        return self._tts_provider
 
     @property
     def is_active(self) -> bool:

@@ -38,6 +38,10 @@ from app.tasks.manager import TaskManager
 from app.tasks.sqlite import SQLiteTaskStore
 from app.tasks.service import TaskControlService
 from app.tools.executor import ToolExecutor
+from app.voice.registry import (
+    VoiceProviderRegistry,
+    create_default_voice_provider_registry,
+)
 from app.voice.service import VoiceService
 from app.vision.service import VisionService
 
@@ -59,6 +63,7 @@ class JARVISApplication:
     diagnostics: DiagnosticsService
     windows: WindowsIntegrationService | None
     engine: CoreEngine
+    voice_provider_registry: VoiceProviderRegistry | None = None
     voice: VoiceService | None = None
     vision: VisionService | None = None
     research: ResearchService | None = None
@@ -112,6 +117,10 @@ def create_application(
     provider_registry.register(mock_provider)
     provider_registry.register(openai_provider)
     provider_registry.register(gemini_provider)
+
+    voice_provider_registry = (
+        create_default_voice_provider_registry()
+    )
 
     model_catalog = ModelCatalog()
     model_catalog.register(
@@ -248,14 +257,6 @@ def create_application(
             SoundDeviceAudioInput,
             WindowsWaveAudioOutput,
         )
-        from app.voice.gemini import (
-            GeminiSpeechRecognizer,
-            GeminiSpeechSynthesizer,
-        )
-        from app.voice.providers import (
-            OpenAISpeechRecognizer,
-            OpenAISpeechSynthesizer,
-        )
 
         audio_input = SoundDeviceAudioInput(
             sample_rate=active_settings.voice_sample_rate,
@@ -278,41 +279,58 @@ def create_application(
 
         audio_output = WindowsWaveAudioOutput()
 
-        voice_provider = (
-            active_settings.default_provider
-            .strip()
-            .casefold()
+        default_voice_fallback = (
+            "openai"
+            if (
+                active_settings.default_provider
+                .strip()
+                .casefold()
+                == "mock"
+            )
+            else None
         )
 
-        if voice_provider == "gemini":
-            recognizer = GeminiSpeechRecognizer(
-                active_settings
+        stt_provider = (
+            voice_provider_registry
+            .resolve_recognizer_provider(
+                active_settings.voice_stt_provider,
+                default_provider=(
+                    active_settings.default_provider
+                ),
+                fallback_provider=(
+                    default_voice_fallback
+                ),
             )
-            synthesizer = GeminiSpeechSynthesizer(
-                active_settings
-            )
+        )
 
-        elif voice_provider == "openai":
-            recognizer = OpenAISpeechRecognizer(
-                active_settings
+        tts_provider = (
+            voice_provider_registry
+            .resolve_synthesizer_provider(
+                active_settings.voice_tts_provider,
+                default_provider=(
+                    active_settings.default_provider
+                ),
+                fallback_provider=(
+                    default_voice_fallback
+                ),
             )
-            synthesizer = OpenAISpeechSynthesizer(
-                active_settings
-            )
+        )
 
-        else:
-            # Backward-compatible explicit voice wiring.
-            #
-            # Historically JARVIS allowed the voice service
-            # to be constructed while Core was in mock mode.
-            # Provider adapters fail closed later if actual
-            # speech is attempted without credentials.
-            recognizer = OpenAISpeechRecognizer(
-                active_settings
+        recognizer = (
+            voice_provider_registry
+            .create_recognizer(
+                stt_provider,
+                active_settings,
             )
-            synthesizer = OpenAISpeechSynthesizer(
-                active_settings
+        )
+
+        synthesizer = (
+            voice_provider_registry
+            .create_synthesizer(
+                tts_provider,
+                active_settings,
             )
+        )
 
         voice = VoiceService.create(
             engine=engine,
@@ -320,6 +338,8 @@ def create_application(
             audio_output=audio_output,
             recognizer=recognizer,
             synthesizer=synthesizer,
+            stt_provider=stt_provider,
+            tts_provider=tts_provider,
             wake_word=active_settings.voice_wake_word,
             max_recording_seconds=active_settings.voice_max_recording_seconds,
             operation_timeout_seconds=active_settings.voice_operation_timeout_seconds,
@@ -509,6 +529,7 @@ def create_application(
         diagnostics=diagnostics,
         windows=windows,
         engine=engine,
+        voice_provider_registry=voice_provider_registry,
         voice=voice,
         vision=vision,
         research=research,

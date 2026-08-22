@@ -121,6 +121,8 @@ class Settings:
     voice_require_wake_word: bool = False
     voice_wake_word: str = "jarvis"
     voice_language: str | None = None
+    voice_stt_provider: str = "auto"
+    voice_tts_provider: str = "auto"
     voice_stt_model: str = "gpt-4o-mini-transcribe"
     voice_tts_model: str = "gpt-4o-mini-tts"
     voice_tts_voice: str = "alloy"
@@ -249,6 +251,16 @@ class Settings:
             raise ValueError("voice_wake_word cannot be empty.")
         if self.voice_language is not None and not self.voice_language.strip():
             raise ValueError("voice_language cannot be empty when set.")
+
+        for field_name in (
+            "voice_stt_provider",
+            "voice_tts_provider",
+        ):
+            if not getattr(self, field_name).strip():
+                raise ValueError(
+                    f"{field_name} cannot be empty."
+                )
+
         for field_name in (
             "voice_stt_model",
             "voice_tts_model",
@@ -461,6 +473,14 @@ class Settings:
             ),
             voice_wake_word=os.getenv("JARVIS_VOICE_WAKE_WORD", "jarvis"),
             voice_language=os.getenv("JARVIS_VOICE_LANGUAGE"),
+            voice_stt_provider=os.getenv(
+                "JARVIS_VOICE_STT_PROVIDER",
+                "auto",
+            ),
+            voice_tts_provider=os.getenv(
+                "JARVIS_VOICE_TTS_PROVIDER",
+                "auto",
+            ),
             voice_stt_model=os.getenv(
                 "JARVIS_VOICE_STT_MODEL",
                 "gpt-4o-mini-transcribe",

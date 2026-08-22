@@ -132,6 +132,11 @@ class APISettingsService:
             default_model=model,
             openai_model=model if provider == "openai" else base.openai_model,
             gemini_model=model if provider == "gemini" else base.gemini_model,
+            voice_enabled=(
+                base.voice_enabled
+                if "JARVIS_VOICE_ENABLED" in os.environ
+                else provider in {"gemini", "openai"}
+            ),
             api_key=(base.api_key or stored_key) if provider == "openai" else base.api_key,
             gemini_api_key=(
                 base.gemini_api_key or stored_key

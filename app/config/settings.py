@@ -129,6 +129,16 @@ class Settings:
     voice_max_audio_bytes: int = 20_000_000
     voice_retain_last_audio: bool = False
 
+    voice_vad_enabled: bool = True
+    voice_silence_threshold_rms: int = 350
+    voice_min_speech_seconds: float = 0.15
+    voice_trailing_silence_seconds: float = 0.65
+    voice_start_timeout_seconds: float = 5.0
+
+    voice_gemini_stt_model: str = "gemini-3.7-flash"
+    voice_gemini_tts_model: str = "gemini-3.1-flash-tts-preview"
+    voice_gemini_tts_voice: str = "Kore"
+
     vision_enabled: bool = False
     vision_model: str = "gpt-4o"
     vision_detail: str = "high"
@@ -239,9 +249,30 @@ class Settings:
             raise ValueError("voice_wake_word cannot be empty.")
         if self.voice_language is not None and not self.voice_language.strip():
             raise ValueError("voice_language cannot be empty when set.")
-        for field_name in ("voice_stt_model", "voice_tts_model", "voice_tts_voice"):
+        for field_name in (
+            "voice_stt_model",
+            "voice_tts_model",
+            "voice_tts_voice",
+            "voice_gemini_stt_model",
+            "voice_gemini_tts_model",
+            "voice_gemini_tts_voice",
+        ):
             if not getattr(self, field_name).strip():
                 raise ValueError(f"{field_name} cannot be empty.")
+
+        if not 1 <= self.voice_silence_threshold_rms <= 32767:
+            raise ValueError(
+                "voice_silence_threshold_rms must be between 1 and 32767."
+            )
+
+        if min(
+            self.voice_min_speech_seconds,
+            self.voice_trailing_silence_seconds,
+            self.voice_start_timeout_seconds,
+        ) <= 0:
+            raise ValueError(
+                "Voice VAD durations must be positive."
+            )
         if (
             self.voice_tts_instructions is not None
             and not self.voice_tts_instructions.strip()
@@ -448,7 +479,41 @@ class Settings:
                 "JARVIS_VOICE_MAX_AUDIO_BYTES",
                 20_000_000,
             ),
-            voice_retain_last_audio=_get_bool("JARVIS_VOICE_RETAIN_LAST_AUDIO"),
+            voice_retain_last_audio=_get_bool(
+                "JARVIS_VOICE_RETAIN_LAST_AUDIO"
+            ),
+            voice_vad_enabled=_get_bool(
+                "JARVIS_VOICE_VAD_ENABLED",
+                True,
+            ),
+            voice_silence_threshold_rms=_get_positive_int(
+                "JARVIS_VOICE_SILENCE_THRESHOLD_RMS",
+                350,
+            ),
+            voice_min_speech_seconds=_get_float(
+                "JARVIS_VOICE_MIN_SPEECH_SECONDS",
+                0.15,
+            ),
+            voice_trailing_silence_seconds=_get_float(
+                "JARVIS_VOICE_TRAILING_SILENCE_SECONDS",
+                0.65,
+            ),
+            voice_start_timeout_seconds=_get_float(
+                "JARVIS_VOICE_START_TIMEOUT_SECONDS",
+                5.0,
+            ),
+            voice_gemini_stt_model=os.getenv(
+                "JARVIS_VOICE_GEMINI_STT_MODEL",
+                "gemini-3.7-flash",
+            ),
+            voice_gemini_tts_model=os.getenv(
+                "JARVIS_VOICE_GEMINI_TTS_MODEL",
+                "gemini-3.1-flash-tts-preview",
+            ),
+            voice_gemini_tts_voice=os.getenv(
+                "JARVIS_VOICE_GEMINI_TTS_VOICE",
+                "Kore",
+            ),
             vision_enabled=_get_bool("JARVIS_VISION_ENABLED"),
             vision_model=os.getenv("JARVIS_VISION_MODEL", "gpt-4o"),
             vision_detail=os.getenv("JARVIS_VISION_DETAIL", "high"),

@@ -125,6 +125,16 @@ class AIProvider(ABC):
         """Return the capabilities supported by this provider."""
         raise NotImplementedError
 
+    @property
+    def is_configured(self) -> bool:
+        """
+        Return whether this provider is ready for live use.
+
+        Provider implementations backed by credentials or
+        external clients should override this property.
+        """
+        return True
+
     @abstractmethod
     async def generate(
         self,

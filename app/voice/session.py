@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 from collections import deque
 from collections.abc import Awaitable
 from typing import TypeVar
@@ -13,6 +14,7 @@ from app.voice.errors import (
     VoiceConfigurationError,
     VoiceDeviceError,
     VoiceInterrupted,
+    VoiceNoSpeech,
     VoiceProviderError,
     VoiceTimeoutError,
 )
@@ -72,6 +74,7 @@ class VoiceSession:
         self._finished = False
         self._state = VoiceSessionState.IDLE
         self.last_capture: AudioCapture | None = None
+        self._started_monotonic: float | None = None
         self._record(VoiceSessionState.IDLE)
 
     @property
@@ -98,23 +101,32 @@ class VoiceSession:
         if self._active or self._finished:
             raise VoiceConfigurationError("A voice session can only be run once.")
         self._active = True
+        self._started_monotonic = time.monotonic()
         capture: AudioCapture | None = None
         transcript: str | None = None
         wake_detected: bool | None = None
         metadata: dict[str, object] = {}
         try:
             self._record(VoiceSessionState.LISTENING)
+            stage_started = time.monotonic()
             capture = await self._await_interruptible(
                 self._audio_input.capture(
                     max_duration_seconds=self._max_recording_seconds,
                     cancel_event=self._interrupt_event,
                 )
             )
+            metadata["capture_latency_seconds"] = (
+                time.monotonic() - stage_started
+            )
             metadata["capture_duration_seconds"] = capture.duration_seconds
 
             self._record(VoiceSessionState.TRANSCRIBING)
+            stage_started = time.monotonic()
             transcription = await self._await_interruptible(
                 self._recognizer.transcribe(capture, language=self._language)
+            )
+            metadata["transcription_latency_seconds"] = (
+                time.monotonic() - stage_started
             )
             transcript = transcription.text
             metadata.update(
@@ -139,6 +151,7 @@ class VoiceSession:
                 )
 
             self._record(VoiceSessionState.PROCESSING)
+            stage_started = time.monotonic()
             response = await self._await_interruptible(
                 self._engine.handle(
                     Request(
@@ -150,12 +163,32 @@ class VoiceSession:
                     cancel_event=self._interrupt_event,
                 )
             )
+            metadata["core_latency_seconds"] = (
+                time.monotonic() - stage_started
+            )
+            provider_latency = (
+                response.metadata
+                .get("provider_metadata", {})
+            )
+            if isinstance(provider_latency, dict):
+                value = provider_latency.get(
+                    "provider_latency_seconds"
+                )
+                if isinstance(value, (int, float)):
+                    metadata[
+                        "provider_latency_seconds"
+                    ] = float(value)
+
             if not response.text.strip():
                 raise VoiceProviderError("Core returned no text for speech output.")
 
             self._record(VoiceSessionState.SYNTHESIZING)
+            stage_started = time.monotonic()
             speech = await self._await_interruptible(
                 self._synthesizer.synthesize(response.text)
+            )
+            metadata["synthesis_latency_seconds"] = (
+                time.monotonic() - stage_started
             )
             metadata.update(
                 synthesis_provider=speech.provider,
@@ -164,13 +197,31 @@ class VoiceSession:
             )
 
             self._record(VoiceSessionState.SPEAKING)
+            stage_started = time.monotonic()
             await self._await_interruptible(
-                self._audio_output.play(speech, cancel_event=self._interrupt_event)
+                self._audio_output.play(
+                    speech,
+                    cancel_event=self._interrupt_event,
+                )
+            )
+            metadata["playback_latency_seconds"] = (
+                time.monotonic() - stage_started
             )
             self._record(VoiceSessionState.COMPLETED)
             return self._result(
                 transcript=transcript,
                 response_text=response.text,
+                wake_word_detected=wake_detected,
+                metadata=metadata,
+            )
+        except VoiceNoSpeech:
+            metadata["ignored_reason"] = "no_speech"
+            self._record(
+                VoiceSessionState.IGNORED,
+                "no_speech",
+            )
+            return self._result(
+                transcript=transcript,
                 wake_word_detected=wake_detected,
                 metadata=metadata,
             )
@@ -237,6 +288,16 @@ class VoiceSession:
         error_code: str | None = None,
         metadata: dict[str, object],
     ) -> VoiceSessionResult:
+        result_metadata = dict(metadata)
+
+        if self._started_monotonic is not None:
+            result_metadata[
+                "total_latency_seconds"
+            ] = (
+                time.monotonic()
+                - self._started_monotonic
+            )
+
         return VoiceSessionResult(
             session_id=self.session_id,
             state=self._state,
@@ -244,7 +305,7 @@ class VoiceSession:
             response_text=response_text,
             wake_word_detected=wake_word_detected,
             error_code=error_code,
-            metadata=dict(metadata),
+            metadata=result_metadata,
         )
 
     async def _await_interruptible(self, operation: Awaitable[T]) -> T:

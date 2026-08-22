@@ -1275,7 +1275,43 @@ class DesktopWindow:
             return
         self._set_busy(True, "LISTENING")
         self._busy_future = self.controller.submit_background(
-            self.controller.run_voice(), self._on_aux_done
+            self.controller.run_voice(),
+            self._on_voice_done,
+        )
+
+    def _on_voice_done(
+        self,
+        future: Future[Any],
+    ) -> None:
+        self.root.after(
+            0,
+            lambda: self._finish_voice(
+                future
+            ),
+        )
+
+    def _finish_voice(
+        self,
+        future: Future[Any],
+    ) -> None:
+        self._busy_future = None
+
+        try:
+            future.result()
+        except Exception as exc:
+            messagebox.showerror(
+                "JARVIS voice failed",
+                str(exc),
+                parent=self.root,
+            )
+
+        self._set_busy(
+            False,
+            "LOCAL CORE READY",
+        )
+
+        self.render(
+            UIScreen.CHAT
         )
 
     def _start_vision(self) -> None:

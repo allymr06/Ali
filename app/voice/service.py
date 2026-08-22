@@ -116,15 +116,57 @@ class VoiceService:
         *,
         max_turns: int,
         context: Context | None = None,
+        max_consecutive_failures: int = 2,
     ) -> tuple[VoiceSessionResult, ...]:
         if max_turns < 1 or max_turns > 100:
-            raise ValueError("Continuous voice turns must be between 1 and 100.")
+            raise ValueError(
+                "Continuous voice turns must be between 1 and 100."
+            )
+        if (
+            max_consecutive_failures < 0
+            or max_consecutive_failures > 10
+        ):
+            raise ValueError(
+                "Continuous voice recovery limit must be between 0 and 10."
+            )
+
         results = []
+        consecutive_failures = 0
+
         for _ in range(max_turns):
-            result = await self.run_once(context)
+            result = await self.run_once(
+                context
+            )
             results.append(result)
-            if result.state in {VoiceSessionState.INTERRUPTED, VoiceSessionState.FAILED}:
+
+            if (
+                result.state
+                is VoiceSessionState.INTERRUPTED
+            ):
                 break
+
+            if (
+                result.state
+                is VoiceSessionState.IGNORED
+            ):
+                break
+
+            if (
+                result.state
+                is VoiceSessionState.FAILED
+            ):
+                consecutive_failures += 1
+
+                if (
+                    consecutive_failures
+                    > max_consecutive_failures
+                ):
+                    break
+
+                continue
+
+            consecutive_failures = 0
+
         return tuple(results)
 
     async def interrupt_active(self) -> bool:

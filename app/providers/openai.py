@@ -49,6 +49,10 @@ class OpenAIProvider(AIProvider):
         return "OpenAI"
 
     @property
+    def is_configured(self) -> bool:
+        return self._client is not None
+
+    @property
     def capabilities(self) -> ModelCapabilities:
         return ModelCapabilities(
             text=True,

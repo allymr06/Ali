@@ -199,17 +199,58 @@ class ProviderGateway:
             return
         raise _GatewayCancelled
 
-    def _candidates(self, decision: RoutingDecision) -> tuple[tuple[str, str | None], ...]:
-        primary = ((decision.provider, decision.model),)
-        if not self._fallback_enabled or decision.user_override:
+    def _candidates(
+        self,
+        decision: RoutingDecision,
+    ) -> tuple[
+        tuple[str, str | None],
+        ...,
+    ]:
+        primary = (
+            (
+                decision.provider,
+                decision.model,
+            ),
+        )
+
+        if (
+            not self._fallback_enabled
+            or decision.user_override
+        ):
             return primary
-        candidates = primary + decision.fallback_candidates
-        if decision.provider.casefold() == "mock":
+
+        configured_fallbacks = tuple(
+            candidate
+            for candidate
+            in decision.fallback_candidates
+            if (
+                self._registry.contains(
+                    candidate[0]
+                )
+                and self._registry.get(
+                    candidate[0]
+                ).is_configured
+            )
+        )
+
+        candidates = (
+            primary
+            + configured_fallbacks
+        )
+
+        if (
+            decision.provider.casefold()
+            == "mock"
+        ):
             return candidates
+
         return tuple(
             candidate
             for candidate in candidates
-            if candidate[0].casefold() != "mock"
+            if (
+                candidate[0].casefold()
+                != "mock"
+            )
         )
 
     def _model_metadata(

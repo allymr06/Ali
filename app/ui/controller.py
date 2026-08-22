@@ -223,9 +223,100 @@ class DesktopController:
 
     async def run_voice(self) -> str:
         if self.application.voice is None:
-            raise RuntimeError("Voice is not enabled in configuration.")
-        result = await self.application.voice.run_once(self.context)
-        return result.response_text or result.state.value
+            raise RuntimeError(
+                "Voice is not enabled in configuration."
+            )
+
+        voice = self.application.voice
+
+        run_continuous = getattr(
+            voice,
+            "run_continuous",
+            None,
+        )
+
+        if callable(run_continuous):
+            results = await run_continuous(
+                max_turns=100,
+                context=self.context,
+                max_consecutive_failures=2,
+            )
+        else:
+            # Compatibility path for older voice adapters
+            # and lightweight test doubles.
+            results = (
+                await voice.run_once(
+                    self.context
+                ),
+            )
+
+        last_response: str | None = None
+
+        for result in results:
+            transcript = getattr(
+                result,
+                "transcript",
+                None,
+            )
+
+            if (
+                isinstance(transcript, str)
+                and transcript.strip()
+            ):
+                self.state.messages.append(
+                    ChatMessage(
+                        "user",
+                        transcript.strip(),
+                    )
+                )
+
+            response_text = getattr(
+                result,
+                "response_text",
+                None,
+            )
+
+            if (
+                isinstance(response_text, str)
+                and response_text.strip()
+            ):
+                last_response = (
+                    response_text.strip()
+                )
+
+                self.state.messages.append(
+                    ChatMessage(
+                        "assistant",
+                        last_response,
+                    )
+                )
+
+        if last_response is not None:
+            return last_response
+
+        if results:
+            state = getattr(
+                results[-1],
+                "state",
+                None,
+            )
+
+            state_value = getattr(
+                state,
+                "value",
+                None,
+            )
+
+            if (
+                isinstance(state_value, str)
+                and state_value
+            ):
+                return state_value
+
+            if state is not None:
+                return str(state)
+
+        return "idle"
 
     async def run_research(
         self, query: str, *, max_sources: int = 5

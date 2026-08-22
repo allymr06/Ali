@@ -10,6 +10,10 @@ class VoiceDeviceError(VoiceError):
     """An audio device failed or disappeared."""
 
 
+class VoiceNoSpeech(VoiceError):
+    """No speech was detected inside the bounded listening window."""
+
+
 class VoiceProviderError(VoiceError):
     """A speech provider failed without exposing sensitive details."""
 

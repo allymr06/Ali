@@ -17,6 +17,7 @@ jarvis-desktop = "app.ui.desktop:launch_desktop"
 [project.optional-dependencies]
 voice = [
     "sounddevice==0.5.5",
+    "google-genai>=2.3.0,<3.0.0",
 ]
 dev = [
     "pytest==9.1.1",

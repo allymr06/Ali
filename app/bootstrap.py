@@ -244,21 +244,82 @@ def create_application(
     if active_settings.voice_enabled:
         if os.name != "nt":
             raise OSError("The configured voice output currently requires Windows.")
-        from app.voice.audio import SoundDeviceAudioInput, WindowsWaveAudioOutput
-        from app.voice.providers import OpenAISpeechRecognizer, OpenAISpeechSynthesizer
+        from app.voice.audio import (
+            SoundDeviceAudioInput,
+            WindowsWaveAudioOutput,
+        )
+        from app.voice.gemini import (
+            GeminiSpeechRecognizer,
+            GeminiSpeechSynthesizer,
+        )
+        from app.voice.providers import (
+            OpenAISpeechRecognizer,
+            OpenAISpeechSynthesizer,
+        )
 
         audio_input = SoundDeviceAudioInput(
             sample_rate=active_settings.voice_sample_rate,
             channels=active_settings.voice_channels,
             device_id=active_settings.voice_input_device_id,
+            vad_enabled=active_settings.voice_vad_enabled,
+            silence_threshold_rms=(
+                active_settings.voice_silence_threshold_rms
+            ),
+            min_speech_seconds=(
+                active_settings.voice_min_speech_seconds
+            ),
+            trailing_silence_seconds=(
+                active_settings.voice_trailing_silence_seconds
+            ),
+            start_timeout_seconds=(
+                active_settings.voice_start_timeout_seconds
+            ),
         )
+
         audio_output = WindowsWaveAudioOutput()
+
+        voice_provider = (
+            active_settings.default_provider
+            .strip()
+            .casefold()
+        )
+
+        if voice_provider == "gemini":
+            recognizer = GeminiSpeechRecognizer(
+                active_settings
+            )
+            synthesizer = GeminiSpeechSynthesizer(
+                active_settings
+            )
+
+        elif voice_provider == "openai":
+            recognizer = OpenAISpeechRecognizer(
+                active_settings
+            )
+            synthesizer = OpenAISpeechSynthesizer(
+                active_settings
+            )
+
+        else:
+            # Backward-compatible explicit voice wiring.
+            #
+            # Historically JARVIS allowed the voice service
+            # to be constructed while Core was in mock mode.
+            # Provider adapters fail closed later if actual
+            # speech is attempted without credentials.
+            recognizer = OpenAISpeechRecognizer(
+                active_settings
+            )
+            synthesizer = OpenAISpeechSynthesizer(
+                active_settings
+            )
+
         voice = VoiceService.create(
             engine=engine,
             audio_input=audio_input,
             audio_output=audio_output,
-            recognizer=OpenAISpeechRecognizer(active_settings),
-            synthesizer=OpenAISpeechSynthesizer(active_settings),
+            recognizer=recognizer,
+            synthesizer=synthesizer,
             wake_word=active_settings.voice_wake_word,
             max_recording_seconds=active_settings.voice_max_recording_seconds,
             operation_timeout_seconds=active_settings.voice_operation_timeout_seconds,

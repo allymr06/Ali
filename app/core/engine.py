@@ -18,15 +18,22 @@ from app.execution.models import ExecutionLimits, ExecutionUsage, RetryPolicy
 from app.execution.service import ExecutionService
 from app.execution.verification import VerificationEngine
 from app.execution.task_service import TaskExecutionService
+from app.diagnostics.models import DiagnosticLevel
 from app.memory.analyzer import MemoryAnalyzer
 from app.memory.manager import MemoryManager
+from app.memory.safety import SensitiveMemoryError
 from app.planning.planner import Planner
 from app.planning.models import Plan, PlanStep
 from app.planning.executor import PlanExecutor
 from app.memory.policy import MemoryPolicy
 from app.providers.registry import ProviderRegistry
+from app.reliability.admission import (
+    AdmissionController,
+    AdmissionRejectedError,
+)
 from app.providers.gateway import ProviderGateway
 from app.tasks.manager import TaskManager
+from app.tasks.runtime import DurableTaskRuntime
 from app.tools.executor import ToolExecutor
 
 
@@ -53,6 +60,11 @@ class CoreEngine:
         execution_limits: ExecutionLimits | None = None,
         provider_gateway: ProviderGateway | None = None,
         conversation_engine: ConversationEngine | None = None,
+        task_runtime_directory: str | None = None,
+        diagnostics=None,
+        max_concurrent_requests: int = 8,
+        max_queued_requests: int = 32,
+        admission_timeout_seconds: float = 2.0,
     ) -> None:
         self._provider_registry = provider_registry
         self._memory_manager = memory_manager
@@ -74,6 +86,12 @@ class CoreEngine:
             max_retries=0,
         )
         self._conversation_engine = conversation_engine or ConversationEngine()
+        self._diagnostics = diagnostics
+        self._admission = AdmissionController(
+            max_concurrent_requests,
+            max_queued_requests,
+            admission_timeout_seconds,
+        )
 
         self._planner = Planner()
         self._plan_executor = PlanExecutor(
@@ -93,11 +111,27 @@ class CoreEngine:
             retry_policy=RetryPolicy(),
             limits=self._execution_limits,
         )
+        self._task_runtime = (
+            DurableTaskRuntime(
+                task_runtime_directory,
+                task_manager=self._task_manager,
+                tool_executor=self._tool_executor,
+                limits=self._execution_limits,
+                retry_policy=RetryPolicy(),
+            )
+            if task_runtime_directory is not None
+            else None
+        )
 
     @property
     def task_manager(self) -> TaskManager:
         """Return the task manager used by this engine."""
         return self._task_manager
+
+    @property
+    def task_runtime(self) -> DurableTaskRuntime | None:
+        """Return durable task orchestration when configured."""
+        return self._task_runtime
 
     @property
     def execution_service(self) -> ExecutionService:
@@ -182,6 +216,15 @@ class CoreEngine:
             for value in task_metadata.values()
         ):
             plan.metadata["execution_context"] = task_metadata
+
+        if self._task_runtime is not None:
+            return await self._task_runtime.execute_new(
+                task.task_id,
+                plan,
+                request_id=request_id,
+                conversation_id=conversation_id,
+                cancel_event=cancel_event,
+            )
 
         return await self._task_execution_service.execute(
             task.task_id,
@@ -305,7 +348,42 @@ class CoreEngine:
 
         return {item.strip() for item in values if item.strip()}
 
+    @property
+    def admission(self) -> AdmissionController:
+        return self._admission
+
     async def handle(
+        self,
+        request: Request,
+        context: Context | None = None,
+        *,
+        cancel_event=None,
+        limits: ExecutionLimits | None = None,
+    ) -> Response:
+        try:
+            lease = await self._admission.acquire()
+        except AdmissionRejectedError:
+            self._record_diagnostic(
+                "request.rejected",
+                "Core request rejected by admission control.",
+                level=DiagnosticLevel.WARNING,
+                trace_id=str(request.request_id),
+            )
+            if self._diagnostics is not None:
+                try:
+                    self._diagnostics.metrics.increment("core.requests.rejected")
+                except Exception:
+                    pass
+            raise
+        async with lease:
+            return await self._handle_admitted(
+                request,
+                context,
+                cancel_event=cancel_event,
+                limits=limits,
+            )
+
+    async def _handle_admitted(
         self,
         request: Request,
         context: Context | None = None,
@@ -321,6 +399,12 @@ class CoreEngine:
             if context is not None
             else Context()
         )
+        self._record_diagnostic(
+            "request.started",
+            "Core request started.",
+            trace_id=str(request.request_id),
+            attributes={"source": request.source.value},
+        )
 
         candidate = self._memory_analyzer.analyze(request)
 
@@ -329,16 +413,24 @@ class CoreEngine:
             candidate,
         )
 
+        memory_saved = False
+        memory_write_reason: str | None = None
         if (
             decision.should_remember
             and candidate is not None
         ):
-            self._memory_manager.remember(
-                candidate.content,
-                memory_type=decision.memory_type,
-                importance=decision.importance,
-                confidence=candidate.confidence,
-            )
+            try:
+                self._memory_manager.remember(
+                    candidate.content,
+                    memory_type=decision.memory_type,
+                    importance=decision.importance,
+                    confidence=candidate.confidence,
+                    source_reference=f"request:{request.request_id}",
+                    metadata={"reason": decision.reason},
+                )
+                memory_saved = True
+            except SensitiveMemoryError as exc:
+                memory_write_reason = str(exc)
 
         recalled_memories = self._memory_manager.recall(
             request.text,
@@ -350,6 +442,16 @@ class CoreEngine:
             memory.content
             for memory in recalled_memories
         )
+        active_context.values["memory_provenance"] = [
+            {
+                "memory_id": str(memory.memory_id),
+                "source": memory.source.value,
+                "source_reference": memory.source_reference,
+                "confidence": memory.confidence,
+                "freshness": memory.freshness().value,
+            }
+            for memory in recalled_memories
+        ]
         self._conversation_engine.prepare_request(request, active_context)
 
         provider = self._provider_registry.get_default()
@@ -420,6 +522,15 @@ class CoreEngine:
                 outcome = "budget_exhausted"
                 budget_reason = "time"
                 break
+            except Exception as exc:
+                self._record_diagnostic(
+                    "request.failed",
+                    "Core provider request failed.",
+                    level=DiagnosticLevel.ERROR,
+                    trace_id=str(request.request_id),
+                    attributes={"error_type": type(exc).__name__},
+                )
+                raise
 
             usage.model_tokens += self._model_token_usage(model_response)
 
@@ -614,6 +725,11 @@ class CoreEngine:
                 "provider": provider_name,
                 "model": model_name,
                 "memory_decision": decision.should_remember,
+                "memory_saved": memory_saved,
+                "memory_write_reason": memory_write_reason,
+                "recalled_memory_ids": [
+                    str(memory.memory_id) for memory in recalled_memories
+                ],
                 "memory_count": len(active_context.memories),
                 "conversation_id": str(active_context.conversation_id),
                 "outcome": outcome,
@@ -656,4 +772,48 @@ class CoreEngine:
         response.metadata["conversation_summary_turn_count"] = (
             conversation.summary_turn_count
         )
+        self._record_diagnostic(
+            "request.completed",
+            "Core request completed.",
+            trace_id=str(request.request_id),
+            attributes={
+                "outcome": outcome,
+                "provider": provider_name,
+                "model": model_name,
+                "tool_calls": executed_tool_calls,
+                "completion_verified": completion_verified,
+                "elapsed_seconds": usage.elapsed_seconds,
+            },
+        )
+        if self._diagnostics is not None:
+            try:
+                self._diagnostics.metrics.increment("core.requests")
+                self._diagnostics.metrics.observe(
+                    "core.request.duration", usage.elapsed_seconds
+                )
+            except Exception:
+                pass
         return response
+
+    def _record_diagnostic(
+        self,
+        name: str,
+        message: str,
+        *,
+        trace_id: str | None = None,
+        attributes: dict[str, object] | None = None,
+        level: DiagnosticLevel = DiagnosticLevel.INFO,
+    ) -> None:
+        if self._diagnostics is None:
+            return
+        try:
+            self._diagnostics.record(
+                "core",
+                name,
+                message,
+                level=level,
+                trace_id=trace_id,
+                attributes=attributes,
+            )
+        except Exception:
+            pass

@@ -20,6 +20,7 @@ from app.providers.base import (
 from app.providers.models import RoutingDecision, TaskType
 from app.providers.registry import ProviderRegistry
 from app.providers.router import ModelRouter
+from app.reliability.circuit import CircuitBreaker, CircuitState
 
 
 @dataclass(slots=True)
@@ -29,6 +30,7 @@ class ProviderHealth:
     consecutive_failures: int = 0
     last_error: str | None = None
     last_latency_seconds: float | None = None
+    circuit_state: CircuitState = CircuitState.CLOSED
 
 
 class _GatewayCancelled(Exception):
@@ -47,6 +49,8 @@ class ProviderGateway:
         max_retries: int = 2,
         retry_backoff_seconds: float = 0.25,
         fallback_enabled: bool = True,
+        circuit_failure_threshold: int = 5,
+        circuit_recovery_seconds: float = 30.0,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be greater than 0.")
@@ -54,6 +58,8 @@ class ProviderGateway:
             raise ValueError("max_retries cannot be negative.")
         if retry_backoff_seconds < 0:
             raise ValueError("retry_backoff_seconds cannot be negative.")
+        if circuit_failure_threshold < 1 or circuit_recovery_seconds <= 0:
+            raise ValueError("Circuit breaker limits are invalid.")
         self._registry = registry
         self._router = router or ModelRouter(registry)
         self._timeout_seconds = timeout_seconds
@@ -61,19 +67,34 @@ class ProviderGateway:
         self._retry_backoff_seconds = retry_backoff_seconds
         self._fallback_enabled = fallback_enabled
         self._health: dict[str, ProviderHealth] = {}
+        self._circuit_failure_threshold = circuit_failure_threshold
+        self._circuit_recovery_seconds = circuit_recovery_seconds
+        self._breakers: dict[str, CircuitBreaker] = {}
 
     @property
     def router(self) -> ModelRouter:
         return self._router
 
     def health(self, provider: str) -> ProviderHealth:
-        state = self._health.setdefault(provider.strip(), ProviderHealth())
+        normalized = provider.strip()
+        state = self._health.setdefault(normalized, ProviderHealth())
+        circuit = self._breaker(normalized).snapshot()
         return ProviderHealth(
             successes=state.successes,
             failures=state.failures,
             consecutive_failures=state.consecutive_failures,
             last_error=state.last_error,
             last_latency_seconds=state.last_latency_seconds,
+            circuit_state=circuit.state,
+        )
+
+    def _breaker(self, provider: str) -> CircuitBreaker:
+        return self._breakers.setdefault(
+            provider,
+            CircuitBreaker(
+                self._circuit_failure_threshold,
+                self._circuit_recovery_seconds,
+            ),
         )
 
     async def _await_operation(self, awaitable, cancel_event):
@@ -182,7 +203,14 @@ class ProviderGateway:
         primary = ((decision.provider, decision.model),)
         if not self._fallback_enabled or decision.user_override:
             return primary
-        return primary + decision.fallback_candidates
+        candidates = primary + decision.fallback_candidates
+        if decision.provider.casefold() == "mock":
+            return candidates
+        return tuple(
+            candidate
+            for candidate in candidates
+            if candidate[0].casefold() != "mock"
+        )
 
     def _model_metadata(
         self,
@@ -251,8 +279,16 @@ class ProviderGateway:
             if not provider_instance.capabilities.supports(required):
                 continue
             health = self._health.setdefault(provider_name, ProviderHealth())
+            breaker = self._breaker(provider_name)
 
             for attempt in range(1, self._max_retries + 2):
+                if not breaker.allow():
+                    last_error = ProviderUnavailableError(
+                        f"Provider '{provider_name}' circuit is open.",
+                        provider=provider_name,
+                    )
+                    health.circuit_state = CircuitState.OPEN
+                    break
                 if cancel_event is not None and cancel_event.is_set():
                     raise asyncio.CancelledError
                 started = time.monotonic()
@@ -281,6 +317,9 @@ class ProviderGateway:
                     health.consecutive_failures += 1
                     health.last_error = str(error)
                     health.last_latency_seconds = time.monotonic() - started
+                    if self._is_retryable(error):
+                        breaker.failure()
+                    health.circuit_state = breaker.snapshot().state
                     last_error = error
                     if (
                         self._is_retryable(error)
@@ -301,6 +340,8 @@ class ProviderGateway:
                 health.consecutive_failures = 0
                 health.last_error = None
                 health.last_latency_seconds = time.monotonic() - started
+                breaker.success()
+                health.circuit_state = CircuitState.CLOSED
                 response.metadata.update(
                     {
                         "gateway_attempt": attempt,
@@ -364,8 +405,16 @@ class ProviderGateway:
             if not provider_instance.capabilities.supports(required):
                 continue
             health = self._health.setdefault(provider_name, ProviderHealth())
+            breaker = self._breaker(provider_name)
 
             for attempt in range(1, self._max_retries + 2):
+                if not breaker.allow():
+                    last_error = ProviderUnavailableError(
+                        f"Provider '{provider_name}' circuit is open.",
+                        provider=provider_name,
+                    )
+                    health.circuit_state = CircuitState.OPEN
+                    break
                 emitted = False
                 started = time.monotonic()
                 try:
@@ -414,12 +463,17 @@ class ProviderGateway:
                     health.consecutive_failures = 0
                     health.last_error = None
                     health.last_latency_seconds = time.monotonic() - started
+                    breaker.success()
+                    health.circuit_state = CircuitState.CLOSED
                     return
 
                 health.failures += 1
                 health.consecutive_failures += 1
                 health.last_error = str(error)
                 health.last_latency_seconds = time.monotonic() - started
+                if self._is_retryable(error):
+                    breaker.failure()
+                health.circuit_state = breaker.snapshot().state
                 last_error = error
 
                 if emitted:

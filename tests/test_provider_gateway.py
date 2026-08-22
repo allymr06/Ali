@@ -24,6 +24,7 @@ from app.providers.gateway import ProviderGateway
 from app.providers.models import ModelProfile, TaskType
 from app.providers.registry import ProviderRegistry
 from app.providers.router import ModelRouter
+from app.reliability.circuit import CircuitState
 
 
 class StaticProvider(AIProvider):
@@ -71,6 +72,33 @@ class StaticProvider(AIProvider):
             model=model or f"{self.name}-model",
             provider=self.name,
         )
+
+
+@pytest.mark.asyncio
+async def test_gateway_circuit_opens_and_skips_repeated_provider_calls() -> None:
+    provider = StaticProvider(
+        "unstable",
+        errors=[
+            ProviderUnavailableError("down", provider="unstable"),
+            ProviderUnavailableError("down", provider="unstable"),
+        ],
+    )
+    gateway = ProviderGateway(
+        registry_with(provider),
+        max_retries=0,
+        fallback_enabled=False,
+        circuit_failure_threshold=2,
+        circuit_recovery_seconds=60,
+    )
+
+    for _ in range(2):
+        with pytest.raises(ProviderUnavailableError):
+            await gateway.generate(Request("test"), Context())
+    with pytest.raises(ProviderUnavailableError, match="circuit"):
+        await gateway.generate(Request("test"), Context())
+
+    assert provider.calls == 2
+    assert gateway.health("unstable").circuit_state is CircuitState.OPEN
 
 
 def registry_with(*providers: AIProvider, default: str | None = None):
@@ -375,6 +403,30 @@ async def test_gateway_falls_back_and_records_health():
     assert response.metadata["fallback_count"] == 1
     assert gateway.health("primary").failures == 1
     assert gateway.health("secondary").successes == 1
+
+
+@pytest.mark.asyncio
+async def test_gateway_never_hides_live_provider_failure_with_mock_echo():
+    primary = StaticProvider(
+        "openai",
+        errors=[ProviderUnavailableError("down", provider="openai")],
+    )
+    mock = StaticProvider("mock")
+    registry = registry_with(primary, mock, default="openai")
+    catalog = ModelCatalog()
+    catalog.register(profile("openai", "live-model", priority=1))
+    catalog.register(profile("mock", "mock-model", priority=2))
+    gateway = ProviderGateway(
+        registry,
+        router=ModelRouter(registry, catalog),
+        max_retries=0,
+    )
+
+    with pytest.raises(ProviderUnavailableError):
+        await gateway.generate(Request("hello"), Context())
+
+    assert primary.calls == 1
+    assert mock.calls == 0
 
 
 @pytest.mark.asyncio

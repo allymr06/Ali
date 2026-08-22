@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -44,6 +45,10 @@ class OpenAIProvider(AIProvider):
         return "openai"
 
     @property
+    def provider_label(self) -> str:
+        return "OpenAI"
+
+    @property
     def capabilities(self) -> ModelCapabilities:
         return ModelCapabilities(
             text=True,
@@ -56,13 +61,13 @@ class OpenAIProvider(AIProvider):
     def _require_client(self):
         if self._client is None:
             raise ProviderConfigurationError(
-                "OpenAI client is not configured.",
+                f"{self.provider_label} client is not configured.",
                 provider=self.name,
             )
         return self._client
 
-    @staticmethod
     def _messages(
+        self,
         request: Request,
         context: Context,
         system_prompt: str | None,
@@ -83,7 +88,7 @@ class OpenAIProvider(AIProvider):
                 isinstance(message, dict) for message in context_messages
             ):
                 raise ValueError("Context messages must be a list of objects.")
-            messages.extend(context_messages)
+            messages.extend(dict(message) for message in context_messages)
         request_is_present = (
             context.values.get("conversation_request_id")
             == str(request.request_id)
@@ -106,7 +111,52 @@ class OpenAIProvider(AIProvider):
             or last_matches_request
         ):
             messages.append({"role": "user", "content": request.text})
+        images = request.metadata.get("images")
+        if images is not None:
+            content = self._image_content(request.text, images)
+            replaced = False
+            for message in reversed(messages):
+                if message.get("role") == "user" and message.get("content") == request.text:
+                    message["content"] = content
+                    replaced = True
+                    break
+            if not replaced:
+                messages.append({"role": "user", "content": content})
         return messages
+
+    def _image_content(self, text: str, images) -> list[dict[str, Any]]:
+        if not isinstance(images, list) or not images:
+            raise ValueError("Vision images must be a non-empty list.")
+        if len(images) > self._settings.vision_max_images:
+            raise ValueError("Vision image count exceeds the configured limit.")
+        content: list[dict[str, Any]] = [{"type": "text", "text": text}]
+        total_bytes = 0
+        for image in images:
+            if not isinstance(image, dict):
+                raise TypeError("Vision image entries must be objects.")
+            data = image.get("data")
+            mime_type = image.get("mime_type")
+            detail = image.get("detail", self._settings.vision_detail)
+            if not isinstance(data, (bytes, bytearray)) or not data:
+                raise ValueError("Vision image data must be non-empty bytes.")
+            if mime_type not in {"image/png", "image/jpeg", "image/webp", "image/gif"}:
+                raise ValueError("Vision image type is not supported.")
+            if detail not in {"low", "high", "original", "auto"}:
+                raise ValueError("Vision detail level is invalid.")
+            total_bytes += len(data)
+            if total_bytes > self._settings.vision_max_encoded_bytes:
+                raise ValueError("Vision image payload exceeds the configured limit.")
+            encoded = base64.b64encode(data).decode("ascii")
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{mime_type};base64,{encoded}",
+                        "detail": detail,
+                    },
+                }
+            )
+        return content
 
     @staticmethod
     def _tool_calls(message) -> list[dict[str, Any]]:
@@ -149,7 +199,7 @@ class OpenAIProvider(AIProvider):
         status_code = getattr(error, "status_code", None)
         if status_code in {401, 403}:
             return ProviderAuthenticationError(
-                "OpenAI authentication failed.",
+                f"{self.provider_label} authentication failed.",
                 provider=self.name,
                 status_code=status_code,
             )
@@ -164,25 +214,25 @@ class OpenAIProvider(AIProvider):
             except (TypeError, ValueError):
                 retry_after_seconds = None
             return ProviderRateLimitError(
-                "OpenAI rate limit exceeded.",
+                f"{self.provider_label} rate limit exceeded.",
                 provider=self.name,
                 status_code=status_code,
                 retry_after_seconds=retry_after_seconds,
             )
         if isinstance(error, TimeoutError) or status_code == 408:
             return ProviderTimeoutError(
-                "OpenAI request timed out.",
+                f"{self.provider_label} request timed out.",
                 provider=self.name,
                 status_code=status_code,
             )
         if status_code is None or status_code >= 500:
             return ProviderUnavailableError(
-                "OpenAI provider is unavailable.",
+                f"{self.provider_label} provider is unavailable.",
                 provider=self.name,
                 status_code=status_code,
             )
         return ProviderError(
-            f"OpenAI request failed with status {status_code}.",
+            f"{self.provider_label} request failed with status {status_code}.",
             provider=self.name,
             status_code=status_code,
         )
@@ -219,14 +269,14 @@ class OpenAIProvider(AIProvider):
         choices = getattr(response, "choices", None) or []
         if not choices:
             raise ProviderInvalidResponseError(
-                "OpenAI response did not contain a choice.",
+                f"{self.provider_label} response did not contain a choice.",
                 provider=self.name,
             )
         choice = choices[0]
         message = getattr(choice, "message", None)
         if message is None:
             raise ProviderInvalidResponseError(
-                "OpenAI response did not contain a message.",
+                f"{self.provider_label} response did not contain a message.",
                 provider=self.name,
             )
         return ModelResponse(

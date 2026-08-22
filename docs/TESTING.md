@@ -46,6 +46,8 @@ The Phase 3 regression coverage includes:
 - cancellation and timeout cleanup;
 - streaming retry only before the first emitted chunk;
 - OpenAI response, tool-call, usage, error, and stream normalization;
+- Gemini identity, model selection, compatible endpoint wiring, isolated
+  credentials, and classified error normalization;
 - model context and optional cost metadata;
 - sanitization of unexpected provider exceptions.
 
@@ -86,3 +88,152 @@ The Phase 6 regression coverage includes:
 - real tool-contract risk resolution in the agent approval gate;
 - immutable approval requests and atomic concurrent state transitions;
 - configurable approval TTL and permission audit capacity.
+
+The Phase 7 regression coverage includes:
+
+- strict Windows application definitions, aliases, and registry lifecycle;
+- executable resolution without shell expressions, scripts, or network paths;
+- bounded native process enumeration and current-process observation;
+- launch PID observation and executable identity verification;
+- unknown application, missing executable, timeout, and mismatch failures;
+- verified Windows tool registration and Core provider/tool integration;
+- feature-flagged bootstrap behavior;
+- real local system/process observations;
+- one real Notepad launch, PID verification, and test-process cleanup.
+
+The Phase 8 regression coverage includes:
+
+- SQLite schema initialization, integrity checks, and complete field roundtrip;
+- restart persistence and application-level durable-memory wiring;
+- deterministic relevance ranking and exclusion of inactive/expired records;
+- concurrent writers and persisted recall timestamps;
+- exact duplicate handling, declared-subject conflict visibility, and expiry purge;
+- soft forget versus permanent deletion;
+- source, confidence, freshness, sensitivity, and retention metadata;
+- credential, private-key, and payment-card rejection;
+- verified database backup/restore and fail-closed corruption handling;
+- provider-visible memory controls with approval-bound mutations.
+
+The Phase 9 regression coverage includes:
+
+- complete SQLite task and task-step roundtrip across process restart;
+- automatic interrupted-running to recoverable-paused conversion;
+- preservation of waiting-for-input and waiting-for-approval states;
+- safe-boundary pause followed by restart and remaining-step-only execution;
+- durable cancellation and terminal-state recovery refusal;
+- multi-task concurrency and same-task re-entry rejection;
+- parent/subtask relationship persistence;
+- atomic plan and execution snapshot coordination;
+- strict metadata persistence and rollback after serialization failure;
+- corrupt task database failure, integrity-checked backup, and restore;
+- provider-visible progress plus approval-bound pause/resume/cancel controls.
+
+The Phase 10 regression coverage includes:
+
+- strict audio device, capture, transcription, speech, event, and result models;
+- bounded PCM capture, WAV conversion, device enumeration, and stream closure;
+- OpenAI transcription and WAV synthesis request normalization;
+- provider provenance plus text and audio response limits;
+- exact, case-insensitive wake-word gating before Core execution;
+- `RequestSource.VOICE` identity through the complete Core boundary;
+- audio overwrite/release by default and explicit in-memory retention;
+- interruption while listening, processing, and speaking;
+- per-stage timeout and sanitized configuration/device/provider failures;
+- single active-session admission and bounded continuous turns;
+- optional bootstrap wiring without network, credentials, or audio hardware.
+
+The Phase 11 regression coverage includes:
+
+- validated RGB images, PNG encoding, bounds, and deterministic pixel hashes;
+- irreversible region and automatic taskbar redaction;
+- native screen-source dimension and allocation limits;
+- explicit consent disclosure, expiry boundary, exact binding, and one use;
+- rejection of altered grant identity, changed purpose, and changed regions;
+- capture, redaction, stale-frame, analysis, timeout, and interruption states;
+- source, capture time, dimensions, hashes, transformations, and consent provenance;
+- raw and processed image overwrite/release plus explicit retention clearing;
+- OpenAI Base64 image normalization, media/detail/size/count validation;
+- prevention of image payload persistence in conversation history;
+- capability-aware selection of the dedicated vision model;
+- a deterministic image through the real Core and provider gateway.
+
+The Phase 12 regression coverage includes:
+
+- URL normalization plus scheme, credentials, hostname, and port rejection;
+- IPv4, IPv6, mapped-address, mixed-DNS, localhost, and metadata SSRF blocking;
+- IP-pinned retrieval and complete validation of every redirect target;
+- HTTPS downgrade, redirect, status, byte, character, MIME, encoding, and
+  attachment limits;
+- active HTML element removal, publication-date parsing, and injection signals;
+- strict SearXNG JSON normalization, safe-result filtering, and deduplication;
+- bounded multi-source collection, freshness classification, source hashing,
+  cross-checking, explicit uncertainties, and citation referential integrity;
+- read-only untrusted-content tool contracts and offline deterministic reports;
+- environment configuration and disabled-by-default bootstrap behavior.
+
+The Phase 13 regression coverage includes:
+
+- complete navigation parity with the approved eleven-screen prototype;
+- strict black, white, and neutral-gray design tokens for both themes;
+- validated UI state and conversation message models;
+- live provider, model, memory, task, tool, and optional-service snapshots;
+- real text requests through Core with preserved conversation context;
+- fail-closed voice, vision, and research actions when unconfigured;
+- controller bridges for enabled voice, one-use vision consent, and research;
+- background event-loop execution, idempotent shutdown, and import safety;
+- Python compilation of all desktop modules without constructing a window.
+
+The packaged-runtime gate bundles Tcl/Tk and verifies its required files before
+launching the frozen process. On the current sandbox, Tcl's native file API
+cannot read an `init.tcl` that Python and the operating system can both read, so
+the release evidence records `native_ui_rendered=false`. Controller and
+presentation modules remain fully deterministic and headless-testable, but this
+environment-limited result is not equivalent to a native render pass.
+
+The Phase 14 regression coverage includes:
+
+- recursive secret-key and credential-shaped message redaction;
+- stable non-reversible trace correlation and bounded attributes;
+- event hash chaining, filtering, tamper detection, and anchored eviction;
+- validated fixed-capacity counters, gauges, and duration summaries;
+- concurrent sync/async health checks with per-check timeout containment;
+- sanitized exception handling and overall degraded/unhealthy aggregation;
+- read-only health, event, and metric tool contracts and verification;
+- bootstrap health checks for Core, provider, memory, tasks, and ledger;
+- automatic Core start, completion, timing, and sanitized failure events;
+- live event integrity and count visibility in the desktop diagnostics screen.
+
+## Phase 15 acceptance automation
+
+`python scripts/verify.py` is the single deterministic acceptance entry point.
+It checks installed dependency consistency, compiles all application and test
+modules, fixes `PYTHONHASHSEED` to a non-default value, and runs the complete
+suite. The same command runs in a least-privilege Windows GitHub Actions job.
+
+Phase 15 additionally verifies the complete offline application path, imports
+every `app.*` module without external actions, serializes every tool contract,
+enforces confirmation for medium-or-higher risk contracts, and scans runtime
+source for forbidden dynamic execution and shell-enabled subprocess patterns.
+The authoritative gate list is in `docs/ACCEPTANCE.md`.
+
+The Phase 16 regression coverage includes:
+
+- strict active and queued Core admission limits;
+- immediate saturation rejection, queued timeout, and cancellation cleanup;
+- lease accounting after success and exception paths;
+- one hundred concurrent offline requests under a five-second outer budget;
+- provider circuit threshold, open-state fast failure, half-open single probe,
+  successful recovery, and failed-probe reopening;
+- gateway call suppression and externally visible circuit health;
+- environment parsing and validation for every reliability bound;
+- admission rejection diagnostics and metrics without request-content leakage.
+
+The Phase 17 regression coverage includes:
+
+- path-contained cleanup of build, distribution, and release directories;
+- strict frozen smoke-report validation and an explicit environment-limited
+  classification that cannot pass without all Tcl/Tk/icon runtime files;
+- deterministic portable archive structure;
+- SHA-256 evidence for only the declared release artifacts;
+- application, executable, window, installer, and shortcut icon integration;
+- pinned PyInstaller dependencies and Authenticode-checked build-tool bootstrap.

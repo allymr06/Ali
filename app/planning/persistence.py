@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from dataclasses import asdict, is_dataclass
+from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -32,6 +35,18 @@ def _json_safe(value: Any) -> Any:
             "value": str(value),
         }
 
+    if isinstance(value, datetime):
+        return {
+            "__type__": "datetime",
+            "value": value.isoformat(),
+        }
+
+    if isinstance(value, Enum):
+        return value.value
+
+    if is_dataclass(value):
+        return _json_safe(asdict(value))
+
     if isinstance(value, (list, tuple)):
         return [
             _json_safe(item)
@@ -57,6 +72,12 @@ def _restore_json(value: Any) -> Any:
             and "value" in value
         ):
             return UUID(str(value["value"]))
+
+        if (
+            value.get("__type__") == "datetime"
+            and "value" in value
+        ):
+            return datetime.fromisoformat(str(value["value"]))
 
         return {
             key: _restore_json(item)

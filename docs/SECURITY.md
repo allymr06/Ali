@@ -72,3 +72,149 @@ closed. A provider tool call outside the exposed request scope is rejected at
 execution time. Disabling a tool removes it from discovery and blocks new
 execution without deleting its registration, allowing controlled runtime lifecycle
 management and auditable registry revision changes.
+
+## Windows actions
+
+Model-generated executable paths and shell commands are not accepted by the
+Windows launcher. The model supplies a registered application ID or alias;
+trusted application definitions supply the executable and fixed arguments.
+Only local `.exe` files are accepted. UNC/network paths, batch files, scripts,
+unknown IDs, missing executables, and command expressions fail closed.
+
+Successful process creation is not sufficient evidence of success. The
+launcher observes the returned PID through Win32, confirms that it is still
+active, and compares its executable identity with the application contract.
+Failure, timeout, disappearance, or identity mismatch returns an unverified
+failure. Process enumeration uses native snapshot APIs rather than executing
+model-controlled terminal input.
+
+## Memory safety and control
+
+Durable memory rejects labeled credentials, private keys, and valid
+payment-card numbers before a database write. Rejected content is not echoed
+into an error record or persisted as metadata. Memory records retain their
+source, source reference, confidence, freshness, and expiry so recalled facts
+can be traced and evaluated.
+
+Listing and searching memory are read-only tools. Soft forgetting is
+`MEDIUM` risk and keeps history; permanent deletion is `HIGH` risk and removes
+the row. Both require an exact, unexpired approval grant at the tool boundary.
+Expired records do not enter model context and can be explicitly purged under
+the retention API.
+
+## Durable task control
+
+An interrupted process never causes a running task or step to be assumed
+complete. Startup converts it to `PAUSED`, and recovery trusts only completed
+step IDs in the atomic execution snapshot. The interrupted step remains
+unverified and is eligible for controlled retry.
+
+Task pause, resume, and cancellation tools are `MEDIUM` risk and require an
+exact bound approval. Pause becomes verified only after the runtime reaches a
+safe step boundary; a timeout reports that side effects may continue. Resume
+does not restore a stale approval grant for an underlying risky tool: that
+action must still pass the current permission and approval policy.
+
+## Voice privacy and interruption
+
+Voice is disabled by default. A microphone session has a hard duration and
+each capture, transcription, Core, synthesis, and playback stage is bounded by
+a timeout. The same cooperative interruption event reaches the device and Core
+layers; output is explicitly stopped when the user interrupts.
+
+Captured PCM remains in memory and is overwritten and released immediately
+after transcription by default, including failure paths. Retention requires an
+explicit setting and does not write the capture to disk. Session results and
+events never contain raw audio. Provider and device exceptions cross the voice
+boundary only as stable classifications, preventing credentials or upstream
+details from entering UI-visible results.
+
+Wake-word matching is case-insensitive but requires a complete word, avoiding
+activation by a substring. A required wake word gates the request before Core,
+so ignored speech cannot trigger provider tools or side effects. Wake-word
+gating is not treated as speaker authentication or authorization.
+
+## Vision consent and image privacy
+
+Vision and screen capture are disabled by default. Enabling the service does
+not authorize capture. Every frame requires a user-visible consent request and
+an immutable grant bound to purpose, source, redaction coordinates, expiration,
+and random grant identity. Validation and one-use consumption happen atomically
+before capture; altered, expired, denied, unknown, or replayed grants fail
+closed.
+
+Capture dimensions, pixel count, frame age, encoded size, image count, media
+type, and model detail are bounded. User redactions must be fully in-frame, and
+the configured taskbar band is blackened before encoding. Source and processed
+hashes preserve traceability without retaining image content.
+
+Raw RGB and processed PNG buffers remain mutable so they can be overwritten on
+success, failure, timeout, stale-frame rejection, or interruption. They are not
+written to disk or stored in conversation history. Optional processed-image
+retention is explicit, remains in memory, clears the previous frame before a
+new capture, and exposes a dedicated clearing operation.
+
+## Untrusted web content and SSRF protection
+
+Web research is disabled by default and requires an explicit SearXNG endpoint.
+Source URLs allow no embedded credentials and resolve only to globally routable
+addresses on configured ports. A hostname is rejected when any DNS answer is
+private, loopback, link-local, reserved, multicast, unspecified, or otherwise
+non-global. Connections are pinned to the validated address, preventing a
+second DNS lookup from redirecting the connection to an internal service.
+
+Redirects are manual and revalidated; HTTPS downgrade, attachment responses,
+unknown media, compression, oversized content, malformed length declarations,
+and non-success status codes fail closed. Retrieval bypasses environment proxy
+settings and sends no cookies or credentials.
+
+Search results, pages, snippets, and embedded instructions are untrusted data,
+never policy. The research tool contract explicitly prohibits automatic
+instruction execution. Reports include retrieval time, publication time when
+available, final URL, IP evidence, content hash, freshness, prompt-injection
+indicators, citations, and uncertainties. A successful fetch verifies the
+retrieval and citation structure; it does not certify that a source is true.
+
+## Desktop trust boundary
+
+The desktop shell is an adapter, not an authority boundary. Text enters Core as
+a normal typed request and all provider tool calls still pass the existing tool,
+permission, approval, budget, and verification layers. Capability status is
+read from application services; the UI never treats a displayed button as an
+authorization grant.
+
+Voice, vision, and research controls fail closed when their services are not
+configured. Vision displays the provider-transfer and retention disclosure and
+requires an immediate affirmative action before creating the one-use consent
+grant. Window close cancels the UI-owned future and closes its background event
+loop; it does not claim that an already-running synchronous side effect stopped.
+
+## Observability privacy and integrity
+
+Diagnostic fields are bounded before storage. Password, token, API-key,
+authorization, cookie, credential, and private-key fields are replaced with a
+redaction marker at every supported nesting level. Bearer and key-shaped values
+are removed from messages. Request correlation remains possible through a
+stable SHA-256-derived identifier that cannot reveal the original request ID.
+
+The in-memory event window is hash chained and checked before an event query is
+reported as verified. Bounded eviction advances a trusted anchor rather than
+silently breaking the retained chain. Metrics prohibit arbitrary labels and
+limit unique names, preventing user text or identifiers from creating unbounded
+cardinality. Health check exceptions do not expose exception messages or stack
+traces through tools or the UI.
+
+## Overload and dependency failure containment
+
+Core accepts only a configured number of active and queued requests. A saturated
+process fails fast with a stable typed error before memory, provider, or tool
+work begins. Queue cancellation and timeout remove their accounting entry, and
+every admitted request releases its lease through an asynchronous context
+boundary.
+
+Provider circuit breakers react only to retryable availability failures; an
+authentication or invalid-response failure cannot be misrepresented as a
+temporary outage. Open circuits skip remote calls, preventing retry storms.
+Recovery admits one probe and blocks concurrent probes until its result is
+known. No request text, credentials, or provider response content enters circuit
+state or reliability metrics.

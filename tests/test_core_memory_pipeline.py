@@ -122,3 +122,5 @@ def test_engine_recalled_memory_is_available_during_generation() -> None:
     )
 
     assert context.memories == ["Ali Python öğreniyor"]
+    assert context.values["memory_provenance"][0]["source"] == "user"
+    assert context.values["memory_provenance"][0]["freshness"] == "current"

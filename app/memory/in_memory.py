@@ -65,6 +65,9 @@ class InMemoryStore(MemoryStore):
                 if not memory.active:
                     continue
 
+                if memory.freshness().value == "expired":
+                    continue
+
                 memory_words = set(memory.content.casefold().split())
                 overlap = query_words & memory_words
 

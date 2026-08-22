@@ -49,3 +49,6 @@ class MemoryStore(ABC):
     def __len__(self) -> int:
         """Return the number of stored memories."""
         raise NotImplementedError
+
+    def close(self) -> None:
+        """Release storage resources when the backend owns any."""

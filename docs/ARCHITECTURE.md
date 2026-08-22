@@ -160,3 +160,230 @@ Grant verification occurs again at the `ToolExecutor` boundary rather than
 being reduced to a boolean in the execution service. Approval requests are
 immutable and their in-memory store serializes state transitions, including
 concurrent approval, denial, and expiry.
+
+## Windows integration layer
+
+Phase 7 introduces `WindowsIntegrationService` as the composition boundary for
+native Windows observations and actions. `WindowsApplicationRegistry` owns
+trusted application definitions and aliases, so model output selects only a
+registered ID and never supplies an executable path or shell expression.
+
+`WindowsProcessInspector` uses Win32 process APIs for PID identity, executable
+path observation, and bounded process snapshots. `WindowsApplicationLauncher`
+starts an `.exe` with `shell=False`, rejects network and batch/script paths,
+then independently observes the returned PID and checks its process identity.
+An API return without that observation is a failed, unverified launch.
+
+The bootstrap registers four provider-visible Windows tools when the feature
+is enabled on Windows: registered application discovery, process observation,
+system information, and application launch. Read-only observations return
+verified results from native state. Application launch is classified `LOW` and
+uses the same bounded tool, permission, and result-verification runtime as all
+other actions.
+
+## Durable memory
+
+Phase 8 separates transient working context, conversation history, and durable
+long-term memory. `MemoryManager` owns lifecycle and safety policy through the
+provider-independent `MemoryStore` boundary. Production bootstrap selects
+`SQLiteMemoryStore`; tests and explicitly ephemeral runtimes may still use the
+thread-safe in-memory implementation.
+
+SQLite initialization is schema-versioned and integrity-checked. Writes are
+transactional, concurrent access is serialized, and explicit backup/restore
+operations verify database integrity. Records retain source, source reference,
+confidence, timestamps, expiry, sensitivity, and supersession relationships.
+
+Recall excludes inactive and expired records and applies deterministic lexical
+relevance, importance, confidence, and recency scoring. Only a compact bounded
+set enters provider context; its IDs and provenance remain available in Core
+context metadata. Exact duplicates are collapsed, declared-subject conflicts
+are visible, and supersession retains history.
+
+`MemoryService` exposes read-only list/search tools and separately controlled
+forget/delete actions. Forgetting deactivates a record; permanent deletion is a
+high-risk operation. Both mutation tools pass through the same permission and
+bound-approval runtime as every other side effect.
+
+## Durable task and agent runtime
+
+Phase 9 makes tracked task state independent from process lifetime.
+`SQLiteTaskStore` transactionally persists tasks, steps, progress, results,
+errors, parent-task relationships, execution identity, and timestamps.
+`TaskManager` reloads this state at startup and converts interrupted `RUNNING`
+tasks and steps to recoverable `PAUSED` state instead of guessing completion.
+
+`DurableTaskRuntime` allocates an isolated plan and execution-state directory
+per task. Plan writes and execution snapshots remain atomic. Recovery combines
+the durable task projection, plan, and latest snapshot; verified completed
+steps are preserved and an interrupted step is retried. One task cannot be
+admitted twice concurrently.
+
+Pause requests take effect only at a safe plan-step boundary. Cancellation is
+cooperative and terminal. Resume creates a fresh bounded execution context, so
+time, step, tool-call, model, retry, approval, and verification limits continue
+to apply after restart. `TaskControlService` exposes task observation and
+approval-bound pause, resume, and cancel tools.
+
+## Voice pipeline
+
+Phase 10 adds an optional voice boundary without moving device or vendor logic
+into Core. `AudioInput`, `AudioOutput`, `SpeechRecognizer`, and
+`SpeechSynthesizer` are explicit contracts. The production adapters provide
+bounded PCM microphone capture, Windows WAV playback, and OpenAI transcription
+and synthesis. Imports for microphone hardware remain lazy so normal startup
+does not require the optional audio dependency.
+
+`VoiceSession` owns one stateful turn:
+
+```text
+LISTENING -> TRANSCRIBING -> wake gate -> PROCESSING
+          -> SYNTHESIZING -> SPEAKING -> COMPLETED
+```
+
+Every blocking stage has a timeout and shares one interruption signal. A voice
+request enters `CoreEngine` with `RequestSource.VOICE`, so its provider, tool,
+permission, approval, budget, and verification behavior remains identical to a
+text request. `VoiceService` admits only one active session and supports a
+bounded multi-turn loop.
+
+Session results contain transcript, response text, states, and provider/model
+provenance, but never synthesized or captured audio. Raw capture uses mutable
+memory so it can be overwritten and released immediately after transcription.
+
+## Vision and screen understanding
+
+Phase 11 adds `VisionService` as a boundary around screen capture and visual
+analysis. `ImageSource` keeps native capture replaceable; the Windows adapter
+uses Win32 GDI directly, does not execute shell input, and checks width, height,
+and pixel limits before allocation.
+
+The state flow is explicit:
+
+```text
+AWAITING_CONSENT -> CAPTURING -> REDACTING -> ANALYZING -> COMPLETED
+```
+
+`VisionConsentGate` issues a short-lived, immutable grant bound to the exact
+purpose, source, and user-selected redaction regions. A grant is consumed
+atomically before capture and cannot be replayed. Disclosure text states that
+the processed frame may reach the configured vision provider.
+
+`ImageRedactor` irreversibly blackens user-selected regions and the configured
+taskbar band before PNG encoding. Provenance records source, capture time,
+dimensions, original pixel hash, processed PNG hash, transformations, and
+consent identity. Frame age is checked before and after processing.
+
+Vision enters Core as `RequestSource.VISION` with an ephemeral mutable image
+payload. `ModelRouter` requires the `VISION` capability and selects the
+dedicated vision model profile. `OpenAIProvider` converts validated bytes to a
+Base64 data URL only for the active vendor request. Conversation history stores
+the user text and response, never the image payload. Mutable frame and PNG
+buffers are overwritten after completion or failure.
+
+## Web research
+
+Phase 12 adds a separate research pipeline so ordinary conversation cannot
+silently become network retrieval:
+
+```text
+QUESTION -> SEARCH -> COLLECT -> FILTER -> CROSS-CHECK
+         -> SYNTHESIZE -> CITE -> COMPLETE
+```
+
+`URLPolicy` accepts only configured HTTP(S) schemes and ports, resolves every
+hostname, and rejects any DNS answer that is not globally routable, including
+IPv4-mapped IPv6 addresses. `PinnedHTTPTransport` connects directly to one of
+the validated addresses while preserving the original hostname for HTTP Host
+and TLS certificate verification. Proxies, cookies, credentials, automatic
+redirects, authentication, and compressed responses are not used. Every
+redirect target passes the complete policy again and HTTPS cannot downgrade.
+
+`SafeWebFetcher` bounds time, redirect count, response bytes, extracted
+characters, content types, and status codes. Attachments and binary downloads
+fail closed. HTML extraction removes active and hidden elements. Web text is
+always marked as untrusted data; prompt-injection indicators are hashed and
+reported but never interpreted as instructions.
+
+`SearXNGSearchProvider` uses the administrator-configured JSON endpoint. The
+`ResearchService` deduplicates and bounds candidates, collects independent
+sources concurrently, records observation/publication times, resolved IPs and
+content hashes, assigns freshness, cross-checks excerpts, and validates every
+claim citation against the returned source set. The structured report labels
+every claim as observation or inference and lists unresolved limitations.
+
+## Desktop interface
+
+Phase 13 adds a native Tk desktop shell derived from the approved monochrome
+prototype. Presentation remains outside Core: `DesktopController` translates UI
+intent into typed `Request`, voice, vision, research, task, memory, and tool
+service calls. A persistent background asyncio loop keeps provider and device
+operations off Tk's event thread; completed work returns to the UI only through
+the Tk event queue.
+
+The shell provides Home, Chat, Tasks, Memory, Voice, Vision, Research, Tools,
+Integrations, Diagnostics, and Settings screens, a collapsible navigation rail,
+live context panel, and command composer. All counts and states come from the
+active application instance rather than prototype data. Disabled capabilities
+remain visibly disabled and fail closed at the controller boundary.
+
+Vision approval is user-visible and immediately precedes the exact one-capture
+consent grant. The interface does not bypass tool permissions or synthesize an
+approval grant. Security-sensitive runtime configuration remains environment
+controlled; the Settings screen exposes appearance and observes configuration
+without rewriting secrets or policy.
+
+## Diagnostics and observability
+
+Phase 14 adds `DiagnosticsService` as the shared observability boundary. Core
+emits request start, completion, duration, outcome, provider identity, verified
+tool counts, and sanitized failure classification. Telemetry failure is isolated
+from request execution so a full metrics registry cannot break Core.
+
+`DiagnosticLedger` is thread-safe, bounded, and hash chained. When capacity
+evicts an old record its hash becomes the retained anchor, preserving integrity
+verification for the remaining window. Events use sanitized bounded attributes;
+credential-shaped keys are redacted and correlation identifiers are represented
+by stable non-reversible hashes.
+
+`MetricRegistry` accepts validated low-cardinality names and fixed-capacity
+counters, gauges, and duration summaries. `HealthRegistry` runs synchronous and
+asynchronous checks concurrently under individual timeouts, converts exceptions
+to stable failure messages, and reports one observed timestamp and latency per
+component. Three read-only tools expose live health, sanitized events, and
+metrics without granting mutation authority.
+
+## Performance and reliability
+
+Phase 16 adds admission control at the public Core boundary. A bounded semaphore
+limits concurrent executions; a separate bounded queue admits only a configured
+number of waiters and gives each a short deadline. Saturation returns a typed
+`AdmissionRejectedError`, records a warning event and counter, and does not
+create an unbounded task backlog. Leases release capacity on success, exception,
+cancellation, or timeout.
+
+Every provider has an independent circuit breaker. Retryable consecutive
+failures open the circuit at a configured threshold. Calls fail fast while open;
+after the recovery interval exactly one half-open probe is admitted. A successful
+probe closes and resets the breaker, while a failed probe reopens it. Existing
+provider retry, fallback, timeout, and cancellation rules remain in force.
+
+Provider circuit and Core admission state are included in live health checks.
+Load tests exercise one hundred parallel offline Core requests, saturation,
+queue timeout, cancellation cleanup, circuit opening, half-open exclusivity,
+recovery, and fixed resource accounting.
+
+## Windows packaging boundary
+
+Phase 17 uses an onedir PyInstaller build so native libraries and Tcl/Tk data
+remain inspectable. A custom hook handles build hosts where PyInstaller cannot
+initialize Tcl during analysis while still collecting `_tkinter`, Tcl/Tk DLLs,
+and complete script libraries. The frozen entry point stores mutable state only
+below `%LOCALAPPDATA%\JARVIS` and provides a non-interactive smoke mode.
+
+`scripts/build_windows.py` runs the source acceptance gate, builds the frozen
+application, requires native rendering of all eleven screens under normal
+conditions, creates a portable archive, compiles the current-user Inno Setup
+installer when ISCC is available, and records hashes and signing status. An
+explicit environment-limited switch records a failed native-render result; it
+cannot convert that evidence into a production qualification.

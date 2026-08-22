@@ -10,20 +10,61 @@ from app.core.models import (
     TaskStepStatus,
     utc_now,
 )
+from app.tasks.base import TaskStore
 
 
 class TaskManager:
     """Manage the lifecycle of JARVIS tasks and their steps."""
 
-    def __init__(self) -> None:
-        self._tasks: dict[UUID, Task] = {}
+    def __init__(self, store: TaskStore | None = None) -> None:
+        self._store = store
+        self._tasks: dict[UUID, Task] = {
+            task.task_id: task
+            for task in (store.list() if store is not None else ())
+        }
         self._lock = RLock()
+        self._recover_interrupted_tasks()
 
-    def create(self, goal: str) -> Task:
-        task = Task(goal=goal)
+    def _persist(self, task: Task) -> None:
+        if self._store is not None:
+            self._store.save(task)
+
+    def _recover_interrupted_tasks(self) -> None:
+        for task in self._tasks.values():
+            if task.status is not TaskStatus.RUNNING:
+                continue
+            task.status = TaskStatus.PAUSED
+            task.metadata["recovery_required"] = True
+            task.metadata["recovery_reason"] = "interrupted_process"
+            task.updated_at = utc_now()
+            for step in task.steps:
+                if step.status is TaskStepStatus.RUNNING:
+                    step.status = TaskStepStatus.PAUSED
+                    step.updated_at = task.updated_at
+            self._persist(task)
+
+    def create(
+        self,
+        goal: str,
+        *,
+        parent_task_id: UUID | None = None,
+    ) -> Task:
+        if not goal.strip():
+            raise ValueError("Task goal cannot be empty.")
+        if parent_task_id is not None:
+            self.get(parent_task_id)
+        task = Task(
+            goal=goal.strip(),
+            metadata=(
+                {"parent_task_id": str(parent_task_id)}
+                if parent_task_id is not None
+                else {}
+            ),
+        )
 
         with self._lock:
             self._tasks[task.task_id] = task
+            self._persist(task)
 
         return task
 
@@ -49,7 +90,10 @@ class TaskManager:
             )
 
         task.status = TaskStatus.RUNNING
+        task.metadata.pop("recovery_required", None)
+        task.metadata.pop("recovery_reason", None)
         task.updated_at = utc_now()
+        self._persist(task)
 
         return task
 
@@ -63,6 +107,7 @@ class TaskManager:
 
         task.status = TaskStatus.PAUSED
         task.updated_at = utc_now()
+        self._persist(task)
         return task
 
     def resume(self, task_id: UUID) -> Task:
@@ -75,6 +120,7 @@ class TaskManager:
 
         task.status = TaskStatus.RUNNING
         task.updated_at = utc_now()
+        self._persist(task)
         return task
 
     def wait_for_input(self, task_id: UUID) -> Task:
@@ -87,6 +133,7 @@ class TaskManager:
 
         task.status = TaskStatus.WAITING_FOR_INPUT
         task.updated_at = utc_now()
+        self._persist(task)
         return task
 
     def wait_for_approval(self, task_id: UUID) -> Task:
@@ -99,6 +146,7 @@ class TaskManager:
 
         task.status = TaskStatus.WAITING_FOR_APPROVAL
         task.updated_at = utc_now()
+        self._persist(task)
         return task
 
     def resume_from_input(self, task_id: UUID) -> Task:
@@ -111,6 +159,7 @@ class TaskManager:
 
         task.status = TaskStatus.RUNNING
         task.updated_at = utc_now()
+        self._persist(task)
         return task
 
     def resume_from_approval(self, task_id: UUID) -> Task:
@@ -123,6 +172,7 @@ class TaskManager:
 
         task.status = TaskStatus.RUNNING
         task.updated_at = utc_now()
+        self._persist(task)
         return task
 
     def cancel(
@@ -144,7 +194,12 @@ class TaskManager:
         task.status = TaskStatus.CANCELLED
         task.result = result
         task.updated_at = utc_now()
+        self._persist(task)
         return task
+
+    def create_subtask(self, parent_task_id: UUID, goal: str) -> Task:
+        """Create a durable child task linked to an existing parent."""
+        return self.create(goal, parent_task_id=parent_task_id)
 
     def complete(
         self,
@@ -162,6 +217,7 @@ class TaskManager:
         task.progress = 1.0
         task.result = result
         task.updated_at = utc_now()
+        self._persist(task)
         return task
 
     def fail(
@@ -186,6 +242,7 @@ class TaskManager:
         task.error = error
         task.result = result
         task.updated_at = utc_now()
+        self._persist(task)
         return task
 
     def update_progress(
@@ -205,6 +262,7 @@ class TaskManager:
             progress,
             current_step=current_step,
         )
+        self._persist(task)
 
         return task
 
@@ -237,6 +295,7 @@ class TaskManager:
         with self._lock:
             task.steps.append(step)
             task.updated_at = utc_now()
+            self._persist(task)
 
         return step
 
@@ -289,6 +348,7 @@ class TaskManager:
 
         task.current_step = step.name
         task.updated_at = utc_now()
+        self._persist(task)
 
         return step
 
@@ -308,6 +368,7 @@ class TaskManager:
         step.status = TaskStepStatus.WAITING_FOR_INPUT
         step.updated_at = utc_now()
         task.updated_at = utc_now()
+        self._persist(task)
 
         return step
 
@@ -327,6 +388,7 @@ class TaskManager:
         step.status = TaskStepStatus.WAITING_FOR_APPROVAL
         step.updated_at = utc_now()
         task.updated_at = utc_now()
+        self._persist(task)
 
         return step
 
@@ -346,6 +408,7 @@ class TaskManager:
         step.status = TaskStepStatus.PAUSED
         step.updated_at = utc_now()
         task.updated_at = utc_now()
+        self._persist(task)
 
         return step
 
@@ -365,6 +428,7 @@ class TaskManager:
         step.status = TaskStepStatus.RUNNING
         step.updated_at = utc_now()
         task.updated_at = utc_now()
+        self._persist(task)
 
         return step
 
@@ -384,6 +448,7 @@ class TaskManager:
         step.status = TaskStepStatus.RUNNING
         step.updated_at = utc_now()
         task.updated_at = utc_now()
+        self._persist(task)
 
         return step
 
@@ -403,6 +468,7 @@ class TaskManager:
         step.status = TaskStepStatus.RUNNING
         step.updated_at = utc_now()
         task.updated_at = utc_now()
+        self._persist(task)
 
         return step
 
@@ -425,6 +491,7 @@ class TaskManager:
         step.updated_at = utc_now()
 
         self._recalculate_progress(task)
+        self._persist(task)
 
         return step
 
@@ -450,6 +517,7 @@ class TaskManager:
         step.updated_at = utc_now()
 
         task.updated_at = utc_now()
+        self._persist(task)
 
         return step
 
@@ -472,6 +540,7 @@ class TaskManager:
         step.status = TaskStepStatus.CANCELLED
         step.updated_at = utc_now()
         task.updated_at = utc_now()
+        self._persist(task)
 
         return step
 
@@ -493,3 +562,114 @@ class TaskManager:
             for step in task.steps
         ):
             task.current_step = None
+
+    def recoverable(self) -> tuple[Task, ...]:
+        """Return tasks paused by restart or waiting on an external decision."""
+        with self._lock:
+            return tuple(
+                task
+                for task in self._tasks.values()
+                if task.status in {
+                    TaskStatus.PAUSED,
+                    TaskStatus.WAITING_FOR_INPUT,
+                    TaskStatus.WAITING_FOR_APPROVAL,
+                }
+            )
+
+    def reconcile_plan(self, task_id: UUID, plan) -> Task:
+        """Project authoritative recovered plan state onto a durable task."""
+        from app.planning.models import PlanStatus, PlanStepStatus
+
+        task = self.get(task_id)
+        by_plan_step = {
+            str(step.metadata.get("plan_step_id")): step
+            for step in task.steps
+        }
+        status_map = {
+            PlanStepStatus.PENDING: TaskStepStatus.QUEUED,
+            PlanStepStatus.READY: TaskStepStatus.QUEUED,
+            PlanStepStatus.RUNNING: TaskStepStatus.RUNNING,
+            PlanStepStatus.COMPLETED: TaskStepStatus.COMPLETED,
+            PlanStepStatus.FAILED: TaskStepStatus.FAILED,
+            PlanStepStatus.CANCELLED: TaskStepStatus.CANCELLED,
+            PlanStepStatus.BLOCKED: TaskStepStatus.PAUSED,
+            PlanStepStatus.SKIPPED: TaskStepStatus.CANCELLED,
+        }
+        for plan_step in plan.steps:
+            task_step = by_plan_step.get(str(plan_step.step_id))
+            if task_step is None:
+                task_step = TaskStep(
+                    name=plan_step.name,
+                    metadata={"plan_step_id": str(plan_step.step_id)},
+                )
+                task.steps.append(task_step)
+            task_step.status = status_map[plan_step.status]
+            task_step.result = plan_step.metadata.get("tool_result")
+            task_step.error = plan_step.metadata.get("tool_error")
+            task_step.updated_at = utc_now()
+
+        task.progress = plan.progress
+        task.current_step = next(
+            (
+                step.name
+                for step in task.steps
+                if step.status is TaskStepStatus.RUNNING
+            ),
+            None,
+        )
+        if plan.status is PlanStatus.COMPLETED:
+            task.status = TaskStatus.COMPLETED
+            task.progress = 1.0
+        elif plan.status is PlanStatus.FAILED:
+            task.status = TaskStatus.FAILED
+            task.error = str(
+                plan.metadata.get("execution_error", "Plan execution failed.")
+            )
+        elif plan.status is PlanStatus.CANCELLED:
+            task.status = TaskStatus.CANCELLED
+        else:
+            task.status = TaskStatus.PAUSED
+        task.result = {
+            "plan_id": str(plan.plan_id),
+            "plan_goal": plan.goal,
+            "plan_progress": plan.progress,
+            "outcome": plan.metadata.get("execution_outcome", plan.status.value),
+            "usage": plan.metadata.get("execution_usage", {}),
+        }
+        task.metadata.pop("recovery_required", None)
+        task.metadata.pop("recovery_reason", None)
+        task.updated_at = utc_now()
+        self._persist(task)
+        return task
+
+    def update_metadata(
+        self,
+        task_id: UUID,
+        values: dict[str, object],
+    ) -> Task:
+        task = self.get(task_id)
+        if not isinstance(values, dict) or not all(
+            isinstance(key, str) for key in values
+        ):
+            raise TypeError("Task metadata must use string keys.")
+        previous = dict(task.metadata)
+        task.metadata.update(values)
+        task.updated_at = utc_now()
+        try:
+            self._persist(task)
+        except Exception:
+            task.metadata.clear()
+            task.metadata.update(previous)
+            raise
+        return task
+
+    def set_result(self, task_id: UUID, result: object) -> Task:
+        task = self.get(task_id)
+        task.result = result
+        task.updated_at = utc_now()
+        self._persist(task)
+        return task
+
+    def close(self) -> None:
+        if self._store is not None:
+            self._store.close()

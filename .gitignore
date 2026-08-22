@@ -5,4 +5,19 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.test-cache/
+.test-temp/
+build/
+build-tools/
+dist/
+release/
 
+# Runtime state
+data/*.sqlite3
+data/*.sqlite3-*
+data/*.db
+data/tasks/
+
+
+.github.zip
+.venv_codex_backup_*/

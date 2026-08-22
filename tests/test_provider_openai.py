@@ -649,3 +649,109 @@ async def test_openai_provider_appends_current_user_to_plain_history() -> None:
         "role": "user",
         "content": "second",
     }
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_normalizes_private_image_bytes_as_data_url() -> None:
+    import base64
+
+    client = FakeClient(make_response())
+    provider = OpenAIProvider(make_settings(), client=client)
+    request = Request(
+        "Inspect",
+        metadata={
+            "vision": True,
+            "images": [
+                {
+                    "data": bytearray(b"png-bytes"),
+                    "mime_type": "image/png",
+                    "detail": "high",
+                }
+            ],
+        },
+    )
+
+    await provider.generate(request, Context())
+
+    content = client.chat.completions.calls[0]["messages"][-1]["content"]
+    assert content[0] == {"type": "text", "text": "Inspect"}
+    assert content[1]["type"] == "image_url"
+    assert content[1]["image_url"]["detail"] == "high"
+    assert content[1]["image_url"]["url"] == (
+        "data:image/png;base64," + base64.b64encode(b"png-bytes").decode()
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "image",
+    [
+        {"data": b"", "mime_type": "image/png", "detail": "high"},
+        {"data": b"x", "mime_type": "image/bmp", "detail": "high"},
+        {"data": b"x", "mime_type": "image/png", "detail": "extreme"},
+    ],
+)
+async def test_openai_provider_rejects_invalid_image_contract(image) -> None:
+    provider = OpenAIProvider(make_settings(), client=FakeClient(make_response()))
+    with pytest.raises((TypeError, ValueError)):
+        await provider.generate(
+            Request("Inspect", metadata={"vision": True, "images": [image]}),
+            Context(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_does_not_mutate_conversation_image_history() -> None:
+    client = FakeClient(make_response())
+    provider = OpenAIProvider(make_settings(), client=client)
+    history = [{"role": "user", "content": "Inspect"}]
+    context = Context(
+        values={
+            "messages": history,
+            "conversation_request_id": "present",
+        }
+    )
+    request = Request(
+        "Inspect",
+        metadata={
+            "images": [
+                {"data": b"x", "mime_type": "image/png", "detail": "low"}
+            ]
+        },
+    )
+
+    await provider.generate(request, context)
+
+    assert history == [{"role": "user", "content": "Inspect"}]
+    assert isinstance(client.chat.completions.calls[0]["messages"][-1]["content"], list)
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_enforces_image_count_limit() -> None:
+    settings = Settings(default_model="test-model", vision_max_images=1)
+    provider = OpenAIProvider(settings, client=FakeClient(make_response()))
+    image = {"data": b"x", "mime_type": "image/png", "detail": "low"}
+
+    with pytest.raises(ValueError, match="count"):
+        await provider.generate(
+            Request("Inspect", metadata={"images": [image, image]}), Context()
+        )
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_enforces_total_image_size_limit() -> None:
+    settings = Settings(default_model="test-model", vision_max_encoded_bytes=1)
+    provider = OpenAIProvider(settings, client=FakeClient(make_response()))
+
+    with pytest.raises(ValueError, match="payload"):
+        await provider.generate(
+            Request(
+                "Inspect",
+                metadata={
+                    "images": [
+                        {"data": b"xx", "mime_type": "image/png", "detail": "low"}
+                    ]
+                },
+            ),
+            Context(),
+        )

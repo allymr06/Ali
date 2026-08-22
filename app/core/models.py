@@ -14,6 +14,7 @@ class RequestSource(str, Enum):
 
     TEXT = "text"
     VOICE = "voice"
+    VISION = "vision"
     SYSTEM = "system"
     API = "api"
 
@@ -134,6 +135,7 @@ class Task:
     result: Any = None
     error: str | None = None
     steps: list[TaskStep] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def update_progress(
         self,

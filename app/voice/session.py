@@ -90,6 +90,10 @@ async def _await_task(task: "asyncio.Task[T]") -> T:
     return await task
 
 
+class _SpeechRecovered(Exception):
+    """Control-flow marker: retried cloud speech played successfully."""
+
+
 class VoiceSession:
     """One bounded, interruptible microphone-to-Core-to-speaker turn."""
 
@@ -314,7 +318,47 @@ class VoiceSession:
                 metadata["playback_latency_seconds"] = (
                     time.monotonic() - stage_started
                 )
-            except (VoiceProviderError, VoiceConfigurationError):
+            except (
+                VoiceProviderError,
+                VoiceConfigurationError,
+            ) as speech_exc:
+                if getattr(speech_exc, "transient", False):
+                    # A per-minute rate limit usually clears within a
+                    # breath; one short retry keeps the cloud voice.
+                    await asyncio.sleep(1.5)
+                    try:
+                        speech = await self._await_interruptible(
+                            self._synthesizer.synthesize(
+                                split_speech_chunks(response.text)[0]
+                            )
+                        )
+                        await self._await_interruptible(
+                            self._audio_output.play(
+                                speech,
+                                cancel_event=self._interrupt_event,
+                            )
+                        )
+                        remaining_chunks = split_speech_chunks(
+                            response.text
+                        )[1:]
+                        for chunk in remaining_chunks:
+                            speech = await self._await_interruptible(
+                                self._synthesizer.synthesize(chunk)
+                            )
+                            await self._await_interruptible(
+                                self._audio_output.play(
+                                    speech,
+                                    cancel_event=self._interrupt_event,
+                                )
+                            )
+                        metadata["speech_retry"] = "recovered"
+                        raise _SpeechRecovered()
+                    except _SpeechRecovered:
+                        raise
+                    except VoiceInterrupted:
+                        raise
+                    except Exception:
+                        pass
                 metadata["speech_error"] = "provider"
                 self._record(VoiceSessionState.SPEAKING, "fallback")
                 spoke = await self._speak_with_local_fallback(
@@ -329,6 +373,8 @@ class VoiceSession:
                         response_text=response.text,
                     )
                 metadata["speech_fallback"] = "windows-sapi"
+            except _SpeechRecovered:
+                pass
             self._record(VoiceSessionState.COMPLETED)
             return self._result(
                 transcript=transcript,

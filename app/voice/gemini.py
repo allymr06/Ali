@@ -40,6 +40,20 @@ def _create_google_client(
     )
 
 
+def _provider_error(
+    message: str, cause: Exception
+) -> VoiceProviderError:
+    """Wrap a provider failure, marking transient rate/availability
+    errors so callers can retry once before degrading."""
+    error = VoiceProviderError(message)
+    detail = f"{type(cause).__name__} {cause}"
+    error.transient = any(
+        marker in detail
+        for marker in ("429", "RESOURCE_EXHAUSTED", "503", "502")
+    )
+    return error
+
+
 async def _generate_content(
     client,
     **kwargs,
@@ -161,7 +175,9 @@ class GeminiSpeechRecognizer(
             "Transcribe only the spoken words "
             "in this audio. Return plain text "
             "only. Do not summarize, explain, "
-            "or add commentary."
+            "or add commentary. The assistant's "
+            "name 'Jarvis' may be spoken; write "
+            "it exactly as 'Jarvis'."
         )
 
         if language:
@@ -194,9 +210,8 @@ class GeminiSpeechRecognizer(
             )
 
         except Exception as exc:
-            raise VoiceProviderError(
-                "Gemini speech "
-                "transcription failed."
+            raise _provider_error(
+                "Gemini speech transcription failed.", exc
             ) from exc
 
         text = getattr(
@@ -347,9 +362,8 @@ class GeminiSpeechSynthesizer(
             )
 
         except Exception as exc:
-            raise VoiceProviderError(
-                "Gemini speech synthesis "
-                "failed."
+            raise _provider_error(
+                "Gemini speech synthesis failed.", exc
             ) from exc
 
         decoded: tuple[bytes, str] | None = None

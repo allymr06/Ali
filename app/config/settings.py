@@ -160,7 +160,7 @@ class Settings:
     # capture; end-of-turn detection cost is worth not cutting people
     # off.
     voice_trailing_silence_seconds: float = 0.9
-    voice_start_timeout_seconds: float = 5.0
+    voice_start_timeout_seconds: float = 8.0
 
     # The lite model transcribes in ~1.3s where the thinking model
     # spends ~11s reasoning before answering; transcription needs speed.
@@ -550,7 +550,7 @@ class Settings:
             ),
             voice_start_timeout_seconds=_get_float(
                 "JARVIS_VOICE_START_TIMEOUT_SECONDS",
-                5.0,
+                8.0,
             ),
             voice_gemini_stt_model=os.getenv(
                 "JARVIS_VOICE_GEMINI_STT_MODEL",

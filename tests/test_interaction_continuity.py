@@ -306,6 +306,8 @@ def test_application_restores_conversation_after_restart(
     )
 
     settings = Settings(
+        default_provider="mock",
+        default_model="mock-model",
         conversation_database_path=database,
         memory_database_path=None,
         task_database_path=None,

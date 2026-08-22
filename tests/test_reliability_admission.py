@@ -61,6 +61,8 @@ def test_admission_validates_limits_and_unbalanced_release() -> None:
 async def test_core_rejects_overload_and_records_metric(monkeypatch) -> None:
     application = create_application(
         Settings(
+            default_provider="mock",
+            default_model="mock-model",
             windows_integrations_enabled=False,
             memory_database_path=None,
             task_database_path=None,
@@ -97,6 +99,8 @@ async def test_core_rejects_overload_and_records_metric(monkeypatch) -> None:
 async def test_mock_core_handles_bounded_parallel_load() -> None:
     application = create_application(
         Settings(
+            default_provider="mock",
+            default_model="mock-model",
             windows_integrations_enabled=False,
             memory_database_path=None,
             task_database_path=None,

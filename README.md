@@ -10,7 +10,7 @@ The project is in the **core engineering stage**. It is not yet a complete deskt
 
 Implemented:
 
-- provider abstraction with mock, OpenAI, and Gemini providers
+- provider abstraction with Gemini as the single production provider and a deterministic offline mock provider for tests
 - provider registration, selection, timeout, and retry handling
 - conversation orchestration and model tool-call processing
 - versioned tool contracts, dynamic capability discovery, and bounded execution
@@ -23,7 +23,7 @@ Implemented:
 - provenance, freshness, relevance ranking, retention, and memory controls
 - deterministic memory analysis with credential and payment-data rejection
 - optional bounded voice input, exact wake-word gating, interruption, and WAV output
-- OpenAI speech recognition/synthesis adapters with explicit provenance
+- Gemini speech recognition/synthesis adapters with explicit provenance
 - privacy-first in-memory audio disposal and classified voice failures
 - consent-bound native screen capture with bounded session state
 - irreversible sensitive-region and taskbar redaction before model access
@@ -33,24 +33,29 @@ Implemented:
 - source timestamps, content hashes, freshness, citation checks, and uncertainties
 - refined monochrome desktop shell with eleven live views, subtle optional
   motion, scroll-safe layouts, and documented keyboard shortcuts
-- in-app Gemini/OpenAI provider and model setup with connection testing and
-  provider-specific API secrets stored in Windows Credential Manager
+- in-app Gemini model setup with connection testing and the API secret stored
+  in Windows Credential Manager
 - sanitized structured diagnostics, tamper-evident events, bounded metrics, and
   live component health checks
 - bounded Core admission, explicit overload failure, and provider circuit
   breakers with single-probe recovery
 - automated unit and integration tests
 
+- root-allowlisted filesystem tools with traversal and reparse-point defenses
+- Windows clipboard and window-listing controls under the permission engine
+
 Not implemented yet:
 
-- broader Windows controls such as windows, clipboard, and notifications
+- notifications and proactive behavior
+- filesystem undo/rollback, bulk dry-run plans, and indexed search
+- keyboard/mouse automation and general safe PowerShell execution
 - system tray integration
 - plugin runtime
-- production code signing and a non-sandboxed installed-runtime qualification
+- production code signing and an installed-runtime qualification
 
 ## Verification status
 
-The current test suite contains **817 passing tests** on Python 3.12. This result was verified on 21 August 2026.
+The current test suite contains **1088 passing tests (`scripts/verify.py`), verified on 22 August 2026
 
 The project does not yet claim production readiness. The first real Windows
 vertical slice is implemented and verified:

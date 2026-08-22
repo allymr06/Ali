@@ -108,11 +108,14 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit("--output is required with --smoke-test")
         return smoke_test(Path(arguments.output).resolve(), state)
     configure_state(state)
-    from app.bootstrap import create_application
-    from app.ui.controller import DesktopController
-    from app.ui.desktop import DesktopWindow
 
-    DesktopWindow(DesktopController(create_application())).run()
+    # launch_desktop wires the APISettingsService so the packaged app reads
+    # the Gemini key from Windows Credential Manager and the Settings screen
+    # can accept one. A bare create_application() would boot an unconfigurable
+    # runtime whose every provider call fails authentication.
+    from app.ui.desktop import launch_desktop
+
+    launch_desktop()
     return 0
 
 

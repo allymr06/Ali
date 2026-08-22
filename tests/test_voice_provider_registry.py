@@ -191,39 +191,6 @@ def test_auto_voice_provider_inherits_supported_llm_provider(
     )
 
 
-def test_auto_voice_provider_can_use_explicit_compatibility_fallback(
-) -> None:
-    registry = VoiceProviderRegistry()
-
-    registry.register_recognizer(
-        "openai",
-        DummyRecognizer,
-    )
-
-    registry.register_synthesizer(
-        "openai",
-        DummySynthesizer,
-    )
-
-    assert (
-        registry.resolve_recognizer_provider(
-            "auto",
-            default_provider="mock",
-            fallback_provider="openai",
-        )
-        == "openai"
-    )
-
-    assert (
-        registry.resolve_synthesizer_provider(
-            "auto",
-            default_provider="mock",
-            fallback_provider="openai",
-        )
-        == "openai"
-    )
-
-
 def test_default_registry_exposes_built_in_providers_for_both_roles(
 ) -> None:
     registry = (
@@ -232,17 +199,11 @@ def test_default_registry_exposes_built_in_providers_for_both_roles(
 
     assert set(
         registry.list_recognizer_providers()
-    ) == {
-        "gemini",
-        "openai",
-    }
+    ) == {"gemini"}
 
     assert set(
         registry.list_synthesizer_providers()
-    ) == {
-        "gemini",
-        "openai",
-    }
+    ) == {"gemini"}
 
 
 def test_settings_load_independent_voice_provider_environment(
@@ -250,7 +211,7 @@ def test_settings_load_independent_voice_provider_environment(
 ) -> None:
     monkeypatch.setenv(
         "JARVIS_VOICE_STT_PROVIDER",
-        "openai",
+        "gemini",
     )
 
     monkeypatch.setenv(
@@ -264,7 +225,7 @@ def test_settings_load_independent_voice_provider_environment(
 
     assert (
         settings.voice_stt_provider
-        == "openai"
+        == "gemini"
     )
 
     assert (
@@ -294,7 +255,7 @@ class MemoryCredentialStore:
         return existed
 
 
-def test_runtime_loads_secondary_voice_provider_credential_only_when_requested(
+def test_runtime_loads_gemini_voice_credential(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -310,18 +271,11 @@ def test_runtime_loads_secondary_voice_provider_credential_only_when_requested(
             raising=False,
         )
 
-    monkeypatch.setenv(
-        "JARVIS_VOICE_STT_PROVIDER",
-        "openai",
-    )
+    monkeypatch.setenv("JARVIS_VOICE_STT_PROVIDER", "gemini")
 
     monkeypatch.setenv(
         "JARVIS_VOICE_TTS_PROVIDER",
         "gemini",
-    )
-
-    openai = MemoryCredentialStore(
-        "openai-secret"
     )
 
     gemini = MemoryCredentialStore(
@@ -344,7 +298,6 @@ def test_runtime_loads_secondary_voice_provider_credential_only_when_requested(
 
     service = APISettingsService(
         credential_stores={
-            "openai": openai,
             "gemini": gemini,
         },
         preferences=preferences,
@@ -357,11 +310,6 @@ def test_runtime_loads_secondary_voice_provider_credential_only_when_requested(
     assert (
         settings.default_provider
         == "gemini"
-    )
-
-    assert (
-        settings.api_key
-        == "openai-secret"
     )
 
     assert (
@@ -420,7 +368,7 @@ def test_bootstrap_wires_split_stt_and_tts_without_api_calls(
                 "gemini-3.7-flash"
             ),
             voice_enabled=True,
-            voice_stt_provider="openai",
+            voice_stt_provider="gemini",
             voice_tts_provider="gemini",
             windows_integrations_enabled=False,
             memory_database_path=None,
@@ -440,7 +388,7 @@ def test_bootstrap_wires_split_stt_and_tts_without_api_calls(
             application
             .voice
             .stt_provider
-            == "openai"
+            == "gemini"
         )
 
         assert (

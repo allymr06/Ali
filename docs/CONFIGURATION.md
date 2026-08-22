@@ -13,47 +13,32 @@ be committed to source control or written to logs.
 
 ## Provider gateway
 
+Gemini is the only production provider. `mock` is a deterministic offline
+provider used by the automated tests; it is registered only when
+`JARVIS_DEFAULT_PROVIDER` is explicitly set to `mock`, and it is never
+selectable from the desktop Settings screen.
+
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `JARVIS_DEFAULT_PROVIDER` | `mock` | Default registered provider. |
-| `JARVIS_DEFAULT_MODEL` | `mock-model` | Default model for the selected provider. |
-| `JARVIS_OPENAI_MODEL` | unset | OpenAI-specific model override. |
-| `JARVIS_GEMINI_MODEL` | unset | Gemini-specific model override. |
-| `JARVIS_PROVIDER_TIMEOUT` | `30` | Per-attempt timeout in seconds. |
-| `JARVIS_PROVIDER_MAX_RETRIES` | `2` | Maximum retries after the first attempt. |
+| `JARVIS_DEFAULT_PROVIDER` | `gemini` | Default registered provider. Only `gemini` is supported for normal use; `mock` additionally registers the offline test provider. |
+| `JARVIS_DEFAULT_MODEL` | `gemini-3.5-flash-lite` | Default model for the selected provider. |
+| `JARVIS_GEMINI_MODEL` | unset | Gemini model override. |
+| `JARVIS_PROVIDER_TIMEOUT` | `15` | Per-attempt timeout in seconds. |
+| `JARVIS_PROVIDER_MAX_RETRIES` | `1` | Maximum retries after the first attempt. |
 | `JARVIS_PROVIDER_RETRY_BACKOFF` | `0.25` | Initial exponential backoff in seconds. |
-| `JARVIS_PROVIDER_FALLBACK` | `true` | Allows fallback when no user override is active. |
 
-`JARVIS_OPENAI_MODEL` should be configured when OpenAI is enabled while another
-provider uses a different default model name.
-
-The development-only `mock` provider is never used as a fallback for a live
-provider. Authentication, model-access, quota, and availability failures remain
-visible to the user instead of being replaced by a misleading mock echo.
-
-## OpenAI connection
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `JARVIS_API_KEY` | unset | OpenAI-compatible API credential. |
-| `JARVIS_API_BASE_URL` | unset | Optional compatible API base URL. |
-
-With no API key, the OpenAI adapter remains registered but reports a classified
-configuration error if selected. The default mock provider continues to work
-offline.
-
-The desktop Settings screen can store the API credential in the current user's
-Windows Credential Manager under `JARVIS/OpenAI API`. The secret is never
-written to the project, the non-secret settings JSON, diagnostics, or logs.
-Provider and model preferences are stored separately in
-`%LOCALAPPDATA%\JARVIS\settings.json`. Explicit environment variables retain
-precedence over desktop preferences.
+Provider fallback is disabled. With a single production provider there is
+nothing to fall back to, and falling back to `mock` would hide a real failure.
+Authentication, model-access, quota, and availability failures stay visible to
+the user instead of being replaced by a misleading mock echo.
 
 ## Gemini connection
 
-Gemini uses Google's OpenAI-compatible API surface, allowing JARVIS to keep
-one provider-neutral conversation and tool contract while preserving Gemini's
-own identity and classified errors.
+Gemini is reached through Google's OpenAI-compatible API surface, which lets
+JARVIS keep one provider-neutral conversation and tool contract while
+preserving Gemini's own identity and classified errors. `app/providers/openai.py`
+therefore remains in the tree as the shared adapter base class that
+`GeminiProvider` extends; there is no separately registered OpenAI provider.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -61,9 +46,14 @@ own identity and classified errors.
 | `JARVIS_GEMINI_MODEL` | unset | Gemini model override. |
 | `JARVIS_GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai/` | Compatible Gemini endpoint. |
 
-The desktop stores Gemini credentials separately under `JARVIS/Gemini API`.
-Select `gemini`, use `gemini-3.7-flash`, test the connection, then save and
-activate it. Removing a key affects only the currently selected provider.
+The desktop Settings screen stores the Gemini credential in the current user's
+Windows Credential Manager under `JARVIS/Gemini API`. The secret is never
+written to the project, the non-secret settings JSON, diagnostics, or logs.
+Model preferences are stored separately in
+`%LOCALAPPDATA%\JARVIS\settings.json`. Explicit environment variables retain
+precedence over desktop preferences.
+
+Enter the model name, test the connection, then save and activate it.
 
 ## Conversation context
 
@@ -78,11 +68,19 @@ Conversation limits preserve the complete most recent request/tool group even
 when that single group is larger than the configured normal window. This avoids
 creating an invalid partial tool-call chain.
 
-## Durable memory
+## Durable state storage
+
+All durable state defaults to the per-user application data directory
+`%LOCALAPPDATA%\JARVIS` (or `~/.jarvis` when `LOCALAPPDATA` is unavailable).
+`JARVIS_STATE_DIRECTORY` relocates that root; the per-store variables override
+individual files.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `JARVIS_MEMORY_DATABASE_PATH` | `data/jarvis_memory.sqlite3` | SQLite database used for durable long-term memory. |
+| `JARVIS_STATE_DIRECTORY` | `%LOCALAPPDATA%\JARVIS` | Root directory for all durable runtime state. |
+| `JARVIS_CONVERSATION_DATABASE_PATH` | `<state>/jarvis_conversations.sqlite3` | SQLite database for durable conversation history. |
+| `JARVIS_MEMORY_DATABASE_PATH` | `<state>/jarvis_memory.sqlite3` | SQLite database used for durable long-term memory. |
+| `JARVIS_RESEARCH_CACHE_DATABASE_PATH` | `<state>/jarvis_research.sqlite3` | SQLite cache for web-research retrievals. |
 
 The configured parent directory is created when needed. Runtime SQLite files
 are excluded from Git. Backups should be stored separately from the live
@@ -92,8 +90,8 @@ database and restored only after their integrity check succeeds.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `JARVIS_TASK_DATABASE_PATH` | `data/jarvis_tasks.sqlite3` | SQLite database for task and task-step state. |
-| `JARVIS_TASK_RUNTIME_DIRECTORY` | `data/tasks` | Per-task atomic plan and execution snapshot directory. |
+| `JARVIS_TASK_DATABASE_PATH` | `<state>/jarvis_tasks.sqlite3` | SQLite database for task and task-step state. |
+| `JARVIS_TASK_RUNTIME_DIRECTORY` | `<state>/tasks` | Per-task atomic plan and execution snapshot directory. |
 
 Task database files and runtime directories are excluded from Git. A restarted
 application marks interrupted running work as paused and requires an explicit
@@ -122,8 +120,9 @@ other local runtime features available without registering Windows tools.
 ## Voice pipeline
 
 Voice is opt-in and requires the `voice` dependency extra for microphone
-capture. Windows WAV output uses the standard library. OpenAI speech adapters
-use the same API connection settings documented above.
+capture. Windows WAV output uses the standard library. Gemini provides both
+speech recognition and speech synthesis and uses the same API connection
+settings documented above.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -136,9 +135,9 @@ use the same API connection settings documented above.
 | `JARVIS_VOICE_REQUIRE_WAKE_WORD` | `false` | Ignores transcripts without the exact wake word. |
 | `JARVIS_VOICE_WAKE_WORD` | `jarvis` | Case-insensitive, whole-word activation text. |
 | `JARVIS_VOICE_LANGUAGE` | unset | Optional ISO language hint for recognition. |
-| `JARVIS_VOICE_STT_MODEL` | `gpt-4o-mini-transcribe` | Speech recognition model. |
-| `JARVIS_VOICE_TTS_MODEL` | `gpt-4o-mini-tts` | Speech synthesis model. |
-| `JARVIS_VOICE_TTS_VOICE` | `alloy` | Speech synthesis voice. |
+| `JARVIS_VOICE_GEMINI_STT_MODEL` | `gemini-3.7-flash` | Speech recognition model. |
+| `JARVIS_VOICE_GEMINI_TTS_MODEL` | `gemini-3.1-flash-tts-preview` | Speech synthesis model. |
+| `JARVIS_VOICE_GEMINI_TTS_VOICE` | `Kore` | Speech synthesis voice. |
 | `JARVIS_VOICE_TTS_INSTRUCTIONS` | unset | Optional speaking-style instruction. |
 | `JARVIS_VOICE_MAX_TTS_CHARACTERS` | `4000` | Maximum text length sent for synthesis. |
 | `JARVIS_VOICE_MAX_AUDIO_BYTES` | `20000000` | Maximum accepted synthesized audio response. |
@@ -156,7 +155,7 @@ Every analysis still requires a separately approved, short-lived consent grant.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `JARVIS_VISION_ENABLED` | `false` | Constructs the vision service at application startup. |
-| `JARVIS_VISION_MODEL` | `gpt-4o` | Dedicated vision-capable OpenAI model profile. |
+| `JARVIS_VISION_MODEL` | unset | Optional dedicated Gemini vision model. When set and different from the general model, `VISION` requests route to it exclusively; when unset, vision uses the general model. |
 | `JARVIS_VISION_DETAIL` | `high` | Image detail: `low`, `high`, `original`, or `auto`. |
 | `JARVIS_VISION_OPERATION_TIMEOUT_SECONDS` | `60` | Timeout for each capture or analysis operation. |
 | `JARVIS_VISION_MAX_FRAME_AGE_SECONDS` | `5` | Maximum age before a captured frame is rejected as stale. |
@@ -165,7 +164,7 @@ Every analysis still requires a separately approved, short-lived consent grant.
 | `JARVIS_VISION_MAX_HEIGHT` | `4320` | Maximum virtual-screen height. |
 | `JARVIS_VISION_MAX_PIXELS` | `20000000` | Maximum pixels allocated for one capture. |
 | `JARVIS_VISION_MAX_ENCODED_BYTES` | `20000000` | Maximum processed image payload. |
-| `JARVIS_VISION_MAX_IMAGES` | `4` | Maximum image inputs accepted by the OpenAI adapter. |
+| `JARVIS_VISION_MAX_IMAGES` | `4` | Maximum image inputs accepted by the provider adapter. |
 | `JARVIS_VISION_REDACT_TASKBAR` | `true` | Blacks out the configured bottom taskbar band. |
 | `JARVIS_VISION_TASKBAR_HEIGHT` | `64` | Height in pixels of the automatic bottom privacy mask. |
 | `JARVIS_VISION_RETAIN_LAST_IMAGE` | `false` | Retains the processed PNG in memory until explicitly cleared. |

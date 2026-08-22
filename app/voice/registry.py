@@ -349,21 +349,7 @@ def create_default_voice_provider_registry(
         GeminiSpeechRecognizer,
         GeminiSpeechSynthesizer,
     )
-    from app.voice.providers import (
-        OpenAISpeechRecognizer,
-        OpenAISpeechSynthesizer,
-    )
-
     registry = VoiceProviderRegistry()
-
-    registry.register_recognizer(
-        "openai",
-        OpenAISpeechRecognizer,
-    )
-    registry.register_synthesizer(
-        "openai",
-        OpenAISpeechSynthesizer,
-    )
 
     registry.register_recognizer(
         "gemini",

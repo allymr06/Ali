@@ -42,10 +42,11 @@ The Phase 3 regression coverage includes:
 - explicit provider and model overrides;
 - fail-closed tool, vision, streaming, and structured-output requirements;
 - transient-only retry and bounded exponential backoff;
-- provider fallback and health accounting;
+- health accounting and disabled-fallback behavior;
 - cancellation and timeout cleanup;
 - streaming retry only before the first emitted chunk;
-- OpenAI response, tool-call, usage, error, and stream normalization;
+- OpenAI-compatible response, tool-call, usage, error, and stream
+  normalization through the shared adapter base class;
 - Gemini identity, model selection, compatible endpoint wiring, isolated
   credentials, and classified error normalization;
 - model context and optional cost metadata;
@@ -68,7 +69,7 @@ The Phase 4 regression coverage includes:
 The Phase 5 regression coverage includes:
 
 - versioned tool metadata and unsafe retry-contract rejection;
-- provider-neutral contract and OpenAI schema derivation;
+- provider-neutral contract and OpenAI-compatible schema derivation;
 - dynamic enable, disable, unregister, and registry revision behavior;
 - exact-name, capability, and tag-based discovery;
 - request-scoped tool exposure with malformed filters failing closed;
@@ -132,7 +133,7 @@ The Phase 10 regression coverage includes:
 
 - strict audio device, capture, transcription, speech, event, and result models;
 - bounded PCM capture, WAV conversion, device enumeration, and stream closure;
-- OpenAI transcription and WAV synthesis request normalization;
+- Gemini transcription and WAV synthesis request normalization;
 - provider provenance plus text and audio response limits;
 - exact, case-insensitive wake-word gating before Core execution;
 - `RequestSource.VOICE` identity through the complete Core boundary;
@@ -152,7 +153,8 @@ The Phase 11 regression coverage includes:
 - capture, redaction, stale-frame, analysis, timeout, and interruption states;
 - source, capture time, dimensions, hashes, transformations, and consent provenance;
 - raw and processed image overwrite/release plus explicit retention clearing;
-- OpenAI Base64 image normalization, media/detail/size/count validation;
+- Base64 image normalization plus media/detail/size/count validation in the
+  OpenAI-compatible adapter;
 - prevention of image payload persistence in conversation history;
 - capability-aware selection of the dedicated vision model;
 - a deterministic image through the real Core and provider gateway.

@@ -406,7 +406,15 @@ async def test_core_executes_verified_windows_observation_tool() -> None:
                 finish_reason="stop",
             )
 
-    application = create_application()
+    application = create_application(
+        Settings(
+            default_provider="mock",
+            default_model="mock-model",
+            memory_database_path=None,
+            task_database_path=None,
+            task_runtime_directory=None,
+        )
+    )
     application.provider_registry.unregister("mock")
     application.provider_registry.register(
         WindowsToolProvider(),

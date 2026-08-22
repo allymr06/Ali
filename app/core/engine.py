@@ -33,7 +33,6 @@ from app.planning.executor import PlanExecutor
 from app.memory.policy import MemoryPolicy
 from app.providers.base import ModelResponse
 from app.providers.registry import ProviderRegistry
-from app.providers.ollama_hybrid import OllamaHybridPolicy
 from app.reliability.admission import (
     AdmissionController,
     AdmissionRejectedError,
@@ -80,7 +79,6 @@ class CoreEngine:
         task_manager: TaskManager | None = None,
         execution_limits: ExecutionLimits | None = None,
         provider_gateway: ProviderGateway | None = None,
-        ollama_hybrid_policy: OllamaHybridPolicy | None = None,
         fast_action_router: ApprovedApplicationFastRouter | None = None,
         tool_schema_selector: ToolSchemaSelector | None = None,
         conversation_engine: ConversationEngine | None = None,
@@ -115,7 +113,6 @@ class CoreEngine:
             provider_registry,
             max_retries=0,
         )
-        self._ollama_hybrid_policy = ollama_hybrid_policy
         self._fast_action_router = fast_action_router
         self._tool_schema_selector = tool_schema_selector
         self._conversation_engine = conversation_engine or ConversationEngine()
@@ -523,278 +520,6 @@ class CoreEngine:
 
         return {item.strip() for item in values if item.strip()}
 
-
-    @staticmethod
-    def _hybrid_context_enabled(
-        request: Request,
-    ) -> bool:
-        return (
-            request.metadata.get(
-                "low_latency_context"
-            )
-            is not False
-        )
-
-    @staticmethod
-    def _needs_chat_history(
-        request: Request,
-    ) -> bool:
-        normalized = " ".join(
-            request.text
-            .casefold()
-            .strip()
-            .split()
-        )
-
-        exact = {
-            "neden",
-            "neden?",
-            "niye",
-            "niye?",
-            "nasil yani",
-            "nas\u0131l yani",
-            "peki",
-            "peki?",
-            "devam",
-            "devam et",
-            "biraz daha",
-            "daha fazla",
-            "daha detayli",
-            "daha detayl\u0131",
-            "ne demek",
-            "ne demek?",
-        }
-
-        if normalized in exact:
-            return True
-
-        markers = (
-            "peki ",
-            "neden ",
-            "niye ",
-            "biraz daha",
-            "daha detay",
-            "devam et",
-            "onu ",
-            "onun ",
-            "bunu ",
-            "bunun ",
-            "bundan ",
-            "az once",
-            "az \u00f6nce",
-            "demin ",
-            "dedigin",
-            "dedi\u011fin",
-            "soyledigin",
-            "s\u00f6yledi\u011fin",
-        )
-
-        return any(
-            marker in normalized
-            for marker in markers
-        )
-
-    @staticmethod
-    def _current_request_message_index(
-        request: Request,
-        messages: list[dict[str, object]],
-    ) -> int | None:
-        for index in range(
-            len(messages) - 1,
-            -1,
-            -1,
-        ):
-            message = messages[index]
-
-            if (
-                message.get("role") == "user"
-                and message.get("content")
-                == request.text
-            ):
-                return index
-
-        return None
-
-    @classmethod
-    def _chat_provider_messages(
-        cls,
-        request: Request,
-        context: Context,
-    ) -> list[dict[str, object]]:
-        raw_messages = context.values.get(
-            "messages",
-            [],
-        )
-
-        if not isinstance(raw_messages, list):
-            return [
-                {
-                    "role": "user",
-                    "content": request.text,
-                }
-            ]
-
-        messages = [
-            dict(message)
-            for message in raw_messages
-            if isinstance(message, dict)
-        ]
-
-        current_index = (
-            cls._current_request_message_index(
-                request,
-                messages,
-            )
-        )
-
-        if current_index is None:
-            return [
-                {
-                    "role": "user",
-                    "content": request.text,
-                }
-            ]
-
-        current = [
-            dict(messages[current_index])
-        ]
-
-        if not cls._needs_chat_history(request):
-            return current
-
-        previous = messages[:current_index]
-
-        previous_assistant = None
-        previous_user = None
-
-        for message in reversed(previous):
-            role = message.get("role")
-            content = message.get("content")
-
-            if (
-                role == "assistant"
-                and previous_assistant is None
-                and isinstance(content, str)
-                and content.strip()
-                and not message.get("tool_calls")
-            ):
-                previous_assistant = dict(message)
-                continue
-
-            if (
-                previous_assistant is not None
-                and role == "user"
-                and isinstance(content, str)
-                and content.strip()
-            ):
-                previous_user = dict(message)
-                break
-
-        selected = []
-
-        if previous_user is not None:
-            selected.append(previous_user)
-
-        if previous_assistant is not None:
-            selected.append(previous_assistant)
-
-        selected.extend(current)
-
-        return selected
-
-    @classmethod
-    def _tool_provider_messages(
-        cls,
-        request: Request,
-        context: Context,
-    ) -> list[dict[str, object]]:
-        raw_messages = context.values.get(
-            "messages",
-            [],
-        )
-
-        if not isinstance(raw_messages, list):
-            return [
-                {
-                    "role": "user",
-                    "content": request.text,
-                }
-            ]
-
-        messages = [
-            dict(message)
-            for message in raw_messages
-            if isinstance(message, dict)
-        ]
-
-        current_index = (
-            cls._current_request_message_index(
-                request,
-                messages,
-            )
-        )
-
-        if current_index is None:
-            return [
-                {
-                    "role": "user",
-                    "content": request.text,
-                }
-            ]
-
-        return [
-            dict(message)
-            for message in messages[current_index:]
-        ]
-
-    @classmethod
-    def _low_latency_provider_context(
-        cls,
-        request: Request,
-        context: Context,
-        hybrid_decision,
-    ) -> Context:
-        if (
-            hybrid_decision is None
-            or not cls._hybrid_context_enabled(request)
-            or request.metadata.get("images")
-            or request.metadata.get("vision")
-        ):
-            return context
-
-        if hybrid_decision.role == "chat":
-            messages = cls._chat_provider_messages(
-                request,
-                context,
-            )
-            mode = "chat"
-
-        elif hybrid_decision.role == "tool":
-            messages = cls._tool_provider_messages(
-                request,
-                context,
-            )
-            mode = "tool"
-
-        else:
-            return context
-
-        values = dict(context.values)
-
-        values["messages"] = messages
-        values["low_latency_context_mode"] = mode
-        values[
-            "low_latency_context_message_count"
-        ] = len(messages)
-
-        return Context(
-            conversation_id=context.conversation_id,
-            user_id=context.user_id,
-            active_task_id=context.active_task_id,
-            values=values,
-            memories=[],
-        )
-
     async def _collect_streamed_response(
         self,
         request: Request,
@@ -1069,7 +794,6 @@ class CoreEngine:
         deterministic_route = (
             self._deterministic_tool_router.route(
                 request,
-                provider_name=provider.name,
                 tool_executor=self._tool_executor,
                 tool_schemas=tool_schemas,
             )
@@ -1182,57 +906,10 @@ class CoreEngine:
                 fast_action_tool_name
             }
 
-        hybrid_model_decision = None
         provider_model_override = None
         provider_system_prompt = (
             interaction_decision.system_prompt
         )
-
-        if self._ollama_hybrid_policy is not None:
-            hybrid_model_decision = (
-                self._ollama_hybrid_policy.route(
-                    request,
-                    provider_name=provider.name,
-                    interaction_kind=interaction_decision.kind,
-                    deterministic_tool_name=(
-                        deterministic_tool_name
-                    ),
-                )
-            )
-
-        if hybrid_model_decision is not None:
-            provider_model_override = (
-                hybrid_model_decision.model
-            )
-
-            if not hybrid_model_decision.expose_tools:
-                tool_schemas = []
-                exposed_tool_names.clear()
-
-            hybrid_prompt = (
-                hybrid_model_decision.system_prompt
-            )
-
-            if hybrid_prompt:
-                if (
-                    hybrid_model_decision.role
-                    == "chat"
-                ):
-                    provider_system_prompt = (
-                        hybrid_prompt
-                    )
-
-                elif provider_system_prompt:
-                    provider_system_prompt = (
-                        provider_system_prompt
-                        + "\n\n"
-                        + hybrid_prompt
-                    )
-
-                else:
-                    provider_system_prompt = (
-                        hybrid_prompt
-                    )
 
         tool_schema_count_before = len(
             tool_schemas
@@ -1418,22 +1095,12 @@ class CoreEngine:
 
                 usage.model_iterations += 1
 
-                provider_context = (
-                    self._low_latency_provider_context(
-                        request,
-                        active_context,
-                        hybrid_model_decision,
-                    )
-                )
+                provider_context = active_context
 
                 try:
                     stream_chat = (
                         stream_callback is not None
                         and not tool_schemas
-                        and (
-                            hybrid_model_decision is None
-                            or hybrid_model_decision.role == "chat"
-                        )
                     )
 
                     if stream_chat:
@@ -1850,41 +1517,10 @@ class CoreEngine:
                     blocked_plaintext_tool_call
                 ),
                 "elapsed_seconds": usage.elapsed_seconds,
-                "hybrid_model_role": (
-                    hybrid_model_decision.role
-                    if hybrid_model_decision is not None
-                    else None
-                ),
-                "hybrid_model_reason": (
-                    hybrid_model_decision.reason
-                    if hybrid_model_decision is not None
-                    else None
-                ),
-                "hybrid_model_tools_exposed": (
-                    hybrid_model_decision.expose_tools
-                    if hybrid_model_decision is not None
-                    else None
-                ),
                 "provider_metadata": (
                     dict(model_response.metadata)
                     if model_response is not None
                     else {}
-                ),
-                "low_latency_context_mode": (
-                    provider_context.values.get(
-                        "low_latency_context_mode"
-                    )
-                    if "provider_context"
-                    in locals()
-                    else None
-                ),
-                "low_latency_context_message_count": (
-                    provider_context.values.get(
-                        "low_latency_context_message_count"
-                    )
-                    if "provider_context"
-                    in locals()
-                    else None
                 ),
             },
         )

@@ -4,6 +4,21 @@ JARVIS treats tool execution as a security boundary. Model output cannot
 directly bypass the permission engine, argument validation, approval gate, or
 execution timeout.
 
+## Deterministic tool routing
+
+Besides model-issued tool calls, `DeterministicToolRouter` can map an
+unambiguous user request (for example "görevlerimi listele") directly to a tool
+call without a model round trip. This path is latency-only, never a privilege
+shortcut:
+
+- The router refuses any candidate whose effective risk is not `READ_ONLY`, and
+  any candidate whose permission decision requires confirmation.
+- A routed call enters the same pipeline as a model tool call: the permission
+  engine evaluates it, argument schemas validate it, and its structured result
+  is verified.
+- Requests can opt out per call with the `deterministic_tool_routing: false`
+  metadata flag.
+
 ## Tool contracts
 
 - Tool names, descriptions, versions, timeouts, retry policy, concurrency

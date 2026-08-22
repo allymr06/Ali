@@ -201,7 +201,7 @@ class InspectingVisionProvider(AIProvider):
 
     @property
     def name(self):
-        return "openai"
+        return "gemini"
 
     @property
     def capabilities(self):
@@ -215,10 +215,13 @@ class InspectingVisionProvider(AIProvider):
 @pytest.mark.asyncio
 async def test_vision_vertical_slice_runs_through_real_core_and_router() -> None:
     from app.bootstrap import create_application
+    from app.config.provider_preferences import DEFAULT_GEMINI_MODEL
     from app.config.settings import Settings
 
     application = create_application(
         Settings(
+            default_provider="mock",
+            default_model="mock-model",
             memory_database_path=None,
             task_database_path=None,
             task_runtime_directory=None,
@@ -226,7 +229,7 @@ async def test_vision_vertical_slice_runs_through_real_core_and_router() -> None
         )
     )
     provider = InspectingVisionProvider()
-    application.provider_registry.unregister("openai")
+    application.provider_registry.unregister("gemini")
     application.provider_registry.register(provider)
     service, _ = make_service(engine=application.engine)
 
@@ -235,4 +238,4 @@ async def test_vision_vertical_slice_runs_through_real_core_and_router() -> None
     assert result.state is VisionSessionState.COMPLETED
     assert result.response_text == "Real Core saw the image."
     assert provider.requests[0][0].metadata["vision"] is True
-    assert provider.requests[0][1]["model"] == "gpt-4o"
+    assert provider.requests[0][1]["model"] == DEFAULT_GEMINI_MODEL

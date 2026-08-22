@@ -15,6 +15,8 @@ from app.tools.executor import ToolExecutor
 
 def settings() -> Settings:
     return Settings(
+        default_provider="mock",
+        default_model="mock-model",
         windows_integrations_enabled=False,
         memory_database_path=None,
         task_database_path=None,

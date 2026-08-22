@@ -11,16 +11,6 @@ def isolate_runtime_memory_database(monkeypatch, tmp_path) -> None:
         str(tmp_path / "runtime-state"),
     )
     monkeypatch.setenv(
-        "JARVIS_OLLAMA_WARM_ENABLED",
-        "false",
-    )
-
-    monkeypatch.setenv(
-        "JARVIS_OLLAMA_HYBRID_ENABLED",
-        "false",
-    )
-
-    monkeypatch.setenv(
         "JARVIS_CONVERSATION_DATABASE_PATH",
         str(tmp_path / "runtime-conversations.sqlite3"),
     )

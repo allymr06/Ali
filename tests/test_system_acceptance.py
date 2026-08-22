@@ -16,6 +16,8 @@ from app.ui.controller import DesktopController
 
 def isolated_settings(tmp_path) -> Settings:
     return Settings(
+        default_provider="mock",
+        default_model="mock-model",
         windows_integrations_enabled=False,
         memory_database_path=str(tmp_path / "memory.sqlite3"),
         task_database_path=str(tmp_path / "tasks.sqlite3"),

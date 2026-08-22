@@ -99,8 +99,9 @@ async def test_sounddevice_overflow_is_classified_and_stream_is_closed() -> None
 
 
 class FakeWinSound:
+    # Mirrors the real winsound module: SND_MEMORY and SND_PURGE exist,
+    # synchronous playback is the default and has no constant.
     SND_MEMORY = 1
-    SND_SYNC = 2
     SND_PURGE = 4
 
     def __init__(self):
@@ -121,7 +122,7 @@ async def test_windows_output_plays_wav_and_can_stop() -> None:
     await output.play(speech)
     await output.stop()
 
-    assert module.calls[0] == (b"RIFFaudio", 3)
+    assert module.calls[0] == (b"RIFFaudio", FakeWinSound.SND_MEMORY)
     assert module.calls[1] == (None, 4)
 
 

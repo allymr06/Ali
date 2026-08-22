@@ -138,8 +138,11 @@ def test_worker_completion_is_applied_by_the_ui_event_pump() -> None:
         controller = DesktopController(application)
         controller.state.reduced_motion = True
         window = DesktopWindow(controller, root=root)
+        voice_operation_id = window._begin_voice_operation()
+        assert voice_operation_id is not None
         operation_id = window._begin_operation("PROCESSING")
         assert operation_id is not None
+        assert operation_id != voice_operation_id
         window._command_operation_id = operation_id
         window._streaming_text = ""
         controller.state.messages.append(ChatMessage("user", "Merhaba"))
@@ -163,11 +166,15 @@ def test_worker_completion_is_applied_by_the_ui_event_pump() -> None:
             "assistant",
         ]
         assert controller.state.busy is False
+        assert controller.state.voice_active is True
         assert window.send_button.cget("state") == "normal"
+        assert window.status_label.cget("text") == "DİNLİYOR"
 
         window._queue_ui_event(operation_id, "command_stream", "stale")
         root.update()
         assert window._stream_target_text == ""
+        assert window._complete_voice_operation(voice_operation_id)
+        assert controller.state.voice_active is False
     finally:
         if window is not None:
             window.close()

@@ -243,6 +243,42 @@ async def test_voice_messages_can_be_marshaled_to_the_ui_thread() -> None:
     assert controller.state.messages == []
 
 
+@pytest.mark.asyncio
+async def test_voice_uses_an_independent_context_and_history() -> None:
+    app = application()
+
+    class ContextVoice:
+        context = None
+
+        async def run_once(self, context):
+            self.context = context
+            return type(
+                "VoiceResult",
+                (),
+                {
+                    "transcript": "Sesli soru",
+                    "response_text": "Sesli yanıt",
+                    "state": None,
+                },
+            )()
+
+    voice = ContextVoice()
+    app.voice = voice
+    controller = DesktopController(app)
+    await controller.submit_command("Metin sorusu")
+    text_messages = list(controller.state.messages)
+
+    await controller.run_voice()
+
+    assert voice.context is controller.voice_context
+    assert voice.context is not controller.context
+    assert controller.state.messages == text_messages
+    assert controller.state.voice_messages == [
+        ChatMessage("user", "Sesli soru"),
+        ChatMessage("assistant", "Sesli yanıt"),
+    ]
+
+
 def test_async_runner_executes_and_closes_once() -> None:
     async def value():
         return 42

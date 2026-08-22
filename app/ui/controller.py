@@ -70,6 +70,7 @@ class DesktopController:
     application: Any
     state: UIState = field(default_factory=UIState)
     context: Context = field(default_factory=Context)
+    voice_context: Context = field(default_factory=Context)
     _runner: AsyncRunner | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -179,6 +180,9 @@ class DesktopController:
         previous_conversation_id = (
             self.context.conversation_id
         )
+        previous_voice_conversation_id = (
+            self.voice_context.conversation_id
+        )
 
         self.application = application
 
@@ -194,6 +198,17 @@ class DesktopController:
                 conversation_id=(
                     previous_conversation_id
                 )
+            )
+
+        try:
+            self.application.conversation_engine.get(
+                previous_voice_conversation_id
+            )
+        except KeyError:
+            self.voice_context = Context()
+        else:
+            self.voice_context = Context(
+                conversation_id=previous_voice_conversation_id
             )
 
         close = getattr(
@@ -281,31 +296,10 @@ class DesktopController:
             )
 
         voice = self.application.voice
-
-        run_continuous = getattr(
-            voice,
-            "run_continuous",
-            None,
-        )
-
-        if callable(run_continuous):
-            results = await run_continuous(
-                max_turns=100,
-                context=self.context,
-                max_consecutive_failures=2,
-            )
-        else:
-            # Compatibility path for older voice adapters
-            # and lightweight test doubles.
-            results = (
-                await voice.run_once(
-                    self.context
-                ),
-            )
-
         last_response: str | None = None
 
-        for result in results:
+        def record_result(result: object) -> None:
+            nonlocal last_response
             transcript = getattr(
                 result,
                 "transcript",
@@ -321,7 +315,7 @@ class DesktopController:
                     transcript.strip(),
                 )
                 if manage_state:
-                    self.state.messages.append(message)
+                    self.state.voice_messages.append(message)
                 if message_callback is not None:
                     message_callback(message)
 
@@ -335,18 +329,38 @@ class DesktopController:
                 isinstance(response_text, str)
                 and response_text.strip()
             ):
-                last_response = (
-                    response_text.strip()
-                )
-
+                last_response = response_text.strip()
                 message = ChatMessage(
                     "assistant",
                     last_response,
                 )
                 if manage_state:
-                    self.state.messages.append(message)
+                    self.state.voice_messages.append(message)
                 if message_callback is not None:
                     message_callback(message)
+
+        run_continuous = getattr(
+            voice,
+            "run_continuous",
+            None,
+        )
+
+        if callable(run_continuous):
+            results = await run_continuous(
+                max_turns=100,
+                context=self.voice_context,
+                max_consecutive_failures=2,
+                result_callback=record_result,
+            )
+        else:
+            # Compatibility path for older voice adapters
+            # and lightweight test doubles.
+            results = (
+                await voice.run_once(
+                    self.voice_context
+                ),
+            )
+            record_result(results[0])
 
         if last_response is not None:
             return last_response
@@ -374,6 +388,15 @@ class DesktopController:
                 return str(state)
 
         return "idle"
+
+    async def interrupt_voice(self) -> bool:
+        voice = self.application.voice
+        if voice is None:
+            return False
+        interrupt = getattr(voice, "interrupt_active", None)
+        if not callable(interrupt):
+            return False
+        return bool(await interrupt())
 
     async def run_research(
         self, query: str, *, max_sources: int = 5

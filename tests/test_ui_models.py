@@ -29,6 +29,9 @@ def test_ui_state_defaults_are_safe_and_local() -> None:
     assert state.theme is UITheme.DARK
     assert state.busy is False
     assert state.status == "LOCAL CORE READY"
+    assert state.voice_active is False
+    assert state.voice_status == "IDLE"
+    assert state.voice_messages == []
 
 
 def test_chat_message_validates_role_and_text() -> None:

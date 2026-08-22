@@ -950,3 +950,155 @@ def test_bootstrap_registers_ollama_without_network_call(
 
     finally:
         application.close()
+
+
+
+def test_ollama_fast_finalization_skips_model_generation(
+) -> None:
+    client = FakeClient()
+
+    provider = OllamaProvider(
+        Settings(
+            default_provider="ollama",
+            default_model=DEFAULT_OLLAMA_MODEL,
+            ollama_model=DEFAULT_OLLAMA_MODEL,
+        ),
+        client=client,
+    )
+
+    request = Request(
+        "Inspect the system."
+    )
+
+    raw_data = {
+        "release": "11",
+        "version": "10.0.26200",
+        "logical_cpu_count": 8,
+        "memory_total_gib": 7.84,
+        "memory_available_gib": 1.43,
+        "disk_total_gib": 118.01,
+        "disk_free_gib": 7.95,
+    }
+
+    context = Context()
+
+    context.values["messages"] = [
+        {
+            "role": "user",
+            "content": request.text,
+        },
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "system-call",
+                    "type": "function",
+                    "function": {
+                        "name": (
+                            "get_windows_system_info"
+                        ),
+                        "arguments": "{}",
+                    },
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "system-call",
+            "content": str(raw_data),
+        },
+    ]
+
+    result = (
+        provider.try_deterministic_finalization(
+            request,
+            context,
+        )
+    )
+
+    assert result is not None
+
+    assert result.text == (
+        "Windows release: 11\n"
+        "Windows version: 10.0.26200\n"
+        "Logical CPU count: 8\n"
+        "Total memory: 7.84 GiB\n"
+        "Available memory: 1.43 GiB\n"
+        "Total system-drive disk space: 118.01 GiB\n"
+        "Free system-drive disk space: 7.95 GiB"
+    )
+
+    assert result.provider == "ollama"
+    assert result.finish_reason == "stop"
+    assert result.tool_calls == []
+    assert result.usage == {}
+
+    assert result.metadata == {
+        "deterministic_finalization": (
+            "get_windows_system_info"
+        ),
+        "generation_skipped": True,
+    }
+
+    # Critical latency assertion:
+    # no OpenAI-compatible Ollama request occurred.
+    assert client.completions.calls == []
+
+
+def test_ollama_fast_finalization_rejects_malformed_result(
+) -> None:
+    client = FakeClient()
+
+    provider = OllamaProvider(
+        Settings(
+            default_provider="ollama",
+            default_model=DEFAULT_OLLAMA_MODEL,
+            ollama_model=DEFAULT_OLLAMA_MODEL,
+        ),
+        client=client,
+    )
+
+    request = Request(
+        "Inspect the system."
+    )
+
+    context = Context()
+
+    context.values["messages"] = [
+        {
+            "role": "user",
+            "content": request.text,
+        },
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "system-call",
+                    "type": "function",
+                    "function": {
+                        "name": (
+                            "get_windows_system_info"
+                        ),
+                        "arguments": "{}",
+                    },
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "system-call",
+            "content": "invalid result",
+        },
+    ]
+
+    result = (
+        provider.try_deterministic_finalization(
+            request,
+            context,
+        )
+    )
+
+    assert result is None
+    assert client.completions.calls == []

@@ -7,7 +7,10 @@ from app.core.engine import CoreEngine
 from app.core.models import (
     Request,
     ToolDefinition,
+    ToolExecutionStatus,
+    ToolResult,
 )
+from app.providers.base import ModelResponse
 from app.memory.in_memory import InMemoryStore
 from app.memory.manager import MemoryManager
 from app.providers.mock import MockProvider
@@ -522,3 +525,184 @@ def test_core_routes_get_task_with_exact_uuid(
     assert response.metadata[
         "invalid_tool_calls"
     ] == 0
+
+
+
+class FastFinalizingOllamaProvider(
+    OllamaLikeProvider
+):
+    def __init__(self) -> None:
+        super().__init__()
+        self.finalization_calls = 0
+
+    def try_deterministic_finalization(
+        self,
+        request,
+        context,
+        *,
+        model=None,
+    ):
+        self.finalization_calls += 1
+
+        return ModelResponse(
+            text="fast deterministic response",
+            model="test-ollama",
+            provider="ollama",
+            finish_reason="stop",
+            metadata={
+                "deterministic_finalization": (
+                    "get_windows_system_info"
+                ),
+                "generation_skipped": True,
+            },
+        )
+
+
+def test_core_skips_model_after_verified_fast_finalization(
+) -> None:
+    called = {"count": 0}
+
+    provider = (
+        FastFinalizingOllamaProvider()
+    )
+
+    engine = create_engine(
+        provider,
+        called=called,
+    )
+
+    response = asyncio.run(
+        engine.handle(
+            Request(
+                "Bu bilgisayar\u0131n "
+                "sistem bilgilerini g\u00f6ster."
+            )
+        )
+    )
+
+    assert called["count"] == 1
+
+    # generate() must never be called.
+    assert provider.calls == []
+
+    assert (
+        provider.finalization_calls
+        == 1
+    )
+
+    assert (
+        response.text
+        == "fast deterministic response"
+    )
+
+    assert response.metadata[
+        "model_iterations"
+    ] == 0
+
+    assert response.metadata[
+        "model_tokens"
+    ] == 0
+
+    assert response.metadata[
+        "tool_calls"
+    ] == 1
+
+    assert response.metadata[
+        "verified_tool_calls"
+    ] == 1
+
+    assert (
+        response.metadata[
+            "completion_verified"
+        ]
+        is True
+    )
+
+    assert (
+        response.metadata[
+            "provider_metadata"
+        ]["generation_skipped"]
+        is True
+    )
+
+
+def test_core_never_fast_finalizes_failed_tool_result(
+) -> None:
+    registry = ProviderRegistry()
+
+    provider = (
+        FastFinalizingOllamaProvider()
+    )
+
+    registry.register(
+        provider,
+        make_default=True,
+    )
+
+    executor = ToolExecutor()
+
+    def failing_system_info():
+        return ToolResult(
+            status=ToolExecutionStatus.FAILED,
+            tool_name=(
+                "get_windows_system_info"
+            ),
+            message=(
+                "System information failed."
+            ),
+            error="test failure",
+            verified=False,
+        )
+
+    executor.register(
+        ToolDefinition(
+            name="get_windows_system_info",
+            description=(
+                "Read verified local Windows "
+                "system information."
+            ),
+        ),
+        failing_system_info,
+    )
+
+    engine = CoreEngine(
+        registry,
+        MemoryManager(
+            InMemoryStore()
+        ),
+        tool_executor=executor,
+    )
+
+    response = asyncio.run(
+        engine.handle(
+            Request(
+                "Bu bilgisayar\u0131n "
+                "sistem bilgilerini g\u00f6ster."
+            )
+        )
+    )
+
+    # Fast finalization is forbidden because
+    # the tool result failed verification.
+    assert (
+        provider.finalization_calls
+        == 0
+    )
+
+    # Normal provider path remains available.
+    assert len(provider.calls) == 1
+
+    assert response.metadata[
+        "model_iterations"
+    ] == 1
+
+    assert response.metadata[
+        "failed_tool_calls"
+    ] == 1
+
+    assert (
+        response.metadata[
+            "completion_verified"
+        ]
+        is False
+    )

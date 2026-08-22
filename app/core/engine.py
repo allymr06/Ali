@@ -568,6 +568,32 @@ class CoreEngine:
                 pending_tool_calls = None
                 assistant_tool_content = None
             else:
+                deterministic_final = None
+
+                if (
+                    deterministic_tool_name is not None
+                    and tool_results
+                    and (
+                        tool_results[-1].tool_name
+                        == deterministic_tool_name
+                    )
+                    and tool_results[-1].succeeded
+                    and self._verification_engine.verify(
+                        tool_results[-1]
+                    ).passed
+                ):
+                    deterministic_final = (
+                        provider.try_deterministic_finalization(
+                            request,
+                            active_context,
+                        )
+                    )
+
+                if deterministic_final is not None:
+                    model_response = deterministic_final
+                    outcome = "completed"
+                    break
+
                 usage.model_iterations += 1
 
                 try:

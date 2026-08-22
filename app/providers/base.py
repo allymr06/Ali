@@ -135,6 +135,22 @@ class AIProvider(ABC):
         """
         return True
 
+    def try_deterministic_finalization(
+        self,
+        request: Request,
+        context: Context,
+        *,
+        model: str | None = None,
+    ) -> ModelResponse | None:
+        """
+        Return a fully verified response without model inference.
+
+        Providers should override this only when the final text can
+        be derived deterministically from the current verified
+        execution context.
+        """
+        return None
+
     @abstractmethod
     async def generate(
         self,

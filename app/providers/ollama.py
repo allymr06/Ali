@@ -10,6 +10,7 @@ from app.config.provider_preferences import (
 from app.config.settings import Settings
 from app.providers.base import (
     ModelCapabilities,
+    ModelResponse,
 )
 from app.core.models import (
     Context,
@@ -413,6 +414,51 @@ class OllamaProvider(OpenAIProvider):
                 message["content"] = compact
 
         return messages
+
+    def try_deterministic_finalization(
+        self,
+        request: Request,
+        context: Context,
+        *,
+        model: str | None = None,
+    ) -> ModelResponse | None:
+        """
+        Finalize verified Windows system information without
+        running local model inference.
+        """
+        system_report = (
+            self._current_system_info_report(
+                request,
+                context,
+            )
+        )
+
+        if system_report is None:
+            return None
+
+        selected_model = (
+            model
+            or self._settings.openai_model
+            or self._settings.default_model
+        )
+
+        if not selected_model:
+            return None
+
+        return ModelResponse(
+            text=system_report,
+            model=selected_model,
+            provider=self.name,
+            finish_reason="stop",
+            tool_calls=[],
+            usage={},
+            metadata={
+                "deterministic_finalization": (
+                    "get_windows_system_info"
+                ),
+                "generation_skipped": True,
+            },
+        )
 
     async def generate(
         self,

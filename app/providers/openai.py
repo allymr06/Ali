@@ -38,6 +38,11 @@ class OpenAIProvider(AIProvider):
             self._client = AsyncOpenAI(
                 api_key=self._settings.api_key,
                 base_url=self._settings.api_base_url or None,
+                timeout=self._settings.provider_timeout_seconds,
+                # ProviderGateway is the single retry owner. Disabling SDK
+                # retries prevents one gateway attempt from multiplying into
+                # several hidden HTTP requests.
+                max_retries=0,
             )
 
     @property

@@ -5,6 +5,16 @@ import os
 from dataclasses import dataclass
 
 
+DEFAULT_CONVERSATION_SYSTEM_PROMPT = (
+    "You are JARVIS, a personal AI assistant. When the user writes in "
+    "Turkish, answer in fluent, modern, natural Turkish. Sound warm, "
+    "concise, and conversational, never robotic. Do not mix languages "
+    "unless the user asks. Avoid formulaic introductions, unnecessary "
+    "numbered lists, and translated-sounding phrases. If uncertain, say "
+    "so directly."
+)
+
+
 def _get_bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
 
@@ -99,7 +109,7 @@ class Settings:
     # Gemma handles conversation; the primary Ollama
     # model remains responsible for structured tool use.
     ollama_hybrid_enabled: bool = False
-    ollama_chat_model: str = "gemma3:4b"
+    ollama_chat_model: str = "llama3.2:latest"
 
     # Keep the local Ollama model hot without blocking
     # JARVIS application startup.
@@ -109,15 +119,15 @@ class Settings:
     ollama_warm_retry_seconds: float = 15.0
     ollama_warmup_timeout_seconds: float = 30.0
 
-    provider_timeout_seconds: float = 30.0
-    provider_max_retries: int = 2
+    provider_timeout_seconds: float = 15.0
+    provider_max_retries: int = 1
     provider_retry_backoff_seconds: float = 0.25
     provider_fallback_enabled: bool = True
 
     conversation_max_messages: int = 50
     conversation_max_characters: int = 50_000
     conversation_summary_max_characters: int = 4_000
-    conversation_system_prompt: str | None = None
+    conversation_system_prompt: str | None = DEFAULT_CONVERSATION_SYSTEM_PROMPT
     conversation_database_path: str | None = None
 
     memory_database_path: str | None = None
@@ -447,7 +457,7 @@ class Settings:
             ),
             ollama_chat_model=os.getenv(
                 "JARVIS_OLLAMA_CHAT_MODEL",
-                "gemma3:4b",
+                "llama3.2:latest",
             ),
             ollama_warm_enabled=_get_bool(
                 "JARVIS_OLLAMA_WARM_ENABLED",
@@ -475,11 +485,11 @@ class Settings:
             ).strip().lower(),
             provider_timeout_seconds=_get_float(
                 "JARVIS_PROVIDER_TIMEOUT",
-                30.0,
+                15.0,
             ),
             provider_max_retries=_get_non_negative_int(
                 "JARVIS_PROVIDER_MAX_RETRIES",
-                2,
+                1,
             ),
             provider_retry_backoff_seconds=_get_float(
                 "JARVIS_PROVIDER_RETRY_BACKOFF",
@@ -502,7 +512,8 @@ class Settings:
                 4_000,
             ),
             conversation_system_prompt=os.getenv(
-                "JARVIS_CONVERSATION_SYSTEM_PROMPT"
+                "JARVIS_CONVERSATION_SYSTEM_PROMPT",
+                DEFAULT_CONVERSATION_SYSTEM_PROMPT,
             ),
             conversation_database_path=os.getenv(
                 "JARVIS_CONVERSATION_DATABASE_PATH",
@@ -708,4 +719,3 @@ class Settings:
                 "https://generativelanguage.googleapis.com/v1beta/openai/",
             ),
         )
-

@@ -1273,9 +1273,11 @@ class CoreEngine:
                 try:
                     stream_chat = (
                         stream_callback is not None
-                        and hybrid_model_decision is not None
-                        and hybrid_model_decision.role == "chat"
                         and not tool_schemas
+                        and (
+                            hybrid_model_decision is None
+                            or hybrid_model_decision.role == "chat"
+                        )
                     )
 
                     if stream_chat:

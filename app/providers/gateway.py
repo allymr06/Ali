@@ -45,9 +45,10 @@ class ProviderGateway:
         registry: ProviderRegistry,
         *,
         router: ModelRouter | None = None,
-        timeout_seconds: float = 30.0,
-        max_retries: int = 2,
+        timeout_seconds: float = 15.0,
+        max_retries: int = 1,
         retry_backoff_seconds: float = 0.25,
+        max_retry_delay_seconds: float = 2.0,
         fallback_enabled: bool = True,
         circuit_failure_threshold: int = 5,
         circuit_recovery_seconds: float = 30.0,
@@ -58,6 +59,8 @@ class ProviderGateway:
             raise ValueError("max_retries cannot be negative.")
         if retry_backoff_seconds < 0:
             raise ValueError("retry_backoff_seconds cannot be negative.")
+        if max_retry_delay_seconds < 0:
+            raise ValueError("max_retry_delay_seconds cannot be negative.")
         if circuit_failure_threshold < 1 or circuit_recovery_seconds <= 0:
             raise ValueError("Circuit breaker limits are invalid.")
         self._registry = registry
@@ -65,6 +68,7 @@ class ProviderGateway:
         self._timeout_seconds = timeout_seconds
         self._max_retries = max_retries
         self._retry_backoff_seconds = retry_backoff_seconds
+        self._max_retry_delay_seconds = max_retry_delay_seconds
         self._fallback_enabled = fallback_enabled
         self._health: dict[str, ProviderHealth] = {}
         self._circuit_failure_threshold = circuit_failure_threshold
@@ -188,6 +192,7 @@ class ProviderGateway:
             if retry_after_seconds is not None and retry_after_seconds >= 0
             else self._retry_backoff_seconds * (2 ** max(0, attempt - 1))
         )
+        delay = min(delay, self._max_retry_delay_seconds)
         if delay <= 0:
             return
         if cancel_event is None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+from collections.abc import Callable
 from uuid import uuid4
 
 from app.conversation.engine import ConversationEngine
@@ -27,6 +28,7 @@ from app.planning.planner import Planner
 from app.planning.models import Plan, PlanStep
 from app.planning.executor import PlanExecutor
 from app.memory.policy import MemoryPolicy
+from app.providers.base import ModelResponse
 from app.providers.base import ModelResponse
 from app.providers.registry import ProviderRegistry
 from app.providers.ollama_hybrid import OllamaHybridPolicy
@@ -360,6 +362,101 @@ class CoreEngine:
 
         return {item.strip() for item in values if item.strip()}
 
+    async def _collect_streamed_response(
+        self,
+        request: Request,
+        context: Context,
+        *,
+        model: str | None,
+        system_prompt: str | None,
+        callback: Callable[[str], None] | None,
+        cancel_event=None,
+    ) -> ModelResponse:
+        """
+        Collect one chat-only provider stream into the normal
+        ModelResponse contract while exposing cumulative text
+        to the caller as soon as chunks arrive.
+
+        This path never accepts tool calls.
+        """
+        parts: list[str] = []
+        provider_name: str | None = None
+        model_name: str | None = model
+        finish_reason: str | None = None
+        usage: dict[str, int] = {}
+        metadata: dict[str, object] = {}
+
+        async for chunk in self._provider_gateway.stream(
+            request,
+            context,
+            model=model,
+            system_prompt=system_prompt,
+            tools=None,
+            cancel_event=cancel_event,
+        ):
+            if chunk.tool_calls:
+                raise RuntimeError(
+                    "Tool calls are not allowed on the "
+                    "chat-only streaming route."
+                )
+
+            provider_name = chunk.provider
+            model_name = chunk.model or model_name
+
+            if chunk.finish_reason is not None:
+                finish_reason = chunk.finish_reason
+
+            if chunk.usage:
+                usage = dict(chunk.usage)
+
+            if chunk.metadata:
+                metadata.update(
+                    chunk.metadata
+                )
+
+            if not chunk.text:
+                continue
+
+            parts.append(
+                chunk.text
+            )
+
+            if callback is not None:
+                cumulative = "".join(
+                    parts
+                )
+
+                try:
+                    callback(
+                        cumulative
+                    )
+                except Exception:
+                    # UI presentation failures must never
+                    # break the Core request.
+                    pass
+
+        if provider_name is None:
+            raise RuntimeError(
+                "Streaming provider returned no chunks."
+            )
+
+        if model_name is None:
+            raise RuntimeError(
+                "Streaming provider did not identify a model."
+            )
+
+        metadata["streamed"] = True
+
+        return ModelResponse(
+            text="".join(parts),
+            model=model_name,
+            provider=provider_name,
+            finish_reason=finish_reason,
+            tool_calls=[],
+            usage=usage,
+            metadata=metadata,
+        )
+
     @property
     def admission(self) -> AdmissionController:
         return self._admission
@@ -371,6 +468,7 @@ class CoreEngine:
         *,
         cancel_event=None,
         limits: ExecutionLimits | None = None,
+        stream_callback: Callable[[str], None] | None = None,
     ) -> Response:
         try:
             lease = await self._admission.acquire()
@@ -393,6 +491,7 @@ class CoreEngine:
                 context,
                 cancel_event=cancel_event,
                 limits=limits,
+                stream_callback=stream_callback,
             )
 
     async def _handle_admitted(
@@ -402,6 +501,7 @@ class CoreEngine:
         *,
         cancel_event=None,
         limits: ExecutionLimits | None = None,
+        stream_callback: Callable[[str], None] | None = None,
     ) -> Response:
         """
         Process one request through the JARVIS orchestration pipeline.
@@ -674,17 +774,38 @@ class CoreEngine:
                 usage.model_iterations += 1
 
                 try:
-                    model_response = await self._await_provider(
-                        self._provider_gateway.generate(
-                            request,
-                            active_context,
-                            model=provider_model_override,
-                            system_prompt=provider_system_prompt,
-                            tools=tool_schemas or None,
-                        ),
-                        cancel_event=cancel_event,
-                        timeout=remaining,
+                    stream_chat = (
+                        stream_callback is not None
+                        and hybrid_model_decision is not None
+                        and hybrid_model_decision.role == "chat"
+                        and not tool_schemas
                     )
+
+                    if stream_chat:
+                        model_response = await self._await_provider(
+                            self._collect_streamed_response(
+                                request,
+                                active_context,
+                                model=provider_model_override,
+                                system_prompt=provider_system_prompt,
+                                callback=stream_callback,
+                                cancel_event=cancel_event,
+                            ),
+                            cancel_event=cancel_event,
+                            timeout=remaining,
+                        )
+                    else:
+                        model_response = await self._await_provider(
+                            self._provider_gateway.generate(
+                                request,
+                                active_context,
+                                model=provider_model_override,
+                                system_prompt=provider_system_prompt,
+                                tools=tool_schemas or None,
+                            ),
+                            cancel_event=cancel_event,
+                            timeout=remaining,
+                        )
                 except _ExecutionCancelled:
                     outcome = "cancelled"
                     break

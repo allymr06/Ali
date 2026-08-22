@@ -108,6 +108,8 @@ class DesktopWindow:
         self._colors = tokens(self.controller.state.theme)
         self._nav_buttons: dict[UIScreen, tk.Button] = {}
         self._busy_future: Future[Any] | None = None
+        self._streaming_text: str | None = None
+        self._streaming_label: tk.Label | None = None
         self._status_job: str | None = None
         self._nav_job: str | None = None
         self._pulse_frame = 0
@@ -670,6 +672,8 @@ class DesktopWindow:
             )
 
     def _render_chat(self) -> None:
+        self._streaming_label = None
+
         self._heading(
             "CONVERSATION",
             "A focused dialogue.",
@@ -712,7 +716,53 @@ class DesktopWindow:
                 justify="left",
                 wraplength=720,
             ).pack(anchor="w", pady=(4, 0))
-        if not self.controller.state.messages:
+        if self._streaming_text is not None:
+            background = self._colors.surface
+            bubble = tk.Frame(
+                card,
+                bg=background,
+                padx=12,
+                pady=10,
+            )
+            bubble.pack(
+                fill="x",
+                pady=4,
+            )
+
+            tk.Label(
+                bubble,
+                text="ASSISTANT",
+                bg=background,
+                fg=self._colors.faint,
+                font=(
+                    "Segoe UI Semibold",
+                    7,
+                ),
+            ).pack(
+                anchor="w"
+            )
+
+            self._streaming_label = tk.Label(
+                bubble,
+                text=(
+                    self._streaming_text
+                    or "..."
+                ),
+                bg=background,
+                fg=self._colors.ink,
+                justify="left",
+                wraplength=720,
+            )
+
+            self._streaming_label.pack(
+                anchor="w",
+                pady=(4, 0),
+            )
+
+        if (
+            not self.controller.state.messages
+            and self._streaming_text is None
+        ):
             self._line(card, "No messages", "Write below to begin.")
 
     def _render_tasks(self) -> None:
@@ -1247,17 +1297,90 @@ class DesktopWindow:
             )
             return "break"
         self.command.delete("1.0", "end")
-        self._set_busy(True, "PROCESSING")
+
+        self._streaming_text = ""
+        self._streaming_label = None
+
+        self._set_busy(
+            True,
+            "PROCESSING",
+        )
+
         self._busy_future = self.controller.submit_background(
-            self.controller.submit_command(text), self._on_command_done
+            self.controller.submit_command(
+                text,
+                stream_callback=self._on_stream_text,
+            ),
+            self._on_command_done,
         )
         return "break"
+
+    def _on_stream_text(
+        self,
+        text: str,
+    ) -> None:
+        if self._closing:
+            return
+
+        self.root.after(
+            0,
+            lambda value=text: (
+                self._apply_stream_text(
+                    value
+                )
+            ),
+        )
+
+    def _apply_stream_text(
+        self,
+        text: str,
+    ) -> None:
+        if (
+            self._busy_future is None
+            or not isinstance(text, str)
+            or not text
+        ):
+            return
+
+        self._streaming_text = text
+
+        label = self._streaming_label
+
+        if (
+            self.controller.state.screen
+            is not UIScreen.CHAT
+            or label is None
+            or not label.winfo_exists()
+        ):
+            self.render(
+                UIScreen.CHAT
+            )
+
+            label = (
+                self._streaming_label
+            )
+
+        if (
+            label is not None
+            and label.winfo_exists()
+        ):
+            label.configure(
+                text=text
+            )
+
+            self.workspace_scroller.canvas.update_idletasks()
+            self.workspace_scroller.canvas.yview_moveto(
+                1.0
+            )
 
     def _on_command_done(self, future: Future[Any]) -> None:
         self.root.after(0, lambda: self._finish_command(future))
 
     def _finish_command(self, future: Future[Any]) -> None:
         self._busy_future = None
+        self._streaming_text = None
+        self._streaming_label = None
+
         try:
             future.result()
         except Exception as exc:

@@ -180,7 +180,12 @@ class DesktopController:
         if close is not None:
             close()
 
-    async def submit_command(self, text: str) -> ChatMessage:
+    async def submit_command(
+        self,
+        text: str,
+        *,
+        stream_callback: Callable[[str], None] | None = None,
+    ) -> ChatMessage:
         normalized = text.strip()
         if not normalized:
             raise ValueError("Command cannot be empty.")
@@ -188,9 +193,22 @@ class DesktopController:
         self.state.status = "PROCESSING"
         self.state.messages.append(ChatMessage("user", normalized))
         try:
-            response = await self.application.engine.handle(
-                Request(normalized, source=RequestSource.TEXT), self.context
+            request = Request(
+                normalized,
+                source=RequestSource.TEXT,
             )
+
+            if stream_callback is None:
+                response = await self.application.engine.handle(
+                    request,
+                    self.context,
+                )
+            else:
+                response = await self.application.engine.handle(
+                    request,
+                    self.context,
+                    stream_callback=stream_callback,
+                )
             message = ChatMessage("assistant", response.text or "No response text.")
             self.state.messages.append(message)
             self.state.status = "LOCAL CORE READY"

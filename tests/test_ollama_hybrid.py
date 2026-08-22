@@ -16,6 +16,7 @@ from app.providers.base import (
     AIProvider,
     ModelCapabilities,
     ModelResponse,
+    ModelStreamChunk,
 )
 from app.providers.gateway import ProviderGateway
 from app.providers.ollama_hybrid import (
@@ -133,6 +134,7 @@ def test_non_ollama_provider_is_untouched() -> None:
 class CapturingOllamaProvider(AIProvider):
     def __init__(self) -> None:
         self.calls = []
+        self.stream_calls = []
 
     @property
     def name(self) -> str:
@@ -177,6 +179,41 @@ class CapturingOllamaProvider(AIProvider):
             finish_reason="stop",
         )
 
+
+
+    async def stream(
+        self,
+        request,
+        context,
+        *,
+        model=None,
+        system_prompt=None,
+        tools=None,
+    ):
+        self.stream_calls.append(
+            {
+                "model": model,
+                "system_prompt": system_prompt,
+                "tools": tools,
+            }
+        )
+
+        yield ModelStreamChunk(
+            text="Mer",
+            model=model or "gemma3:4b",
+            provider="ollama",
+        )
+
+        yield ModelStreamChunk(
+            text="haba",
+            model=model or "gemma3:4b",
+            provider="ollama",
+            finish_reason="stop",
+            usage={
+                "completion_tokens": 2,
+                "total_tokens": 4,
+            },
+        )
 
 def make_core():
     provider = CapturingOllamaProvider()
@@ -284,6 +321,73 @@ def test_core_action_uses_llama_and_retains_tools() -> None:
         == "tool"
     )
 
+
+
+
+def test_core_chat_streams_gemma_without_generate(
+) -> None:
+    engine, provider = make_core()
+    updates = []
+
+    response = asyncio.run(
+        engine.handle(
+            Request(
+                "Bug\u00fcn biraz s\u0131k\u0131ld\u0131m. "
+                "Benimle konu\u015f."
+            ),
+            Context(),
+            stream_callback=updates.append,
+        )
+    )
+
+    assert provider.calls == []
+    assert len(provider.stream_calls) == 1
+
+    call = provider.stream_calls[0]
+
+    assert call["model"] == "gemma3:4b"
+    assert call["tools"] is None
+
+    assert updates == [
+        "Mer",
+        "Merhaba",
+    ]
+
+    assert response.text == "Merhaba"
+
+    assert (
+        response.metadata[
+            "provider_metadata"
+        ]["streamed"]
+        is True
+    )
+
+
+def test_core_tool_route_does_not_stream(
+) -> None:
+    engine, provider = make_core()
+    updates = []
+
+    response = asyncio.run(
+        engine.handle(
+            Request(
+                "Notepad a\u00e7."
+            ),
+            Context(),
+            stream_callback=updates.append,
+        )
+    )
+
+    assert provider.stream_calls == []
+    assert len(provider.calls) == 1
+    assert updates == []
+
+    assert (
+        response.metadata[
+            "hybrid_model_role"
+        ]
+        == "tool"
+    )
 
 def test_hybrid_settings_load_from_environment(
     monkeypatch,

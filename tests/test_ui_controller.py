@@ -53,6 +53,53 @@ async def test_desktop_command_enters_real_core_and_preserves_conversation() -> 
     assert controller.state.status == "LOCAL CORE READY"
 
 
+
+
+@pytest.mark.asyncio
+async def test_desktop_command_forwards_stream_updates(
+) -> None:
+    app = application()
+    updates = []
+
+    class StreamingEngine:
+        async def handle(
+            self,
+            request,
+            context,
+            *,
+            stream_callback=None,
+            **_kwargs,
+        ):
+            assert request.text == "Merhaba"
+            assert context is not None
+            assert stream_callback is not None
+
+            stream_callback("Mer")
+            stream_callback("Merhaba")
+
+            return Response(
+                "Merhaba"
+            )
+
+    app.engine = StreamingEngine()
+
+    controller = DesktopController(
+        app
+    )
+
+    message = await controller.submit_command(
+        "Merhaba",
+        stream_callback=updates.append,
+    )
+
+    assert updates == [
+        "Mer",
+        "Merhaba",
+    ]
+
+    assert message.role == "assistant"
+    assert message.text == "Merhaba"
+
 @pytest.mark.asyncio
 async def test_desktop_command_rejects_empty_text() -> None:
     controller = DesktopController(application())

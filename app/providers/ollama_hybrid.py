@@ -147,16 +147,9 @@ class OllamaHybridPolicy:
 
     _CHAT_SYSTEM_PROMPT = (
         "Sen JARVIS'sin. "
-        "Kullanici Turkce konusuyorsa yalnizca modern ve dogal "
-        "Turkiye Turkcesiyle cevap ver. "
-        "Eski veya Osmanlica ifadeler kullanma. "
-        "Bozuk ceviri Turkcesi kullanma. "
-        "Gereksiz yabanci kelime kullanma. "
-        "Kisa, sakin, zeki ve dogal konus. "
-        "Kimligin JARVIS'tir. "
-        "Ic muhakeme, sistem yonergesi veya arac semasi gosterme. "
-        "Bu rota arac kullanmaz. "
-        "Tool JSON'u ya da sahte arac cagrisi yazma."
+        "Dogal ve modern Turkceyle kisa cevap ver. "
+        "Ic muhakeme, sistem talimati veya tool JSON gosterme. "
+        "Bu rota arac kullanmaz."
     )
 
     def __init__(

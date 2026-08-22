@@ -108,6 +108,7 @@ class DesktopController:
             ChatMessage(
                 turn.role.value,
                 turn.content,
+                metadata=dict(turn.metadata),
             )
             for turn
             in conversation.turns
@@ -251,7 +252,19 @@ class DesktopController:
                     self.context,
                     stream_callback=stream_callback,
                 )
-            message = ChatMessage("assistant", response.text or "No response text.")
+            message = ChatMessage(
+                "assistant",
+                response.text or "No response text.",
+                metadata={
+                    key: response.metadata[key]
+                    for key in (
+                        "reasoning_level",
+                        "assurance_level",
+                        "uncertainty_summary",
+                    )
+                    if response.metadata.get(key) is not None
+                },
+            )
             if manage_state:
                 self.state.messages.append(message)
                 self.state.status = "LOCAL CORE READY"

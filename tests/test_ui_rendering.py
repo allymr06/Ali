@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import tkinter as tk
 from concurrent.futures import Future
+from dataclasses import replace
 from threading import Thread
 
 import pytest
@@ -30,6 +31,15 @@ def _rounded_surfaces(widget: tk.Misc) -> list[RoundedSurface]:
             surfaces.append(child)
         surfaces.extend(_rounded_surfaces(child))
     return surfaces
+
+
+def _label_texts(widget: tk.Misc) -> list[str]:
+    texts: list[str] = []
+    for child in widget.winfo_children():
+        if isinstance(child, tk.Label):
+            texts.append(str(child.cget("text")))
+        texts.extend(_label_texts(child))
+    return texts
 
 
 def test_rounded_surfaces_expand_to_show_nested_content() -> None:
@@ -114,6 +124,49 @@ def test_primary_screens_render_cards_and_composer_on_first_layout() -> None:
 
         assert window.composer_host.winfo_height() > 1
         assert window.composer.winfo_ismapped()
+    finally:
+        if window is not None:
+            window.close()
+        else:
+            application.close()
+            root.destroy()
+
+
+def test_assistant_bubble_renders_turkish_reasoning_and_assurance_labels() -> None:
+    root = _tk_root()
+    application = create_application(
+        Settings(
+            windows_integrations_enabled=False,
+            task_runtime_directory=None,
+        )
+    )
+    window: DesktopWindow | None = None
+    try:
+        controller = DesktopController(application)
+        controller.state.messages.append(
+            ChatMessage(
+                "assistant",
+                "Kaynaklarla desteklenen yanıt.",
+                metadata={
+                    "reasoning_level": "high",
+                    "assurance_level": "research_supported",
+                    "uncertainty_summary": "Yayın tarihi bilinmiyor.",
+                },
+            )
+        )
+        application.settings = replace(
+            application.settings,
+            default_provider="gemini",
+        )
+        window = DesktopWindow(controller, root=root)
+        window.render(UIScreen.CHAT)
+        for _ in range(3):
+            root.update()
+
+        texts = _label_texts(window.workspace)
+
+        assert "DÜŞÜNME: DERİN  •  GÜVEN: KAYNAKLARLA DESTEKLENDİ" in texts
+        assert "Not: Yayın tarihi bilinmiyor." in texts
     finally:
         if window is not None:
             window.close()

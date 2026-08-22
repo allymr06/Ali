@@ -27,12 +27,16 @@ class UITheme(StrEnum):
 class ChatMessage:
     role: str
     text: str
+    metadata: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.role not in {"user", "assistant", "system"}:
             raise ValueError("Chat role is invalid.")
         if not self.text.strip():
             raise ValueError("Chat text cannot be empty.")
+        if not isinstance(self.metadata, dict):
+            raise TypeError("Chat metadata must be a dictionary.")
+        object.__setattr__(self, "metadata", dict(self.metadata))
 
 
 @dataclass(frozen=True, slots=True)

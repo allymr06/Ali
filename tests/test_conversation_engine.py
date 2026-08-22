@@ -127,6 +127,37 @@ def test_complete_response_is_idempotent_by_response_id():
     assert len(engine.get(context.conversation_id).turns) == 2
 
 
+def test_complete_response_persists_assurance_and_reasoning_metadata():
+    engine = ConversationEngine()
+    context = Context()
+    request = Request("kanıtlı yanıt")
+    response = Response(
+        "yanıt",
+        request_id=request.request_id,
+        metadata={
+            "provider": "gemini",
+            "model": "gemini-test",
+            "outcome": "completed",
+            "reasoning_level": "medium",
+            "assurance_level": "research_supported",
+            "uncertainty_summary": "Yayın tarihi bilinmiyor.",
+        },
+    )
+    engine.prepare_request(request, context)
+
+    turn = engine.complete_response(request, response, context)
+
+    assert turn is not None
+    assert turn.metadata == {
+        "outcome": "completed",
+        "provider": "gemini",
+        "model": "gemini-test",
+        "reasoning_level": "medium",
+        "assurance_level": "research_supported",
+        "uncertainty_summary": "Yayın tarihi bilinmiyor.",
+    }
+
+
 def test_engine_preserves_atomic_tool_chain():
     engine = ConversationEngine(max_context_messages=2)
     context = Context()

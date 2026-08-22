@@ -683,7 +683,7 @@ def test_environment_defaults_to_durable_conversation_store(
     )
 
 
-def test_environment_defaults_gemini_to_minimal_reasoning(
+def test_environment_defaults_gemini_to_auto_reasoning(
     monkeypatch,
 ) -> None:
     monkeypatch.delenv(
@@ -697,5 +697,5 @@ def test_environment_defaults_gemini_to_minimal_reasoning(
 
     assert (
         settings.gemini_reasoning_effort
-        == "minimal"
+        == "auto"
     )

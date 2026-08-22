@@ -105,6 +105,66 @@ async def test_openai_provider_generates_response():
 
 
 @pytest.mark.asyncio
+async def test_legacy_single_argument_request_options_hook_supports_generate_and_stream():
+    stream_event = SimpleNamespace(
+        model="test-model",
+        choices=[
+            SimpleNamespace(
+                delta=SimpleNamespace(content="ok", tool_calls=[]),
+                finish_reason="stop",
+            )
+        ],
+        usage=None,
+    )
+
+    class FakeStream:
+        def __init__(self) -> None:
+            self._events = iter([stream_event])
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            try:
+                return next(self._events)
+            except StopIteration:
+                raise StopAsyncIteration
+
+    class DualCompletions:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def create(self, **kwargs):
+            self.calls.append(kwargs)
+            return FakeStream() if kwargs.get("stream") else make_response()
+
+    class LegacyHookProvider(OpenAIProvider):
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            self.hook_models: list[str] = []
+
+        def _chat_request_options(self, selected_model: str):
+            self.hook_models.append(selected_model)
+            return {"temperature": 0.25}
+
+    completions = DualCompletions()
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions)
+    )
+    provider = LegacyHookProvider(make_settings(), client=client)
+
+    await provider.generate(Request("hello"), Context())
+    chunks = [
+        chunk
+        async for chunk in provider.stream(Request("hello"), Context())
+    ]
+
+    assert provider.hook_models == ["test-model", "test-model"]
+    assert [call["temperature"] for call in completions.calls] == [0.25, 0.25]
+    assert [chunk.text for chunk in chunks] == ["ok"]
+
+
+@pytest.mark.asyncio
 async def test_openai_provider_passes_system_prompt_and_memories():
     client = FakeClient(make_response())
 

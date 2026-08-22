@@ -1479,6 +1479,48 @@ class DesktopWindow:
                 justify="left",
                 wraplength=720,
             ).pack(anchor="w", pady=(4, 0))
+            if message.role == "assistant" and message.metadata:
+                reasoning_labels = {
+                    "minimal": "HIZLI",
+                    "low": "HIZLI",
+                    "medium": "DENGELİ",
+                    "high": "DERİN",
+                }
+                assurance_labels = {
+                    "tool_verified": "ARAÇLA DOĞRULANDI",
+                    "research_supported": "KAYNAKLARLA DESTEKLENDİ",
+                    "unverified": "DOĞRULANMADI",
+                }
+                reasoning = reasoning_labels.get(
+                    str(message.metadata.get("reasoning_level", ""))
+                )
+                assurance = assurance_labels.get(
+                    str(message.metadata.get("assurance_level", ""))
+                )
+                labels = []
+                if reasoning:
+                    labels.append(f"DÜŞÜNME: {reasoning}")
+                if assurance:
+                    labels.append(f"GÜVEN: {assurance}")
+                if labels:
+                    tk.Label(
+                        bubble,
+                        text="  •  ".join(labels),
+                        bg=background,
+                        fg=self._colors.muted,
+                        font=("Segoe UI Semibold", 7),
+                    ).pack(anchor="w", pady=(6, 0))
+                uncertainty = message.metadata.get("uncertainty_summary")
+                if isinstance(uncertainty, str) and uncertainty.strip():
+                    tk.Label(
+                        bubble,
+                        text=f"Not: {uncertainty.strip()}",
+                        bg=background,
+                        fg=self._colors.muted,
+                        justify="left",
+                        wraplength=720,
+                        font=("Segoe UI", 7),
+                    ).pack(anchor="w", pady=(2, 0))
         if self._streaming_text is not None:
             background = self._colors.surface
             bubble_surface = RoundedSurface(

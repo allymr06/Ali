@@ -5,7 +5,7 @@ import sqlite3
 import pytest
 
 from app.config import paths
-from app.conversation.models import Conversation
+from app.conversation.models import Conversation, ConversationTurn, MessageRole
 from app.conversation.sqlite import (
     ConversationPersistenceError,
     SQLiteConversationStore,
@@ -75,6 +75,33 @@ def test_conversation_backup_round_trip_includes_live_wal_data(tmp_path) -> None
         expected.conversation_id
     )
     restored.close()
+
+
+def test_assurance_metadata_survives_sqlite_round_trip(tmp_path) -> None:
+    store = SQLiteConversationStore(tmp_path / "conversations.sqlite3")
+    conversation = Conversation()
+    conversation.add_turn(
+        ConversationTurn(
+            conversation_id=conversation.conversation_id,
+            role=MessageRole.ASSISTANT,
+            content="Kanıtlı yanıt",
+            metadata={
+                "reasoning_level": "high",
+                "assurance_level": "tool_verified",
+                "uncertainty_summary": None,
+            },
+        )
+    )
+
+    store.save(conversation)
+    loaded = store.get(conversation.conversation_id)
+    store.close()
+
+    assert loaded.turns[0].metadata == {
+        "reasoning_level": "high",
+        "assurance_level": "tool_verified",
+        "uncertainty_summary": None,
+    }
 
 
 def test_default_state_migration_copies_legacy_sqlite_without_deleting_it(

@@ -253,6 +253,14 @@ class OpenAIProvider(AIProvider):
         """Provider-specific Chat Completions options."""
         return {}
 
+    def _chat_request_options_for_request(
+        self,
+        selected_model: str,
+        request: Request,
+    ) -> dict[str, Any]:
+        """Request-aware hook that preserves existing provider overrides."""
+        return self._chat_request_options(selected_model)
+
     async def generate(
         self,
         request: Request,
@@ -276,8 +284,9 @@ class OpenAIProvider(AIProvider):
             "tools": tools or None,
         }
         request_arguments.update(
-            self._chat_request_options(
-                selected_model
+            self._chat_request_options_for_request(
+                selected_model,
+                request,
             )
         )
         if response_format is not None:
@@ -336,8 +345,9 @@ class OpenAIProvider(AIProvider):
                 },
             }
             request_arguments.update(
-                self._chat_request_options(
-                    selected_model
+                self._chat_request_options_for_request(
+                    selected_model,
+                    request,
                 )
             )
             stream = await client.chat.completions.create(

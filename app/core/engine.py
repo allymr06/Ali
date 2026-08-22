@@ -14,6 +14,7 @@ from app.core.models import (
     ToolExecutionStatus,
     ToolResult,
 )
+from app.core.assurance import summarize_assurance
 from app.core.interaction_policy import InteractionPolicy
 from app.execution.context import ExecutionContext
 from app.execution.models import ExecutionLimits, ExecutionUsage, RetryPolicy
@@ -1535,6 +1536,7 @@ class CoreEngine:
             and failed_tools == 0
             and verified_tools == len(tool_results)
         )
+        assurance = summarize_assurance(tool_results, outcome=outcome)
 
         if model_response is None:
             response_text = (
@@ -1556,6 +1558,17 @@ class CoreEngine:
                     else "Execution stopped before verified completion."
                 )
 
+        raw_reasoning_level = (
+            model_response.metadata.get("reasoning_level")
+            if model_response is not None
+            else None
+        )
+        reasoning_level = (
+            raw_reasoning_level
+            if raw_reasoning_level in {"minimal", "low", "medium", "high"}
+            else None
+        )
+
         response = Response(
             text=response_text,
             request_id=request.request_id,
@@ -1572,6 +1585,9 @@ class CoreEngine:
                 "conversation_id": str(active_context.conversation_id),
                 "outcome": outcome,
                 "completion_verified": completion_verified,
+                "reasoning_level": reasoning_level,
+                "assurance_level": assurance.level.value,
+                "uncertainty_summary": assurance.uncertainty,
                 "budget_reason": budget_reason,
                 "tool_calls": executed_tool_calls,
                 "tool_call_attempts": usage.tool_calls,

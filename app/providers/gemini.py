@@ -5,17 +5,13 @@ from typing import Any
 
 from app.config.provider_preferences import DEFAULT_GEMINI_MODEL
 from app.config.settings import Settings
+from app.core.models import Request
 from app.providers.openai import OpenAIProvider
+from app.providers.reasoning import ReasoningPolicy
 
 
 class GeminiProvider(OpenAIProvider):
     """Gemini adapter using Google's OpenAI-compatible API surface."""
-
-    _MINIMAL_REASONING_MODELS = (
-        "gemini-3.5-flash-lite",
-        "gemini-3.5-flash",
-        "gemini-3.6-flash",
-    )
 
     def __init__(
         self,
@@ -32,22 +28,27 @@ class GeminiProvider(OpenAIProvider):
         )
         super().__init__(gemini_settings, client=client)
 
-    def _chat_request_options(
+    def _chat_request_options_for_request(
         self,
         selected_model: str,
+        request: Request,
     ) -> dict[str, Any]:
-        effort = self._settings.gemini_reasoning_effort
-
-        if (
-            effort == "minimal"
-            and not selected_model.startswith(
-                self._MINIMAL_REASONING_MODELS
-            )
-        ):
-            effort = "low"
+        metadata = dict(request.metadata)
+        if ReasoningPolicy.explicitly_requests_deep_reasoning(request.text):
+            metadata[ReasoningPolicy.DEEP_REASONING_METADATA_KEY] = True
+        effort = ReasoningPolicy.select(
+            task_type=request.metadata.get(
+                "reasoning_task_type",
+                request.metadata.get("task_type", "standard"),
+            ),
+            model=selected_model,
+            config_override=self._settings.gemini_reasoning_effort,
+            request_metadata=metadata,
+        )
+        request.metadata["_reasoning_level"] = effort.value
 
         return {
-            "reasoning_effort": effort,
+            "reasoning_effort": effort.value,
         }
 
     @property

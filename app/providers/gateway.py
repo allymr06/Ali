@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import time
 from collections.abc import AsyncIterator, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from app.core.models import Context, Request
 from app.providers.base import (
@@ -290,6 +290,23 @@ class ProviderGateway:
             )
         )
 
+    def _reasoning_task_type(
+        self,
+        request: Request,
+        *,
+        explicit: TaskType | str | None,
+        routed: TaskType,
+    ) -> TaskType:
+        classifier = getattr(self._router, "classify", None)
+        if not callable(classifier):
+            return routed
+        classified = classifier(request, task_type=explicit)
+        return (
+            classified
+            if isinstance(classified, TaskType)
+            else TaskType(classified)
+        )
+
     def _model_metadata(
         self,
         provider: str,
@@ -347,6 +364,20 @@ class ProviderGateway:
             task_type=task_type,
             required=required,
         )
+        reasoning_task_type = self._reasoning_task_type(
+            request,
+            explicit=task_type,
+            routed=decision.task_type,
+        )
+        provider_request = replace(
+            request,
+            metadata={
+                **request.metadata,
+                "task_type": decision.task_type.value,
+                "reasoning_task_type": reasoning_task_type.value,
+                "routing_reason": decision.reason,
+            },
+        )
         last_error: Exception | None = None
         fallback_count = 0
         candidates = self._candidates(decision)
@@ -383,6 +414,7 @@ class ProviderGateway:
                 total_attempts += 1
                 started = time.monotonic()
                 try:
+                    provider_request.metadata.pop("_reasoning_level", None)
                     provider_kwargs = {
                         "model": selected_model,
                         "system_prompt": system_prompt,
@@ -392,7 +424,7 @@ class ProviderGateway:
                         provider_kwargs["response_format"] = response_format
                     raw = await self._await_operation(
                         provider_instance.generate(
-                            request,
+                            provider_request,
                             context,
                             **provider_kwargs,
                         ),
@@ -442,6 +474,9 @@ class ProviderGateway:
                         "fallback_count": fallback_count,
                         "routing_reason": decision.reason,
                         "task_type": decision.task_type.value,
+                        "reasoning_level": provider_request.metadata.get(
+                            "_reasoning_level"
+                        ),
                         "provider_latency_seconds": health.last_latency_seconds,
                     }
                 )
@@ -495,6 +530,20 @@ class ProviderGateway:
             required=required,
             streaming=True,
         )
+        reasoning_task_type = self._reasoning_task_type(
+            request,
+            explicit=task_type,
+            routed=decision.task_type,
+        )
+        provider_request = replace(
+            request,
+            metadata={
+                **request.metadata,
+                "task_type": decision.task_type.value,
+                "reasoning_task_type": reasoning_task_type.value,
+                "routing_reason": decision.reason,
+            },
+        )
         last_error: Exception | None = None
         fallback_count = 0
         candidates = self._candidates(decision)
@@ -530,9 +579,10 @@ class ProviderGateway:
                 total_attempts += 1
                 started = time.monotonic()
                 try:
+                    provider_request.metadata.pop("_reasoning_level", None)
                     async with asyncio.timeout(remaining):
                         async for chunk in provider_instance.stream(
-                            request,
+                            provider_request,
                             context,
                             model=selected_model,
                             system_prompt=system_prompt,
@@ -558,6 +608,9 @@ class ProviderGateway:
                                     "fallback_count": fallback_count,
                                     "routing_reason": decision.reason,
                                     "task_type": decision.task_type.value,
+                                    "reasoning_level": provider_request.metadata.get(
+                                        "_reasoning_level"
+                                    ),
                                 }
                             )
                             yield chunk

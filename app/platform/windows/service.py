@@ -116,6 +116,8 @@ class WindowsIntegrationService:
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         if not kernel32.GlobalMemoryStatusEx(ctypes.byref(memory)):
             raise OSError(ctypes.get_last_error(), "GlobalMemoryStatusEx failed.")
+        gibibyte = 1024 ** 3
+
         return {
             "system": platform.system(),
             "release": platform.release(),
@@ -126,9 +128,25 @@ class WindowsIntegrationService:
             "logical_cpu_count": os.cpu_count(),
             "memory_total_bytes": memory.total_physical,
             "memory_available_bytes": memory.available_physical,
+            "memory_total_gib": round(
+                memory.total_physical / gibibyte,
+                2,
+            ),
+            "memory_available_gib": round(
+                memory.available_physical / gibibyte,
+                2,
+            ),
             "system_drive": system_drive,
             "disk_total_bytes": disk.total,
             "disk_free_bytes": disk.free,
+            "disk_total_gib": round(
+                disk.total / gibibyte,
+                2,
+            ),
+            "disk_free_gib": round(
+                disk.free / gibibyte,
+                2,
+            ),
         }
 
     def register_tools(self, executor: ToolExecutor) -> None:

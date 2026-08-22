@@ -316,6 +316,32 @@ def test_native_system_info_reports_local_windows_state() -> None:
     assert info["disk_total_bytes"] > 0
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows-only native observation")
+def test_native_system_info_exposes_deterministic_gib_values() -> None:
+    info = WindowsIntegrationService.system_info()
+    gibibyte = 1024 ** 3
+
+    assert info["memory_total_gib"] == round(
+        info["memory_total_bytes"] / gibibyte,
+        2,
+    )
+    assert info["memory_available_gib"] == round(
+        info["memory_available_bytes"] / gibibyte,
+        2,
+    )
+    assert info["disk_total_gib"] == round(
+        info["disk_total_bytes"] / gibibyte,
+        2,
+    )
+    assert info["disk_free_gib"] == round(
+        info["disk_free_bytes"] / gibibyte,
+        2,
+    )
+
+    assert info["memory_available_gib"] <= info["memory_total_gib"]
+    assert info["disk_free_gib"] <= info["disk_total_gib"]
+
+
 def test_bootstrap_registers_windows_tools_on_windows() -> None:
     application = create_application()
 

@@ -521,14 +521,13 @@ class WindowsWaveAudioOutput(AudioOutput):
                 "interrupted."
             )
 
+        # Synchronous playback is winsound's default; the Win32
+        # SND_SYNC flag is 0 and the module exposes no constant for it.
         playback = asyncio.create_task(
             asyncio.to_thread(
                 winsound.PlaySound,
                 speech.data,
-                (
-                    winsound.SND_MEMORY
-                    | winsound.SND_SYNC
-                ),
+                winsound.SND_MEMORY,
             )
         )
 

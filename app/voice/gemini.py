@@ -40,12 +40,17 @@ def _create_google_client(
     )
 
 
-async def _create_interaction(
+async def _generate_content(
     client,
     **kwargs,
 ):
+    """Call models.generate_content off the event loop.
+
+    The configured speech models expose only the generateContent
+    action, so both adapters speak that surface.
+    """
     result = await asyncio.to_thread(
-        client.interactions.create,
+        client.models.generate_content,
         **kwargs,
     )
 
@@ -53,6 +58,38 @@ async def _create_interaction(
         result = await result
 
     return result
+
+
+def _decode_inline_audio(part) -> tuple[bytes, str] | None:
+    """Extract (raw_bytes, mime_type) from a response part, if audio."""
+    inline = getattr(part, "inline_data", None)
+    if inline is None:
+        return None
+    mime = str(
+        getattr(
+            getattr(inline, "mime_type", ""), "value",
+            getattr(inline, "mime_type", ""),
+        )
+    ).lower()
+    if not mime.startswith("audio/"):
+        return None
+    data = getattr(inline, "data", None)
+    if isinstance(data, str):
+        try:
+            return base64.b64decode(data), mime
+        except Exception:
+            return None
+    if isinstance(data, (bytes, bytearray)):
+        return bytes(data), mime
+    return None
+
+
+def _pcm_rate_from_mime(mime: str, default: int = 24_000) -> int:
+    for parameter in mime.split(";"):
+        key, _, value = parameter.strip().partition("=")
+        if key == "rate" and value.isdigit():
+            return int(value)
+    return default
 
 
 class GeminiSpeechRecognizer(
@@ -101,10 +138,6 @@ class GeminiSpeechRecognizer(
     ) -> TranscriptionResult:
         client = self._require_client()
 
-        audio = base64.b64encode(
-            capture.to_wav_bytes()
-        ).decode("ascii")
-
         instruction = (
             "Transcribe only the spoken words "
             "in this audio. Return plain text "
@@ -119,28 +152,30 @@ class GeminiSpeechRecognizer(
             )
 
         try:
-            interaction = (
-                await _create_interaction(
-                    client,
-                    model=self._model,
-                    input=[
-                        {
-                            "type": "text",
-                            "text": instruction,
-                        },
-                        {
-                            "type": "audio",
-                            "data": audio,
-                            "mime_type": (
-                                "audio/wav"
-                            ),
-                        },
-                    ],
-                    response_format={
-                        "type": "text",
+            response = await _generate_content(
+                client,
+                model=self._model,
+                contents=[
+                    {
+                        "role": "user",
+                        "parts": [
+                            {"text": instruction},
+                            {
+                                "inline_data": {
+                                    "mime_type": "audio/wav",
+                                    "data": (
+                                        capture.to_wav_bytes()
+                                    ),
+                                }
+                            },
+                        ],
+                    }
+                ],
+                config={
+                    "automatic_function_calling": {
+                        "disable": True,
                     },
-                    store=False,
-                )
+                },
             )
 
         except Exception as exc:
@@ -150,8 +185,8 @@ class GeminiSpeechRecognizer(
             ) from exc
 
         text = getattr(
-            interaction,
-            "output_text",
+            response,
+            "text",
             None,
         )
 
@@ -277,29 +312,23 @@ class GeminiSpeechSynthesizer(
         client = self._require_client()
 
         try:
-            interaction = (
-                await _create_interaction(
-                    client,
-                    model=self._model,
-                    input=prompt,
-                    response_format={
-                        "type": "audio",
-                        "mime_type": (
-                            "audio/wav"
-                        ),
-                        "delivery": "inline",
-                    },
-                    generation_config={
-                        "speech_config": [
-                            {
-                                "voice": (
-                                    self._voice
-                                )
+            response = await _generate_content(
+                client,
+                model=self._model,
+                contents=prompt,
+                config={
+                    "response_modalities": ["AUDIO"],
+                    "speech_config": {
+                        "voice_config": {
+                            "prebuilt_voice_config": {
+                                "voice_name": self._voice,
                             }
-                        ]
+                        }
                     },
-                    store=False,
-                )
+                    "automatic_function_calling": {
+                        "disable": True,
+                    },
+                },
             )
 
         except Exception as exc:
@@ -308,103 +337,44 @@ class GeminiSpeechSynthesizer(
                 "failed."
             ) from exc
 
-        audio = getattr(
-            interaction,
-            "output_audio",
-            None,
-        )
+        decoded: tuple[bytes, str] | None = None
+        for candidate in (
+            getattr(response, "candidates", None) or []
+        ):
+            content = getattr(candidate, "content", None)
+            for part in (
+                getattr(content, "parts", None) or []
+            ):
+                decoded = _decode_inline_audio(part)
+                if decoded is not None:
+                    break
+            if decoded is not None:
+                break
 
-        if audio is None:
+        if decoded is None:
             raise VoiceProviderError(
                 "Gemini returned no "
                 "speech audio."
             )
 
-        raw_data = getattr(
-            audio,
-            "data",
-            None,
-        )
+        data, mime_type = decoded
 
-        if isinstance(
-            raw_data,
-            str,
-        ):
-            try:
-                data = (
-                    base64.b64decode(
-                        raw_data
-                    )
-                )
-            except Exception as exc:
-                raise VoiceProviderError(
-                    "Gemini returned invalid "
-                    "speech audio."
-                ) from exc
+        base_mime = mime_type.split(";")[0].strip()
 
-        elif isinstance(
-            raw_data,
-            (bytes, bytearray),
-        ):
-            data = bytes(raw_data)
-
-        else:
-            raise VoiceProviderError(
-                "Gemini returned invalid "
-                "speech audio."
-            )
-
-        raw_mime_type = getattr(
-            audio,
-            "mime_type",
-            "audio/wav",
-        )
-
-        mime_type = getattr(
-            raw_mime_type,
-            "value",
-            raw_mime_type,
-        )
-
-        mime_type = str(
-            mime_type
-        ).lower()
-
-        if mime_type in {
+        if base_mime in {
             "audio/l16",
             "audio/pcm",
         }:
-            sample_rate = int(
-                getattr(
-                    audio,
-                    "sample_rate",
-                    24_000,
-                )
-                or 24_000
-            )
-
-            channels = int(
-                getattr(
-                    audio,
-                    "channels",
-                    1,
-                )
-                or 1
-            )
-
             data = self._wav_from_pcm(
                 data,
-                sample_rate=sample_rate,
-                channels=channels,
+                sample_rate=_pcm_rate_from_mime(mime_type),
+                channels=1,
             )
 
-        elif (
-            mime_type
-            not in {
-                "audio/wav",
-                "audio/x-wav",
-            }
-        ):
+        elif base_mime not in {
+            "audio/wav",
+            "audio/x-wav",
+        }:
             raise VoiceProviderError(
                 "Gemini returned an "
                 "unsupported speech format."

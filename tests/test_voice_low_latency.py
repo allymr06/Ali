@@ -199,7 +199,7 @@ async def test_vad_exits_when_user_never_speaks(
     assert stream.closed is True
 
 
-class FakeInteractions:
+class FakeModels:
     def __init__(
         self,
         responses,
@@ -209,7 +209,7 @@ class FakeInteractions:
         )
         self.calls = []
 
-    def create(
+    def generate_content(
         self,
         **kwargs,
     ):
@@ -225,145 +225,100 @@ class FakeGeminiClient:
         self,
         responses,
     ) -> None:
-        self.interactions = (
-            FakeInteractions(
-                responses
-            )
+        self.models = FakeModels(
+            responses
         )
 
 
 @pytest.mark.asyncio
-async def test_gemini_recognizer_uses_inline_audio_without_storage(
-) -> None:
+async def test_gemini_recognizer_sends_inline_wav_audio() -> None:
     client = FakeGeminiClient(
-        [
-            SimpleNamespace(
-                output_text=" Merhaba JARVIS "
-            )
-        ]
+        [SimpleNamespace(text=" Merhaba JARVIS ")]
     )
 
-    recognizer = (
-        GeminiSpeechRecognizer(
-            Settings(),
-            client=client,
-        )
+    recognizer = GeminiSpeechRecognizer(
+        Settings(),
+        client=client,
     )
 
-    result = (
-        await recognizer.transcribe(
-            AudioCapture(
-                bytearray(
-                    b"\x00\x01" * 80
-                )
-            ),
-            language="tr",
-        )
+    result = await recognizer.transcribe(
+        AudioCapture(bytearray(b"\x00\x01" * 80)),
+        language="tr",
     )
 
-    assert (
-        result.text
-        == "Merhaba JARVIS"
-    )
+    assert result.text == "Merhaba JARVIS"
     assert result.provider == "gemini"
 
-    call = (
-        client.interactions
-        .calls[0]
-    )
+    call = client.models.calls[0]
 
-    assert call["store"] is False
-    assert (
-        call["model"]
-        == "gemini-3.7-flash"
-    )
+    assert call["model"] == "gemini-3.7-flash"
 
-    audio = call["input"][1]
+    parts = call["contents"][0]["parts"]
+    assert "Transcribe" in parts[0]["text"]
 
-    assert (
-        audio["mime_type"]
-        == "audio/wav"
-    )
-    assert audio["data"]
+    audio = parts[1]["inline_data"]
+    assert audio["mime_type"] == "audio/wav"
+    assert bytes(audio["data"]).startswith(b"RIFF")
+
+    afc = call["config"]["automatic_function_calling"]
+    assert afc["disable"] is True
 
 
 @pytest.mark.asyncio
-async def test_gemini_tts_requests_inline_wav_without_storage(
-) -> None:
-    wav = b"RIFFfake-wav"
+async def test_gemini_tts_wraps_inline_pcm_into_wav() -> None:
+    pcm_bytes = b"\x01\x02" * 2_000
 
     client = FakeGeminiClient(
         [
             SimpleNamespace(
-                output_audio=(
+                candidates=[
                     SimpleNamespace(
-                        data=(
-                            base64.b64encode(
-                                wav
-                            ).decode(
-                                "ascii"
-                            )
-                        ),
-                        mime_type=(
-                            "audio/wav"
-                        ),
-                        sample_rate=24000,
-                        channels=1,
+                        content=SimpleNamespace(
+                            parts=[
+                                SimpleNamespace(
+                                    inline_data=SimpleNamespace(
+                                        mime_type=(
+                                            "audio/L16;codec=pcm;rate=24000"
+                                        ),
+                                        data=pcm_bytes,
+                                    )
+                                )
+                            ]
+                        )
                     )
-                )
+                ]
             )
         ]
     )
 
-    synthesizer = (
-        GeminiSpeechSynthesizer(
-            Settings(),
-            client=client,
-        )
+    synthesizer = GeminiSpeechSynthesizer(
+        Settings(),
+        client=client,
     )
 
-    result = (
-        await synthesizer.synthesize(
-            "Merhaba."
-        )
-    )
+    result = await synthesizer.synthesize("Merhaba.")
 
-    assert result.data == wav
+    assert result.encoding is AudioEncoding.WAV
+    assert result.provider == "gemini"
+    assert result.data.startswith(b"RIFF")
+    assert pcm_bytes in result.data
 
-    assert (
-        result.encoding
-        is AudioEncoding.WAV
-    )
+    import io
+    import wave
 
-    assert (
-        result.provider
-        == "gemini"
-    )
+    with wave.open(io.BytesIO(result.data)) as reader:
+        assert reader.getframerate() == 24_000
+        assert reader.getnchannels() == 1
 
-    call = (
-        client.interactions
-        .calls[0]
-    )
+    call = client.models.calls[0]
 
-    assert call["store"] is False
+    assert call["model"] == "gemini-3.1-flash-tts-preview"
+    assert call["config"]["response_modalities"] == ["AUDIO"]
 
-    assert (
-        call["response_format"][
-            "mime_type"
-        ]
-        == "audio/wav"
-    )
-
-    assert (
-        call[
-            "generation_config"
-        ][
-            "speech_config"
-        ][0][
-            "voice"
-        ]
-        == "Kore"
-    )
+    voice = call["config"]["speech_config"]["voice_config"][
+        "prebuilt_voice_config"
+    ]["voice_name"]
+    assert voice == "Kore"
 
 
 class DummyInput:

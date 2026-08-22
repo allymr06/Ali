@@ -4458,7 +4458,7 @@ class DesktopWindow:
             and self.voice_overlay.visible
             and payload.role == "user"
         ):
-            self.voice_overlay.set_transcript(payload.content)
+            self.voice_overlay.set_transcript(payload.text)
         if self.controller.state.screen is UIScreen.VOICE:
             self.render(UIScreen.VOICE)
 

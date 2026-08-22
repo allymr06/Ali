@@ -306,3 +306,37 @@ def test_tool_approval_event_is_main_thread_only_and_stale_safe(
         else:
             application.close()
             root.destroy()
+
+
+def test_voice_message_updates_overlay_transcript() -> None:
+    from app.ui.desktop import VoiceOverlay
+
+    root = _tk_root()
+    application = create_application(
+        Settings(windows_integrations_enabled=False, task_runtime_directory=None)
+    )
+    window: DesktopWindow | None = None
+    try:
+        window = DesktopWindow(DesktopController(application), root=root)
+        window._voice_operation_id = 7
+        window.voice_overlay = VoiceOverlay(
+            window.shell,
+            window._colors,
+            window.engine,
+            on_dismiss=lambda: None,
+        )
+        window.voice_overlay.open()
+        root.update()
+
+        window._apply_voice_message(7, ChatMessage("user", "Merhaba Jarvis"))
+
+        assert window.voice_overlay._transcript == "Merhaba Jarvis"
+
+        window._apply_voice_message(7, ChatMessage("assistant", "Merhaba!"))
+        assert window.voice_overlay._transcript == "Merhaba Jarvis"
+    finally:
+        if window is not None:
+            window.close()
+        else:
+            application.close()
+            root.destroy()

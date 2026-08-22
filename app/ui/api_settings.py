@@ -8,8 +8,6 @@ from openai import AsyncOpenAI
 
 from app.config.provider_preferences import (
     DEFAULT_GEMINI_MODEL,
-    DEFAULT_OLLAMA_MODEL,
-    DEFAULT_OPENAI_MODEL,
     ProviderPreferences,
     ProviderPreferencesStore,
     validate_model,
@@ -36,9 +34,7 @@ class ConnectionTestResult:
 class APISettingsService:
     """Coordinate non-secret preferences and OS-backed API credentials."""
 
-    _CREDENTIAL_PROVIDERS = frozenset(
-        {"gemini", "openai"}
-    )
+    _CREDENTIAL_PROVIDERS = frozenset({"gemini"})
 
     def __init__(
         self,
@@ -50,14 +46,10 @@ class APISettingsService:
         if credential_stores is not None:
             self._credential_stores = dict(credential_stores)
         elif credentials is not None:
-            self._credential_stores = {
-                "gemini": credentials,
-                "openai": credentials,
-            }
+            self._credential_stores = {"gemini": credentials}
         else:
             self._credential_stores = {
                 "gemini": WindowsCredentialStore("JARVIS/Gemini API"),
-                "openai": WindowsCredentialStore("JARVIS/OpenAI API"),
             }
         self.preferences = preferences or ProviderPreferencesStore()
         self._client_factory = client_factory
@@ -90,9 +82,6 @@ class APISettingsService:
 
     def _credential_store(self, provider: str) -> CredentialStore:
         selected = validate_provider(provider)
-        if selected == "mock":
-            selected = "gemini"
-
         if selected not in self._credential_stores:
             raise ValueError(
                 f"{selected.title()} does not use an API credential."
@@ -181,7 +170,7 @@ class APISettingsService:
 
         self.preferences.save(
             ProviderPreferences(
-                provider="mock",
+                provider="gemini",
                 model=profile.model,
             )
         )
@@ -191,108 +180,41 @@ class APISettingsService:
     def build_runtime_settings(self) -> Settings:
         base = Settings.from_environment()
         profile = self.preferences.load()
-        provider = os.getenv("JARVIS_DEFAULT_PROVIDER") or profile.provider
-        provider_model_env = {
-            "gemini": "JARVIS_GEMINI_MODEL",
-            "ollama": "JARVIS_OLLAMA_MODEL",
-            "openai": "JARVIS_OPENAI_MODEL",
-        }.get(provider)
 
+        # The desktop always runs on Gemini. Leftover environment from an
+        # older build — JARVIS_DEFAULT_PROVIDER, JARVIS_DEFAULT_MODEL, or a
+        # voice provider naming a deleted adapter — is ignored here instead
+        # of selecting a nonexistent provider, renaming the Gemini model, or
+        # failing desktop startup. Explicit Gemini variables keep precedence.
         model = (
-            os.getenv(provider_model_env)
-            if provider_model_env
-            else None
-        ) or os.getenv(
-            "JARVIS_DEFAULT_MODEL"
-        ) or profile.model
-        voice_provider_names = {
-            base.voice_stt_provider.strip().casefold(),
-            base.voice_tts_provider.strip().casefold(),
-        }
-
-        needs_openai = (
-            provider == "openai"
-            or "openai" in voice_provider_names
+            (os.getenv("JARVIS_GEMINI_MODEL") or "").strip()
+            or profile.model
         )
+        stored_gemini_key = self._credential_store("gemini").read()
 
-        needs_gemini = (
-            provider == "gemini"
-            or "gemini" in voice_provider_names
-        )
-
-        stored_openai_key = (
-            self._credential_store(
-                "openai"
-            ).read()
-            if needs_openai
-            else None
-        )
-
-        stored_gemini_key = (
-            self._credential_store(
-                "gemini"
-            ).read()
-            if needs_gemini
-            else None
-        )
+        supported_voice = {"auto", "gemini"}
+        stt_provider = base.voice_stt_provider.strip().casefold()
+        tts_provider = base.voice_tts_provider.strip().casefold()
 
         return replace(
             base,
-            default_provider=provider,
+            default_provider="gemini",
             default_model=model,
-            openai_model=(
-                model
-                if provider == "openai"
-                else base.openai_model
-            ),
-            gemini_model=(
-                model
-                if provider == "gemini"
-                else base.gemini_model
-            ),
-            ollama_model=(
-                model
-                if provider == "ollama"
-                else base.ollama_model
-            ),
-            ollama_enabled=(
-                base.ollama_enabled
-                or provider == "ollama"
-            ),
-            # A selected local provider should use the streaming/chat path
-            # without requiring hidden environment switches. Reuse the
-            # selected model unless an explicit chat model was configured.
-            ollama_hybrid_enabled=(
-                base.ollama_hybrid_enabled
-                or provider == "ollama"
-            ),
-            ollama_chat_model=(
-                base.ollama_chat_model
-                if "JARVIS_OLLAMA_CHAT_MODEL" in os.environ
-                else model
-                if provider == "ollama"
-                else base.ollama_chat_model
-            ),
-            ollama_warm_enabled=(
-                base.ollama_warm_enabled
-                or provider == "ollama"
-            ),
+            gemini_model=model,
             voice_enabled=(
                 base.voice_enabled
                 if "JARVIS_VOICE_ENABLED" in os.environ
-                else provider in {"gemini", "openai"}
+                else True
             ),
-            api_key=(
-                base.api_key
-                or stored_openai_key
-                if needs_openai
-                else base.api_key
+            voice_stt_provider=(
+                stt_provider if stt_provider in supported_voice else "auto"
+            ),
+            voice_tts_provider=(
+                tts_provider if tts_provider in supported_voice else "auto"
             ),
             gemini_api_key=(
                 base.gemini_api_key
                 or stored_gemini_key
-                if needs_gemini
-                else base.gemini_api_key
             ),
         )
 
@@ -304,52 +226,27 @@ class APISettingsService:
     ) -> ConnectionTestResult:
         selected_provider = validate_provider(provider)
         selected_model = validate_model(model)
-        if selected_provider == "mock":
-            return ConnectionTestResult(
-                True,
-                "Yerel deneme sağlayıcısı kullanılabilir.",
-            )
-
-        settings = (
-            Settings.from_environment()
-        )
+        settings = Settings.from_environment()
 
         secret_candidate: str | None = None
 
-        if selected_provider == "ollama":
-            client_arguments: dict[str, Any] = {
-                "api_key": "ollama",
-                "base_url": (
-                    settings.ollama_base_url
-                ),
-                "timeout": 15.0,
-                "max_retries": 0,
-            }
+        secret_candidate = (
+            (api_key or "").strip()
+            or self._credential_store(selected_provider).read()
+        )
 
-        else:
-            secret_candidate = (
-                (api_key or "").strip()
-                or self._credential_store(
-                    selected_provider
-                ).read()
+        if not secret_candidate:
+            return ConnectionTestResult(
+                False,
+                "Önce bir Gemini API anahtarı gir.",
             )
 
-            if not secret_candidate:
-                return ConnectionTestResult(
-                    False,
-                    "Önce bir API anahtarı gir.",
-                )
-
-            client_arguments = {
-                "api_key": secret_candidate,
-                "timeout": 15.0,
-                "max_retries": 0,
-            }
-
-            if selected_provider == "gemini":
-                client_arguments["base_url"] = (
-                    settings.gemini_base_url
-                )
+        client_arguments: dict[str, Any] = {
+            "api_key": secret_candidate,
+            "base_url": settings.gemini_base_url,
+            "timeout": 15.0,
+            "max_retries": 0,
+        }
         client = self._client_factory(
             **client_arguments,
         )
@@ -392,7 +289,5 @@ __all__ = [
     "APISettingsSnapshot",
     "ConnectionTestResult",
     "DEFAULT_GEMINI_MODEL",
-    "DEFAULT_OLLAMA_MODEL",
-    "DEFAULT_OPENAI_MODEL",
     "create_api_settings_service",
 ]

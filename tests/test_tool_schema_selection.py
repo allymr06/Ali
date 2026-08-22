@@ -16,7 +16,6 @@ from app.providers.base import (
     ModelResponse,
 )
 from app.providers.gateway import ProviderGateway
-from app.providers.ollama_hybrid import OllamaHybridPolicy
 from app.providers.registry import ProviderRegistry
 from app.tools.executor import ToolExecutor
 from app.tools.selection import ToolSchemaSelector
@@ -162,7 +161,7 @@ def test_selector_never_expands_available_tools():
 
 
 class CapturingProvider(AIProvider):
-    def __init__(self, name: str = "ollama"):
+    def __init__(self, name: str = "gemini"):
         self._name = name
         self.calls = []
 
@@ -205,17 +204,17 @@ class CapturingProvider(AIProvider):
             text="ok",
             model=(
                 model
-                or "llama3.2:latest"
+                or "gemini-3.5-flash-lite"
             ),
             provider=self._name,
         )
 
 
-def test_core_sends_only_relevant_tool_to_llama():
+def test_core_sends_only_relevant_launch_tool_to_provider():
     provider = CapturingProvider()
 
     registry = ProviderRegistry(
-        default_provider="ollama",
+        default_provider="gemini",
     )
     registry.register(provider)
 
@@ -259,15 +258,6 @@ def test_core_sends_only_relevant_tool_to_llama():
             registry,
             max_retries=0,
             fallback_enabled=False,
-        ),
-        ollama_hybrid_policy=(
-            OllamaHybridPolicy(
-                enabled=True,
-                chat_model="gemma3:4b",
-                tool_model=(
-                    "llama3.2:latest"
-                ),
-            )
         ),
         tool_schema_selector=(
             ToolSchemaSelector()

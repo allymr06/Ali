@@ -707,16 +707,13 @@ class DeterministicToolRouter:
         self,
         request: Request,
         *,
-        provider_name: str,
         tool_executor: ToolExecutor,
         tool_schemas: list[dict[str, Any]],
     ) -> DeterministicToolRoute | None:
-        if (
-            provider_name.strip().casefold()
-            != "ollama"
-        ):
-            return None
-
+        # Routing is provider-neutral. Every candidate below is a
+        # READ_ONLY observation tool, and the permission engine still
+        # authorizes the call, so skipping the model round trip only
+        # removes latency, never a security boundary.
         if (
             request.metadata.get(
                 "deterministic_tool_routing"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.config.provider_preferences import DEFAULT_GEMINI_MODEL
 from app.config.settings import (
     DEFAULT_CONVERSATION_SYSTEM_PROMPT,
     Settings,
@@ -19,10 +20,10 @@ def test_settings_defaults(monkeypatch, tmp_path) -> None:
     assert settings.app_name == "JARVIS"
     assert settings.environment == "development"
     assert settings.debug is False
-    assert settings.default_provider == "mock"
-    assert settings.default_model == "mock-model"
+    assert settings.default_provider == "gemini"
+    assert settings.default_model == DEFAULT_GEMINI_MODEL
     assert settings.openai_model is None
-    assert settings.gemini_model is None
+    assert settings.gemini_model == DEFAULT_GEMINI_MODEL
     assert settings.gemini_api_key is None
     assert settings.gemini_base_url == (
         "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -30,7 +31,6 @@ def test_settings_defaults(monkeypatch, tmp_path) -> None:
     assert settings.provider_timeout_seconds == 15.0
     assert settings.provider_max_retries == 1
     assert settings.provider_retry_backoff_seconds == 0.25
-    assert settings.provider_fallback_enabled is True
     assert settings.conversation_max_messages == 50
     assert settings.conversation_max_characters == 50_000
     assert settings.conversation_summary_max_characters == 4_000
@@ -62,7 +62,7 @@ def test_settings_defaults(monkeypatch, tmp_path) -> None:
     assert settings.voice_wake_word == "jarvis"
     assert settings.voice_retain_last_audio is False
     assert settings.vision_enabled is False
-    assert settings.vision_model == "gpt-4o"
+    assert settings.vision_model is None
     assert settings.vision_detail == "high"
     assert settings.vision_redact_taskbar is True
 
@@ -73,7 +73,6 @@ def test_settings_reads_environment(monkeypatch) -> None:
     monkeypatch.setenv("JARVIS_DEBUG", "true")
     monkeypatch.setenv("JARVIS_DEFAULT_PROVIDER", "mock-test")
     monkeypatch.setenv("JARVIS_DEFAULT_MODEL", "test-model")
-    monkeypatch.setenv("JARVIS_OPENAI_MODEL", "openai-test-model")
     monkeypatch.setenv("JARVIS_GEMINI_MODEL", "gemini-test-model")
     monkeypatch.setenv("JARVIS_GEMINI_API_KEY", "gemini-test-key")
     monkeypatch.setenv(
@@ -82,7 +81,6 @@ def test_settings_reads_environment(monkeypatch) -> None:
     monkeypatch.setenv("JARVIS_PROVIDER_TIMEOUT", "15.5")
     monkeypatch.setenv("JARVIS_PROVIDER_MAX_RETRIES", "5")
     monkeypatch.setenv("JARVIS_PROVIDER_RETRY_BACKOFF", "0.5")
-    monkeypatch.setenv("JARVIS_PROVIDER_FALLBACK", "false")
     monkeypatch.setenv("JARVIS_CONVERSATION_MAX_MESSAGES", "20")
     monkeypatch.setenv("JARVIS_CONVERSATION_MAX_CHARACTERS", "2000")
     monkeypatch.setenv("JARVIS_CONVERSATION_SUMMARY_MAX_CHARACTERS", "500")
@@ -123,14 +121,12 @@ def test_settings_reads_environment(monkeypatch) -> None:
     assert settings.debug is True
     assert settings.default_provider == "mock-test"
     assert settings.default_model == "test-model"
-    assert settings.openai_model == "openai-test-model"
     assert settings.gemini_model == "gemini-test-model"
     assert settings.gemini_api_key == "gemini-test-key"
     assert settings.gemini_base_url == "https://gemini.example/openai/"
     assert settings.provider_timeout_seconds == 15.5
     assert settings.provider_max_retries == 5
     assert settings.provider_retry_backoff_seconds == 0.5
-    assert settings.provider_fallback_enabled is False
     assert settings.conversation_max_messages == 20
     assert settings.conversation_max_characters == 2000
     assert settings.conversation_summary_max_characters == 500
@@ -205,20 +201,16 @@ def test_settings_rejects_invalid_security_limits(monkeypatch) -> None:
     with pytest.raises(ValueError):
         Settings.from_environment()
 
-def test_settings_reads_api_configuration(monkeypatch) -> None:
-    monkeypatch.setenv(
-        "JARVIS_API_KEY",
-        "test-api-key",
-    )
-    monkeypatch.setenv(
-        "JARVIS_API_BASE_URL",
-        "https://example.test/v1",
-    )
+def test_settings_ignores_retired_openai_environment(monkeypatch) -> None:
+    monkeypatch.setenv("JARVIS_API_KEY", "stale-openai-key")
+    monkeypatch.setenv("JARVIS_API_BASE_URL", "https://example.test/v1")
+    monkeypatch.setenv("JARVIS_OPENAI_MODEL", "gpt-4o-mini")
 
     settings = Settings.from_environment()
 
-    assert settings.api_key == "test-api-key"
-    assert settings.api_base_url == "https://example.test/v1"
+    assert settings.api_key is None
+    assert settings.api_base_url is None
+    assert settings.openai_model is None
 
 
 def test_settings_api_configuration_defaults_to_none() -> None:
@@ -255,7 +247,7 @@ def test_settings_rejects_negative_retries(monkeypatch) -> None:
 def test_settings_rejects_invalid_boolean(monkeypatch) -> None:
     import pytest
 
-    monkeypatch.setenv("JARVIS_PROVIDER_FALLBACK", "sometimes")
+    monkeypatch.setenv("JARVIS_DEBUG", "sometimes")
 
     with pytest.raises(ValueError, match="must be a boolean"):
         Settings.from_environment()
@@ -269,10 +261,10 @@ def test_settings_rejects_non_finite_timeout(monkeypatch) -> None:
     with pytest.raises(ValueError, match="finite"):
         Settings.from_environment()
 
-def test_settings_reads_api_key(monkeypatch) -> None:
-    monkeypatch.setenv("JARVIS_API_KEY", "test-secret")
+def test_settings_reads_gemini_api_key(monkeypatch) -> None:
+    monkeypatch.setenv("JARVIS_GEMINI_API_KEY", "test-secret")
     settings = Settings.from_environment()
-    assert settings.api_key == "test-secret"
+    assert settings.gemini_api_key == "test-secret"
 
 
 def test_settings_reads_research_configuration(monkeypatch) -> None:
@@ -340,78 +332,21 @@ def test_settings_reads_and_validates_reliability_configuration(monkeypatch) -> 
         Settings(provider_circuit_failure_threshold=0)
 
 
-
-
-def test_settings_reads_ollama_warm_configuration(
-    monkeypatch,
-) -> None:
-    monkeypatch.setenv(
-        "JARVIS_OLLAMA_WARM_ENABLED",
-        "true",
-    )
-
-    monkeypatch.setenv(
-        "JARVIS_OLLAMA_KEEP_ALIVE_SECONDS",
-        "1800",
-    )
-
-    monkeypatch.setenv(
-        "JARVIS_OLLAMA_WARM_REFRESH_SECONDS",
-        "120",
-    )
-
-    monkeypatch.setenv(
-        "JARVIS_OLLAMA_WARM_RETRY_SECONDS",
-        "7.5",
-    )
-
-    monkeypatch.setenv(
-        "JARVIS_OLLAMA_WARMUP_TIMEOUT_SECONDS",
-        "20",
-    )
+def test_settings_ignores_retired_vision_model_default(monkeypatch) -> None:
+    monkeypatch.setenv("JARVIS_VISION_MODEL", "gpt-4o")
 
     settings = Settings.from_environment()
 
-    assert settings.ollama_warm_enabled is True
-
-    assert (
-        settings.ollama_keep_alive_seconds
-        == 1800.0
-    )
-
-    assert (
-        settings.ollama_warm_refresh_seconds
-        == 120.0
-    )
-
-    assert (
-        settings.ollama_warm_retry_seconds
-        == 7.5
-    )
-
-    assert (
-        settings.ollama_warmup_timeout_seconds
-        == 20.0
-    )
+    assert settings.vision_model is None
 
 
-def test_settings_rejects_invalid_ollama_warm_configuration(
-) -> None:
-    import pytest
+def test_settings_strips_whitespace_from_model_overrides(monkeypatch) -> None:
+    monkeypatch.setenv("JARVIS_GEMINI_MODEL", "  gemini-3.7-flash  ")
+    monkeypatch.setenv("JARVIS_DEFAULT_MODEL", "   ")
+    monkeypatch.setenv("JARVIS_VISION_MODEL", "  ")
 
-    with pytest.raises(
-        ValueError,
-        match="warm durations",
-    ):
-        Settings(
-            ollama_warmup_timeout_seconds=0,
-        )
+    settings = Settings.from_environment()
 
-    with pytest.raises(
-        ValueError,
-        match="less than",
-    ):
-        Settings(
-            ollama_keep_alive_seconds=30,
-            ollama_warm_refresh_seconds=30,
-        )
+    assert settings.gemini_model == "gemini-3.7-flash"
+    assert settings.default_model == DEFAULT_GEMINI_MODEL
+    assert settings.vision_model is None

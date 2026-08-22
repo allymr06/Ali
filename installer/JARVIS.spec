@@ -16,7 +16,7 @@ a = Analysis(
     ],
     hiddenimports=[
         "app.voice.audio",
-        "app.voice.providers",
+        "app.voice.gemini",
         "app.vision.capture",
         "app.vision.consent",
         "app.vision.models",

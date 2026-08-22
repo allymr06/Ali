@@ -85,8 +85,10 @@ graph acyclic and lets execution be tested in isolation.
 Phase 3 introduces `ProviderGateway` as the only model-provider entry point used
 by `CoreEngine`. Provider adapters perform one vendor call and translate vendor
 data into strict `ModelResponse` or `ModelStreamChunk` contracts. The gateway
-owns routing, capability validation, timeout, retry, fallback, cancellation,
-health accounting, and provider metadata.
+owns routing, capability validation, timeout, retry, cancellation, health
+accounting, and provider metadata. Cross-provider fallback is intentionally
+disabled: Gemini is the only production provider, and falling back to the
+offline mock provider would hide a real failure.
 
 `ModelRouter` classifies work as simple, standard, complex, long-running,
 vision, or agentic. It combines the task type with required capabilities such
@@ -230,7 +232,7 @@ approval-bound pause, resume, and cancel tools.
 Phase 10 adds an optional voice boundary without moving device or vendor logic
 into Core. `AudioInput`, `AudioOutput`, `SpeechRecognizer`, and
 `SpeechSynthesizer` are explicit contracts. The production adapters provide
-bounded PCM microphone capture, Windows WAV playback, and OpenAI transcription
+bounded PCM microphone capture, Windows WAV playback, and Gemini transcription
 and synthesis. Imports for microphone hardware remain lazy so normal startup
 does not require the optional audio dependency.
 
@@ -276,8 +278,9 @@ consent identity. Frame age is checked before and after processing.
 
 Vision enters Core as `RequestSource.VISION` with an ephemeral mutable image
 payload. `ModelRouter` requires the `VISION` capability and selects the
-dedicated vision model profile. `OpenAIProvider` converts validated bytes to a
-Base64 data URL only for the active vendor request. Conversation history stores
+dedicated vision model profile when `JARVIS_VISION_MODEL` names one, otherwise
+the general model. The provider adapter converts validated bytes to a Base64
+data URL only for the active vendor request. Conversation history stores
 the user text and response, never the image payload. Mutable frame and PNG
 buffers are overwritten after completion or failure.
 
@@ -366,7 +369,7 @@ Every provider has an independent circuit breaker. Retryable consecutive
 failures open the circuit at a configured threshold. Calls fail fast while open;
 after the recovery interval exactly one half-open probe is admitted. A successful
 probe closes and resets the breaker, while a failed probe reopens it. Existing
-provider retry, fallback, timeout, and cancellation rules remain in force.
+provider retry, timeout, and cancellation rules remain in force.
 
 Provider circuit and Core admission state are included in live health checks.
 Load tests exercise one hundred parallel offline Core requests, saturation,

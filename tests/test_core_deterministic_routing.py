@@ -18,13 +18,13 @@ from app.providers.registry import ProviderRegistry
 from app.tools.executor import ToolExecutor
 
 
-class OllamaLikeProvider(MockProvider):
+class DeterministicRoutingProvider(MockProvider):
     def __init__(self) -> None:
         self.calls = []
 
     @property
     def name(self) -> str:
-        return "ollama"
+        return "routing-test"
 
     async def generate(
         self,
@@ -46,8 +46,8 @@ class OllamaLikeProvider(MockProvider):
 
         return SimpleNamespace(
             text="final response",
-            model="test-ollama",
-            provider="ollama",
+            model="routing-test-model",
+            provider="routing-test",
             finish_reason="stop",
             tool_calls=[],
             usage={},
@@ -105,7 +105,7 @@ def create_engine(
 def test_core_routes_system_info_before_first_model_call(
 ) -> None:
     called = {"count": 0}
-    provider = OllamaLikeProvider()
+    provider = DeterministicRoutingProvider()
 
     engine = create_engine(
         provider,
@@ -163,7 +163,7 @@ def test_core_routes_system_info_before_first_model_call(
 def test_core_removes_already_routed_tool_from_model_tools(
 ) -> None:
     called = {"count": 0}
-    provider = OllamaLikeProvider()
+    provider = DeterministicRoutingProvider()
 
     engine = create_engine(
         provider,
@@ -190,7 +190,7 @@ def test_core_removes_already_routed_tool_from_model_tools(
 def test_core_can_disable_deterministic_routing(
 ) -> None:
     called = {"count": 0}
-    provider = OllamaLikeProvider()
+    provider = DeterministicRoutingProvider()
 
     engine = create_engine(
         provider,
@@ -227,7 +227,7 @@ def test_core_can_disable_deterministic_routing(
 def test_core_respects_allowed_tools_filter_for_route(
 ) -> None:
     called = {"count": 0}
-    provider = OllamaLikeProvider()
+    provider = DeterministicRoutingProvider()
 
     engine = create_engine(
         provider,
@@ -273,7 +273,7 @@ def test_core_does_not_reexecute_deterministically_routed_tool(
 
         @property
         def name(self) -> str:
-            return "ollama"
+            return "routing-test"
 
         async def generate(
             self,
@@ -296,8 +296,8 @@ def test_core_does_not_reexecute_deterministically_routed_tool(
             if len(self.calls) == 1:
                 return SimpleNamespace(
                     text="",
-                    model="test-ollama",
-                    provider="ollama",
+                    model="routing-test-model",
+                    provider="routing-test",
                     finish_reason="tool_calls",
                     tool_calls=[
                         {
@@ -317,8 +317,8 @@ def test_core_does_not_reexecute_deterministically_routed_tool(
 
             return SimpleNamespace(
                 text="final response",
-                model="test-ollama",
-                provider="ollama",
+                model="routing-test-model",
+                provider="routing-test",
                 finish_reason="stop",
                 tool_calls=[],
                 usage={},
@@ -374,7 +374,7 @@ def test_core_does_not_reexecute_deterministically_routed_tool(
 def test_core_routes_parameterized_memory_search(
 ) -> None:
     registry = ProviderRegistry()
-    provider = OllamaLikeProvider()
+    provider = DeterministicRoutingProvider()
 
     registry.register(
         provider,
@@ -450,7 +450,7 @@ def test_core_routes_parameterized_memory_search(
 def test_core_routes_get_task_with_exact_uuid(
 ) -> None:
     registry = ProviderRegistry()
-    provider = OllamaLikeProvider()
+    provider = DeterministicRoutingProvider()
 
     registry.register(
         provider,
@@ -529,7 +529,7 @@ def test_core_routes_get_task_with_exact_uuid(
 
 
 class FastFinalizingOllamaProvider(
-    OllamaLikeProvider
+    DeterministicRoutingProvider
 ):
     def __init__(self) -> None:
         super().__init__()
@@ -546,8 +546,8 @@ class FastFinalizingOllamaProvider(
 
         return ModelResponse(
             text="fast deterministic response",
-            model="test-ollama",
-            provider="ollama",
+            model="routing-test-model",
+            provider="routing-test",
             finish_reason="stop",
             metadata={
                 "deterministic_finalization": (

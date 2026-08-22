@@ -179,7 +179,11 @@ def test_new_database_records_schema_version(tmp_path) -> None:
 
 def test_application_uses_durable_memory_across_restarts(tmp_path) -> None:
     database = tmp_path / "jarvis.sqlite3"
-    settings = Settings(memory_database_path=str(database))
+    settings = Settings(
+        default_provider="mock",
+        default_model="mock-model",
+        memory_database_path=str(database),
+    )
     first = create_application(settings)
     memory = first.memory_manager.remember("JARVIS restart proof")
     first.memory_manager.close()
@@ -192,7 +196,11 @@ def test_application_uses_durable_memory_across_restarts(tmp_path) -> None:
 
 def test_core_refuses_to_persist_a_labeled_secret(tmp_path) -> None:
     application = create_application(
-        Settings(memory_database_path=str(tmp_path / "jarvis.sqlite3"))
+        Settings(
+            default_provider="mock",
+            default_model="mock-model",
+            memory_database_path=str(tmp_path / "jarvis.sqlite3"),
+        )
     )
 
     response = asyncio.run(

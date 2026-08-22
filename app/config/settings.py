@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass
 
 from app.config.paths import default_state_path
+from app.config.provider_preferences import DEFAULT_GEMINI_MODEL
 
 
 DEFAULT_CONVERSATION_SYSTEM_PROMPT = (
@@ -89,6 +90,19 @@ def _get_positive_int(name: str, default: int) -> int:
     return parsed
 
 
+def _get_vision_model_override() -> str | None:
+    """Read JARVIS_VISION_MODEL, dropping the retired OpenAI-era default.
+
+    Older builds documented `gpt-4o` as this variable's default, so it can
+    linger in real user environments. Gemini cannot serve it, and honoring
+    it would capture every VISION request on a nonexistent model.
+    """
+    value = os.getenv("JARVIS_VISION_MODEL", "").strip()
+    if not value or value.casefold() == "gpt-4o":
+        return None
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     """Runtime configuration loaded from environment variables."""
@@ -97,34 +111,15 @@ class Settings:
     environment: str = "development"
     debug: bool = False
 
-    default_provider: str = "mock"
-    default_model: str = "mock-model"
+    default_provider: str = "gemini"
+    default_model: str = DEFAULT_GEMINI_MODEL
     openai_model: str | None = None
-    gemini_model: str | None = None
+    gemini_model: str | None = DEFAULT_GEMINI_MODEL
     gemini_reasoning_effort: str = "auto"
-
-    ollama_model: str | None = None
-    ollama_base_url: str = "http://localhost:11434/v1/"
-    ollama_enabled: bool = False
-
-    # Hybrid local Ollama routing:
-    # Gemma handles conversation; the primary Ollama
-    # model remains responsible for structured tool use.
-    ollama_hybrid_enabled: bool = False
-    ollama_chat_model: str = "llama3.2:latest"
-
-    # Keep the local Ollama model hot without blocking
-    # JARVIS application startup.
-    ollama_warm_enabled: bool = False
-    ollama_keep_alive_seconds: float = 1800.0
-    ollama_warm_refresh_seconds: float = 120.0
-    ollama_warm_retry_seconds: float = 15.0
-    ollama_warmup_timeout_seconds: float = 30.0
 
     provider_timeout_seconds: float = 15.0
     provider_max_retries: int = 1
     provider_retry_backoff_seconds: float = 0.25
-    provider_fallback_enabled: bool = True
 
     conversation_max_messages: int = 50
     conversation_max_characters: int = 50_000
@@ -153,9 +148,6 @@ class Settings:
     voice_language: str | None = None
     voice_stt_provider: str = "auto"
     voice_tts_provider: str = "auto"
-    voice_stt_model: str = "gpt-4o-mini-transcribe"
-    voice_tts_model: str = "gpt-4o-mini-tts"
-    voice_tts_voice: str = "alloy"
     voice_tts_instructions: str | None = None
     voice_max_tts_characters: int = 4_000
     voice_max_audio_bytes: int = 20_000_000
@@ -172,7 +164,9 @@ class Settings:
     voice_gemini_tts_voice: str = "Kore"
 
     vision_enabled: bool = False
-    vision_model: str = "gpt-4o"
+    # Optional dedicated vision model. When unset, VISION requests route to
+    # the general model like every other task type.
+    vision_model: str | None = None
     vision_detail: str = "high"
     vision_operation_timeout_seconds: float = 60.0
     vision_max_frame_age_seconds: float = 5.0
@@ -226,37 +220,6 @@ class Settings:
             raise ValueError("openai_model cannot be empty when set.")
         if self.gemini_model is not None and not self.gemini_model.strip():
             raise ValueError("gemini_model cannot be empty when set.")
-        if self.ollama_model is not None and not self.ollama_model.strip():
-            raise ValueError("ollama_model cannot be empty when set.")
-        if not self.ollama_chat_model.strip():
-            raise ValueError("ollama_chat_model cannot be empty.")
-        if not self.ollama_base_url.strip():
-            raise ValueError("ollama_base_url cannot be empty.")
-        if not self.ollama_base_url.startswith(
-            ("http://", "https://")
-        ):
-            raise ValueError(
-                "ollama_base_url must use http or https."
-            )
-        if min(
-            self.ollama_keep_alive_seconds,
-            self.ollama_warm_refresh_seconds,
-            self.ollama_warm_retry_seconds,
-            self.ollama_warmup_timeout_seconds,
-        ) <= 0:
-            raise ValueError(
-                "Ollama warm durations must be positive."
-            )
-
-        if (
-            self.ollama_warm_refresh_seconds
-            >= self.ollama_keep_alive_seconds
-        ):
-            raise ValueError(
-                "ollama_warm_refresh_seconds must be "
-                "less than ollama_keep_alive_seconds."
-            )
-
         if self.gemini_reasoning_effort not in {
             "auto",
             "minimal",
@@ -331,9 +294,6 @@ class Settings:
                 )
 
         for field_name in (
-            "voice_stt_model",
-            "voice_tts_model",
-            "voice_tts_voice",
             "voice_gemini_stt_model",
             "voice_gemini_tts_model",
             "voice_gemini_tts_voice",
@@ -363,8 +323,8 @@ class Settings:
             raise ValueError("voice_max_tts_characters must be positive.")
         if self.voice_max_audio_bytes < 1:
             raise ValueError("voice_max_audio_bytes must be positive.")
-        if not self.vision_model.strip():
-            raise ValueError("vision_model cannot be empty.")
+        if self.vision_model is not None and not self.vision_model.strip():
+            raise ValueError("vision_model cannot be empty when set.")
         if self.vision_detail not in {"low", "high", "original", "auto"}:
             raise ValueError("vision_detail must be low, high, original, or auto.")
         if min(
@@ -453,50 +413,15 @@ class Settings:
             debug=_get_bool("JARVIS_DEBUG"),
             default_provider=os.getenv(
                 "JARVIS_DEFAULT_PROVIDER",
-                "mock",
+                "gemini",
             ),
-            default_model=os.getenv(
-                "JARVIS_DEFAULT_MODEL",
-                "mock-model",
+            default_model=(
+                os.getenv("JARVIS_DEFAULT_MODEL", "").strip()
+                or DEFAULT_GEMINI_MODEL
             ),
-            openai_model=os.getenv("JARVIS_OPENAI_MODEL"),
-            gemini_model=os.getenv("JARVIS_GEMINI_MODEL"),
-            ollama_model=os.getenv("JARVIS_OLLAMA_MODEL"),
-            ollama_base_url=os.getenv(
-                "JARVIS_OLLAMA_BASE_URL",
-                "http://localhost:11434/v1/",
-            ),
-            ollama_enabled=_get_bool(
-                "JARVIS_OLLAMA_ENABLED",
-                False,
-            ),
-            ollama_hybrid_enabled=_get_bool(
-                "JARVIS_OLLAMA_HYBRID_ENABLED",
-                False,
-            ),
-            ollama_chat_model=os.getenv(
-                "JARVIS_OLLAMA_CHAT_MODEL",
-                "llama3.2:latest",
-            ),
-            ollama_warm_enabled=_get_bool(
-                "JARVIS_OLLAMA_WARM_ENABLED",
-                False,
-            ),
-            ollama_keep_alive_seconds=_get_float(
-                "JARVIS_OLLAMA_KEEP_ALIVE_SECONDS",
-                1800.0,
-            ),
-            ollama_warm_refresh_seconds=_get_float(
-                "JARVIS_OLLAMA_WARM_REFRESH_SECONDS",
-                120.0,
-            ),
-            ollama_warm_retry_seconds=_get_float(
-                "JARVIS_OLLAMA_WARM_RETRY_SECONDS",
-                15.0,
-            ),
-            ollama_warmup_timeout_seconds=_get_float(
-                "JARVIS_OLLAMA_WARMUP_TIMEOUT_SECONDS",
-                30.0,
+            gemini_model=(
+                os.getenv("JARVIS_GEMINI_MODEL", "").strip()
+                or DEFAULT_GEMINI_MODEL
             ),
             gemini_reasoning_effort=os.getenv(
                 "JARVIS_GEMINI_REASONING_EFFORT",
@@ -513,10 +438,6 @@ class Settings:
             provider_retry_backoff_seconds=_get_float(
                 "JARVIS_PROVIDER_RETRY_BACKOFF",
                 0.25,
-            ),
-            provider_fallback_enabled=_get_bool(
-                "JARVIS_PROVIDER_FALLBACK",
-                True,
             ),
             conversation_max_messages=_get_positive_int(
                 "JARVIS_CONVERSATION_MAX_MESSAGES",
@@ -594,15 +515,6 @@ class Settings:
                 "JARVIS_VOICE_TTS_PROVIDER",
                 "auto",
             ),
-            voice_stt_model=os.getenv(
-                "JARVIS_VOICE_STT_MODEL",
-                "gpt-4o-mini-transcribe",
-            ),
-            voice_tts_model=os.getenv(
-                "JARVIS_VOICE_TTS_MODEL",
-                "gpt-4o-mini-tts",
-            ),
-            voice_tts_voice=os.getenv("JARVIS_VOICE_TTS_VOICE", "alloy"),
             voice_tts_instructions=os.getenv("JARVIS_VOICE_TTS_INSTRUCTIONS"),
             voice_max_tts_characters=_get_positive_int(
                 "JARVIS_VOICE_MAX_TTS_CHARACTERS",
@@ -648,7 +560,7 @@ class Settings:
                 "Kore",
             ),
             vision_enabled=_get_bool("JARVIS_VISION_ENABLED"),
-            vision_model=os.getenv("JARVIS_VISION_MODEL", "gpt-4o"),
+            vision_model=_get_vision_model_override(),
             vision_detail=os.getenv("JARVIS_VISION_DETAIL", "high"),
             vision_operation_timeout_seconds=_get_float(
                 "JARVIS_VISION_OPERATION_TIMEOUT_SECONDS", 60.0
@@ -730,11 +642,6 @@ class Settings:
             ),
             provider_circuit_recovery_seconds=_get_float(
                 "JARVIS_PROVIDER_CIRCUIT_RECOVERY_SECONDS", 30.0
-            ),
-            api_key=os.getenv("JARVIS_API_KEY"),
-            api_base_url=os.getenv(
-                "JARVIS_API_BASE_URL",
-                None,
             ),
             gemini_api_key=os.getenv("JARVIS_GEMINI_API_KEY"),
             gemini_base_url=os.getenv(

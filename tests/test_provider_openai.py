@@ -246,10 +246,12 @@ def test_openai_provider_creates_client_from_settings(monkeypatch) -> None:
     from app.config.settings import Settings
     from app.providers.openai import OpenAIProvider
 
-    monkeypatch.setenv("JARVIS_API_KEY", "test-secret")
-    monkeypatch.setenv("JARVIS_API_BASE_URL", "https://example.test/v1")
-
-    provider = OpenAIProvider(Settings.from_environment())
+    provider = OpenAIProvider(
+        Settings(
+            api_key="test-secret",
+            api_base_url="https://example.test/v1",
+        )
+    )
 
     assert provider._client is not None
     assert provider._client.api_key == "test-secret"

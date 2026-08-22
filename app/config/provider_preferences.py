@@ -7,12 +7,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
-SUPPORTED_PROVIDERS = frozenset(
-    {"gemini", "mock", "ollama", "openai"}
-)
+SUPPORTED_PROVIDERS = frozenset({"gemini"})
 DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
-DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
-DEFAULT_OLLAMA_MODEL = "llama3.2:latest"
 _MODEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 
@@ -32,7 +28,7 @@ def validate_model(model: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ProviderPreferences:
-    provider: str = "mock"
+    provider: str = "gemini"
     model: str = DEFAULT_GEMINI_MODEL
     version: int = 1
 
@@ -64,7 +60,7 @@ class ProviderPreferencesStore:
             if not isinstance(payload, dict):
                 raise ValueError("Provider preferences must be a JSON object.")
             return ProviderPreferences(
-                provider=str(payload.get("provider", "mock")),
+                provider=str(payload.get("provider", "gemini")),
                 model=str(payload.get("model", DEFAULT_GEMINI_MODEL)),
                 version=int(payload.get("version", 1)),
             )

@@ -327,6 +327,8 @@ async def test_voice_vertical_slice_runs_through_real_core() -> None:
 
     application = create_application(
         Settings(
+            default_provider="mock",
+            default_model="mock-model",
             memory_database_path=None,
             task_database_path=None,
             task_runtime_directory=None,

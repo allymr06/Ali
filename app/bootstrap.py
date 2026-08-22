@@ -21,13 +21,7 @@ from app.memory.manager import MemoryManager
 from app.memory.service import MemoryService
 from app.memory.sqlite import SQLiteMemoryStore
 from app.platform.windows import WindowsIntegrationService
-from app.providers.base import ModelCapabilities
-from app.providers.mock import MockProvider
-from app.providers.openai import OpenAIProvider
 from app.providers.gemini import GeminiProvider
-from app.providers.ollama import OllamaProvider
-from app.providers.ollama_hybrid import OllamaHybridPolicy
-from app.providers.ollama_warm import OllamaWarmKeeper
 from app.providers.catalog import ModelCatalog
 from app.providers.gateway import ProviderGateway
 from app.providers.models import ModelProfile, TaskType
@@ -77,8 +71,6 @@ class JARVISApplication:
     voice: VoiceService | None = None
     vision: VisionService | None = None
     research: ResearchService | None = None
-    ollama_warm_keeper: OllamaWarmKeeper | None = None
-    ollama_chat_warm_keeper: OllamaWarmKeeper | None = None
 
     @property
     def agent_loop(self):
@@ -92,12 +84,6 @@ class JARVISApplication:
 
     def close(self) -> None:
         """Release durable stores owned by the application runtime."""
-        if self.ollama_chat_warm_keeper is not None:
-            self.ollama_chat_warm_keeper.close()
-
-        if self.ollama_warm_keeper is not None:
-            self.ollama_warm_keeper.close()
-
         conversation_store = (
             self.conversation_engine.store
         )
@@ -125,121 +111,81 @@ def create_application(
         metrics=MetricRegistry(active_settings.diagnostics_metric_capacity),
     )
 
-    provider_registry = ProviderRegistry(
-        default_provider=active_settings.default_provider,
+    # Gemini is the only production provider. The deterministic mock
+    # provider exists solely for offline tests and is registered only
+    # when settings explicitly request it; the desktop settings surface
+    # cannot select it.
+    use_mock = (
+        active_settings.default_provider.strip().casefold() == "mock"
     )
 
-    mock_provider = MockProvider()
-    openai_provider = OpenAIProvider(active_settings)
-    gemini_provider = GeminiProvider(active_settings)
-    ollama_provider = OllamaProvider(active_settings)
+    provider_registry = ProviderRegistry(
+        default_provider="mock" if use_mock else "gemini",
+    )
 
-    provider_registry.register(mock_provider)
-    provider_registry.register(openai_provider)
+    gemini_provider = GeminiProvider(active_settings)
+
     provider_registry.register(gemini_provider)
-    provider_registry.register(ollama_provider)
 
     voice_provider_registry = (
         create_default_voice_provider_registry()
     )
 
     model_catalog = ModelCatalog()
-    model_catalog.register(
-        ModelProfile(
-            provider="mock",
-            model="mock-model",
-            capabilities=mock_provider.capabilities,
-            priority=1000,
-        )
+    gemini_model = (
+        (active_settings.gemini_model or "").strip()
+        or DEFAULT_GEMINI_MODEL
     )
-    openai_general_model = active_settings.openai_model or active_settings.default_model
-    if openai_general_model == active_settings.vision_model:
+    dedicated_vision_model = (
+        active_settings.vision_model.strip()
+        if active_settings.vision_model is not None
+        else None
+    )
+
+    if dedicated_vision_model and dedicated_vision_model != gemini_model:
+        # A dedicated vision model is configured, so the general profile
+        # gives up VISION and the vision profile takes it exclusively.
         model_catalog.register(
             ModelProfile(
-                provider="openai",
-                model=openai_general_model,
-                capabilities=openai_provider.capabilities,
-                priority=100,
+                provider="gemini",
+                model=gemini_model,
+                capabilities=gemini_provider.capabilities,
+                task_types=frozenset(TaskType) - {TaskType.VISION},
+                priority=75,
+            )
+        )
+        model_catalog.register(
+            ModelProfile(
+                provider="gemini",
+                model=dedicated_vision_model,
+                capabilities=gemini_provider.capabilities,
+                task_types=frozenset({TaskType.VISION}),
+                priority=50,
             )
         )
     else:
         model_catalog.register(
             ModelProfile(
-                provider="openai",
-                model=openai_general_model,
-                capabilities=openai_provider.capabilities,
-                task_types=frozenset(TaskType) - {TaskType.VISION},
-                priority=100,
+                provider="gemini",
+                model=gemini_model,
+                capabilities=gemini_provider.capabilities,
+                priority=75,
             )
         )
+
+    if use_mock:
+        from app.providers.mock import MockProvider
+
+        mock_provider = MockProvider()
+        provider_registry.register(mock_provider)
         model_catalog.register(
             ModelProfile(
-                provider="openai",
-                model=active_settings.vision_model,
-                capabilities=openai_provider.capabilities,
-                task_types=frozenset({TaskType.VISION}),
-                priority=50,
+                provider="mock",
+                model="mock-model",
+                capabilities=mock_provider.capabilities,
+                priority=1000,
             )
         )
-    gemini_model = active_settings.gemini_model or DEFAULT_GEMINI_MODEL
-    model_catalog.register(
-        ModelProfile(
-            provider="gemini",
-            model=gemini_model,
-            capabilities=gemini_provider.capabilities,
-            priority=75,
-        )
-    )
-
-    ollama_model = (
-        active_settings.ollama_model
-        or "llama3.2:latest"
-    )
-
-    ollama_chat_model = (
-        active_settings.ollama_chat_model.strip()
-    )
-    model_catalog.register(
-        ModelProfile(
-            provider="ollama",
-            model=ollama_model,
-            capabilities=ollama_provider.capabilities,
-            priority=90,
-        )
-    )
-
-    if (
-        active_settings.ollama_hybrid_enabled
-        and ollama_chat_model != ollama_model
-    ):
-        model_catalog.register(
-            ModelProfile(
-                provider="ollama",
-                model=ollama_chat_model,
-                capabilities=ModelCapabilities(
-                    text=True,
-                    streaming=True,
-                    structured_output=False,
-                    tool_calling=False,
-                    vision=False,
-                ),
-                task_types=frozenset(
-                    {
-                        TaskType.SIMPLE,
-                        TaskType.STANDARD,
-                        TaskType.COMPLEX,
-                        TaskType.LONG_RUNNING,
-                    }
-                ),
-                priority=80,
-            )
-        )
-
-    ollama_hybrid_policy = OllamaHybridPolicy(
-        enabled=active_settings.ollama_hybrid_enabled,
-        chat_model=ollama_chat_model,
-        tool_model=ollama_model,
-    )
 
     provider_gateway = ProviderGateway(
         provider_registry,
@@ -249,7 +195,10 @@ def create_application(
         retry_backoff_seconds=(
             active_settings.provider_retry_backoff_seconds
         ),
-        fallback_enabled=active_settings.provider_fallback_enabled,
+        # Gemini is the only production provider, so there is nothing to
+        # fall back to. Falling back to the offline mock provider would
+        # replace a real failure with a convincing but fictional answer.
+        fallback_enabled=False,
         circuit_failure_threshold=(
             active_settings.provider_circuit_failure_threshold
         ),
@@ -324,17 +273,7 @@ def create_application(
 
     fast_action_router = None
 
-    if (
-        windows is not None
-        and active_settings.ollama_hybrid_enabled
-        and (
-            active_settings
-            .default_provider
-            .strip()
-            .casefold()
-            == "ollama"
-        )
-    ):
+    if windows is not None:
         launch_aliases = {}
 
         for application in (
@@ -374,7 +313,6 @@ def create_application(
         tool_executor=tool_executor,
         task_manager=task_manager,
         provider_gateway=provider_gateway,
-        ollama_hybrid_policy=ollama_hybrid_policy,
         fast_action_router=fast_action_router,
         tool_schema_selector=tool_schema_selector,
         conversation_engine=conversation_engine,
@@ -417,16 +355,12 @@ def create_application(
 
         audio_output = WindowsWaveAudioOutput()
 
-        default_voice_fallback = (
-            "openai"
-            if (
-                active_settings.default_provider
-                .strip()
-                .casefold()
-                == "mock"
-            )
-            else None
-        )
+        # Gemini owns both voice roles. When the text provider has no
+        # speech adapters (the mock test provider, or a stale provider
+        # name from an older build), automatic selection falls back to
+        # Gemini instead of failing desktop startup closed. An explicit
+        # unsupported JARVIS_VOICE_*_PROVIDER value still fails closed.
+        default_voice_fallback = "gemini"
 
         stt_provider = (
             voice_provider_registry
@@ -550,60 +484,6 @@ def create_application(
         )
         research.register_tools(tool_executor)
 
-    ollama_warm_keeper = None
-    ollama_chat_warm_keeper = None
-
-    if (
-        active_settings.ollama_warm_enabled
-        and ollama_provider.is_configured
-    ):
-        ollama_warm_keeper = OllamaWarmKeeper(
-            base_url=active_settings.ollama_base_url,
-            model=ollama_model,
-            keep_alive_seconds=(
-                active_settings.ollama_keep_alive_seconds
-            ),
-            refresh_seconds=(
-                active_settings.ollama_warm_refresh_seconds
-            ),
-            retry_seconds=(
-                active_settings.ollama_warm_retry_seconds
-            ),
-            timeout_seconds=(
-                active_settings.ollama_warmup_timeout_seconds
-            ),
-        )
-
-        # start() never performs the HTTP request itself.
-        # The potentially slow model load runs in a daemon
-        # background thread.
-        ollama_warm_keeper.start()
-
-        if (
-            active_settings.ollama_hybrid_enabled
-            and ollama_chat_model != ollama_model
-        ):
-            ollama_chat_warm_keeper = OllamaWarmKeeper(
-                base_url=active_settings.ollama_base_url,
-                model=ollama_chat_model,
-                keep_alive_seconds=(
-                    active_settings.ollama_keep_alive_seconds
-                ),
-                refresh_seconds=(
-                    active_settings.ollama_warm_refresh_seconds
-                ),
-                retry_seconds=(
-                    active_settings.ollama_warm_retry_seconds
-                ),
-                timeout_seconds=(
-                    active_settings.ollama_warmup_timeout_seconds
-                ),
-            )
-
-            # Model loading remains off the synchronous
-            # JARVIS bootstrap path.
-            ollama_chat_warm_keeper.start()
-
     health_timeout = active_settings.diagnostics_health_timeout_seconds
     diagnostics.health.register(
         HealthCheck(
@@ -625,6 +505,9 @@ def create_application(
             health_timeout,
         )
     )
+    # Health and diagnostics report the provider the registry actually
+    # defaults to, which a stale settings string cannot rename.
+    effective_provider = provider_registry.get_default().name
     diagnostics.health.register(
         HealthCheck(
             "provider_gateway",
@@ -633,15 +516,15 @@ def create_application(
                 (
                     HealthStatus.DEGRADED
                     if provider_gateway.health(
-                        active_settings.default_provider
+                        effective_provider
                     ).circuit_state is CircuitState.OPEN
                     else HealthStatus.HEALTHY
                 ),
                 "Provider gateway circuit observed.",
                 {
-                    "provider": active_settings.default_provider,
+                    "provider": effective_provider,
                     "circuit": provider_gateway.health(
-                        active_settings.default_provider
+                        effective_provider
                     ).circuit_state.value,
                 },
             ),
@@ -709,20 +592,11 @@ def create_application(
         "application.ready",
         "JARVIS application initialized.",
         attributes={
-            "provider": active_settings.default_provider,
+            "provider": effective_provider,
             "voice_enabled": voice is not None,
             "vision_enabled": vision is not None,
             "research_enabled": research is not None,
             "windows_enabled": windows is not None,
-            "ollama_warm_enabled": (
-                ollama_warm_keeper is not None
-            ),
-            "ollama_hybrid_enabled": (
-                active_settings.ollama_hybrid_enabled
-            ),
-            "ollama_chat_warm_enabled": (
-                ollama_chat_warm_keeper is not None
-            ),
         },
     )
 
@@ -744,6 +618,4 @@ def create_application(
         voice=voice,
         vision=vision,
         research=research,
-        ollama_warm_keeper=ollama_warm_keeper,
-        ollama_chat_warm_keeper=ollama_chat_warm_keeper,
     )

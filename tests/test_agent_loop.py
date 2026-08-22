@@ -9,6 +9,7 @@ from app.agent.models import (
     AgentMode,
     AgentStatus,
 )
+from app.config.settings import Settings
 from app.core.models import (
     Context,
     Request,
@@ -22,7 +23,16 @@ from app.planning.models import Plan, PlanStep
 
 
 def create_loop(plan_builder=None):
-    application = create_application()
+    application = create_application(
+        Settings(
+            default_provider="mock",
+            default_model="mock-model",
+            windows_integrations_enabled=False,
+            memory_database_path=None,
+            task_database_path=None,
+            task_runtime_directory=None,
+        )
+    )
 
     return (
         AgentLoop(

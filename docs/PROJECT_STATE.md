@@ -1,23 +1,71 @@
 # JARVIS Project State
 
-Last verified: 21 August 2026
+Last verified: 22 August 2026
 
 ## Current status
 
 - Completed implementation milestone: Phase 17 — Windows packaging and installer
 - Completed validation milestone: Phase 18 — final audit and delivery evidence
-- Next action: user approval for the post-vision remediation roadmap
+- Completed maintenance milestone: single-provider (Gemini) consolidation
+- Next action: resolve the remaining release blockers in `docs/FINAL_AUDIT.md`
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 817 tests passing
+- Automated verification: 1088 tests passing, 2 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Provider consolidation (22 August 2026)
+
+JARVIS now ships exactly one production AI provider: **Gemini**, reached through
+Google's OpenAI-compatible API surface.
+
+- Removed: the Ollama provider, its warm keeper, its hybrid chat/tool routing
+  policy, and the OpenAI speech adapters. `app/providers/openai.py` remains only
+  as the shared adapter base class that `GeminiProvider` extends.
+- `MockProvider` remains the deterministic offline provider for the automated
+  suite. `create_application()` registers it, and makes it the default, only
+  when `settings.default_provider == "mock"`. The desktop cannot select it.
+- Provider fallback is disabled by construction. With one production provider
+  there is nothing to fall back to, and falling back to the mock provider would
+  replace a real failure with a convincing fiction.
+- `DeterministicToolRouter` is now provider-neutral. It previously refused to
+  route unless the active provider was Ollama, which silently disabled the
+  latency optimization after the migration. Every candidate it routes to is a
+  `READ_ONLY` observation tool and the permission engine still authorizes the
+  call, so removing the provider gate removes a model round trip, never a
+  security boundary.
+- `vision_model` is now an optional dedicated Gemini vision model instead of a
+  dead `gpt-4o` default. When set and different from the general model, `VISION`
+  requests route to it exclusively.
+- Dead configuration knobs were removed rather than left to mislead:
+  `voice_stt_model`, `voice_tts_model`, `voice_tts_voice`, and
+  `provider_fallback_enabled` had no remaining consumer, and the retired
+  `JARVIS_API_KEY`, `JARVIS_API_BASE_URL`, and `JARVIS_OPENAI_MODEL`
+  environment variables are no longer read.
+- The approved-application fast-action router, previously gated behind the
+  Ollama hybrid mode, now activates whenever Windows integrations are enabled.
+  It short-circuits only registered application launches, and the launched
+  process is still verified by PID and identity.
+- Stale environment from older builds cannot break startup: unknown
+  `JARVIS_DEFAULT_PROVIDER` values fall back to Gemini, the desktop ignores
+  stale default-model and voice-provider variables, the retired `gpt-4o`
+  vision default is dropped, and voice automatic selection falls back to
+  Gemini when the text provider has no speech adapters.
+
+### Verified on this host
+
+- Native Tcl/Tk 8.6.15 initializes, and all eleven desktop screens render from
+  source on a normal Windows 11 account. The sandbox limitation recorded in the
+  Phase 13 and Phase 17 notes below does not apply to this machine.
+- `scripts/verify.py` passes dependency integrity, bytecode compilation, and the
+  complete deterministic suite.
 
 ## Implemented architecture
 
 - `CoreEngine` provides bounded request, provider, conversation, memory, and
   tool orchestration.
 - `ProviderGateway` provides capability-aware routing, explicit overrides,
-  timeout, retry, fallback, health accounting, and normalized streaming.
+  timeout, retry, health accounting, and normalized streaming; cross-provider
+  fallback is intentionally disabled.
 - `ConversationEngine` owns validated conversation lifecycle, complete tool-call
   groups, bounded context, and summaries.
 - `ToolExecutor` owns strict input/output contracts, dynamic discovery,
@@ -116,9 +164,10 @@ Last verified: 21 August 2026
 
 - Window management, clipboard, notifications, and broader application-specific
   controls remain future Windows extensions.
-- Conversation storage remains in-memory; durable conversation persistence is
-  separate from the completed long-term memory store.
-- The mock provider remains the offline default; OpenAI requires configuration.
+- Gemini requires a configured API key. Without one the desktop reports a
+  classified configuration error instead of answering.
+- The filesystem tool family has no undo/rollback snapshot, no dry-run plan for
+  bulk operations, and no indexed search tool.
 - Python cannot forcibly stop an already-running synchronous worker thread.
   Timeout results explicitly report when side effects may continue.
 - System tray and plugin runtime remain future extensions.
@@ -289,22 +338,19 @@ pulse, improved conversation presentation, and keyboard-first operation.
 `Enter` submits the composer, `Shift+Enter` inserts a line break, and additional
 navigation, focus, theme, and help shortcuts are available through `F1`.
 
-The Settings screen now accepts an OpenAI API key through a masked field,
-selects provider and model, tests model access, saves non-secret preferences
-atomically, and activates a rebuilt runtime without restarting the desktop. The
-secret is stored only in Windows Credential Manager under
-`JARVIS/OpenAI API`; it is never written to the repository or preferences JSON.
-Mock echo responses are blocked in the user interface and replaced by a clear
-configuration path. A live provider failure can no longer fall back to the
-development-only mock provider, so authentication, model, quota, and network
-errors remain visible. The complete source suite passes all 833 deterministic
-tests, including 16 new API-settings, secret-redaction, preference-integrity,
-runtime-swap, motion-state, shortcut, and truthful-fallback regressions.
+The Settings screen accepts the Gemini API key through a masked field, selects
+the model, tests model access, saves non-secret preferences atomically, and
+activates a rebuilt runtime without restarting the desktop. The secret is stored
+only in Windows Credential Manager under `JARVIS/Gemini API`; it is never
+written to the repository or preferences JSON. Mock echo responses are blocked
+in the user interface and replaced by a clear configuration path. A live
+provider failure can no longer fall back to the development-only mock provider,
+so authentication, model, quota, and network errors remain visible.
 
 ## Gemini provider integration
 
-JARVIS now registers Gemini as a first-class provider through Google's
-OpenAI-compatible API endpoint. Gemini and OpenAI credentials are isolated in
-separate Windows Credential Manager records, and the desktop can test and
-activate either provider. The default Gemini model offered by the desktop is
-`gemini-3.7-flash`; OpenAI remains optional.
+Gemini is the sole production provider, reached through Google's
+OpenAI-compatible API endpoint. Its credential lives in its own Windows
+Credential Manager record. The default model is `gemini-3.5-flash-lite`, and an
+optional `JARVIS_VISION_MODEL` routes `VISION` requests to a separate Gemini
+model when the two differ.

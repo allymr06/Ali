@@ -13,7 +13,6 @@ from queue import Empty, SimpleQueue
 from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable
 
-from app.config.provider_preferences import DEFAULT_GEMINI_MODEL
 from app.core.time import utc_now
 from app.security.interactive import InteractiveApprovalRequest
 from app.ui.api_settings import APISettingsService, create_api_settings_service
@@ -1776,23 +1775,9 @@ class DesktopWindow:
         card = self._card(self.workspace, "Çalışma zamanı bağlantıları")
         for name, ready in (
             ("Windows", self._snapshot.windows_available),
-            ("OpenAI", bool(self.controller.application.settings.api_key)),
             (
                 "Gemini",
                 bool(self.controller.application.settings.gemini_api_key),
-            ),
-            (
-                "Ollama",
-                bool(
-                    self.controller.application.settings.ollama_enabled
-                    or (
-                        self.controller.application.settings
-                        .default_provider
-                        .strip()
-                        .casefold()
-                        == "ollama"
-                    )
-                ),
             ),
             ("Ses", self._snapshot.voice_available),
             ("Görüş", self._snapshot.vision_available),
@@ -1987,7 +1972,7 @@ class DesktopWindow:
             self.workspace,
             "Yapay zekâ sağlayıcısı ve API anahtarı",
             subtitle=(
-                "Gemini veya OpenAI anahtarını buraya yapıştır. Anahtar proje "
+                "Gemini anahtarını buraya yapıştır. Anahtar proje "
                 "dosyalarına değil Windows Kimlik Bilgisi Yöneticisi'ne kaydedilir."
             ),
         )
@@ -2003,15 +1988,7 @@ class DesktopWindow:
         self.api_model = tk.StringVar(value=state.model)
         self.api_key = tk.StringVar()
         self._field_label(api, "SAĞLAYICI")
-        provider_input = ttk.Combobox(
-            api,
-            textvariable=self.api_provider,
-            values=("gemini", "openai", "ollama", "mock"),
-            state="readonly",
-            style="Jarvis.TCombobox",
-        )
-        provider_input.pack(fill="x", pady=(0, 10))
-        provider_input.bind("<<ComboboxSelected>>", self._on_api_provider_changed)
+        self._line(api, "Gemini", "TEK ÜRETİM SAĞLAYICISI")
         self._field_label(api, "MODEL")
         self._entry(api, textvariable=self.api_model).pack(
             fill="x", ipady=7, pady=(0, 10)
@@ -2038,23 +2015,7 @@ class DesktopWindow:
         )
         self.api_key_visibility_button.pack(side="right", padx=(6, 0))
 
-        if not state.credential_required:
-            self.api_key_entry.configure(
-                state="disabled"
-            )
-            self.api_key_visibility_button.configure(state="disabled")
-            self._line(
-                api,
-                "API anahtarı gerekmiyor",
-                (
-                    "Ollama yerel Ollama hizmetini kullanır."
-                    if state.provider == "ollama"
-                    else (
-                        "Bu sağlayıcı API kimlik bilgisi kullanmaz."
-                    )
-                ),
-            )
-        elif state.credential_configured:
+        if state.credential_configured:
             self._line(
                 api,
                 "Anahtar güvenle saklanıyor",
@@ -2135,68 +2096,6 @@ class DesktopWindow:
             fg=self._colors.faint,
             font=("Segoe UI Semibold", 8),
         ).pack(anchor="w", pady=(3, 5))
-
-    def _on_api_provider_changed(self, _event: object | None = None) -> None:
-        defaults = {
-            "gemini": DEFAULT_GEMINI_MODEL,
-            "openai": "gpt-4o-mini",
-            "ollama": "llama3.2:latest",
-            "mock": "mock-model",
-        }
-
-        provider = (
-            self.api_provider.get()
-        )
-
-        self.api_model.set(
-            defaults[provider]
-        )
-        self.api_key.set("")
-
-        required = (
-            self.api_settings is not None
-            and self.api_settings.requires_credential(
-                provider
-            )
-        )
-
-        entry = getattr(
-            self,
-            "api_key_entry",
-            None,
-        )
-
-        if entry is not None:
-            entry.configure(
-                state=(
-                    "normal"
-                    if required
-                    else "disabled"
-                )
-            )
-
-        visibility = getattr(
-            self,
-            "api_key_visibility_button",
-            None,
-        )
-        if visibility is not None and entry is not None:
-            visibility.configure(
-                state="normal" if required else "disabled",
-                text="GÖSTER",
-            )
-            entry.configure(show="*")
-
-        delete = getattr(
-            self,
-            "api_delete_button",
-            None,
-        )
-
-        if delete is not None:
-            delete.configure(
-                state="disabled"
-            )
 
     def _toggle_api_key_visibility(self) -> None:
         visible = self.api_key_entry.cget("show") == ""

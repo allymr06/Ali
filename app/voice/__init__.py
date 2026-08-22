@@ -2,7 +2,6 @@
 
 from app.voice.audio import SoundDeviceAudioInput, WindowsWaveAudioOutput
 from app.voice.models import VoiceSessionResult, VoiceSessionState
-from app.voice.providers import OpenAISpeechRecognizer, OpenAISpeechSynthesizer
 from app.voice.registry import (
     VoiceProviderRegistry,
     create_default_voice_provider_registry,
@@ -12,8 +11,6 @@ from app.voice.session import VoiceSession
 from app.voice.wake import TextWakeWordDetector
 
 __all__ = [
-    "OpenAISpeechRecognizer",
-    "OpenAISpeechSynthesizer",
     "SoundDeviceAudioInput",
     "TextWakeWordDetector",
     "VoiceProviderRegistry",

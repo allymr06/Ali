@@ -70,17 +70,17 @@ def service(tmp_path, *, credential: str | None = None, factory=None):
 def test_provider_preferences_are_atomic_and_never_contain_secret(tmp_path) -> None:
     instance, credentials, preferences, _clients = service(tmp_path)
 
-    instance.save("openai", "gpt-4o-mini", "sk-test-secret")
+    instance.save("gemini", "gemini-3.5-flash-lite", "sk-test-secret")
 
     assert credentials.read() == "sk-test-secret"
     assert instance.snapshot().credential_configured is True
     payload = preferences.path.read_text(encoding="utf-8")
     assert "sk-test-secret" not in payload
-    assert json.loads(payload)["provider"] == "openai"
+    assert json.loads(payload)["provider"] == "gemini"
     assert not preferences.path.with_suffix(".json.tmp").exists()
 
 
-def test_corrupt_preferences_fail_closed_to_mock(tmp_path) -> None:
+def test_corrupt_preferences_fail_closed_to_gemini(tmp_path) -> None:
     path = tmp_path / "settings.json"
     path.write_text("not-json", encoding="utf-8")
 
@@ -91,23 +91,23 @@ def test_runtime_settings_use_vault_secret_without_environment_leak(
     tmp_path, monkeypatch
 ) -> None:
     for name in (
-        "JARVIS_API_KEY",
         "JARVIS_DEFAULT_PROVIDER",
         "JARVIS_DEFAULT_MODEL",
-        "JARVIS_OPENAI_MODEL",
+        "JARVIS_GEMINI_API_KEY",
+        "JARVIS_GEMINI_MODEL",
     ):
         monkeypatch.delenv(name, raising=False)
     instance, _credentials, _preferences, _clients = service(
         tmp_path, credential="vault-secret"
     )
-    instance.save("openai", "gpt-4o-mini")
+    instance.save("gemini", "gemini-3.5-flash-lite")
 
     settings = instance.build_runtime_settings()
 
-    assert settings.default_provider == "openai"
-    assert settings.default_model == "gpt-4o-mini"
-    assert settings.openai_model == "gpt-4o-mini"
-    assert settings.api_key == "vault-secret"
+    assert settings.default_provider == "gemini"
+    assert settings.default_model == "gemini-3.5-flash-lite"
+    assert settings.gemini_model == "gemini-3.5-flash-lite"
+    assert settings.gemini_api_key == "vault-secret"
 
 
 def test_gemini_runtime_uses_separate_vault_and_compatible_endpoint(
@@ -122,9 +122,8 @@ def test_gemini_runtime_uses_separate_vault_and_compatible_endpoint(
     ):
         monkeypatch.delenv(name, raising=False)
     gemini = MemoryCredentialStore("gemini-vault-secret")
-    openai = MemoryCredentialStore("openai-vault-secret")
     instance = APISettingsService(
-        credential_stores={"gemini": gemini, "openai": openai},
+        credential_stores={"gemini": gemini},
         preferences=ProviderPreferencesStore(tmp_path / "settings.json"),
         client_factory=lambda **_kwargs: FakeClient(),
     )
@@ -143,11 +142,11 @@ async def test_connection_test_uses_candidate_key_and_closes_client(tmp_path) ->
     instance, _credentials, _preferences, clients = service(tmp_path)
 
     result = await instance.test_connection(
-        "openai", "gpt-4o-mini", "candidate-secret"
+        "gemini", "gemini-3.5-flash-lite", "candidate-secret"
     )
 
     assert result.ok is True
-    assert "gpt-4o-mini" in result.message
+    assert "gemini-3.5-flash-lite" in result.message
     assert clients[0].closed is True
 
 
@@ -185,7 +184,7 @@ async def test_connection_errors_redact_api_key(tmp_path) -> None:
     )
 
     result = await instance.test_connection(
-        "openai", "gpt-4o-mini", candidate
+        "gemini", "gemini-3.5-flash-lite", candidate
     )
 
     assert result.ok is False
@@ -194,16 +193,26 @@ async def test_connection_errors_redact_api_key(tmp_path) -> None:
     assert client.closed is True
 
 
-def test_removing_key_returns_profile_to_mock(tmp_path) -> None:
+def test_removing_key_keeps_gemini_profile_unconfigured(tmp_path) -> None:
     instance, credentials, preferences, _clients = service(
         tmp_path, credential="stored"
     )
-    instance.save("openai", "gpt-4o-mini")
+    instance.save("gemini", "gemini-3.5-flash-lite")
 
     assert instance.delete_api_key() is True
 
     assert credentials.read() is None
-    assert preferences.load().provider == "mock"
+    assert preferences.load().provider == "gemini"
+
+
+def test_legacy_non_gemini_preference_migrates_to_gemini(tmp_path) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text(
+        json.dumps({"provider": "ollama", "model": "llama3.2:latest", "version": 1}),
+        encoding="utf-8",
+    )
+
+    assert ProviderPreferencesStore(path).load() == ProviderPreferences()
 
 
 @pytest.mark.parametrize("provider", ["", "unknown", " open-ai "])
@@ -216,3 +225,39 @@ def test_provider_validation_rejects_unknown_values(provider: str) -> None:
 def test_model_validation_rejects_unsafe_values(model: str) -> None:
     with pytest.raises(ValueError):
         validate_model(model)
+
+
+def test_runtime_settings_sanitize_stale_environment(
+    tmp_path, monkeypatch
+) -> None:
+    instance, credentials, _preferences, _clients = service(tmp_path)
+    credentials.write("stored-key")
+
+    monkeypatch.setenv("JARVIS_DEFAULT_PROVIDER", "ollama")
+    monkeypatch.setenv("JARVIS_DEFAULT_MODEL", "llama3.2:latest")
+    monkeypatch.setenv("JARVIS_VOICE_STT_PROVIDER", "openai")
+    monkeypatch.setenv("JARVIS_VOICE_TTS_PROVIDER", "ollama")
+    monkeypatch.delenv("JARVIS_GEMINI_MODEL", raising=False)
+
+    settings = instance.build_runtime_settings()
+
+    assert settings.default_provider == "gemini"
+    assert settings.default_model == "gemini-3.5-flash-lite"
+    assert settings.gemini_model == "gemini-3.5-flash-lite"
+    assert settings.voice_stt_provider == "auto"
+    assert settings.voice_tts_provider == "auto"
+    assert settings.gemini_api_key == "stored-key"
+
+
+def test_runtime_settings_keep_supported_voice_providers(
+    tmp_path, monkeypatch
+) -> None:
+    instance, _credentials, _preferences, _clients = service(tmp_path)
+
+    monkeypatch.setenv("JARVIS_VOICE_STT_PROVIDER", "gemini")
+    monkeypatch.setenv("JARVIS_VOICE_TTS_PROVIDER", "auto")
+
+    settings = instance.build_runtime_settings()
+
+    assert settings.voice_stt_provider == "gemini"
+    assert settings.voice_tts_provider == "auto"

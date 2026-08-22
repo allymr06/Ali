@@ -19,7 +19,6 @@ from app.providers.base import (
     ModelResponse,
 )
 from app.providers.gateway import ProviderGateway
-from app.providers.ollama_hybrid import OllamaHybridPolicy
 from app.providers.registry import ProviderRegistry
 from app.tools.executor import ToolExecutor
 from app.tools.fast_actions import (
@@ -127,7 +126,7 @@ class CapturingProvider(AIProvider):
 
     @property
     def name(self):
-        return "ollama"
+        return "capturing"
 
     @property
     def capabilities(self):
@@ -164,9 +163,9 @@ class CapturingProvider(AIProvider):
             text="provider-called",
             model=(
                 model
-                or "llama3.2:latest"
+                or "capturing-model"
             ),
-            provider="ollama",
+            provider="capturing",
         )
 
 
@@ -176,7 +175,7 @@ def test_exact_launch_skips_model():
     )
 
     registry = ProviderRegistry(
-        default_provider="ollama",
+        default_provider="capturing",
     )
 
     registry.register(
@@ -235,15 +234,6 @@ def test_exact_launch_skips_model():
         ),
         tool_executor=executor,
         provider_gateway=gateway,
-        ollama_hybrid_policy=(
-            OllamaHybridPolicy(
-                enabled=True,
-                chat_model="gemma3:4b",
-                tool_model=(
-                    "llama3.2:latest"
-                ),
-            )
-        ),
         fast_action_router=(
             make_router()
         ),

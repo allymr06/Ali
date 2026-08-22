@@ -142,7 +142,6 @@ def make_schemas():
 def route(
     text: str,
     *,
-    provider_name: str = "ollama",
     executor: ToolExecutor | None = None,
     schemas=None,
     metadata=None,
@@ -155,7 +154,6 @@ def route(
                 or {}
             ),
         ),
-        provider_name=provider_name,
         tool_executor=(
             executor
             or make_executor()
@@ -425,14 +423,17 @@ def test_does_not_route_filtered_diagnostic_events(
     assert result is None
 
 
-def test_does_not_route_for_other_provider(
+def test_routes_independently_of_the_active_provider(
 ) -> None:
+    # Every deterministic candidate is a READ_ONLY observation tool and
+    # the permission engine still authorizes the call, so routing is not
+    # tied to which model provider happens to be active.
     result = route(
         "JARVIS metriklerini g\u00f6ster.",
-        provider_name="openai",
     )
 
-    assert result is None
+    assert result is not None
+    assert result.tool_name == "diagnostics_metrics"
 
 
 def test_request_can_disable_routing(

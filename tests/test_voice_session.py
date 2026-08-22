@@ -408,3 +408,60 @@ async def test_session_pipelines_speech_chunk_synthesis() -> None:
     assert result.metadata["speech_chunks"] == len(synthesizer.texts)
     # Playback count matches synthesized chunk count.
     assert len(parts["audio_output"].played) == len(synthesizer.texts)
+
+
+class FailingSynthesizer:
+    def __init__(self):
+        self.calls = 0
+
+    async def synthesize(self, text):
+        self.calls += 1
+        from app.voice.errors import VoiceProviderError
+
+        raise VoiceProviderError("quota exhausted")
+
+
+@pytest.mark.asyncio
+async def test_synthesis_failure_keeps_answer_and_uses_local_fallback(
+    monkeypatch,
+) -> None:
+    spoken = []
+
+    async def fake_sapi(text):
+        spoken.append(text)
+        return True
+
+    monkeypatch.setattr(
+        "app.voice.audio.speak_text_with_windows_sapi",
+        fake_sapi,
+    )
+
+    session, parts = make_session(synthesizer=FailingSynthesizer())
+    result = await session.run_once()
+
+    assert result.state is VoiceSessionState.COMPLETED
+    assert result.response_text == "All systems operational."
+    assert result.metadata["speech_fallback"] == "windows-sapi"
+    assert result.metadata["speech_error"] == "provider"
+    assert spoken == ["All systems operational."]
+
+
+@pytest.mark.asyncio
+async def test_synthesis_failure_without_fallback_preserves_text(
+    monkeypatch,
+) -> None:
+    async def no_sapi(text):
+        return False
+
+    monkeypatch.setattr(
+        "app.voice.audio.speak_text_with_windows_sapi",
+        no_sapi,
+    )
+
+    session, parts = make_session(synthesizer=FailingSynthesizer())
+    result = await session.run_once()
+
+    assert result.state is VoiceSessionState.FAILED
+    assert result.error_code == "synthesis"
+    # The core answer survives the speech failure.
+    assert result.response_text == "All systems operational."

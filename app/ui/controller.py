@@ -309,6 +309,42 @@ class DesktopController:
             if manage_state:
                 self.state.busy = False
 
+    _VOICE_ERROR_NOTICES = {
+        "synthesis": (
+            "Yanıt sese çevrilemedi (sağlayıcı kotası dolmuş "
+            "olabilir); yanıtı metin olarak ekledim."
+        ),
+        "provider": (
+            "Konuşman çözümlenemedi. Sağlayıcı hatası olabilir; "
+            "tekrar dener misin?"
+        ),
+        "timeout": "Ses işlemi zaman aşımına uğradı.",
+        "device": (
+            "Mikrofon veya hoparlöre erişilemedi. Cihaz "
+            "bağlantısını kontrol eder misin?"
+        ),
+        "configuration": (
+            "Ses yapılandırması eksik. Ayarlar ekranından API "
+            "anahtarını kontrol eder misin?"
+        ),
+    }
+
+    @classmethod
+    def _voice_turn_notice(cls, result: object) -> str | None:
+        metadata = getattr(result, "metadata", None) or {}
+        if (
+            isinstance(metadata, dict)
+            and metadata.get("speech_fallback") == "windows-sapi"
+        ):
+            return (
+                "Bulut sesi şu an kullanılamıyor; yedek Windows "
+                "sesiyle yanıtladım."
+            )
+        error_code = getattr(result, "error_code", None)
+        if isinstance(error_code, str):
+            return cls._VOICE_ERROR_NOTICES.get(error_code)
+        return None
+
     async def run_voice(
         self,
         *,
@@ -359,6 +395,14 @@ class DesktopController:
                     "assistant",
                     last_response,
                 )
+                if manage_state:
+                    self.state.voice_messages.append(message)
+                if message_callback is not None:
+                    message_callback(message)
+
+            notice = self._voice_turn_notice(result)
+            if notice is not None:
+                message = ChatMessage("system", notice)
                 if manage_state:
                     self.state.voice_messages.append(message)
                 if message_callback is not None:

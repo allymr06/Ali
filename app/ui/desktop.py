@@ -354,7 +354,9 @@ class ScrollableWorkspace(tk.Frame):
         )
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
+        # The minimal trough+thumb layout requests a 1px width in clam,
+        # so the grabbable width comes from internal packing padding.
+        self.scrollbar.pack(side="right", fill="y", ipadx=5)
         self.body.bind(
             "<Configure>",
             lambda _event: self.canvas.configure(
@@ -367,19 +369,31 @@ class ScrollableWorkspace(tk.Frame):
                 self._window, width=event.width
             ),
         )
-        self.canvas.bind("<MouseWheel>", self._on_wheel)
-        self.body.bind("<MouseWheel>", self._on_wheel)
+        # Windows Tk 8.6 delivers <MouseWheel> to the keyboard-focused
+        # widget, not the widget under the pointer, so per-widget bindings
+        # miss the wheel whenever focus sits outside the workspace. One
+        # application-wide binding resolves the widget under the pointer
+        # and scrolls only when it lives inside this workspace and does
+        # not scroll itself.
+        self.canvas.bind_all(
+            "<MouseWheel>", self._on_wheel_anywhere, add="+"
+        )
 
-    def bind_wheel_tree(self) -> None:
-        """Keep wheel scrolling active over dynamically rendered child widgets."""
-        pending = [self.body]
-        while pending:
-            widget = pending.pop()
-            widget.bind("<MouseWheel>", self._on_wheel, add="+")
-            pending.extend(widget.winfo_children())
+    _SELF_SCROLLING = (tk.Text, tk.Listbox)
 
-    def _on_wheel(self, event: tk.Event[Any]) -> None:
-        self.canvas.yview_scroll(int(-event.delta / 120), "units")
+    def _on_wheel_anywhere(self, event: tk.Event[Any]) -> None:
+        widget: tk.Misc | None = self.winfo_containing(
+            event.x_root, event.y_root
+        )
+        while widget is not None:
+            if isinstance(widget, self._SELF_SCROLLING):
+                return
+            if widget is self:
+                self.canvas.yview_scroll(
+                    int(-event.delta / 120), "units"
+                )
+                return
+            widget = widget.master
 
     def reset(self) -> None:
         self.canvas.yview_moveto(0)
@@ -639,7 +653,7 @@ class DesktopWindow:
             relief="flat",
             borderwidth=0,
             arrowsize=0,
-            width=7,
+            width=11,
         )
         style.layout(
             "Jarvis.Vertical.TScrollbar",
@@ -1252,7 +1266,6 @@ class DesktopWindow:
                 normal,
             )
         getattr(self, f"_render_{screen.value}")()
-        self.workspace_scroller.bind_wheel_tree()
 
     def _render_home(self) -> None:
         self._heading(

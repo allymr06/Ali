@@ -13,6 +13,7 @@ from app.core.models import (
     ToolExecutionStatus,
     ToolResult,
 )
+from app.core.interaction_policy import InteractionPolicy
 from app.execution.context import ExecutionContext
 from app.execution.models import ExecutionLimits, ExecutionUsage, RetryPolicy
 from app.execution.service import ExecutionService
@@ -26,6 +27,7 @@ from app.planning.planner import Planner
 from app.planning.models import Plan, PlanStep
 from app.planning.executor import PlanExecutor
 from app.memory.policy import MemoryPolicy
+from app.providers.base import ModelResponse
 from app.providers.registry import ProviderRegistry
 from app.reliability.admission import (
     AdmissionController,
@@ -78,6 +80,9 @@ class CoreEngine:
         )
         self._deterministic_tool_router = (
             DeterministicToolRouter()
+        )
+        self._interaction_policy = (
+            InteractionPolicy()
         )
         self._task_manager = (
             task_manager
@@ -480,6 +485,15 @@ class CoreEngine:
         except ValueError as exc:
             tool_schemas = []
             request.metadata["tool_filter_error"] = str(exc)
+        interaction_decision = (
+            self._interaction_policy.evaluate(
+                request
+            )
+        )
+
+        if not interaction_decision.expose_tools:
+            tool_schemas = []
+
         exposed_tool_names = {
             str(item.get("function", {}).get("name", ""))
             for item in tool_schemas
@@ -494,6 +508,7 @@ class CoreEngine:
         outcome = "completed"
         budget_reason: str | None = None
         model_response = None
+        blocked_plaintext_tool_call: str | None = None
 
         deterministic_route = (
             self._deterministic_tool_router.route(
@@ -552,6 +567,24 @@ class CoreEngine:
             ]
 
         while usage.model_iterations < active_limits.max_model_iterations:
+            if interaction_decision.direct_response is not None:
+                model_response = ModelResponse(
+                    text=interaction_decision.direct_response,
+                    model="jarvis-identity-composer",
+                    provider="core",
+                    finish_reason="stop",
+                    tool_calls=[],
+                    usage={},
+                    metadata={
+                        "direct_response": interaction_decision.kind,
+                        "generation_skipped": True,
+                        "identity_source": "jarvis-core",
+                    },
+                )
+
+                outcome = "completed"
+                break
+
             if cancel_event is not None and cancel_event.is_set():
                 outcome = "cancelled"
                 break
@@ -602,6 +635,9 @@ class CoreEngine:
                             request,
                             active_context,
                             tools=tool_schemas or None,
+                            system_prompt=(
+                                interaction_decision.system_prompt
+                            ),
                         ),
                         cancel_event=cancel_event,
                         timeout=remaining,
@@ -647,6 +683,30 @@ class CoreEngine:
                 )
 
                 if not tool_calls:
+                    blocked_plaintext_tool_call = (
+                        self._interaction_policy
+                        .plaintext_tool_name(
+                            model_response.text,
+                            self._tool_executor.list_names(),
+                        )
+                    )
+
+                    if blocked_plaintext_tool_call is not None:
+                        model_response.metadata[
+                            "blocked_plaintext_tool_call"
+                        ] = blocked_plaintext_tool_call
+
+                        model_response.metadata[
+                            "plaintext_tool_call_blocked"
+                        ] = True
+
+                        model_response.text = (
+                            self._interaction_policy
+                            .safe_fallback(
+                                interaction_decision
+                            )
+                        )
+
                     outcome = "completed"
                     break
 
@@ -865,6 +925,15 @@ class CoreEngine:
                 ),
                 "deterministic_tool_route_reason": (
                     deterministic_tool_reason
+                ),
+                "interaction_kind": (
+                    interaction_decision.kind
+                ),
+                "tools_suppressed": (
+                    not interaction_decision.expose_tools
+                ),
+                "blocked_plaintext_tool_call": (
+                    blocked_plaintext_tool_call
                 ),
                 "elapsed_seconds": usage.elapsed_seconds,
                 "provider_metadata": (

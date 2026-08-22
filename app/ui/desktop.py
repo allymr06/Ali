@@ -7,9 +7,10 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Any, Callable
 
+from app.config.provider_preferences import DEFAULT_GEMINI_MODEL
 from app.ui.api_settings import APISettingsService, create_api_settings_service
 from app.ui.controller import DesktopController
-from app.ui.models import UIScreen, UITheme
+from app.ui.models import ChatMessage, UIScreen, UITheme
 from app.ui.theme import ThemeTokens, tokens
 
 NAVIGATION = (
@@ -39,6 +40,17 @@ SHORTCUTS = (
     ("F1", "Show keyboard shortcuts"),
     ("Escape", "Return focus to the workspace"),
 )
+
+
+def next_typewriter_text(current: str, target: str) -> str:
+    """Advance rendered text smoothly toward the latest streamed value."""
+    if not target:
+        return current
+    if not target.startswith(current):
+        current = ""
+    remaining = len(target) - len(current)
+    step = max(1, min(10, (remaining + 17) // 18))
+    return target[: len(current) + step]
 
 
 class ScrollableWorkspace(tk.Frame):
@@ -109,7 +121,12 @@ class DesktopWindow:
         self._nav_buttons: dict[UIScreen, tk.Button] = {}
         self._busy_future: Future[Any] | None = None
         self._streaming_text: str | None = None
+        self._stream_target_text = ""
         self._streaming_label: tk.Label | None = None
+        self._typewriter_job: str | None = None
+        self._typing_frame = 0
+        self._command_complete_pending = False
+        self._pending_user_text: str | None = None
         self._status_job: str | None = None
         self._nav_job: str | None = None
         self._pulse_frame = 0
@@ -693,7 +710,27 @@ class DesktopWindow:
                 variant="primary",
             ).pack(anchor="w", pady=8)
             return
-        for message in self.controller.state.messages:
+        messages = list(self.controller.state.messages)
+        if (
+            self._pending_user_text
+            and not any(
+                message.role == "user"
+                and message.text == self._pending_user_text
+                for message in messages[-2:]
+            )
+        ):
+            messages.append(
+                ChatMessage("user", self._pending_user_text)
+            )
+        if (
+            self._streaming_text is not None
+            and self._busy_future is not None
+            and messages
+            and messages[-1].role == "assistant"
+        ):
+            messages = messages[:-1]
+
+        for message in messages:
             background = (
                 self._colors.surface_alt
                 if message.role == "user"
@@ -1124,7 +1161,7 @@ class DesktopWindow:
 
     def _on_api_provider_changed(self, _event: object | None = None) -> None:
         defaults = {
-            "gemini": "gemini-3.7-flash",
+            "gemini": DEFAULT_GEMINI_MODEL,
             "openai": "gpt-4o-mini",
             "ollama": "llama3.2:latest",
             "mock": "mock-model",
@@ -1299,7 +1336,11 @@ class DesktopWindow:
         self.command.delete("1.0", "end")
 
         self._streaming_text = ""
+        self._stream_target_text = ""
         self._streaming_label = None
+        self._typing_frame = 0
+        self._command_complete_pending = False
+        self._pending_user_text = text
 
         self._set_busy(
             True,
@@ -1313,6 +1354,8 @@ class DesktopWindow:
             ),
             self._on_command_done,
         )
+        self.render(UIScreen.CHAT)
+        self._schedule_typewriter(180)
         return "break"
 
     def _on_stream_text(
@@ -1342,7 +1385,7 @@ class DesktopWindow:
         ):
             return
 
-        self._streaming_text = text
+        self._stream_target_text = text
 
         label = self._streaming_label
 
@@ -1364,31 +1407,110 @@ class DesktopWindow:
             label is not None
             and label.winfo_exists()
         ):
-            label.configure(
-                text=text
-            )
+            self._schedule_typewriter(0)
 
-            self.workspace_scroller.canvas.update_idletasks()
-            self.workspace_scroller.canvas.yview_moveto(
-                1.0
-            )
+    def _schedule_typewriter(self, delay: int = 16) -> None:
+        if self._closing or self._typewriter_job is not None:
+            return
+        self._typewriter_job = self.root.after(
+            delay,
+            self._animate_stream_text,
+        )
+
+    def _animate_stream_text(self) -> None:
+        self._typewriter_job = None
+        if self._busy_future is None or self._streaming_text is None:
+            return
+
+        label = self._streaming_label
+        if label is None or not label.winfo_exists():
+            self.render(UIScreen.CHAT)
+            label = self._streaming_label
+
+        target = self._stream_target_text
+        if target:
+            if self.controller.state.reduced_motion:
+                rendered = target
+            else:
+                rendered = next_typewriter_text(
+                    self._streaming_text,
+                    target,
+                )
+            self._streaming_text = rendered
+            if label is not None and label.winfo_exists():
+                label.configure(text=rendered)
+            if rendered != target:
+                self._schedule_typewriter()
+            elif self._command_complete_pending:
+                self._finalize_command()
+                return
+        else:
+            if (
+                label is not None
+                and label.winfo_exists()
+                and not self.controller.state.reduced_motion
+            ):
+                label.configure(text="." * (1 + self._typing_frame % 3))
+                self._typing_frame += 1
+            self._schedule_typewriter(180)
+
+        self.workspace_scroller.canvas.update_idletasks()
+        self.workspace_scroller.canvas.yview_moveto(1.0)
 
     def _on_command_done(self, future: Future[Any]) -> None:
         self.root.after(0, lambda: self._finish_command(future))
 
     def _finish_command(self, future: Future[Any]) -> None:
-        self._busy_future = None
-        self._streaming_text = None
-        self._streaming_label = None
-
         try:
-            future.result()
+            message = future.result()
         except Exception as exc:
+            self._pending_user_text = None
             messagebox.showerror(
                 "JARVIS request failed", str(exc), parent=self.root
             )
+            self._finalize_command()
+            return
+
+        self._pending_user_text = None
+
+        if (
+            not self._stream_target_text
+            and getattr(message, "role", None) == "assistant"
+            and isinstance(getattr(message, "text", None), str)
+        ):
+            self._stream_target_text = message.text
+
+        if (
+            self._stream_target_text
+            and self._streaming_text != self._stream_target_text
+            and not self.controller.state.reduced_motion
+        ):
+            self._command_complete_pending = True
+            self._set_busy(True, "RESPONDING")
+            self._schedule_typewriter(0)
+            return
+
+        self._finalize_command()
+
+    def _finalize_command(self) -> None:
+        if self._typewriter_job is not None:
+            self.root.after_cancel(self._typewriter_job)
+            self._typewriter_job = None
+        self._busy_future = None
+        self._streaming_text = None
+        self._stream_target_text = ""
+        self._streaming_label = None
+        self._command_complete_pending = False
+        self._pending_user_text = None
         self._set_busy(False, self.controller.state.status)
         self.render(UIScreen.CHAT)
+        self.root.after(0, self._scroll_chat_to_bottom)
+
+    def _scroll_chat_to_bottom(self) -> None:
+        if self.controller.state.screen is not UIScreen.CHAT:
+            return
+        self.workspace_scroller.canvas.update_idletasks()
+        self.workspace_scroller.canvas.yview_moveto(1.0)
 
     def _start_api_test(self) -> None:
         if self.api_settings is None or self._busy_future is not None:
@@ -1600,6 +1722,8 @@ class DesktopWindow:
             self.root.after_cancel(self._status_job)
         if self._nav_job is not None:
             self.root.after_cancel(self._nav_job)
+        if self._typewriter_job is not None:
+            self.root.after_cancel(self._typewriter_job)
         if self._busy_future is not None:
             self._busy_future.cancel()
         self.controller.close()

@@ -534,6 +534,47 @@ async def test_gemini_chat_defaults_to_low_reasoning_effort(
 
 
 @pytest.mark.asyncio
+async def test_gemini_flash_lite_uses_minimal_reasoning_effort(
+) -> None:
+    client = FakeGeminiClient()
+    provider = GeminiProvider(
+        Settings(
+            gemini_model="gemini-3.5-flash-lite",
+            gemini_reasoning_effort="minimal",
+        ),
+        client=client,
+    )
+
+    from app.core.models import Context, Request
+
+    await provider.generate(Request("quick response"), Context())
+
+    assert (
+        client.chat.completions.calls[0]["reasoning_effort"]
+        == "minimal"
+    )
+
+
+@pytest.mark.asyncio
+async def test_gemini_37_normalizes_unsupported_minimal_to_low(
+) -> None:
+    client = FakeGeminiClient()
+    provider = GeminiProvider(
+        Settings(
+            gemini_model="gemini-3.7-flash",
+            gemini_reasoning_effort="minimal",
+        ),
+        client=client,
+    )
+
+    from app.core.models import Context, Request
+
+    await provider.generate(Request("quick response"), Context())
+
+    assert client.chat.completions.calls[0]["reasoning_effort"] == "low"
+
+
+@pytest.mark.asyncio
 async def test_gemini_stream_also_uses_low_reasoning_effort(
 ) -> None:
     captured = {}
@@ -639,7 +680,7 @@ def test_environment_defaults_to_durable_conversation_store(
     )
 
 
-def test_environment_defaults_gemini_to_low_reasoning(
+def test_environment_defaults_gemini_to_minimal_reasoning(
     monkeypatch,
 ) -> None:
     monkeypatch.delenv(
@@ -653,5 +694,5 @@ def test_environment_defaults_gemini_to_low_reasoning(
 
     assert (
         settings.gemini_reasoning_effort
-        == "low"
+        == "minimal"
     )

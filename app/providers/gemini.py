@@ -11,6 +11,12 @@ from app.providers.openai import OpenAIProvider
 class GeminiProvider(OpenAIProvider):
     """Gemini adapter using Google's OpenAI-compatible API surface."""
 
+    _MINIMAL_REASONING_MODELS = (
+        "gemini-3.5-flash-lite",
+        "gemini-3.5-flash",
+        "gemini-3.6-flash",
+    )
+
     def __init__(
         self,
         settings: Settings | None = None,
@@ -30,11 +36,18 @@ class GeminiProvider(OpenAIProvider):
         self,
         selected_model: str,
     ) -> dict[str, Any]:
-        del selected_model
+        effort = self._settings.gemini_reasoning_effort
+
+        if (
+            effort == "minimal"
+            and not selected_model.startswith(
+                self._MINIMAL_REASONING_MODELS
+            )
+        ):
+            effort = "low"
 
         return {
-            "reasoning_effort":
-                self._settings.gemini_reasoning_effort,
+            "reasoning_effort": effort,
         }
 
     @property

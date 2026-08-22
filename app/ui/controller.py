@@ -9,6 +9,7 @@ from typing import Any
 
 from app.conversation.models import ConversationStatus, MessageRole
 from app.core.models import Context, Request, RequestSource
+from app.security.interactive import InteractiveApprovalCallback
 from app.ui.models import ChatMessage, RuntimeSnapshot, UIState
 
 
@@ -71,6 +72,10 @@ class DesktopController:
     state: UIState = field(default_factory=UIState)
     context: Context = field(default_factory=Context)
     voice_context: Context = field(default_factory=Context)
+    approval_callback: InteractiveApprovalCallback | None = field(
+        default=None,
+        repr=False,
+    )
     _runner: AsyncRunner | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -241,16 +246,23 @@ class DesktopController:
                 source=RequestSource.TEXT,
             )
 
+            approval_options = (
+                {"approval_callback": self.approval_callback}
+                if self.approval_callback is not None
+                else {}
+            )
             if stream_callback is None:
                 response = await self.application.engine.handle(
                     request,
                     self.context,
+                    **approval_options,
                 )
             else:
                 response = await self.application.engine.handle(
                     request,
                     self.context,
                     stream_callback=stream_callback,
+                    **approval_options,
                 )
             message = ChatMessage(
                 "assistant",
@@ -359,20 +371,24 @@ class DesktopController:
         )
 
         if callable(run_continuous):
-            results = await run_continuous(
-                max_turns=100,
-                context=self.voice_context,
-                max_consecutive_failures=2,
-                result_callback=record_result,
-            )
+            options = {
+                "max_turns": 100,
+                "context": self.voice_context,
+                "max_consecutive_failures": 2,
+                "result_callback": record_result,
+            }
+            if self.approval_callback is not None:
+                options["approval_callback"] = self.approval_callback
+            results = await run_continuous(**options)
         else:
             # Compatibility path for older voice adapters
             # and lightweight test doubles.
-            results = (
-                await voice.run_once(
-                    self.voice_context
-                ),
+            options = (
+                {"approval_callback": self.approval_callback}
+                if self.approval_callback is not None
+                else {}
             )
+            results = (await voice.run_once(self.voice_context, **options),)
             record_result(results[0])
 
         if last_response is not None:

@@ -183,6 +183,32 @@ def test_engine_preserves_atomic_tool_chain():
     ]
 
 
+def test_sensitive_tool_content_is_ephemeral_for_provider_only():
+    store = InMemoryConversationStore()
+    engine = ConversationEngine(store)
+    context = Context()
+    request = Request("panoyu oku")
+    engine.prepare_request(request, context)
+    engine.add_assistant_tool_calls(
+        context,
+        request_id=request.request_id,
+        content=None,
+        tool_calls=[{"id": "call", "function": {"name": "clipboard"}}],
+    )
+    engine.add_tool_result(
+        context,
+        request_id=request.request_id,
+        tool_call_id="call",
+        content="Sensitive output was not retained.",
+        provider_content="çok gizli pano metni",
+    )
+
+    assert context.values["messages"][-1]["content"] == "çok gizli pano metni"
+    persisted = store.get(context.conversation_id)
+    assert persisted.turns[-1].content == "Sensitive output was not retained."
+    assert "çok gizli" not in repr(persisted)
+
+
 def test_context_budget_summarizes_omitted_turn_groups_without_deleting_history():
     engine = ConversationEngine(
         max_context_messages=2,

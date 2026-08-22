@@ -145,10 +145,20 @@ def test_approval_grant_validation_binds_every_execution_identity() -> None:
     task_id = uuid4()
     plan_id = uuid4()
     step_id = uuid4()
+    request_id = uuid4()
+    conversation_id = uuid4()
+    operation_id = uuid4()
     parameters = {"path": "a.txt"}
-    context = ApprovalExecutionContext(task_id, plan_id, step_id)
+    context = ApprovalExecutionContext(
+        task_id,
+        plan_id,
+        step_id,
+        conversation_id=conversation_id,
+        request_id=request_id,
+        approval_operation_id=operation_id,
+    )
     grant = ApprovalGrant(
-        operation_id=uuid4(),
+        operation_id=operation_id,
         binding_digest=approval_binding_digest(
             operation="delete",
             tool_name="file",
@@ -157,6 +167,8 @@ def test_approval_grant_validation_binds_every_execution_identity() -> None:
             plan_id=plan_id,
             step_id=step_id,
             tool_version="1.0.0",
+            request_id=request_id,
+            conversation_id=conversation_id,
         ),
         expires_at=utc_now() + timedelta(minutes=1),
         task_id=task_id,
@@ -193,6 +205,36 @@ def test_approval_grant_validation_binds_every_execution_identity() -> None:
         parameters=parameters,
         context=context,
         tool_version="2.0.0",
+    ).valid
+    assert not validate_approval_grant(
+        grant,
+        operation="delete",
+        tool_name="file",
+        parameters=parameters,
+        context=ApprovalExecutionContext(
+            task_id,
+            plan_id,
+            step_id,
+            conversation_id=uuid4(),
+            request_id=request_id,
+            approval_operation_id=operation_id,
+        ),
+        tool_version="1.0.0",
+    ).valid
+    assert not validate_approval_grant(
+        grant,
+        operation="delete",
+        tool_name="file",
+        parameters=parameters,
+        context=ApprovalExecutionContext(
+            task_id,
+            plan_id,
+            step_id,
+            conversation_id=conversation_id,
+            request_id=uuid4(),
+            approval_operation_id=operation_id,
+        ),
+        tool_version="1.0.0",
     ).valid
 
 

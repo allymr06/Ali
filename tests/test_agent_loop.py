@@ -14,6 +14,8 @@ from app.core.models import (
     Request,
     RiskLevel,
     ToolDefinition,
+    ToolExecutionStatus,
+    ToolResult,
 )
 from app.main import create_application
 from app.planning.models import Plan, PlanStep
@@ -419,7 +421,12 @@ async def test_agent_loop_resumes_same_plan_after_approval():
 
     def approved_action():
         called["value"] = True
-        return "approved-ok"
+        return ToolResult(
+            status=ToolExecutionStatus.SUCCESS,
+            tool_name="approval_resume_test",
+            data="approved-ok",
+            verified=True,
+        )
 
     application.tool_executor.register(
         ToolDefinition(

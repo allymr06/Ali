@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import ctypes
 import math
 import sys
@@ -9,10 +10,12 @@ from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
 from pathlib import Path
 from queue import Empty, SimpleQueue
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable
 
 from app.config.provider_preferences import DEFAULT_GEMINI_MODEL
+from app.core.time import utc_now
+from app.security.interactive import InteractiveApprovalRequest
 from app.ui.api_settings import APISettingsService, create_api_settings_service
 from app.ui.controller import DesktopController
 from app.ui.models import ChatMessage, UIScreen, UITheme
@@ -26,6 +29,12 @@ class UIEvent:
     operation_id: int
     kind: str
     payload: object
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalPrompt:
+    request: InteractiveApprovalRequest
+    response: Future[bool]
 
 NAVIGATION = (
     (UIScreen.HOME, "01", "Komuta Merkezi"),
@@ -359,14 +368,16 @@ class ScrollableWorkspace(tk.Frame):
                 self._window, width=event.width
             ),
         )
-        self.canvas.bind("<Enter>", self._bind_wheel)
-        self.canvas.bind("<Leave>", self._unbind_wheel)
+        self.canvas.bind("<MouseWheel>", self._on_wheel)
+        self.body.bind("<MouseWheel>", self._on_wheel)
 
-    def _bind_wheel(self, _event: tk.Event[Any]) -> None:
-        self.canvas.bind_all("<MouseWheel>", self._on_wheel)
-
-    def _unbind_wheel(self, _event: tk.Event[Any]) -> None:
-        self.canvas.unbind_all("<MouseWheel>")
+    def bind_wheel_tree(self) -> None:
+        """Keep wheel scrolling active over dynamically rendered child widgets."""
+        pending = [self.body]
+        while pending:
+            widget = pending.pop()
+            widget.bind("<MouseWheel>", self._on_wheel, add="+")
+            pending.extend(widget.winfo_children())
 
     def _on_wheel(self, event: tk.Event[Any]) -> None:
         self.canvas.yview_scroll(int(-event.delta / 120), "units")
@@ -406,6 +417,7 @@ class DesktopWindow:
         self._pulse_frame = 0
         self._closing = False
         self._ui_events: SimpleQueue[UIEvent] = SimpleQueue()
+        self._pending_approvals: set[Future[bool]] = set()
         self._ui_poll_job: str | None = None
         self._operation_sequence = 0
         self._active_operation_id: int | None = None
@@ -418,6 +430,7 @@ class DesktopWindow:
         self._research_report: dict[str, object] | None = None
         self._research_error: str | None = None
         self._snapshot = self.controller.snapshot()
+        self.controller.approval_callback = self._request_tool_approval
         self._configure_window()
         self._build_shell()
         self._bind_shortcuts()
@@ -1240,6 +1253,7 @@ class DesktopWindow:
                 normal,
             )
         getattr(self, f"_render_{screen.value}")()
+        self.workspace_scroller.bind_wheel_tree()
 
     def _render_home(self) -> None:
         self._heading(
@@ -1755,9 +1769,9 @@ class DesktopWindow:
 
     def _render_integrations(self) -> None:
         self._heading(
-            "BAĞLANTILAR",
-            "Hizmetlere genel bakış",
-            "Yalnızca canlı yapılandırmalar bağlı olarak gösterilir.",
+            "GÜVEN VE ERİŞİM",
+            "Bağlantılar ve sınırlı bilgisayar yetkileri",
+            "Değiştirici her işlem ayrıca tek seferlik açık onay ister.",
         )
         card = self._card(self.workspace, "Çalışma zamanı bağlantıları")
         for name, ready in (
@@ -1787,6 +1801,133 @@ class DesktopWindow:
             self._line(
                 card, name, "BAĞLI" if ready else "AYARLANMAMIŞ"
             )
+
+        access = self._card(
+            self.workspace,
+            "İzin verilen dosya kökleri",
+            subtitle=(
+                "JARVIS yalnız aşağıdaki klasörlerin içinde ve göreli "
+                "yollarla çalışabilir."
+            ),
+        )
+        windows = self.controller.application.windows
+        grants = (
+            windows.filesystem_root_grants()
+            if windows is not None
+            else ()
+        )
+        if not grants:
+            self._line(
+                access,
+                "DOSYA ERİŞİMİ KAPALI",
+                "Varsayılan olarak hiçbir klasöre erişim verilmez.",
+            )
+        for grant in grants:
+            row = RoundedSurface(
+                access,
+                fill=self._colors.surface_alt,
+                outline=self._colors.line,
+                radius=10,
+                padx=10,
+                pady=8,
+            )
+            row.pack(fill="x", pady=2)
+            content = row.content
+            details = tk.Frame(content, bg=self._colors.surface_alt)
+            details.pack(side="left", fill="x", expand=True)
+            tk.Label(
+                details,
+                text=grant.display_name,
+                bg=self._colors.surface_alt,
+                fg=self._colors.ink,
+                anchor="w",
+            ).pack(fill="x")
+            tk.Label(
+                details,
+                text=f"{grant.path}  /  Kimlik: {grant.root_id}",
+                bg=self._colors.surface_alt,
+                fg=self._colors.muted,
+                font=("Segoe UI", 8),
+                anchor="w",
+            ).pack(fill="x", pady=(2, 0))
+            self._button(
+                content,
+                "ERİŞİMİ KALDIR",
+                lambda current=grant: self._remove_filesystem_root(
+                    current.root_id,
+                    str(current.path),
+                ),
+                variant="ghost",
+            ).pack(side="right", padx=(8, 0))
+
+        controls = tk.Frame(access, bg=self._colors.surface)
+        controls.pack(fill="x", pady=(10, 2))
+        add_button = self._button(
+            controls,
+            "KLASÖR İZNİ EKLE",
+            self._add_filesystem_root,
+            variant="primary",
+        )
+        add_button.pack(side="left")
+        if windows is None:
+            add_button.configure(state="disabled")
+
+    def _add_filesystem_root(self) -> None:
+        windows = self.controller.application.windows
+        if windows is None:
+            return
+        selected = filedialog.askdirectory(
+            title="JARVIS için izin verilecek klasörü seç",
+            mustexist=True,
+            parent=self.root,
+        )
+        if not selected:
+            return
+        if not messagebox.askyesno(
+            "Klasör erişimi verilsin mi?",
+            f"JARVIS yalnız bu klasörün içinde çalışabilecek:\n\n{selected}\n\n"
+            "Araçların yapacağı her değişiklik yine ayrıca onaylanacak.",
+            icon="warning",
+            parent=self.root,
+        ):
+            return
+        try:
+            windows.grant_filesystem_root(selected)
+        except Exception as exc:
+            messagebox.showerror(
+                "Klasör izni eklenemedi",
+                str(exc),
+                parent=self.root,
+            )
+            return
+        self.render(UIScreen.INTEGRATIONS)
+
+    def _remove_filesystem_root(self, root_id: str, path: str) -> None:
+        windows = self.controller.application.windows
+        if windows is None:
+            return
+        if not messagebox.askyesno(
+            "Klasör erişimi kaldırılsın mı?",
+            f"JARVIS erişimi hemen kaybedecek:\n\n{path}",
+            parent=self.root,
+        ):
+            return
+        try:
+            removed = windows.revoke_filesystem_root(root_id)
+        except Exception as exc:
+            messagebox.showerror(
+                "Klasör izni kaldırılamadı",
+                str(exc),
+                parent=self.root,
+            )
+            return
+        if not removed:
+            messagebox.showinfo(
+                "Klasör izni",
+                "Bu izin zaten etkin değil.",
+                parent=self.root,
+            )
+        self.render(UIScreen.INTEGRATIONS)
 
     def _render_diagnostics(self) -> None:
         self._heading(
@@ -2202,6 +2343,72 @@ class DesktopWindow:
     ) -> None:
         self._ui_events.put(UIEvent(operation_id, kind, payload))
 
+    async def _request_tool_approval(
+        self,
+        request: InteractiveApprovalRequest,
+    ) -> bool:
+        if self._closing:
+            return False
+        voice_request = request.request_source == "voice"
+        operation_id = (
+            self._voice_operation_id
+            if voice_request
+            else self._active_operation_id
+        )
+        if operation_id is None:
+            return False
+        response: Future[bool] = Future()
+        self._pending_approvals.add(response)
+        self._queue_ui_event(
+            operation_id,
+            "voice_approval_request" if voice_request else "approval_request",
+            ApprovalPrompt(request, response),
+        )
+        try:
+            return bool(await asyncio.wrap_future(response))
+        finally:
+            self._pending_approvals.discard(response)
+
+    def _show_tool_approval(self, payload: object) -> None:
+        if not isinstance(payload, ApprovalPrompt):
+            raise TypeError("Approval event payload must be an ApprovalPrompt.")
+        response = payload.response
+        if response.done():
+            return
+        request = payload.request
+        if utc_now() >= request.expires_at:
+            response.set_result(False)
+            return
+        parameters = "\n".join(
+            f"• {name}: {value}"
+            for name, value in request.parameters.items()
+        ) or "• Parametre yok"
+        approved = messagebox.askyesno(
+            "JARVIS işlem onayı",
+            "JARVIS bilgisayarında bir değişiklik yapmak istiyor.\n\n"
+            f"İşlem: {request.tool_name}\n"
+            f"Risk: {localize_token(request.risk_level.value)}\n\n"
+            f"{parameters}\n\n"
+            "Yalnız bu tek işlem için izin verilsin mi?",
+            icon="warning",
+            parent=self.root,
+        )
+        if not response.done():
+            response.set_result(bool(approved))
+
+    @staticmethod
+    def _deny_approval_prompt(payload: object) -> None:
+        if (
+            isinstance(payload, ApprovalPrompt)
+            and not payload.response.done()
+        ):
+            payload.response.set_result(False)
+
+    def _deny_pending_approvals(self) -> None:
+        for approval in tuple(self._pending_approvals):
+            if not approval.done():
+                approval.set_result(False)
+
     def _drain_ui_events(self) -> None:
         self._ui_poll_job = None
         if self._closing:
@@ -2218,6 +2425,7 @@ class DesktopWindow:
                 else self._active_operation_id
             )
             if event.operation_id != expected_operation:
+                self._deny_approval_prompt(event.payload)
                 continue
             try:
                 if event.kind == "command_stream":
@@ -2260,9 +2468,16 @@ class DesktopWindow:
                         event.operation_id,
                         event.payload,
                     )
+                elif event.kind in {
+                    "approval_request",
+                    "voice_approval_request",
+                }:
+                    self._show_tool_approval(event.payload)
                 else:
                     raise RuntimeError(f"Unknown UI event: {event.kind}")
             except Exception as exc:
+                self._deny_approval_prompt(event.payload)
+                self._deny_pending_approvals()
                 if voice_event:
                     self._recover_voice_operation(event.operation_id, exc)
                 else:
@@ -2417,6 +2632,7 @@ class DesktopWindow:
     ) -> None:
         if operation_id != self._voice_operation_id:
             return
+        self._deny_pending_approvals()
         stopped = self._voice_stop_requested
         if self._voice_future is not None and not self._voice_future.done():
             self._voice_future.cancel()
@@ -2448,6 +2664,7 @@ class DesktopWindow:
             return
         if self._busy_future is not None and not self._busy_future.done():
             self._busy_future.cancel()
+        self._deny_pending_approvals()
         command_failed = operation_id == self._command_operation_id
         if command_failed:
             if self._typewriter_job is not None:
@@ -3040,6 +3257,9 @@ class DesktopWindow:
 
     def close(self) -> None:
         self._closing = True
+        self.controller.approval_callback = None
+        self._deny_pending_approvals()
+        self._pending_approvals.clear()
         self._stop_orb_animation()
         if self._ui_poll_job is not None:
             self.root.after_cancel(self._ui_poll_job)

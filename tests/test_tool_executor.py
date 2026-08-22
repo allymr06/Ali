@@ -85,7 +85,7 @@ def test_executor_allows_read_only_tool() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "hello"
-    assert result.verified is False
+    assert result.verified is True
 
 
 def test_executor_blocks_medium_risk_without_confirmation() -> None:
@@ -283,7 +283,7 @@ def test_executor_accepts_valid_keyword_arguments() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == 42
-    assert result.verified is False
+    assert result.verified is True
 
 
 def test_executor_rejects_unexpected_arguments() -> None:
@@ -362,7 +362,7 @@ def test_executor_accepts_matching_argument_type() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "hello"
-    assert result.verified is False
+    assert result.verified is True
 def test_executor_normalizes_tool_result() -> None:
     executor = ToolExecutor()
 
@@ -381,7 +381,7 @@ def test_executor_normalizes_tool_result() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "hello"
-    assert result.verified is False
+    assert result.verified is True
     assert result.finished_at is not None
 
 

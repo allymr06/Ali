@@ -324,6 +324,11 @@ async def test_openai_provider_parses_tool_calls(monkeypatch) -> None:
     tool_call = SimpleNamespace(
         id="call_123",
         type="function",
+        extra_content={
+            "google": {
+                "thought_signature": "opaque-signature",
+            }
+        },
         function=SimpleNamespace(
             name="get_weather",
             arguments='{"city":"Baku"}',
@@ -404,6 +409,11 @@ async def test_openai_provider_parses_tool_calls(monkeypatch) -> None:
     assert response.tool_calls[0]["type"] == "function"
     assert response.tool_calls[0]["function"]["name"] == "get_weather"
     assert response.tool_calls[0]["function"]["arguments"] == '{"city":"Baku"}'
+    assert response.tool_calls[0]["extra_content"] == {
+        "google": {
+            "thought_signature": "opaque-signature",
+        }
+    }
 
 @pytest.mark.asyncio
 async def test_openai_provider_includes_context_messages() -> None:

@@ -24,12 +24,14 @@ class VerificationEngine:
             )
 
         if verifier is None:
+            if result.verified is not True:
+                return VerificationResult(
+                    passed=False,
+                    reason="Tool result has no explicit postcondition verification.",
+                )
             return VerificationResult(
                 passed=True,
-                reason=(
-                    "Tool execution succeeded without an explicit "
-                    "custom verifier."
-                ),
+                reason="Tool reported an explicitly verified postcondition.",
             )
 
         try:

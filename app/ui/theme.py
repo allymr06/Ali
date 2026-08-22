@@ -20,37 +20,47 @@ class ThemeTokens:
     accent: str
     accent_strong: str
     warning: str
+    # Fine-grain tokens used by the animated shell.
+    line_soft: str = "#14212c"
+    glow: str = "#173544"
+    success: str = "#7fe0b2"
 
 
 DARK = ThemeTokens(
-    "#05080b",
-    "#091016",
-    "#111d25",
-    "#eaf8fb",
-    "#7f969e",
-    "#223640",
-    "#061014",
-    "#14252d",
-    "#45cde9",
-    "#5f7780",
-    "#a9efff",
-    "#45cde9",
-    "#efc37d",
+    background="#05090f",
+    surface="#0a111a",
+    surface_alt="#101b27",
+    ink="#eaf6fa",
+    muted="#8299a6",
+    line="#1d2f3d",
+    inverse="#04121a",
+    hover="#152331",
+    focus="#4dd6f2",
+    faint="#54707f",
+    accent="#7ee8ff",
+    accent_strong="#38c8e8",
+    warning="#f0c684",
+    line_soft="#141f2b",
+    glow="#12303f",
+    success="#7fe0b2",
 )
 LIGHT = ThemeTokens(
-    "#edf4f6",
-    "#f8fcfd",
-    "#e2edf0",
-    "#0a171c",
-    "#536970",
-    "#b7cbd1",
-    "#ffffff",
-    "#d7e8ec",
-    "#167f98",
-    "#789198",
-    "#0c667d",
-    "#168ba6",
-    "#9a651f",
+    background="#eef4f7",
+    surface="#f9fcfd",
+    surface_alt="#e3edf2",
+    ink="#0a171d",
+    muted="#51686f",
+    line="#c3d4da",
+    inverse="#ffffff",
+    hover="#dbe9ee",
+    focus="#0f7f9c",
+    faint="#7d949c",
+    accent="#0c667d",
+    accent_strong="#128aa8",
+    warning="#9a651f",
+    line_soft="#d5e2e7",
+    glow="#cfe6ec",
+    success="#1d7d55",
 )
 
 

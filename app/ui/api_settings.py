@@ -307,7 +307,7 @@ class APISettingsService:
         if selected_provider == "mock":
             return ConnectionTestResult(
                 True,
-                "Local mock provider is available.",
+                "Yerel deneme sağlayıcısı kullanılabilir.",
             )
 
         settings = (
@@ -337,7 +337,7 @@ class APISettingsService:
             if not secret_candidate:
                 return ConnectionTestResult(
                     False,
-                    "Enter an API key first.",
+                    "Önce bir API anahtarı gir.",
                 )
 
             client_arguments = {
@@ -358,7 +358,7 @@ class APISettingsService:
             resolved = getattr(model_record, "id", selected_model)
             return ConnectionTestResult(
                 True,
-                f"Connected successfully. Model: {resolved}",
+                f"Bağlantı başarılı. Model: {resolved}",
             )
         except Exception as exc:
             safe_message = str(exc)
@@ -373,7 +373,7 @@ class APISettingsService:
 
             return ConnectionTestResult(
                 False,
-                f"Connection failed: {safe_message}",
+                f"Bağlantı başarısız: {safe_message}",
             )
         finally:
             close = getattr(client, "close", None)

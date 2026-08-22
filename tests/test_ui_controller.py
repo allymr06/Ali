@@ -209,11 +209,21 @@ def test_async_runner_executes_and_closes_once() -> None:
 
 
 def test_desktop_module_import_does_not_create_a_window() -> None:
-    from app.ui.desktop import NAVIGATION, SHORTCUTS, DesktopWindow
+    from app.ui.desktop import (
+        DISPLAY_MODEL_NAME,
+        NAVIGATION,
+        SHORTCUTS,
+        DesktopWindow,
+        enable_high_dpi_rendering,
+        localize_token,
+    )
 
     assert DesktopWindow is not None
+    assert DISPLAY_MODEL_NAME == "JARVIS 0.2"
+    assert callable(enable_high_dpi_rendering)
+    assert localize_token("running") == "ÇALIŞIYOR"
     assert tuple(item[0] for item in NAVIGATION) == tuple(__import__("app.ui.models", fromlist=["UIScreen"]).UIScreen)
-    assert ("Enter", "Send the prompt from the command composer") in SHORTCUTS
+    assert ("Enter", "Komutu gönder") in SHORTCUTS
 
 
 def test_controller_can_replace_and_close_live_application() -> None:

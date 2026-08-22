@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from threading import Thread
 from typing import Any
 
+from app.conversation.models import ConversationStatus, MessageRole
 from app.core.models import Context, Request, RequestSource
 from app.ui.models import ChatMessage, RuntimeSnapshot, UIState
 
@@ -45,6 +46,55 @@ class DesktopController:
     state: UIState = field(default_factory=UIState)
     context: Context = field(default_factory=Context)
     _runner: AsyncRunner | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        self.restore_latest_conversation()
+
+    def restore_latest_conversation(
+        self,
+    ) -> bool:
+        conversations = tuple(
+            conversation
+            for conversation
+            in self.application.conversation_engine.list()
+            if conversation.status
+            is ConversationStatus.ACTIVE
+        )
+
+        if not conversations:
+            return False
+
+        conversation = max(
+            conversations,
+            key=lambda item: (
+                item.updated_at,
+                item.created_at,
+            ),
+        )
+
+        self.context = Context(
+            conversation_id=(
+                conversation.conversation_id
+            )
+        )
+
+        self.state.messages = [
+            ChatMessage(
+                turn.role.value,
+                turn.content,
+            )
+            for turn
+            in conversation.turns
+            if turn.role
+            in {
+                MessageRole.USER,
+                MessageRole.ASSISTANT,
+            }
+            and turn.content
+            and turn.content.strip()
+        ]
+
+        return True
 
     def snapshot(self) -> RuntimeSnapshot:
         settings = self.application.settings
@@ -91,12 +141,42 @@ class DesktopController:
             tools=tools,
         )
 
-    def replace_application(self, application: Any) -> None:
-        """Swap the live runtime after a validated configuration change."""
+    def replace_application(
+        self,
+        application: Any,
+    ) -> None:
+        """
+        Swap the live runtime without discarding
+        the active conversation.
+        """
         previous = self.application
+
+        previous_conversation_id = (
+            self.context.conversation_id
+        )
+
         self.application = application
-        self.context = Context()
-        close = getattr(previous, "close", None)
+
+        try:
+            self.application.conversation_engine.get(
+                previous_conversation_id
+            )
+        except KeyError:
+            self.context = Context()
+            self.restore_latest_conversation()
+        else:
+            self.context = Context(
+                conversation_id=(
+                    previous_conversation_id
+                )
+            )
+
+        close = getattr(
+            previous,
+            "close",
+            None,
+        )
+
         if close is not None:
             close()
 
@@ -115,9 +195,29 @@ class DesktopController:
             self.state.messages.append(message)
             self.state.status = "LOCAL CORE READY"
             return message
-        except Exception:
-            self.state.status = "REQUEST FAILED"
-            raise
+        except Exception as exc:
+            self.state.status = "RECOVERING"
+
+            message = ChatMessage(
+                "system",
+                (
+                    "?stek tamamlanamad? "
+                    f"({type(exc).__name__}). "
+                    "JARVIS oturumu korundu; "
+                    "tekrar deneyebilirsin."
+                ),
+            )
+
+            self.state.messages.append(
+                message
+            )
+
+            self.state.status = (
+                "LOCAL CORE READY"
+            )
+
+            return message
+
         finally:
             self.state.busy = False
 

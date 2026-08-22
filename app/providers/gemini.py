@@ -26,6 +26,17 @@ class GeminiProvider(OpenAIProvider):
         )
         super().__init__(gemini_settings, client=client)
 
+    def _chat_request_options(
+        self,
+        selected_model: str,
+    ) -> dict[str, Any]:
+        del selected_model
+
+        return {
+            "reasoning_effort":
+                self._settings.gemini_reasoning_effort,
+        }
+
     @property
     def name(self) -> str:
         return "gemini"

@@ -237,6 +237,13 @@ class OpenAIProvider(AIProvider):
             status_code=status_code,
         )
 
+    def _chat_request_options(
+        self,
+        selected_model: str,
+    ) -> dict[str, Any]:
+        """Provider-specific Chat Completions options."""
+        return {}
+
     async def generate(
         self,
         request: Request,
@@ -259,6 +266,11 @@ class OpenAIProvider(AIProvider):
             "messages": messages,
             "tools": tools or None,
         }
+        request_arguments.update(
+            self._chat_request_options(
+                selected_model
+            )
+        )
         if response_format is not None:
             request_arguments["response_format"] = response_format
         try:
@@ -305,12 +317,22 @@ class OpenAIProvider(AIProvider):
         )
         messages = self._messages(request, context, system_prompt)
         try:
+            request_arguments = {
+                "model": selected_model,
+                "messages": messages,
+                "tools": tools or None,
+                "stream": True,
+                "stream_options": {
+                    "include_usage": True
+                },
+            }
+            request_arguments.update(
+                self._chat_request_options(
+                    selected_model
+                )
+            )
             stream = await client.chat.completions.create(
-                model=selected_model,
-                messages=messages,
-                tools=tools or None,
-                stream=True,
-                stream_options={"include_usage": True},
+                **request_arguments
             )
             async for raw_chunk in stream:
                 choices = getattr(raw_chunk, "choices", None) or []

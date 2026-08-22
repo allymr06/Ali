@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from app.config.settings import Settings
 from app.conversation.engine import ConversationEngine
+from app.conversation.sqlite import SQLiteConversationStore
 from app.conversation.store import InMemoryConversationStore
 from app.core.engine import CoreEngine
 from app.diagnostics.health import HealthCheck
@@ -74,6 +75,17 @@ class JARVISApplication:
 
     def close(self) -> None:
         """Release durable stores owned by the application runtime."""
+        conversation_store = (
+            self.conversation_engine.store
+        )
+        close_conversations = getattr(
+            conversation_store,
+            "close",
+            None,
+        )
+        if callable(close_conversations):
+            close_conversations()
+
         self.task_manager.close()
         self.memory_manager.close()
 
@@ -164,8 +176,17 @@ def create_application(
             active_settings.provider_circuit_recovery_seconds
         ),
     )
+    conversation_store = (
+        SQLiteConversationStore(
+            active_settings.conversation_database_path
+        )
+        if active_settings.conversation_database_path
+        is not None
+        else InMemoryConversationStore()
+    )
+
     conversation_engine = ConversationEngine(
-        InMemoryConversationStore(),
+        conversation_store,
         max_context_messages=active_settings.conversation_max_messages,
         max_context_characters=active_settings.conversation_max_characters,
         summary_max_characters=(

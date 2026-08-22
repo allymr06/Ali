@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import math
 import os
@@ -89,6 +89,7 @@ class Settings:
     default_model: str = "mock-model"
     openai_model: str | None = None
     gemini_model: str | None = None
+    gemini_reasoning_effort: str = "low"
 
     provider_timeout_seconds: float = 30.0
     provider_max_retries: int = 2
@@ -99,6 +100,7 @@ class Settings:
     conversation_max_characters: int = 50_000
     conversation_summary_max_characters: int = 4_000
     conversation_system_prompt: str | None = None
+    conversation_database_path: str | None = None
 
     memory_database_path: str | None = None
     task_database_path: str | None = None
@@ -180,6 +182,10 @@ class Settings:
             raise ValueError("openai_model cannot be empty when set.")
         if self.gemini_model is not None and not self.gemini_model.strip():
             raise ValueError("gemini_model cannot be empty when set.")
+        if self.gemini_reasoning_effort not in {"low", "medium", "high"}:
+            raise ValueError(
+                "gemini_reasoning_effort must be low, medium, or high."
+            )
         if not self.gemini_base_url.strip():
             raise ValueError("gemini_base_url cannot be empty.")
         if self.provider_timeout_seconds <= 0:
@@ -334,6 +340,10 @@ class Settings:
             ),
             openai_model=os.getenv("JARVIS_OPENAI_MODEL"),
             gemini_model=os.getenv("JARVIS_GEMINI_MODEL"),
+            gemini_reasoning_effort=os.getenv(
+                "JARVIS_GEMINI_REASONING_EFFORT",
+                "low",
+            ).strip().lower(),
             provider_timeout_seconds=_get_float(
                 "JARVIS_PROVIDER_TIMEOUT",
                 30.0,
@@ -364,6 +374,13 @@ class Settings:
             ),
             conversation_system_prompt=os.getenv(
                 "JARVIS_CONVERSATION_SYSTEM_PROMPT"
+            ),
+            conversation_database_path=os.getenv(
+                "JARVIS_CONVERSATION_DATABASE_PATH",
+                os.path.join(
+                    "data",
+                    "jarvis_conversations.sqlite3",
+                ),
             ),
             memory_database_path=os.getenv(
                 "JARVIS_MEMORY_DATABASE_PATH",

@@ -21,15 +21,51 @@ class ProcessObserver(Protocol):
 ProcessSpawner = Callable[[list[str]], int]
 
 
+_VISIBLE_CONSOLE_EXECUTABLES = frozenset(
+    {
+        "cmd.exe",
+        "powershell.exe",
+    }
+)
+
+
 def _spawn_process(command: list[str]) -> int:
-    process = subprocess.Popen(
-        command,
-        shell=False,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        close_fds=True,
+    if not command:
+        raise ValueError(
+            "Launch command cannot be empty."
+        )
+
+    executable_name = (
+        Path(command[0])
+        .name
+        .casefold()
     )
+
+    if (
+        executable_name
+        in _VISIBLE_CONSOLE_EXECUTABLES
+    ):
+        process = subprocess.Popen(
+            command,
+            shell=False,
+            close_fds=True,
+            creationflags=getattr(
+                subprocess,
+                "CREATE_NEW_CONSOLE",
+                0,
+            ),
+        )
+
+    else:
+        process = subprocess.Popen(
+            command,
+            shell=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+        )
+
     return process.pid
 
 

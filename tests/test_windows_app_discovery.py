@@ -270,3 +270,112 @@ def test_fast_router_supports_unicode_app_name():
         ]
         == "unicode-app"
     )
+
+
+def test_snapshot_adds_natural_application_aliases(
+    tmp_path,
+) -> None:
+    names = (
+        (
+            "Google Chrome",
+            "chrome.exe",
+        ),
+        (
+            "Visual Studio Code",
+            "code.exe",
+        ),
+        (
+            "Task Manager",
+            "taskmgr.exe",
+        ),
+        (
+            "Word 2013",
+            "winword.exe",
+        ),
+    )
+
+    records = []
+
+    for index, (
+        name,
+        executable_name,
+    ) in enumerate(names):
+        executable = (
+            tmp_path
+            / executable_name
+        )
+
+        executable.write_bytes(
+            b"test"
+        )
+
+        records.append(
+            {
+                "name": name,
+                "executable": str(
+                    executable
+                ),
+                "arguments": [],
+                "shortcut": (
+                    f"{index}.lnk"
+                ),
+            }
+        )
+
+    snapshot = (
+        tmp_path
+        / "aliases.json"
+    )
+
+    snapshot.write_text(
+        json.dumps(
+            records
+        ),
+        encoding="utf-8",
+    )
+
+    registry = (
+        WindowsApplicationRegistry()
+    )
+
+    assert (
+        registry.load_snapshot(
+            snapshot
+        )
+        == 4
+    )
+
+    assert (
+        registry.resolve(
+            "chrome"
+        ).display_name
+        == "Google Chrome"
+    )
+
+    assert (
+        registry.resolve(
+            "vs code"
+        ).display_name
+        == "Visual Studio Code"
+    )
+
+    assert (
+        registry.resolve(
+            "vscode"
+        ).display_name
+        == "Visual Studio Code"
+    )
+
+    assert (
+        registry.resolve(
+            "g\u00f6rev y\u00f6neticisi"
+        ).display_name
+        == "Task Manager"
+    )
+
+    assert (
+        registry.resolve(
+            "word"
+        ).display_name
+        == "Word 2013"
+    )

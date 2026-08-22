@@ -197,6 +197,193 @@ class WindowsApplicationRegistry:
                 )
             )
 
+
+    @classmethod
+    def _natural_aliases(
+        cls,
+        name: str,
+    ) -> frozenset[str]:
+        normalized = " ".join(
+            name.casefold().split()
+        )
+
+        aliases: set[str] = set()
+
+        special = {
+            "google chrome": {
+                "chrome",
+            },
+            "microsoft edge": {
+                "edge",
+            },
+            "visual studio code": {
+                "vs code",
+                "vscode",
+                "code",
+            },
+            "vlc media player": {
+                "vlc",
+            },
+            "whatsapp web": {
+                "whatsapp",
+            },
+            "zoom workplace": {
+                "zoom",
+            },
+            "adobe acrobat": {
+                "acrobat",
+            },
+            "7-zip file manager": {
+                "7zip",
+                "7-zip",
+            },
+            "bs.player free": {
+                "bs player",
+            },
+            "windows powershell": {
+                "powershell",
+                "ps",
+            },
+            "windows powershell ise": {
+                "powershell ise",
+                "ps ise",
+            },
+            "command prompt": {
+                "cmd",
+            },
+            "task manager": {
+                "gorev yoneticisi",
+                "g\u00f6rev y\u00f6neticisi",
+            },
+            "registry editor": {
+                "regedit",
+                "kayit defteri",
+                "kay\u0131t defteri",
+            },
+            "system information": {
+                "msinfo",
+                "sistem bilgisi",
+            },
+            "system configuration": {
+                "msconfig",
+                "sistem yapilandirmasi",
+            },
+            "resource monitor": {
+                "resmon",
+                "kaynak izleyicisi",
+            },
+            "disk cleanup": {
+                "cleanmgr",
+                "disk temizleme",
+            },
+            "remote desktop connection": {
+                "remote desktop",
+                "rdp",
+                "uzak masaustu",
+                "uzak masa\u00fcst\u00fc",
+            },
+            "on-screen keyboard": {
+                "osk",
+                "ekran klavyesi",
+            },
+            "character map": {
+                "charmap",
+                "karakter eslem",
+            },
+            "memory diagnostics tool": {
+                "memory diagnostics",
+                "bellek tanilama",
+            },
+            "windows fax and scan": {
+                "fax scan",
+                "faks tarama",
+            },
+            "nvidia app": {
+                "nvidia",
+            },
+            "wondershare recoverit": {
+                "recoverit",
+            },
+            "pc health check": {
+                "pc health",
+            },
+            "freemake video downloader": {
+                "freemake",
+            },
+            "kaspersky secure connection": {
+                "kaspersky vpn",
+            },
+            "yandex.disk": {
+                "yandex disk",
+            },
+            "python 3.12 (64-bit)": {
+                "python",
+                "python 3.12",
+            },
+            "idle (python 3.12 64-bit)": {
+                "idle",
+            },
+            "kicad 8.0": {
+                "kicad",
+            },
+        }
+
+        aliases.update(
+            special.get(
+                normalized,
+                set(),
+            )
+        )
+
+        simplified = re.sub(
+            r"\s+\(standalone\)$",
+            "",
+            normalized,
+        )
+
+        simplified = re.sub(
+            r"\s+\d+(?:\.\d+)*$",
+            "",
+            simplified,
+        ).strip()
+
+        if (
+            simplified
+            and simplified != normalized
+        ):
+            aliases.add(
+                simplified
+            )
+
+        for prefix in (
+            "google ",
+            "microsoft ",
+            "adobe ",
+            "windows ",
+            "wondershare ",
+        ):
+            if simplified.startswith(
+                prefix
+            ):
+                shortened = simplified[
+                    len(prefix):
+                ].strip()
+
+                if len(shortened) >= 3:
+                    aliases.add(
+                        shortened
+                    )
+
+        aliases.discard(
+            normalized
+        )
+
+        return frozenset(
+            alias
+            for alias in aliases
+            if alias.strip()
+        )
+
     def load_snapshot(
         self,
         path: str | Path,
@@ -361,12 +548,17 @@ class WindowsApplicationRegistry:
 
                 aliases = set()
 
-                candidates = (
+                candidates = {
                     name.casefold(),
                     slug,
-                )
+                    *self._natural_aliases(
+                        name
+                    ),
+                }
 
-                for candidate in candidates:
+                for candidate in sorted(
+                    candidates
+                ):
                     candidate = (
                         candidate.strip()
                     )
@@ -473,7 +665,18 @@ class WindowsApplicationRegistry:
                 application_id="file-explorer",
                 display_name="File Explorer",
                 executable=str(Path(system_root) / "explorer.exe"),
-                aliases=frozenset({"explorer", "files", "dosya-gezgini"}),
+                aliases=frozenset(
+                    {
+                        "explorer",
+                        "files",
+                        "dosya-gezgini",
+                        "dosyagezgini",
+                        "dosya gezgini",
+                    }
+                ),
+                arguments=(
+                    "shell:MyComputerFolder",
+                ),
                 process_names=frozenset({"explorer.exe"}),
                 capabilities=frozenset({"files", "navigation"}),
             ),

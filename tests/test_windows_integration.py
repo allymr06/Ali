@@ -409,3 +409,102 @@ async def test_core_executes_verified_windows_observation_tool() -> None:
     assert response.metadata["tool_calls"] == 1
     assert response.metadata["verified_tool_calls"] == 1
     assert response.metadata["completion_verified"] is True
+
+
+
+def test_default_file_explorer_forces_visible_shell_window() -> None:
+    registry = (
+        WindowsApplicationRegistry
+        .with_windows_defaults()
+    )
+
+    explorer = registry.resolve(
+        "dosyagezgini"
+    )
+
+    assert (
+        explorer.application_id
+        == "file-explorer"
+    )
+
+    assert (
+        explorer.arguments
+        == (
+            "shell:MyComputerFolder",
+        )
+    )
+
+
+def test_console_launcher_uses_visible_new_console(
+    monkeypatch,
+) -> None:
+    import app.platform.windows.launcher as launcher_module
+
+    captured = {}
+
+    class FakeProcess:
+        pid = 4321
+
+    def fake_popen(
+        command,
+        **kwargs,
+    ):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+
+        return FakeProcess()
+
+    monkeypatch.setattr(
+        launcher_module.subprocess,
+        "Popen",
+        fake_popen,
+    )
+
+    monkeypatch.setattr(
+        launcher_module.subprocess,
+        "CREATE_NEW_CONSOLE",
+        0x00000010,
+        raising=False,
+    )
+
+    pid = (
+        launcher_module._spawn_process(
+            [
+                (
+                    r"C:\Windows"
+                    r"\System32\cmd.exe"
+                )
+            ]
+        )
+    )
+
+    assert pid == 4321
+
+    assert (
+        captured["kwargs"][
+            "creationflags"
+        ]
+        == 0x00000010
+    )
+
+    assert (
+        "stdin"
+        not in captured["kwargs"]
+    )
+
+    assert (
+        "stdout"
+        not in captured["kwargs"]
+    )
+
+    assert (
+        "stderr"
+        not in captured["kwargs"]
+    )
+
+    assert (
+        captured["kwargs"][
+            "shell"
+        ]
+        is False
+    )

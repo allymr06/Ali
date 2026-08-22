@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from app.config.provider_preferences import DEFAULT_GEMINI_MODEL
 from app.config.settings import Settings
 from app.conversation.engine import ConversationEngine
 from app.conversation.sqlite import SQLiteConversationStore
@@ -177,7 +178,7 @@ def create_application(
                 priority=50,
             )
         )
-    gemini_model = active_settings.gemini_model or "gemini-3.7-flash"
+    gemini_model = active_settings.gemini_model or DEFAULT_GEMINI_MODEL
     model_catalog.register(
         ModelProfile(
             provider="gemini",

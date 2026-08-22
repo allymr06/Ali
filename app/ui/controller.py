@@ -219,7 +219,7 @@ class DesktopController:
             message = ChatMessage(
                 "system",
                 (
-                    "?stek tamamlanamad? "
+                    "İstek tamamlanamadı. "
                     f"({type(exc).__name__}). "
                     "JARVIS oturumu korundu; "
                     "tekrar deneyebilirsin."

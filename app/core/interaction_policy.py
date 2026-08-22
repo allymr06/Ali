@@ -78,6 +78,40 @@ class InteractionPolicy:
         }
     )
 
+    _SOCIAL_MARKERS = (
+        "neşelendir",
+        "neselendir",
+        "moralim",
+        "moral ver",
+        "kendimi kötü hissediyorum",
+        "kendimi kotu hissediyorum",
+        "sohbet edelim",
+        "konuşalım",
+        "konusalim",
+        "espri yap",
+        "beni güldür",
+        "beni guldur",
+    )
+
+    _ACTION_MARKERS = (
+        " aç",
+        " ac",
+        "kapat",
+        "başlat",
+        "baslat",
+        "çalıştır",
+        "calistir",
+        "listele",
+        "dosya",
+        "klasör",
+        "klasor",
+        "masaüstü",
+        "masaustu",
+        "tarayıcı",
+        "tarayici",
+        "sistem bilg",
+    )
+
     _IDENTITY_RESPONSES = (
         (
             "Ben {name}. Windows \u00fczerinde \u00e7al\u0131\u015fan "
@@ -173,7 +207,18 @@ class InteractionPolicy:
                 ),
             )
 
-        if normalized in self._SOCIAL_REQUESTS:
+        is_social = normalized in self._SOCIAL_REQUESTS or (
+            any(
+                marker in normalized
+                for marker in self._SOCIAL_MARKERS
+            )
+            and not any(
+                marker in f" {normalized}"
+                for marker in self._ACTION_MARKERS
+            )
+        )
+
+        if is_social:
             return InteractionDecision(
                 kind="social",
                 expose_tools=False,

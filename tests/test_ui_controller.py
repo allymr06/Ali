@@ -100,6 +100,40 @@ async def test_desktop_command_forwards_stream_updates(
     assert message.role == "assistant"
     assert message.text == "Merhaba"
 
+
+def test_typewriter_progresses_without_dumping_large_chunk() -> None:
+    from app.ui.desktop import next_typewriter_text
+
+    target = "JARVIS " * 40
+    rendered = next_typewriter_text("", target)
+
+    assert rendered
+    assert rendered != target
+    assert target.startswith(rendered)
+
+    for _ in range(100):
+        rendered = next_typewriter_text(rendered, target)
+
+    assert rendered == target
+
+
+@pytest.mark.asyncio
+async def test_desktop_provider_error_keeps_readable_turkish() -> None:
+    app = application()
+
+    class FailingEngine:
+        async def handle(self, *_args, **_kwargs):
+            raise RuntimeError("provider unavailable")
+
+    app.engine = FailingEngine()
+    controller = DesktopController(app)
+
+    message = await controller.submit_command("Neşelendir beni")
+
+    assert message.role == "system"
+    assert message.text.startswith("İstek tamamlanamadı.")
+    assert "oturumu korundu" in message.text
+
 @pytest.mark.asyncio
 async def test_desktop_command_rejects_empty_text() -> None:
     controller = DesktopController(application())

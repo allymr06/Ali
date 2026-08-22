@@ -132,6 +132,28 @@ def test_simple_social_request_suppresses_tools(
     assert decision.system_prompt is not None
 
 
+def test_natural_social_request_suppresses_tools() -> None:
+    policy = InteractionPolicy()
+
+    decision = policy.evaluate(
+        Request("Neşelendir beni JARVIS")
+    )
+
+    assert decision.kind == "social"
+    assert decision.expose_tools is False
+
+
+def test_social_request_with_computer_action_keeps_tools() -> None:
+    policy = InteractionPolicy()
+
+    decision = policy.evaluate(
+        Request("Beni neşelendir ve Not Defteri'ni aç")
+    )
+
+    assert decision.kind == "general"
+    assert decision.expose_tools is True
+
+
 def test_identity_request_never_calls_provider_or_tool(
 ) -> None:
     provider_calls = []

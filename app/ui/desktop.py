@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ctypes
+import math
 import sys
 import tkinter as tk
 from concurrent.futures import Future
@@ -13,33 +15,84 @@ from app.ui.controller import DesktopController
 from app.ui.models import ChatMessage, UIScreen, UITheme
 from app.ui.theme import ThemeTokens, tokens
 
+DISPLAY_MODEL_NAME = "JARVIS 0.2"
+
 NAVIGATION = (
-    (UIScreen.HOME, "01", "Overview"),
-    (UIScreen.CHAT, "02", "Conversation"),
-    (UIScreen.TASKS, "03", "Tasks"),
-    (UIScreen.MEMORY, "04", "Memory"),
-    (UIScreen.VOICE, "05", "Voice"),
-    (UIScreen.VISION, "06", "Vision"),
-    (UIScreen.RESEARCH, "07", "Research"),
-    (UIScreen.TOOLS, "08", "Tools"),
-    (UIScreen.INTEGRATIONS, "09", "Connections"),
-    (UIScreen.DIAGNOSTICS, "10", "Diagnostics"),
-    (UIScreen.SETTINGS, "11", "Settings"),
+    (UIScreen.HOME, "01", "Komuta Merkezi"),
+    (UIScreen.CHAT, "02", "Sohbet"),
+    (UIScreen.TASKS, "03", "Görevler"),
+    (UIScreen.MEMORY, "04", "Hafıza Ağı"),
+    (UIScreen.VOICE, "05", "Ses"),
+    (UIScreen.VISION, "06", "Görüş"),
+    (UIScreen.RESEARCH, "07", "Araştırma"),
+    (UIScreen.TOOLS, "08", "Yetenekler"),
+    (UIScreen.INTEGRATIONS, "09", "Güven ve Erişim"),
+    (UIScreen.DIAGNOSTICS, "10", "Tanılama"),
+    (UIScreen.SETTINGS, "11", "Ayarlar"),
 )
 
 SHORTCUTS = (
-    ("Enter", "Send the prompt from the command composer"),
-    ("Shift + Enter", "Insert a new line in the command composer"),
-    ("Ctrl + L", "Focus the command composer"),
-    ("Ctrl + ,", "Open Settings"),
-    ("Ctrl + Shift + T", "Toggle the light/dark grayscale theme"),
-    ("Ctrl + Shift + N", "Collapse or expand navigation"),
-    ("Alt + 1 ... 9", "Open navigation screens 1 through 9"),
-    ("Alt + 0", "Open Diagnostics"),
-    ("Alt + S", "Open Settings"),
-    ("F1", "Show keyboard shortcuts"),
-    ("Escape", "Return focus to the workspace"),
+    ("Enter", "Komutu gönder"),
+    ("Shift + Enter", "Yeni satır ekle"),
+    ("Ctrl + L", "Komut alanına odaklan"),
+    ("Ctrl + ,", "Ayarları aç"),
+    ("Ctrl + Shift + T", "Açık/koyu temayı değiştir"),
+    ("Ctrl + Shift + N", "Gezinmeyi daralt veya genişlet"),
+    ("Alt + 1 ... 9", "1 ile 9 arasındaki ekranları aç"),
+    ("Alt + 0", "Tanılamayı aç"),
+    ("Alt + S", "Ayarları aç"),
+    ("F1", "Klavye kısayollarını göster"),
+    ("Escape", "Çalışma alanına dön"),
 )
+
+STATUS_TEXT = {
+    "LOCAL CORE READY": "YEREL ÇEKİRDEK HAZIR",
+    "PROCESSING": "İŞLENİYOR",
+    "RESPONDING": "YANITLIYOR",
+    "TESTING CONNECTION": "BAĞLANTI SINANIYOR",
+    "LISTENING": "DİNLİYOR",
+    "CAPTURING": "GÖRÜNTÜ ALINIYOR",
+    "RESEARCHING": "ARAŞTIRIYOR",
+}
+
+TOKEN_TEXT = {
+    "pending": "BEKLİYOR",
+    "running": "ÇALIŞIYOR",
+    "active": "AKTİF",
+    "paused": "DURAKLATILDI",
+    "completed": "TAMAMLANDI",
+    "failed": "BAŞARISIZ",
+    "blocked": "ENGELLENDİ",
+    "cancelled": "İPTAL EDİLDİ",
+    "fresh": "GÜNCEL",
+    "stale": "ESKİ",
+    "low": "DÜŞÜK",
+    "medium": "ORTA",
+    "high": "YÜKSEK",
+    "critical": "KRİTİK",
+}
+
+
+def localize_token(value: object) -> str:
+    text = str(value)
+    return TOKEN_TEXT.get(text.strip().casefold(), text)
+
+
+def enable_high_dpi_rendering() -> bool:
+    """Ask Windows for crisp per-monitor rendering before Tk is created."""
+    if sys.platform != "win32":
+        return False
+    try:
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        if user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+            return True
+    except (AttributeError, OSError):
+        pass
+    try:
+        shcore = ctypes.WinDLL("shcore", use_last_error=True)
+        return shcore.SetProcessDpiAwareness(2) in {0, -2147024891}
+    except (AttributeError, OSError):
+        return False
 
 
 def next_typewriter_text(current: str, target: str) -> str:
@@ -53,6 +106,182 @@ def next_typewriter_text(current: str, target: str) -> str:
     return target[: len(current) + step]
 
 
+class RoundedSurface(tk.Canvas):
+    """Vector rounded container that stays crisp at every DPI scale."""
+
+    def __init__(
+        self,
+        parent: tk.Widget,
+        *,
+        fill: str,
+        outline: str,
+        radius: int = 14,
+        padx: int = 0,
+        pady: int = 0,
+    ) -> None:
+        parent_bg = str(parent.cget("bg"))
+        super().__init__(
+            parent,
+            bg=parent_bg,
+            highlightthickness=0,
+            borderwidth=0,
+            height=1,
+        )
+        self._fill = fill
+        self._outline = outline
+        self._radius = radius
+        self._padx = padx
+        self._pady = pady
+        self.content = tk.Frame(self, bg=fill, padx=padx, pady=pady)
+        self._content_window = self.create_window(
+            padx,
+            pady,
+            anchor="nw",
+            window=self.content,
+        )
+        self.content.bind("<Configure>", self._fit_height)
+        self.bind("<Configure>", self._redraw)
+
+    def _fit_height(self, _event: tk.Event[Any]) -> None:
+        height = self.content.winfo_reqheight() + self._pady * 2
+        if int(float(self.cget("height"))) != height:
+            self.configure(height=height)
+
+    def _redraw(self, event: tk.Event[Any]) -> None:
+        width = max(2, event.width)
+        height = max(2, event.height)
+        self.delete("surface")
+        radius = min(self._radius, width // 2, height // 2)
+        points = (
+            radius,
+            1,
+            width - radius,
+            1,
+            width - 1,
+            radius,
+            width - 1,
+            height - radius,
+            width - radius,
+            height - 1,
+            radius,
+            height - 1,
+            1,
+            height - radius,
+            1,
+            radius,
+        )
+        self.create_polygon(
+            points,
+            smooth=True,
+            splinesteps=18,
+            fill=self._fill,
+            outline=self._outline,
+            width=1,
+            tags=("surface",),
+        )
+        self.tag_lower("surface")
+        self.itemconfigure(
+            self._content_window,
+            width=max(1, width - self._padx * 2),
+        )
+
+
+class RoundedEntry(tk.Canvas):
+    """Rounded vector-backed text entry with the standard Entry contract."""
+
+    def __init__(
+        self,
+        parent: tk.Widget,
+        *,
+        colors: ThemeTokens,
+        textvariable: tk.StringVar | None = None,
+        show: str | None = None,
+    ) -> None:
+        super().__init__(
+            parent,
+            bg=str(parent.cget("bg")),
+            height=32,
+            highlightthickness=0,
+            borderwidth=0,
+        )
+        self._colors = colors
+        self.entry = tk.Entry(
+            self,
+            textvariable=textvariable,
+            show=show,
+            relief="flat",
+            borderwidth=0,
+            bg=colors.surface_alt,
+            fg=colors.ink,
+            insertbackground=colors.ink,
+            selectbackground=colors.faint,
+            font=("Segoe UI", 10),
+        )
+        self._entry_window = self.create_window(
+            10,
+            16,
+            anchor="w",
+            window=self.entry,
+        )
+        self.bind("<Configure>", self._draw_entry)
+
+    def _draw_entry(self, event: tk.Event[Any]) -> None:
+        self.delete("entry-surface")
+        width = max(2, event.width)
+        height = max(2, event.height)
+        radius = min(11, height // 2)
+        self.create_polygon(
+            (
+                radius,
+                1,
+                width - radius,
+                1,
+                width - 1,
+                radius,
+                width - 1,
+                height - radius,
+                width - radius,
+                height - 1,
+                radius,
+                height - 1,
+                1,
+                height - radius,
+                1,
+                radius,
+            ),
+            smooth=True,
+            splinesteps=16,
+            fill=self._colors.surface_alt,
+            outline=self._colors.line,
+            tags=("entry-surface",),
+        )
+        self.tag_lower("entry-surface")
+        self.itemconfigure(
+            self._entry_window,
+            width=max(1, width - 20),
+        )
+
+    def get(self) -> str:
+        return self.entry.get()
+
+    def cget(self, key: str) -> Any:
+        if key in {"show", "state"}:
+            return self.entry.cget(key)
+        return super().cget(key)
+
+    def configure(self, cnf: Any = None, **kwargs: Any) -> Any:
+        entry_options = {
+            key: kwargs.pop(key)
+            for key in tuple(kwargs)
+            if key in {"show", "state"}
+        }
+        if entry_options and hasattr(self, "entry"):
+            self.entry.configure(**entry_options)
+        return super().configure(cnf, **kwargs)
+
+    config = configure
+
+
 class ScrollableWorkspace(tk.Frame):
     """Borderless vertical workspace for screens with dense content."""
 
@@ -64,11 +293,11 @@ class ScrollableWorkspace(tk.Frame):
             highlightthickness=0,
             borderwidth=0,
         )
-        self.scrollbar = tk.Scrollbar(
+        self.scrollbar = ttk.Scrollbar(
             self,
             orient="vertical",
             command=self.canvas.yview,
-            relief="flat",
+            style="Jarvis.Vertical.TScrollbar",
         )
         self.body = tk.Frame(self.canvas, bg=colors.background)
         self._window = self.canvas.create_window(
@@ -119,6 +348,7 @@ class DesktopWindow:
         self.api_settings = api_settings
         self._colors = tokens(self.controller.state.theme)
         self._nav_buttons: dict[UIScreen, tk.Button] = {}
+        self._context_buttons: dict[str, tk.Button] = {}
         self._busy_future: Future[Any] | None = None
         self._streaming_text: str | None = None
         self._stream_target_text = ""
@@ -129,6 +359,9 @@ class DesktopWindow:
         self._pending_user_text: str | None = None
         self._status_job: str | None = None
         self._nav_job: str | None = None
+        self._orb_job: str | None = None
+        self._orb_phase = 0
+        self._home_orb: tk.Canvas | None = None
         self._pulse_frame = 0
         self._closing = False
         self._snapshot = self.controller.snapshot()
@@ -155,70 +388,108 @@ class DesktopWindow:
                 break
             except (AttributeError, tk.TclError):
                 continue
-        self.root.geometry("1360x840")
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        window_width = min(1600, max(1040, screen_width - 120))
+        window_height = min(900, max(700, screen_height - 100))
+        x = max(0, (screen_width - window_width) // 2)
+        y = max(0, (screen_height - window_height) // 2)
+        self.root.geometry(
+            f"{window_width}x{window_height}+{x}+{y}"
+        )
         self.root.minsize(1040, 700)
         self.root.configure(bg=self._colors.background)
         self.root.option_add("*Font", ("Segoe UI", 10))
+        if screen_width >= 1920 and screen_height >= 1080:
+            try:
+                self.root.state("zoomed")
+            except tk.TclError:
+                pass
 
     def _build_shell(self) -> None:
         c = self._colors
         self._configure_ttk()
-        topbar = tk.Frame(self.root, bg=c.background, height=68)
+        topbar = tk.Frame(self.root, bg=c.surface, height=48)
         topbar.pack(fill="x")
         topbar.pack_propagate(False)
-        brand = tk.Frame(topbar, bg=c.background)
-        brand.pack(side="left", padx=(22, 16), pady=14)
+        brand = tk.Frame(
+            topbar,
+            bg=c.surface,
+            width=230,
+            highlightbackground=c.line,
+            highlightthickness=1,
+        )
+        brand.pack(side="left", fill="y")
+        brand.pack_propagate(False)
         tk.Label(
             brand,
             text="J",
-            bg=c.ink,
-            fg=c.inverse,
-            font=("Segoe UI", 14, "bold"),
-            width=2,
-            pady=4,
-        ).pack(side="left")
-        copy = tk.Frame(brand, bg=c.background)
-        copy.pack(side="left", padx=10)
+            bg=c.surface_alt,
+            fg=c.accent,
+            font=("Segoe UI", 13, "bold"),
+            width=3,
+            pady=5,
+            highlightbackground=c.faint,
+            highlightthickness=1,
+        ).pack(side="left", padx=(13, 10), pady=8)
+        copy = tk.Frame(brand, bg=c.surface)
+        copy.pack(side="left", pady=7)
         tk.Label(
             copy,
-            text="J.A.R.V.I.S.",
-            bg=c.background,
+            text="JARVIS",
+            bg=c.surface,
             fg=c.ink,
-            font=("Segoe UI Semibold", 11),
+            font=("Segoe UI Semibold", 10),
         ).pack(anchor="w")
         tk.Label(
             copy,
-            text="BETA / LOCAL DESKTOP",
-            bg=c.background,
+            text="KİŞİSEL İŞLETİM KATMANI",
+            bg=c.surface,
             fg=c.muted,
             font=("Segoe UI", 7),
         ).pack(anchor="w")
 
-        runtime = tk.Frame(topbar, bg=c.background)
-        runtime.pack(side="right", padx=22, pady=15)
+        runtime = tk.Frame(topbar, bg=c.surface)
+        runtime.pack(side="left", fill="both", expand=True, padx=18)
         self.status_dot = tk.Canvas(
             runtime,
-            width=12,
-            height=12,
-            bg=c.background,
+            width=14,
+            height=48,
+            bg=c.surface,
             highlightthickness=0,
         )
-        self.status_dot.pack(side="left", padx=(0, 8))
+        self.status_dot.pack(side="left", padx=(0, 6))
         self._status_oval = self.status_dot.create_oval(
-            2, 2, 10, 10, fill=c.muted, outline=""
+            3, 20, 10, 27, fill=c.accent_strong, outline=""
         )
         self.status_label = tk.Label(
             runtime,
-            text=self.controller.state.status,
-            bg=c.background,
+            text=STATUS_TEXT.get(
+                self.controller.state.status,
+                self.controller.state.status,
+            ),
+            bg=c.surface,
             fg=c.muted,
-            font=("Segoe UI Semibold", 8),
+            font=("Segoe UI Semibold", 7),
         )
-        self.status_label.pack(side="left", padx=(0, 18))
-        self.provider_badge = self._badge(
-            runtime, self._snapshot.provider.upper()
+        self.status_label.pack(side="left", padx=(0, 16))
+        self.provider_badge = self._status_field(
+            runtime, "ÇEKİRDEK", self._snapshot.provider.upper()
         )
-        self.model_badge = self._badge(runtime, self._snapshot.model)
+        self.model_badge = self._status_field(
+            runtime, "MODEL", DISPLAY_MODEL_NAME
+        )
+        self._status_field(runtime, "GÜVEN", "SEVİYE 03")
+        self._status_field(
+            runtime,
+            "MİKROFON",
+            "PASİF" if self._snapshot.voice_available else "ÇEVRİMDIŞI",
+        )
+        self._status_field(
+            runtime,
+            "GÖRÜŞ",
+            "ONAYLI" if self._snapshot.vision_available else "KİLİTLİ",
+        )
         tk.Frame(self.root, bg=c.line, height=1).pack(fill="x")
 
         self.shell = tk.Frame(self.root, bg=c.background)
@@ -230,12 +501,37 @@ class DesktopWindow:
         self.workspace_scroller.pack(
             fill="both",
             expand=True,
-            padx=(30, 18),
-            pady=(24, 132),
+            padx=(26, 18),
+            pady=(22, 142),
         )
         self.workspace = self.workspace_scroller.body
         self._build_composer()
         self._build_context()
+
+    def _status_field(
+        self,
+        parent: tk.Widget,
+        label: str,
+        value: str,
+    ) -> tk.Label:
+        block = tk.Frame(parent, bg=self._colors.surface)
+        block.pack(side="left", padx=(0, 16), pady=8)
+        tk.Label(
+            block,
+            text=label,
+            bg=self._colors.surface,
+            fg=self._colors.faint,
+            font=("Segoe UI Semibold", 6),
+        ).pack(anchor="w")
+        value_label = tk.Label(
+            block,
+            text=value,
+            bg=self._colors.surface,
+            fg=self._colors.ink,
+            font=("Segoe UI Semibold", 7),
+        )
+        value_label.pack(anchor="w")
+        return value_label
 
     def _configure_ttk(self) -> None:
         c = self._colors
@@ -260,6 +556,40 @@ class DesktopWindow:
             fieldbackground=[("readonly", c.surface_alt)],
             foreground=[("readonly", c.ink)],
         )
+        style.configure(
+            "Jarvis.Vertical.TScrollbar",
+            background=c.surface_alt,
+            troughcolor=c.background,
+            bordercolor=c.background,
+            lightcolor=c.surface_alt,
+            darkcolor=c.surface_alt,
+            arrowcolor=c.muted,
+            relief="flat",
+            borderwidth=0,
+            arrowsize=0,
+            width=7,
+        )
+        style.layout(
+            "Jarvis.Vertical.TScrollbar",
+            [
+                (
+                    "Vertical.Scrollbar.trough",
+                    {
+                        "sticky": "ns",
+                        "children": [
+                            (
+                                "Vertical.Scrollbar.thumb",
+                                {"expand": "1", "sticky": "nswe"},
+                            )
+                        ],
+                    },
+                )
+            ],
+        )
+        style.map(
+            "Jarvis.Vertical.TScrollbar",
+            background=[("active", c.faint)],
+        )
 
     def _badge(self, parent: tk.Widget, text: str) -> tk.Label:
         label = tk.Label(
@@ -270,22 +600,30 @@ class DesktopWindow:
             font=("Segoe UI Semibold", 7),
             padx=9,
             pady=4,
+            highlightbackground=self._colors.line,
+            highlightthickness=1,
         )
         label.pack(side="left", padx=3)
         return label
 
     def _build_navigation(self) -> None:
         c = self._colors
-        self.nav = tk.Frame(self.shell, bg=c.surface, width=218)
+        self.nav = tk.Frame(
+            self.shell,
+            bg=c.surface,
+            width=230,
+            highlightbackground=c.line,
+            highlightthickness=1,
+        )
         self.nav.pack(side="left", fill="y")
         self.nav.pack_propagate(False)
         tk.Label(
             self.nav,
-            text="WORKSPACE",
+            text="GÖREV KONTROLÜ",
             bg=c.surface,
-            fg=c.faint,
+            fg=c.accent_strong,
             font=("Segoe UI Semibold", 7),
-        ).pack(anchor="w", padx=18, pady=(20, 9))
+        ).pack(anchor="w", padx=18, pady=(18, 10))
         for screen, index, label in NAVIGATION:
             button = tk.Button(
                 self.nav,
@@ -298,7 +636,7 @@ class DesktopWindow:
                 activebackground=c.hover,
                 activeforeground=c.ink,
                 padx=17,
-                pady=9,
+                pady=10,
                 font=("Segoe UI", 9),
                 cursor="hand2",
                 command=lambda value=screen: self.render(value),
@@ -309,7 +647,7 @@ class DesktopWindow:
         tk.Frame(self.nav, bg=c.surface).pack(fill="both", expand=True)
         self.nav_collapse_button = self._button(
             self.nav,
-            "COLLAPSE",
+            "DARALT",
             self._toggle_navigation,
             variant="ghost",
         )
@@ -317,20 +655,21 @@ class DesktopWindow:
 
     def _build_composer(self) -> None:
         c = self._colors
-        self.composer = tk.Frame(
+        self.composer_host = RoundedSurface(
             self.center,
-            bg=c.surface,
-            highlightbackground=c.line,
-            highlightthickness=1,
-            padx=12,
-            pady=10,
+            fill=c.surface,
+            outline=c.faint,
+            radius=18,
+            padx=10,
+            pady=8,
         )
-        self.composer.place(
-            relx=0.5, rely=1.0, anchor="s", relwidth=0.90, y=-20
+        self.composer_host.place(
+            relx=0.5, rely=1.0, anchor="s", relwidth=0.93, y=-18
         )
+        self.composer = self.composer_host.content
         self.command = tk.Text(
             self.composer,
-            height=3,
+            height=2,
             wrap="word",
             relief="flat",
             borderwidth=0,
@@ -338,8 +677,8 @@ class DesktopWindow:
             fg=c.ink,
             insertbackground=c.ink,
             selectbackground=c.faint,
-            padx=8,
-            pady=6,
+            padx=9,
+            pady=8,
             font=("Segoe UI", 10),
         )
         self.command.pack(fill="x")
@@ -348,54 +687,84 @@ class DesktopWindow:
         bar = tk.Frame(self.composer, bg=c.surface)
         bar.pack(fill="x", pady=(5, 0))
         self._button(
-            bar, "MIC", self._start_voice, variant="ghost"
+            bar, "MİKROFON", self._start_voice, variant="ghost"
         ).pack(side="left")
         self._button(
-            bar, "VISION", self._start_vision, variant="ghost"
+            bar, "GÖRÜŞ", self._start_vision, variant="ghost"
         ).pack(side="left", padx=4)
+        voice_bars = tk.Canvas(
+            bar,
+            width=18,
+            height=18,
+            bg=c.surface,
+            highlightthickness=0,
+        )
+        voice_bars.pack(side="left", padx=(6, 2))
+        for x, height in ((4, 6), (9, 12), (14, 8)):
+            voice_bars.create_line(
+                x,
+                15,
+                x,
+                15 - height,
+                fill=c.accent_strong,
+                width=2,
+            )
         tk.Label(
             bar,
-            text="ENTER TO SEND  /  SHIFT + ENTER FOR NEW LINE",
+            text="BEKLİYOR",
             bg=c.surface,
             fg=c.faint,
             font=("Segoe UI", 7),
-        ).pack(side="left", padx=10)
+        ).pack(side="left", padx=(2, 10))
+        self._badge(bar, DISPLAY_MODEL_NAME)
+        self._badge(
+            bar,
+            f"{self._snapshot.enabled_tools} YETENEK",
+        )
         self.send_button = self._button(
-            bar, "SEND", self._submit_command, variant="primary"
+            bar, "GÖNDER", self._submit_command, variant="primary"
         )
         self.send_button.pack(side="right")
 
     def _build_context(self) -> None:
         c = self._colors
-        self.context = tk.Frame(self.shell, bg=c.surface, width=288)
+        self.context = tk.Frame(
+            self.shell,
+            bg=c.surface,
+            width=330,
+            highlightbackground=c.line,
+            highlightthickness=1,
+        )
         self.context.pack(side="right", fill="y")
         self.context.pack_propagate(False)
         tk.Label(
             self.context,
-            text="LIVE CONTEXT",
+            text="GÖREV TELEMETRİSİ",
             bg=c.surface,
-            fg=c.faint,
+            fg=c.accent_strong,
             font=("Segoe UI Semibold", 7),
         ).pack(anchor="w", padx=18, pady=(21, 4))
         tk.Label(
             self.context,
-            text="Runtime truth",
+            text="Çalışma durumu  ·  CANLI",
             bg=c.surface,
             fg=c.ink,
             font=("Segoe UI Semibold", 12),
         ).pack(anchor="w", padx=18)
         tabs = tk.Frame(self.context, bg=c.surface)
         tabs.pack(fill="x", padx=14, pady=14)
-        for label in ("TASK", "MEMORY", "TOOLS"):
-            self._button(
+        for label in ("YÜRÜTME", "HAFIZA", "ARAÇLAR"):
+            button = self._button(
                 tabs,
                 label,
                 lambda value=label: self._render_context(value),
                 variant="chip",
-            ).pack(side="left", padx=2)
+            )
+            button.pack(side="left", padx=2)
+            self._context_buttons[label] = button
         self.context_body = tk.Frame(self.context, bg=c.surface)
         self.context_body.pack(fill="both", expand=True, padx=18, pady=4)
-        self._render_context("TASK")
+        self._render_context("YÜRÜTME")
 
     def _bind_shortcuts(self) -> None:
         self.root.bind("<Control-l>", self._focus_composer)
@@ -444,7 +813,7 @@ class DesktopWindow:
 
     def _show_shortcuts(self, _event: tk.Event[Any] | None = None) -> str:
         messagebox.showinfo(
-            "JARVIS keyboard shortcuts",
+            "JARVIS klavye kısayolları",
             "\n".join(f"{key}  —  {description}" for key, description in SHORTCUTS),
             parent=self.root,
         )
@@ -464,7 +833,7 @@ class DesktopWindow:
     ) -> tk.Button:
         c = self._colors
         background, foreground, hover = {
-            "primary": (c.ink, c.inverse, c.focus),
+            "primary": (c.accent, c.inverse, c.accent_strong),
             "secondary": (c.surface_alt, c.ink, c.hover),
             "ghost": (c.surface, c.muted, c.hover),
             "chip": (c.surface_alt, c.muted, c.hover),
@@ -503,7 +872,7 @@ class DesktopWindow:
             self.workspace,
             text=eyebrow.upper(),
             bg=c.background,
-            fg=c.faint,
+            fg=c.accent_strong,
             font=("Segoe UI Semibold", 7),
         ).pack(anchor="w")
         tk.Label(
@@ -530,20 +899,28 @@ class DesktopWindow:
         subtitle: str = "",
     ) -> tk.Frame:
         c = self._colors
-        frame = tk.Frame(
+        surface = RoundedSurface(
             parent,
-            bg=c.surface,
-            highlightbackground=c.line,
-            highlightthickness=1,
+            fill=c.surface,
+            outline=c.line,
+            radius=16,
             padx=18,
             pady=16,
         )
-        frame.pack(side=side, fill="both", expand=True, padx=6, pady=6)
+        surface.pack(side=side, fill="both", expand=True, padx=6, pady=6)
+        frame = surface.content
+        setattr(frame, "_rounded_host", surface)
+        tk.Frame(
+            frame,
+            bg=c.accent_strong,
+            width=42,
+            height=1,
+        ).place(x=0, y=0)
         tk.Label(
             frame,
             text=title.upper(),
             bg=c.surface,
-            fg=c.ink,
+            fg=c.muted,
             font=("Segoe UI Semibold", 8),
         ).pack(anchor="w")
         if subtitle:
@@ -560,12 +937,20 @@ class DesktopWindow:
 
     def _line(self, parent: tk.Widget, primary: str, secondary: str = "") -> None:
         c = self._colors
-        row = tk.Frame(parent, bg=c.surface)
-        row.pack(fill="x", pady=6)
+        surface = RoundedSurface(
+            parent,
+            fill=c.surface_alt,
+            outline=c.line,
+            radius=10,
+            padx=10,
+            pady=8,
+        )
+        surface.pack(fill="x", pady=2)
+        row = surface.content
         tk.Label(
             row,
             text=primary,
-            bg=c.surface,
+            bg=c.surface_alt,
             fg=c.ink,
             anchor="w",
             justify="left",
@@ -575,7 +960,7 @@ class DesktopWindow:
             tk.Label(
                 row,
                 text=secondary,
-                bg=c.surface,
+                bg=c.surface_alt,
                 fg=c.muted,
                 font=("Segoe UI", 8),
                 anchor="w",
@@ -602,19 +987,175 @@ class DesktopWindow:
             font=("Segoe UI Semibold", 7),
         ).pack(anchor="w", pady=(2, 0))
 
+    def _chip(
+        self,
+        parent: tk.Widget,
+        text: str,
+        *,
+        live: bool = False,
+        warning: bool = False,
+    ) -> tk.Label:
+        color = (
+            self._colors.warning
+            if warning
+            else self._colors.accent if live else self._colors.muted
+        )
+        chip = tk.Label(
+            parent,
+            text=text,
+            bg=self._colors.surface_alt,
+            fg=color,
+            font=("Segoe UI Semibold", 7),
+            padx=8,
+            pady=4,
+            highlightbackground=color if live or warning else self._colors.line,
+            highlightthickness=1,
+        )
+        chip.pack(side="left", padx=(0, 6))
+        return chip
+
+    def _build_core_visual(self, parent: tk.Widget) -> None:
+        c = self._colors
+        canvas = tk.Canvas(
+            parent,
+            width=290,
+            height=290,
+            bg=c.surface,
+            highlightthickness=0,
+            cursor="hand2",
+            takefocus=True,
+        )
+        canvas.pack(side="right", padx=(8, 2), pady=2)
+        center = 145
+        canvas.create_oval(
+            18,
+            18,
+            272,
+            272,
+            outline=c.line,
+            dash=(2, 6),
+        )
+        canvas.create_oval(
+            39,
+            39,
+            251,
+            251,
+            outline=c.faint,
+        )
+        canvas.create_oval(
+            61,
+            61,
+            229,
+            229,
+            outline=c.line,
+            dash=(6, 5),
+        )
+        canvas.create_oval(
+            73,
+            73,
+            217,
+            217,
+            fill=c.surface_alt,
+            outline=c.accent,
+            width=1,
+            tags=("core",),
+        )
+        for x, y in ((62, 56), (267, 146), (82, 242)):
+            canvas.create_oval(
+                x - 4,
+                y - 4,
+                x + 4,
+                y + 4,
+                fill=c.accent,
+                outline=c.accent_strong,
+            )
+        canvas.create_text(
+            center,
+            center - 5,
+            text="JARVIS",
+            fill=c.ink,
+            font=("Segoe UI Semibold", 12),
+        )
+        canvas.create_text(
+            center,
+            center + 15,
+            text="KONUŞMAK İÇİN TIKLA",
+            fill=c.muted,
+            font=("Segoe UI", 6),
+        )
+        canvas.bind("<Button-1>", lambda _event: self._start_voice())
+        canvas.bind("<Return>", lambda _event: self._start_voice())
+        canvas.bind(
+            "<Enter>",
+            lambda _event: canvas.itemconfigure(
+                "core", outline=c.accent_strong, width=2
+            ),
+        )
+        canvas.bind(
+            "<Leave>",
+            lambda _event: canvas.itemconfigure(
+                "core", outline=c.accent, width=1
+            ),
+        )
+        self._home_orb = canvas
+        self._animate_orb()
+
+    def _stop_orb_animation(self) -> None:
+        if self._orb_job is not None:
+            self.root.after_cancel(self._orb_job)
+            self._orb_job = None
+        self._home_orb = None
+
+    def _animate_orb(self) -> None:
+        canvas = self._home_orb
+        if (
+            self._closing
+            or canvas is None
+            or not canvas.winfo_exists()
+            or self.controller.state.screen is not UIScreen.HOME
+        ):
+            self._orb_job = None
+            return
+        if self.controller.state.reduced_motion:
+            canvas.coords("core", 73, 73, 217, 217)
+            self._orb_job = None
+            return
+        pulse = 2.5 * math.sin(self._orb_phase / 18)
+        canvas.coords(
+            "core",
+            73 - pulse,
+            73 - pulse,
+            217 + pulse,
+            217 + pulse,
+        )
+        self._orb_phase += 1
+        self._orb_job = self.root.after(16, self._animate_orb)
+
     def render(self, screen: UIScreen) -> None:
+        self._stop_orb_animation()
         self.controller.state.screen = screen
         self._snapshot = self.controller.snapshot()
         self._clear(self.workspace)
         self.workspace_scroller.reset()
         self.provider_badge.configure(text=self._snapshot.provider.upper())
-        self.model_badge.configure(text=self._snapshot.model)
+        self.model_badge.configure(text=DISPLAY_MODEL_NAME)
         for value, button in self._nav_buttons.items():
             selected = value is screen
-            normal = self._colors.ink if selected else self._colors.surface
+            index, label = next(
+                (item[1], item[2])
+                for item in NAVIGATION
+                if item[0] is value
+            )
+            collapsed = self.controller.state.nav_collapsed
+            normal = self._colors.hover if selected else self._colors.surface
             button.configure(
                 bg=normal,
-                fg=self._colors.inverse if selected else self._colors.muted,
+                fg=self._colors.accent if selected else self._colors.muted,
+                text=(
+                    index
+                    if collapsed
+                    else f"{'▎ ' if selected else ''}{index}    {label}"
+                ),
                 font=(
                     "Segoe UI Semibold" if selected else "Segoe UI",
                     9,
@@ -622,90 +1163,184 @@ class DesktopWindow:
             )
             self._bind_hover(
                 button,
-                self._colors.focus if selected else self._colors.hover,
+                self._colors.surface_alt if selected else self._colors.hover,
                 normal,
             )
         getattr(self, f"_render_{screen.value}")()
 
     def _render_home(self) -> None:
         self._heading(
-            "LOCAL INTELLIGENCE",
-            "Good to see you.",
-            "A quiet view of the runtime, its capabilities, and current work.",
+            "GÖREV KOMUTASI",
+            "Komuta Merkezi",
+            "Canlı çalışma durumu, aktif hedefler ve sınırlı yetenekler.",
         )
+        active_task = self._snapshot.tasks[0] if self._snapshot.tasks else None
+        objective = (
+            str(active_task.get("goal", "Aktif görev"))
+            if active_task
+            else "Yeni hedefin için hazırım."
+        )
+        task_status = (
+            str(active_task.get("status", "active")).upper()
+            if active_task
+            else "BEKLİYOR"
+        )
+        core = self._card(
+            self.workspace,
+            "AKTİF HEDEF" if active_task else "YÜRÜTME ÇEKİRDEĞİ",
+        )
+        core.configure(padx=22, pady=18)
+        mission = tk.Frame(core, bg=self._colors.surface)
+        mission.pack(side="left", fill="both", expand=True, padx=(0, 12))
+        tk.Label(
+            mission,
+            text=(
+                "GÖREV SÜRÜYOR"
+                if active_task
+                else "ÇEKİRDEK SİSTEMLER NORMAL"
+            ),
+            bg=self._colors.surface,
+            fg=self._colors.accent_strong,
+            font=("Segoe UI Semibold", 7),
+        ).pack(anchor="w", pady=(14, 7))
+        tk.Label(
+            mission,
+            text=objective,
+            bg=self._colors.surface,
+            fg=self._colors.ink,
+            justify="left",
+            wraplength=530,
+            font=("Segoe UI Semibold", 25),
+        ).pack(anchor="w")
+        tk.Label(
+            mission,
+            text=(
+                "JARVIS görev ilerlerken kanıtları, izinleri ve bağlamı "
+                "korur."
+                if active_task
+                else "Başlamak için aşağıya bir hedef yaz veya Sohbet'i aç."
+            ),
+            bg=self._colors.surface,
+            fg=self._colors.muted,
+            justify="left",
+            wraplength=530,
+            font=("Segoe UI", 9),
+        ).pack(anchor="w", pady=(10, 12))
+        facts = tk.Frame(mission, bg=self._colors.surface)
+        facts.pack(anchor="w")
+        self._chip(facts, task_status, live=bool(active_task))
+        self._chip(facts, f"{self._snapshot.enabled_tools} YETENEK")
+        self._chip(facts, f"{self._snapshot.memory_count} HAFIZA")
+        actions = tk.Frame(mission, bg=self._colors.surface)
+        actions.pack(anchor="w", pady=(18, 0))
+        self._button(
+            actions,
+            "SOHBETİ AÇ",
+            lambda: self.render(UIScreen.CHAT),
+            variant="primary",
+        ).pack(side="left")
+        self._button(
+            actions,
+            "GÖREVLERİ GÖR",
+            lambda: self.render(UIScreen.TASKS),
+            variant="secondary",
+        ).pack(side="left", padx=7)
+        self._build_core_visual(core)
+
         if self._snapshot.provider == "mock":
             notice = self._card(
                 self.workspace,
-                "AI provider not configured",
-                subtitle="Mock mode cannot produce intelligent answers.",
+                "Yapay zekâ sağlayıcısı ayarlanmamış",
+                subtitle="Deneme modu akıllı yanıt üretemez.",
             )
             self._line(
                 notice,
-                "Connect an API provider to begin a real conversation.",
-                "The API key stays in Windows Credential Manager, never in project files.",
+                "Gerçek bir sohbet için API sağlayıcısı bağla.",
+                "API anahtarı proje dosyalarına değil Windows Kimlik Bilgisi Yöneticisi'ne kaydedilir.",
             )
             self._button(
                 notice,
-                "OPEN API SETTINGS",
+                "API AYARLARINI AÇ",
                 lambda: self.render(UIScreen.SETTINGS),
                 variant="primary",
             ).pack(anchor="w", pady=(10, 0))
-        metrics = self._card(self.workspace, "Runtime at a glance")
+        metrics = self._card(self.workspace, "Çalışma durumuna genel bakış")
         metric_row = tk.Frame(metrics, bg=self._colors.surface)
         metric_row.pack(fill="x")
-        self._metric(metric_row, str(self._snapshot.task_count), "Tasks")
+        self._metric(metric_row, str(self._snapshot.task_count), "Görevler")
         self._metric(
-            metric_row, str(self._snapshot.memory_count), "Memories"
+            metric_row, str(self._snapshot.memory_count), "Hafızalar"
         )
         self._metric(
-            metric_row, str(self._snapshot.enabled_tools), "Tools"
+            metric_row, str(self._snapshot.enabled_tools), "Yetenekler"
         )
         self._metric(
-            metric_row, self._snapshot.provider.upper(), "Provider"
+            metric_row, self._snapshot.provider.upper(), "Sağlayıcı"
         )
         row = tk.Frame(self.workspace, bg=self._colors.background)
         row.pack(fill="both", expand=True)
-        conversation = self._card(row, "Recent conversation", side="left")
+        conversation = self._card(row, "Son sohbet", side="left")
         messages = self.controller.state.messages[-3:]
         if not messages:
             self._line(
                 conversation,
-                "No conversation yet",
-                "Use the composer after connecting a provider.",
+                "Henüz sohbet yok",
+                "Sağlayıcıyı bağladıktan sonra komut alanını kullan.",
             )
         for message in messages:
             self._line(conversation, message.text, message.role.upper())
-        capabilities = self._card(row, "Capabilities", side="left")
+        capabilities = self._card(row, "Yetenekler", side="left")
         for name, available in (
             ("Windows", self._snapshot.windows_available),
-            ("Voice", self._snapshot.voice_available),
-            ("Vision", self._snapshot.vision_available),
-            ("Research", self._snapshot.research_available),
+            ("Ses", self._snapshot.voice_available),
+            ("Görüş", self._snapshot.vision_available),
+            ("Araştırma", self._snapshot.research_available),
         ):
             self._line(
                 capabilities,
                 name,
-                "AVAILABLE" if available else "NOT CONFIGURED",
+                "KULLANILABİLİR" if available else "AYARLANMAMIŞ",
             )
 
     def _render_chat(self) -> None:
         self._streaming_label = None
 
         self._heading(
-            "CONVERSATION",
-            "A focused dialogue.",
-            "Messages move through the bounded Core pipeline and preserve context.",
+            "İNSAN ARAYÜZÜ",
+            "Sohbet",
+            "Hafıza, kanıt ve sınırlı izinlerle desteklenen iletişim.",
         )
-        card = self._card(self.workspace, "Conversation")
+        layout = tk.Frame(self.workspace, bg=self._colors.background)
+        layout.pack(fill="both", expand=True)
+        thread = self._card(layout, "Geçerli sohbet", side="left")
+        thread_host = getattr(thread, "_rounded_host")
+        thread_host.pack_configure(fill="y", expand=False)
+        thread_host.configure(width=230)
+        self._line(
+            thread,
+            "Canlı sohbet",
+            f"{len(self.controller.state.messages)} mesaj",
+        )
+        self._line(
+            thread,
+            DISPLAY_MODEL_NAME,
+            f"{self._snapshot.provider.upper()} çalışma zamanı",
+        )
+        self._line(
+            thread,
+            "Bağlam korunuyor",
+            f"{self._snapshot.memory_count} kalıcı hafıza",
+        )
+        card = self._card(layout, "Canlı sohbet", side="left")
         if self._snapshot.provider == "mock":
             self._line(
                 card,
-                "AI provider not configured",
-                "Open Settings to add an API key. Mock echoes are disabled here.",
+                "Yapay zekâ sağlayıcısı ayarlanmamış",
+                "API anahtarı eklemek için Ayarlar'ı aç. Deneme tekrarları devre dışı.",
             )
             self._button(
                 card,
-                "OPEN SETTINGS",
+                "AYARLARI AÇ",
                 lambda: self.render(UIScreen.SETTINGS),
                 variant="primary",
             ).pack(anchor="w", pady=8)
@@ -733,16 +1368,35 @@ class DesktopWindow:
         for message in messages:
             background = (
                 self._colors.surface_alt
-                if message.role == "user"
+                if message.role in {"user", "system"}
                 else self._colors.surface
             )
-            bubble = tk.Frame(card, bg=background, padx=12, pady=10)
-            bubble.pack(fill="x", pady=4)
+            role_color = (
+                self._colors.warning
+                if message.role == "system"
+                else self._colors.accent_strong
+                if message.role == "assistant"
+                else self._colors.muted
+            )
+            bubble_surface = RoundedSurface(
+                card,
+                fill=background,
+                outline=self._colors.line,
+                radius=12,
+                padx=12,
+                pady=10,
+            )
+            bubble_surface.pack(fill="x", pady=4)
+            bubble = bubble_surface.content
             tk.Label(
                 bubble,
-                text=message.role.upper(),
+                text={
+                    "user": "SEN",
+                    "assistant": "JARVIS",
+                    "system": "SİSTEM",
+                }[message.role],
                 bg=background,
-                fg=self._colors.faint,
+                fg=role_color,
                 font=("Segoe UI Semibold", 7),
             ).pack(anchor="w")
             tk.Label(
@@ -755,22 +1409,25 @@ class DesktopWindow:
             ).pack(anchor="w", pady=(4, 0))
         if self._streaming_text is not None:
             background = self._colors.surface
-            bubble = tk.Frame(
+            bubble_surface = RoundedSurface(
                 card,
-                bg=background,
+                fill=background,
+                outline=self._colors.line,
+                radius=12,
                 padx=12,
                 pady=10,
             )
-            bubble.pack(
+            bubble_surface.pack(
                 fill="x",
                 pady=4,
             )
+            bubble = bubble_surface.content
 
             tk.Label(
                 bubble,
-                text="ASSISTANT",
+                text="JARVIS",
                 bg=background,
-                fg=self._colors.faint,
+                fg=self._colors.accent_strong,
                 font=(
                     "Segoe UI Semibold",
                     7,
@@ -800,61 +1457,62 @@ class DesktopWindow:
             not self.controller.state.messages
             and self._streaming_text is None
         ):
-            self._line(card, "No messages", "Write below to begin.")
+            self._line(card, "Henüz mesaj yok", "Başlamak için aşağıya yaz.")
 
     def _render_tasks(self) -> None:
         self._heading(
-            "DURABLE EXECUTION",
-            "Missions and tasks.",
-            "Persistent progress and recovery without visual noise.",
+            "KALICI YÜRÜTME",
+            "Görevler",
+            "Görsel karmaşa olmadan kalıcı ilerleme ve kurtarma.",
         )
-        card = self._card(self.workspace, "Task queue")
+        card = self._card(self.workspace, "Görev kuyruğu")
         for task in self._snapshot.tasks:
             self._line(
                 card,
                 str(task["goal"]),
-                f"{str(task['status']).upper()}  /  "
+                f"{localize_token(task['status'])}  /  "
                 f"{float(task['progress']) * 100:.0f}%  /  "
-                f"{task.get('current_step') or 'No active step'}",
+                f"{task.get('current_step') or 'Aktif adım yok'}",
             )
         if not self._snapshot.tasks:
             self._line(
                 card,
-                "No durable tasks",
-                "Tasks appear after Core creates them.",
+                "Kalıcı görev yok",
+                "Çekirdek görev oluşturduğunda burada görünür.",
             )
 
     def _render_memory(self) -> None:
         self._heading(
-            "PROVENANCE-AWARE MEMORY",
-            "What JARVIS remembers.",
-            "Origin, confidence, and freshness stay visible.",
+            "KAYNAK BİLİNÇLİ HAFIZA",
+            "JARVIS'in hatırladıkları",
+            "Kaynak, güven ve güncellik her zaman görünür kalır.",
         )
-        card = self._card(self.workspace, "Active memories")
+        card = self._card(self.workspace, "Aktif hafızalar")
         for memory in self._snapshot.memories:
             self._line(
                 card,
                 str(memory["content"]),
-                f"{memory['source']}  /  {memory['freshness']}  /  "
-                f"confidence {float(memory['confidence']):.2f}",
+                f"{memory['source']}  /  "
+                f"{localize_token(memory['freshness'])}  /  "
+                f"güven {float(memory['confidence']):.2f}",
             )
         if not self._snapshot.memories:
-            self._line(card, "No active memories")
+            self._line(card, "Aktif hafıza yok")
 
     def _render_voice(self) -> None:
         self._heading(
-            "VOICE",
-            "Calm and interruptible.",
-            "The microphone is used only after an explicit action.",
+            "SES",
+            "Sakin ve kesilebilir iletişim",
+            "Mikrofon yalnızca açık bir işlemden sonra kullanılır.",
         )
-        card = self._card(self.workspace, "Voice session")
+        card = self._card(self.workspace, "Ses oturumu")
         self._line(
             card,
-            "READY" if self._snapshot.voice_available else "NOT CONFIGURED",
-            "Current runtime state",
+            "HAZIR" if self._snapshot.voice_available else "AYARLANMAMIŞ",
+            "Geçerli çalışma durumu",
         )
         button = self._button(
-            card, "START VOICE", self._start_voice, variant="primary"
+            card, "SESLİ İLETİŞİMİ BAŞLAT", self._start_voice, variant="primary"
         )
         button.configure(
             state="normal" if self._snapshot.voice_available else "disabled"
@@ -863,17 +1521,17 @@ class DesktopWindow:
 
     def _render_vision(self) -> None:
         self._heading(
-            "VISION",
-            "Consent before capture.",
-            "Every screen capture requires one visible approval.",
+            "GÖRÜŞ",
+            "Görüntüden önce onay",
+            "Her ekran görüntüsü için görünür bir onay gerekir.",
         )
-        card = self._card(self.workspace, "Capture policy")
-        self._line(card, "Default", "Capture denied")
-        self._line(card, "Retention", "Discard after analysis")
-        self._line(card, "Taskbar", "Redacted before provider access")
+        card = self._card(self.workspace, "Görüntü alma ilkesi")
+        self._line(card, "Varsayılan", "Görüntü alma kapalı")
+        self._line(card, "Saklama", "Analizden sonra silinir")
+        self._line(card, "Görev çubuğu", "Sağlayıcı erişiminden önce gizlenir")
         button = self._button(
             card,
-            "REQUEST ONE CAPTURE",
+            "TEK GÖRÜNTÜ İSTE",
             self._start_vision,
             variant="primary",
         )
@@ -884,15 +1542,15 @@ class DesktopWindow:
 
     def _render_research(self) -> None:
         self._heading(
-            "RESEARCH",
-            "Evidence before synthesis.",
-            "Observed facts remain distinct from inference.",
+            "ARAŞTIRMA",
+            "Sentezden önce kanıt",
+            "Gözlenen gerçekler çıkarımlardan ayrı tutulur.",
         )
-        card = self._card(self.workspace, "Research brief")
+        card = self._card(self.workspace, "Araştırma özeti")
         self.research_entry = self._entry(card)
         self.research_entry.pack(fill="x", ipady=7, pady=5)
         button = self._button(
-            card, "RESEARCH", self._start_research, variant="primary"
+            card, "ARAŞTIR", self._start_research, variant="primary"
         )
         button.configure(
             state="normal"
@@ -905,33 +1563,33 @@ class DesktopWindow:
         if not self._snapshot.research_available:
             self._line(
                 self.research_results,
-                "Research is not configured",
-                "Configure a search provider before use.",
+                "Araştırma ayarlanmamış",
+                "Kullanmadan önce bir arama sağlayıcısı ayarla.",
             )
 
     def _render_tools(self) -> None:
         self._heading(
-            "CAPABILITY REGISTRY",
-            "Tools and permissions.",
-            "Availability never implies authorization.",
+            "YETENEK KAYDI",
+            "Araçlar ve izinler",
+            "Kullanılabilirlik hiçbir zaman yetki anlamına gelmez.",
         )
-        card = self._card(self.workspace, "Registered tools")
+        card = self._card(self.workspace, "Kayıtlı araçlar")
         for tool in self._snapshot.tools:
             self._line(
                 card,
                 str(tool["name"]),
-                f"{str(tool['risk']).upper()}  /  "
-                f"{'ENABLED' if tool['enabled'] else 'DISABLED'}  /  "
+                f"{localize_token(tool['risk'])}  /  "
+                f"{'AÇIK' if tool['enabled'] else 'KAPALI'}  /  "
                 f"{tool['source']}",
             )
 
     def _render_integrations(self) -> None:
         self._heading(
-            "CONNECTIONS",
-            "Services at a glance.",
-            "Only live configuration is shown as connected.",
+            "BAĞLANTILAR",
+            "Hizmetlere genel bakış",
+            "Yalnızca canlı yapılandırmalar bağlı olarak gösterilir.",
         )
-        card = self._card(self.workspace, "Runtime connections")
+        card = self._card(self.workspace, "Çalışma zamanı bağlantıları")
         for name, ready in (
             ("Windows", self._snapshot.windows_available),
             ("OpenAI", bool(self.controller.application.settings.api_key)),
@@ -952,88 +1610,88 @@ class DesktopWindow:
                     )
                 ),
             ),
-            ("Voice", self._snapshot.voice_available),
-            ("Vision", self._snapshot.vision_available),
-            ("Web research", self._snapshot.research_available),
+            ("Ses", self._snapshot.voice_available),
+            ("Görüş", self._snapshot.vision_available),
+            ("Web araştırması", self._snapshot.research_available),
         ):
             self._line(
-                card, name, "CONNECTED" if ready else "NOT CONFIGURED"
+                card, name, "BAĞLI" if ready else "AYARLANMAMIŞ"
             )
 
     def _render_diagnostics(self) -> None:
         self._heading(
-            "SYSTEM HEALTH",
-            "Diagnostics without clutter.",
-            "Operational truth from live runtime inspection.",
+            "SİSTEM SAĞLIĞI",
+            "Karmaşasız tanılama",
+            "Canlı çalışma zamanı incelemesinden alınan gerçek durum.",
         )
-        card = self._card(self.workspace, "Current health")
-        self._line(card, "Core", "READY")
-        self._line(card, "Provider", self._snapshot.provider)
+        card = self._card(self.workspace, "Geçerli sağlık")
+        self._line(card, "Çekirdek", "HAZIR")
+        self._line(card, "Sağlayıcı", self._snapshot.provider)
         self._line(
             card,
-            "Tool registry",
-            f"{self._snapshot.enabled_tools}/{self._snapshot.tool_count} enabled",
+            "Araç kaydı",
+            f"{self._snapshot.enabled_tools}/{self._snapshot.tool_count} açık",
         )
-        self._line(card, "Durable tasks", str(self._snapshot.task_count))
+        self._line(card, "Kalıcı görevler", str(self._snapshot.task_count))
         self._line(
             card,
-            "Event ledger",
+            "Olay defteri",
             (
-                f"VALID  /  {self._snapshot.diagnostic_event_count} events"
+                f"GEÇERLİ  /  {self._snapshot.diagnostic_event_count} olay"
                 if self._snapshot.diagnostic_integrity_valid
-                else "INTEGRITY FAILURE"
+                else "BÜTÜNLÜK HATASI"
             ),
         )
 
     def _render_settings(self) -> None:
         self._heading(
-            "SETTINGS",
-            "Quiet controls, clear state.",
-            "Secrets remain outside the project and source control.",
+            "AYARLAR",
+            "Sade kontroller, açık durum",
+            "Gizli bilgiler proje ve kaynak kontrolü dışında kalır.",
         )
-        appearance = self._card(self.workspace, "Appearance")
+        appearance = self._card(self.workspace, "Görünüm")
         controls = tk.Frame(appearance, bg=self._colors.surface)
         controls.pack(fill="x")
         self._button(
-            controls, "TOGGLE THEME", self._toggle_theme
+            controls, "TEMAYI DEĞİŞTİR", self._toggle_theme
         ).pack(side="left")
         self._button(
             controls,
-            "REDUCE MOTION",
+            "HAREKETİ AZALT",
             self._toggle_motion,
             variant="ghost",
         ).pack(side="left", padx=5)
         self._button(
-            controls, "KEYBOARD SHORTCUTS", self._show_shortcuts, variant="ghost"
+            controls, "KLAVYE KISAYOLLARI", self._show_shortcuts, variant="ghost"
         ).pack(side="left")
         self._line(
             appearance,
-            "Motion",
-            "REDUCED"
+            "Hareket",
+            "AZALTILMIŞ"
             if self.controller.state.reduced_motion
-            else "SUBTLE",
+            else "YUMUŞAK",
         )
 
         api = self._card(
             self.workspace,
-            "API connection",
+            "Yapay zekâ sağlayıcısı ve API anahtarı",
             subtitle=(
-                "The key is stored in Windows Credential Manager and is "
-                "never shown again."
+                "Gemini veya OpenAI anahtarını buraya yapıştır. Anahtar proje "
+                "dosyalarına değil Windows Kimlik Bilgisi Yöneticisi'ne kaydedilir."
             ),
         )
         if self.api_settings is None:
             self._line(
                 api,
-                "API settings unavailable",
-                "The credential service was not initialized.",
+                "API ayarları kullanılamıyor",
+                "Kimlik bilgisi hizmeti başlatılmadı.",
             )
             return
         state = self.api_settings.snapshot()
         self.api_provider = tk.StringVar(value=state.provider)
         self.api_model = tk.StringVar(value=state.model)
         self.api_key = tk.StringVar()
-        self._field_label(api, "PROVIDER")
+        self._field_label(api, "SAĞLAYICI")
         provider_input = ttk.Combobox(
             api,
             textvariable=self.api_provider,
@@ -1047,44 +1705,55 @@ class DesktopWindow:
         self._entry(api, textvariable=self.api_model).pack(
             fill="x", ipady=7, pady=(0, 10)
         )
-        self._field_label(api, "API KEY")
+        self._field_label(api, "API ANAHTARI")
+        key_row = tk.Frame(api, bg=self._colors.surface)
+        key_row.pack(fill="x")
         self.api_key_entry = self._entry(
-            api,
+            key_row,
             textvariable=self.api_key,
             show="*",
         )
         self.api_key_entry.pack(
+            side="left",
             fill="x",
+            expand=True,
             ipady=7,
         )
+        self.api_key_visibility_button = self._button(
+            key_row,
+            "GÖSTER",
+            self._toggle_api_key_visibility,
+            variant="ghost",
+        )
+        self.api_key_visibility_button.pack(side="right", padx=(6, 0))
 
         if not state.credential_required:
             self.api_key_entry.configure(
                 state="disabled"
             )
+            self.api_key_visibility_button.configure(state="disabled")
             self._line(
                 api,
-                "No API key required",
+                "API anahtarı gerekmiyor",
                 (
-                    "Ollama uses the local Ollama service."
+                    "Ollama yerel Ollama hizmetini kullanır."
                     if state.provider == "ollama"
                     else (
-                        "This provider does not use "
-                        "an API credential."
+                        "Bu sağlayıcı API kimlik bilgisi kullanmaz."
                     )
                 ),
             )
         elif state.credential_configured:
             self._line(
                 api,
-                "Credential stored",
-                "Leave the field empty to keep the existing key.",
+                "Anahtar güvenle saklanıyor",
+                "Mevcut anahtarı korumak için alanı boş bırak.",
             )
         else:
             self._line(
                 api,
-                "No credential stored",
-                "Paste a key, test it, then save and activate.",
+                "Kayıtlı anahtar yok",
+                "Anahtarı yapıştır, sına, ardından kaydedip etkinleştir.",
             )
         self.api_status = tk.Label(
             api,
@@ -1098,18 +1767,18 @@ class DesktopWindow:
         actions = tk.Frame(api, bg=self._colors.surface)
         actions.pack(fill="x")
         self.api_test_button = self._button(
-            actions, "TEST CONNECTION", self._start_api_test
+            actions, "BAĞLANTIYI SINA", self._start_api_test
         )
         self.api_test_button.pack(side="left")
         self._button(
             actions,
-            "SAVE AND ACTIVATE",
+            "KAYDET VE ETKİNLEŞTİR",
             self._save_api_settings,
             variant="primary",
         ).pack(side="left", padx=6)
         self.api_delete_button = self._button(
             actions,
-            "REMOVE KEY",
+            "ANAHTARI SİL",
             self._delete_api_key,
             variant="ghost",
         )
@@ -1133,21 +1802,12 @@ class DesktopWindow:
         *,
         textvariable: tk.StringVar | None = None,
         show: str | None = None,
-    ) -> tk.Entry:
-        return tk.Entry(
+    ) -> RoundedEntry:
+        return RoundedEntry(
             parent,
+            colors=self._colors,
             textvariable=textvariable,
             show=show,
-            relief="flat",
-            borderwidth=0,
-            bg=self._colors.surface_alt,
-            fg=self._colors.ink,
-            insertbackground=self._colors.ink,
-            selectbackground=self._colors.faint,
-            highlightbackground=self._colors.line,
-            highlightcolor=self._colors.focus,
-            highlightthickness=1,
-            font=("Segoe UI", 10),
         )
 
     def _field_label(self, parent: tk.Widget, text: str) -> None:
@@ -1198,6 +1858,18 @@ class DesktopWindow:
                 )
             )
 
+        visibility = getattr(
+            self,
+            "api_key_visibility_button",
+            None,
+        )
+        if visibility is not None and entry is not None:
+            visibility.configure(
+                state="normal" if required else "disabled",
+                text="GÖSTER",
+            )
+            entry.configure(show="*")
+
         delete = getattr(
             self,
             "api_delete_button",
@@ -1209,47 +1881,70 @@ class DesktopWindow:
                 state="disabled"
             )
 
+    def _toggle_api_key_visibility(self) -> None:
+        visible = self.api_key_entry.cget("show") == ""
+        self.api_key_entry.configure(show="*" if visible else "")
+        self.api_key_visibility_button.configure(
+            text="GÖSTER" if visible else "GİZLE"
+        )
+
     def _render_context(self, tab: str) -> None:
         self._clear(self.context_body)
-        if tab == "TASK":
+        for label, button in self._context_buttons.items():
+            selected = label == tab
+            normal = (
+                self._colors.hover
+                if selected
+                else self._colors.surface_alt
+            )
+            button.configure(
+                bg=normal,
+                fg=(
+                    self._colors.accent
+                    if selected
+                    else self._colors.muted
+                ),
+            )
+            self._bind_hover(button, self._colors.hover, normal)
+        if tab == "YÜRÜTME":
             for task in self._snapshot.tasks[:4]:
                 self._line(
                     self.context_body,
                     str(task["goal"]),
-                    str(task["status"]).upper(),
+                    localize_token(task["status"]),
                 )
             if not self._snapshot.tasks:
                 self._line(
-                    self.context_body, "No active task", "The queue is clear."
+                    self.context_body, "Aktif görev yok", "Kuyruk boş."
                 )
-        elif tab == "MEMORY":
+        elif tab == "HAFIZA":
             for memory in self._snapshot.memories[:6]:
                 self._line(
                     self.context_body,
                     str(memory["content"]),
-                    str(memory["freshness"]),
+                    localize_token(memory["freshness"]),
                 )
             if not self._snapshot.memories:
-                self._line(self.context_body, "No active memory")
+                self._line(self.context_body, "Aktif hafıza yok")
         else:
             for tool in self._snapshot.tools[:9]:
                 self._line(
                     self.context_body,
                     str(tool["name"]),
-                    "ON" if tool["enabled"] else "OFF",
+                    "AÇIK" if tool["enabled"] else "KAPALI",
                 )
 
     def _toggle_navigation(self) -> None:
         collapsed = not self.controller.state.nav_collapsed
         self.controller.state.nav_collapsed = collapsed
-        target = 68 if collapsed else 218
+        target = 64 if collapsed else 230
         for screen, index, label in NAVIGATION:
             self._nav_buttons[screen].configure(
                 text=index if collapsed else f"{index}    {label}",
                 anchor="center" if collapsed else "w",
             )
         self.nav_collapse_button.configure(
-            text="OPEN" if collapsed else "COLLAPSE"
+            text="AÇ" if collapsed else "DARALT"
         )
         self._animate_nav_width(target)
 
@@ -1289,6 +1984,7 @@ class DesktopWindow:
         self._colors = tokens(self.controller.state.theme)
         self.root.configure(bg=self._colors.background)
         self._nav_buttons.clear()
+        self._context_buttons.clear()
         self._build_shell()
         self.render(self.controller.state.screen)
         self._animate_status()
@@ -1318,7 +2014,7 @@ class DesktopWindow:
         self._status_job = self.root.after(520, self._animate_status)
 
     def _set_busy(self, busy: bool, status: str) -> None:
-        self.status_label.configure(text=status)
+        self.status_label.configure(text=STATUS_TEXT.get(status, status))
         self.send_button.configure(state="disabled" if busy else "normal")
 
     def _submit_command(self) -> str:
@@ -1328,8 +2024,8 @@ class DesktopWindow:
         if self._snapshot.provider == "mock":
             self.render(UIScreen.SETTINGS)
             messagebox.showinfo(
-                "Provider required",
-                "Select and activate a real provider in Settings before starting a conversation.",
+                "Sağlayıcı gerekli",
+                "Sohbete başlamadan önce Ayarlar'dan gerçek bir sağlayıcı seçip etkinleştir.",
                 parent=self.root,
             )
             return "break"
@@ -1466,7 +2162,7 @@ class DesktopWindow:
         except Exception as exc:
             self._pending_user_text = None
             messagebox.showerror(
-                "JARVIS request failed", str(exc), parent=self.root
+                "JARVIS isteği başarısız", str(exc), parent=self.root
             )
             self._finalize_command()
             return
@@ -1515,7 +2211,7 @@ class DesktopWindow:
     def _start_api_test(self) -> None:
         if self.api_settings is None or self._busy_future is not None:
             return
-        self.api_status.configure(text="Testing the connection...")
+        self.api_status.configure(text="Bağlantı sınanıyor...")
         self.api_test_button.configure(state="disabled")
         self._set_busy(True, "TESTING CONNECTION")
         self._busy_future = self.controller.submit_background(
@@ -1540,7 +2236,7 @@ class DesktopWindow:
             )
         except Exception as exc:
             self.api_status.configure(
-                text=f"Connection test failed: {exc}", fg=self._colors.muted
+                text=f"Bağlantı sınaması başarısız: {exc}", fg=self._colors.muted
             )
         self.api_test_button.configure(state="normal")
         self._set_busy(False, "LOCAL CORE READY")
@@ -1564,22 +2260,22 @@ class DesktopWindow:
             self._snapshot = self.controller.snapshot()
             self.render(UIScreen.SETTINGS)
             self.api_status.configure(
-                text="Settings saved. The live runtime is now active.",
+                text="Ayarlar kaydedildi. Canlı çalışma zamanı etkin.",
                 fg=self._colors.ink,
             )
             self._set_busy(False, "LOCAL CORE READY")
         except Exception as exc:
             messagebox.showerror(
-                "Could not save API settings", str(exc), parent=self.root
+                "API ayarları kaydedilemedi", str(exc), parent=self.root
             )
 
     def _delete_api_key(self) -> None:
         if self.api_settings is None:
             return
         if not messagebox.askyesno(
-            "Remove API key?",
-            "This removes the JARVIS API credential from Windows Credential "
-            "Manager and returns the desktop to mock mode.",
+            "API anahtarı silinsin mi?",
+            "Bu işlem JARVIS API anahtarını Windows Kimlik Bilgisi "
+            "Yöneticisi'nden siler ve uygulamayı deneme moduna döndürür.",
             parent=self.root,
         ):
             return
@@ -1594,17 +2290,17 @@ class DesktopWindow:
             self._snapshot = self.controller.snapshot()
             self.render(UIScreen.SETTINGS)
             self.api_status.configure(
-                text="Credential removed. Mock mode is active."
+                text="Anahtar silindi. Deneme modu etkin."
             )
         except Exception as exc:
             messagebox.showerror(
-                "Could not remove API key", str(exc), parent=self.root
+                "API anahtarı silinemedi", str(exc), parent=self.root
             )
 
     def _start_voice(self) -> None:
         if not self._snapshot.voice_available or self._busy_future is not None:
             messagebox.showinfo(
-                "Voice", "Voice is not configured.", parent=self.root
+                "Ses", "Sesli iletişim ayarlanmamış.", parent=self.root
             )
             return
         self._set_busy(True, "LISTENING")
@@ -1634,7 +2330,7 @@ class DesktopWindow:
             future.result()
         except Exception as exc:
             messagebox.showerror(
-                "JARVIS voice failed",
+                "JARVIS sesli iletişimi başarısız",
                 str(exc),
                 parent=self.root,
             )
@@ -1651,16 +2347,16 @@ class DesktopWindow:
     def _start_vision(self) -> None:
         if not self._snapshot.vision_available or self._busy_future is not None:
             messagebox.showinfo(
-                "Vision", "Vision is not configured.", parent=self.root
+                "Görüş", "Görsel analiz ayarlanmamış.", parent=self.root
             )
             return
         purpose = (
-            "Describe the current screen and answer the user's visible question."
+            "Geçerli ekranı açıkla ve kullanıcının görünür sorusunu yanıtla."
         )
         approved = messagebox.askyesno(
-            "Allow one screen capture?",
-            "JARVIS will capture once, redact the taskbar, send the processed "
-            "image to the configured provider, and discard it after analysis.",
+            "Tek ekran görüntüsüne izin verilsin mi?",
+            "JARVIS bir kez görüntü alır, görev çubuğunu gizler, işlenmiş "
+            "görseli ayarlı sağlayıcıya yollar ve analizden sonra siler.",
             parent=self.root,
         )
         if not approved:
@@ -1690,7 +2386,7 @@ class DesktopWindow:
             )
         except Exception as exc:
             messagebox.showerror(
-                "JARVIS operation failed", str(exc), parent=self.root
+                "JARVIS işlemi başarısız", str(exc), parent=self.root
             )
         self._set_busy(False, "LOCAL CORE READY")
 
@@ -1710,14 +2406,15 @@ class DesktopWindow:
                 )
             for uncertainty in report.get("uncertainties", []):
                 self._line(
-                    self.research_results, "UNCERTAINTY", uncertainty
+                    self.research_results, "BELİRSİZLİK", uncertainty
                 )
         except Exception as exc:
-            self._line(self.research_results, "Research failed", str(exc))
+            self._line(self.research_results, "Araştırma başarısız", str(exc))
         self._set_busy(False, "LOCAL CORE READY")
 
     def close(self) -> None:
         self._closing = True
+        self._stop_orb_animation()
         if self._status_job is not None:
             self.root.after_cancel(self._status_job)
         if self._nav_job is not None:
@@ -1736,6 +2433,7 @@ class DesktopWindow:
 def launch_desktop() -> None:
     from app.bootstrap import create_application
 
+    enable_high_dpi_rendering()
     api_settings = create_api_settings_service()
     application = create_application(api_settings.build_runtime_settings())
     DesktopWindow(

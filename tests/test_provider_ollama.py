@@ -146,6 +146,716 @@ async def test_ollama_generate_uses_provider_neutral_contract(
     assert call["tools"] == tools
 
 
+@pytest.mark.asyncio
+async def test_ollama_does_not_add_finalization_prompt_before_tool_result(
+) -> None:
+    client = FakeClient()
+
+    provider = OllamaProvider(
+        Settings(
+            default_provider="ollama",
+            default_model=DEFAULT_OLLAMA_MODEL,
+            ollama_model=DEFAULT_OLLAMA_MODEL,
+        ),
+        client=client,
+    )
+
+    await provider.generate(
+        Request("hello"),
+        Context(),
+        system_prompt="Original system prompt.",
+    )
+
+    call = client.completions.calls[0]
+
+    assert call["messages"][0] == {
+        "role": "system",
+        "content": "Original system prompt.",
+    }
+
+    assert (
+        OllamaProvider._TOOL_FINALIZATION_PROMPT
+        not in call["messages"][0]["content"]
+    )
+
+    assert "max_tokens" not in call
+
+
+@pytest.mark.asyncio
+async def test_ollama_adds_concise_prompt_after_tool_result_without_token_cap(
+) -> None:
+    client = FakeClient()
+
+    provider = OllamaProvider(
+        Settings(
+            default_provider="ollama",
+            default_model=DEFAULT_OLLAMA_MODEL,
+            ollama_model=DEFAULT_OLLAMA_MODEL,
+        ),
+        client=client,
+    )
+
+    context = Context()
+
+    context.values["messages"] = [
+        {
+            "role": "user",
+            "content": "Inspect the system.",
+        },
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {
+                        "name": "status",
+                        "arguments": "{}",
+                    },
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call-1",
+            "content": "{'status': 'ok'}",
+        },
+    ]
+
+    await provider.generate(
+        Request("Inspect the system."),
+        context,
+        system_prompt="Original system prompt.",
+    )
+
+    call = client.completions.calls[0]
+
+    system_messages = [
+        message["content"]
+        for message in call["messages"]
+        if message.get("role") == "system"
+    ]
+
+    assert len(system_messages) == 1
+    assert system_messages[0].startswith(
+        "Original system prompt."
+    )
+
+    assert (
+        OllamaProvider._TOOL_FINALIZATION_PROMPT
+        in system_messages[0]
+    )
+
+    assert (
+        "If another tool is required"
+        in system_messages[0]
+    )
+
+    assert "max_tokens" not in call
+
+
+@pytest.mark.asyncio
+async def test_ollama_compacts_windows_system_info_for_model_only(
+) -> None:
+    client = FakeClient()
+
+    provider = OllamaProvider(
+        Settings(
+            default_provider="ollama",
+            default_model=DEFAULT_OLLAMA_MODEL,
+            ollama_model=DEFAULT_OLLAMA_MODEL,
+        ),
+        client=client,
+    )
+
+    raw_data = {
+        "system": "Windows",
+        "release": "11",
+        "version": "10.0.26200",
+        "machine": "AMD64",
+        "processor": "Intel64 Family 6",
+        "hostname": "test-host",
+        "logical_cpu_count": 8,
+        "memory_total_bytes": 8415662080,
+        "memory_available_bytes": 1932735283,
+        "memory_total_gib": 7.84,
+        "memory_available_gib": 1.8,
+        "system_drive": "C:\\",
+        "disk_total_bytes": 126709653504,
+        "disk_free_bytes": 11338713600,
+        "disk_total_gib": 118.01,
+        "disk_free_gib": 10.56,
+    }
+
+    original_content = str(raw_data)
+
+    context = Context()
+
+    context.values["messages"] = [
+        {
+            "role": "user",
+            "content": "Inspect the system.",
+        },
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "system-call",
+                    "type": "function",
+                    "function": {
+                        "name": "get_windows_system_info",
+                        "arguments": "{}",
+                    },
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "system-call",
+            "content": original_content,
+        },
+    ]
+
+    await provider.generate(
+        Request("Inspect the system."),
+        context,
+    )
+
+    call = client.completions.calls[0]
+
+    tool_message = next(
+        message
+        for message in call["messages"]
+        if message.get("role") == "tool"
+    )
+
+    content = tool_message["content"]
+
+    assert content == (
+        "CANONICAL_SYSTEM_REPORT\n"
+        "Windows release: 11\n"
+        "Windows version: 10.0.26200\n"
+        "Logical CPU count: 8\n"
+        "Total memory: 7.84 GiB\n"
+        "Available memory: 1.8 GiB\n"
+        "Total system-drive disk space: 118.01 GiB\n"
+        "Free system-drive disk space: 10.56 GiB"
+    )
+
+    # Raw and ambiguous values must not reach the local model.
+    assert "memory_total_bytes" not in content
+    assert "memory_available_bytes" not in content
+    assert "disk_total_bytes" not in content
+    assert "disk_free_bytes" not in content
+
+    assert "processor" not in content.lower()
+    assert "hostname" not in content.lower()
+    assert "machine" not in content.lower()
+
+    # Provider transformation is model-only.
+    # Persisted conversation/audit data stays untouched.
+    assert (
+        context.values["messages"][2]["content"]
+        == original_content
+    )
+
+
+@pytest.mark.asyncio
+async def test_ollama_does_not_compact_unrelated_tool_results(
+) -> None:
+    client = FakeClient()
+
+    provider = OllamaProvider(
+        Settings(
+            default_provider="ollama",
+            default_model=DEFAULT_OLLAMA_MODEL,
+            ollama_model=DEFAULT_OLLAMA_MODEL,
+        ),
+        client=client,
+    )
+
+    original_content = (
+        "{'status': 'ok', 'value': 123}"
+    )
+
+    context = Context()
+
+    context.values["messages"] = [
+        {
+            "role": "user",
+            "content": "Check status.",
+        },
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "other-call",
+                    "type": "function",
+                    "function": {
+                        "name": "status",
+                        "arguments": "{}",
+                    },
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "other-call",
+            "content": original_content,
+        },
+    ]
+
+    await provider.generate(
+        Request("Check status."),
+        context,
+    )
+
+    call = client.completions.calls[0]
+
+    tool_message = next(
+        message
+        for message in call["messages"]
+        if message.get("role") == "tool"
+    )
+
+    assert (
+        tool_message["content"]
+        == original_content
+    )
+
+
+@pytest.mark.asyncio
+async def test_ollama_leaves_malformed_system_info_result_unchanged(
+) -> None:
+    client = FakeClient()
+
+    provider = OllamaProvider(
+        Settings(
+            default_provider="ollama",
+            default_model=DEFAULT_OLLAMA_MODEL,
+            ollama_model=DEFAULT_OLLAMA_MODEL,
+        ),
+        client=client,
+    )
+
+    original_content = "not a valid mapping"
+
+    context = Context()
+
+    context.values["messages"] = [
+        {
+            "role": "user",
+            "content": "Inspect the system.",
+        },
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "system-call",
+                    "type": "function",
+                    "function": {
+                        "name": "get_windows_system_info",
+                        "arguments": "{}",
+                    },
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "system-call",
+            "content": original_content,
+        },
+    ]
+
+    await provider.generate(
+        Request("Inspect the system."),
+        context,
+    )
+
+    call = client.completions.calls[0]
+
+    tool_message = next(
+        message
+        for message in call["messages"]
+        if message.get("role") == "tool"
+    )
+
+    assert (
+        tool_message["content"]
+        == original_content
+    )
+
+
+@pytest.mark.asyncio
+async def test_ollama_ignores_historical_tool_result_for_new_request(
+) -> None:
+    client = FakeClient()
+
+    provider = OllamaProvider(
+        Settings(
+            default_provider="ollama",
+            default_model=DEFAULT_OLLAMA_MODEL,
+            ollama_model=DEFAULT_OLLAMA_MODEL,
+        ),
+        client=client,
+    )
+
+    context = Context()
+
+    context.values["messages"] = [
+        {
+            "role": "user",
+            "content": "Old request.",
+        },
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "old-call",
+                    "type": "function",
+                    "function": {
+                        "name": "status",
+                        "arguments": "{}",
+                    },
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "old-call",
+            "content": "{'status': 'ok'}",
+        },
+        {
+            "role": "assistant",
+            "content": "Old response.",
+        },
+        {
+            "role": "user",
+            "content": "New request.",
+        },
+    ]
+
+    await provider.generate(
+        Request("New request."),
+        context,
+        system_prompt="Original system prompt.",
+    )
+
+    call = client.completions.calls[0]
+
+    system_messages = [
+        message["content"]
+        for message in call["messages"]
+        if message.get("role") == "system"
+    ]
+
+    assert system_messages == [
+        "Original system prompt."
+    ]
+
+    assert (
+        OllamaProvider._TOOL_FINALIZATION_PROMPT
+        not in system_messages[0]
+    )
+
+
+
+@pytest.mark.asyncio
+async def test_ollama_uses_verified_system_info_for_final_text(
+) -> None:
+    client = FakeClient()
+
+    provider = OllamaProvider(
+        Settings(
+            default_provider="ollama",
+            default_model=DEFAULT_OLLAMA_MODEL,
+            ollama_model=DEFAULT_OLLAMA_MODEL,
+        ),
+        client=client,
+    )
+
+    request = Request(
+        "Inspect the system."
+    )
+
+    raw_data = {
+        "release": "11",
+        "version": "10.0.26200",
+        "logical_cpu_count": 8,
+        "memory_total_gib": 7.84,
+        "memory_available_gib": 1.43,
+        "disk_total_gib": 118.01,
+        "disk_free_gib": 7.95,
+        "memory_total_bytes": 8415662080,
+        "disk_total_bytes": 126709653504,
+    }
+
+    original_content = str(raw_data)
+
+    context = Context()
+
+    context.values["messages"] = [
+        {
+            "role": "user",
+            "content": request.text,
+        },
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "system-call",
+                    "type": "function",
+                    "function": {
+                        "name": "get_windows_system_info",
+                        "arguments": "{}",
+                    },
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "system-call",
+            "content": original_content,
+        },
+    ]
+
+    result = await provider.generate(
+        request,
+        context,
+    )
+
+    assert result.text == (
+        "Windows release: 11\n"
+        "Windows version: 10.0.26200\n"
+        "Logical CPU count: 8\n"
+        "Total memory: 7.84 GiB\n"
+        "Available memory: 1.43 GiB\n"
+        "Total system-drive disk space: 118.01 GiB\n"
+        "Free system-drive disk space: 7.95 GiB"
+    )
+
+    assert result.finish_reason == "stop"
+    assert result.tool_calls == []
+
+    assert (
+        result.metadata[
+            "deterministic_finalization"
+        ]
+        == "get_windows_system_info"
+    )
+
+    assert (
+        context.values["messages"][2]["content"]
+        == original_content
+    )
+
+
+@pytest.mark.asyncio
+async def test_ollama_does_not_suppress_additional_tool_call(
+) -> None:
+    client = FakeClient()
+
+    async def create_with_tool_call(
+        **kwargs,
+    ):
+        client.completions.calls.append(
+            kwargs
+        )
+
+        function = SimpleNamespace(
+            name="status",
+            arguments="{}",
+        )
+
+        tool_call = SimpleNamespace(
+            id="next-call",
+            type="function",
+            function=function,
+        )
+
+        message = SimpleNamespace(
+            content="",
+            tool_calls=[tool_call],
+        )
+
+        choice = SimpleNamespace(
+            message=message,
+            finish_reason="tool_calls",
+        )
+
+        return SimpleNamespace(
+            choices=[choice],
+            usage=None,
+        )
+
+    client.completions.create = (
+        create_with_tool_call
+    )
+
+    provider = OllamaProvider(
+        Settings(
+            default_provider="ollama",
+            default_model=DEFAULT_OLLAMA_MODEL,
+            ollama_model=DEFAULT_OLLAMA_MODEL,
+        ),
+        client=client,
+    )
+
+    request = Request(
+        "Inspect the system."
+    )
+
+    raw_data = {
+        "release": "11",
+        "version": "10.0.26200",
+        "logical_cpu_count": 8,
+        "memory_total_gib": 7.84,
+        "memory_available_gib": 1.43,
+        "disk_total_gib": 118.01,
+        "disk_free_gib": 7.95,
+    }
+
+    context = Context()
+
+    context.values["messages"] = [
+        {
+            "role": "user",
+            "content": request.text,
+        },
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "system-call",
+                    "type": "function",
+                    "function": {
+                        "name": "get_windows_system_info",
+                        "arguments": "{}",
+                    },
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "system-call",
+            "content": str(raw_data),
+        },
+    ]
+
+    result = await provider.generate(
+        request,
+        context,
+    )
+
+    assert result.text == ""
+    assert result.finish_reason == "tool_calls"
+
+    assert result.tool_calls == [
+        {
+            "id": "next-call",
+            "type": "function",
+            "function": {
+                "name": "status",
+                "arguments": "{}",
+            },
+        }
+    ]
+
+    assert (
+        "deterministic_finalization"
+        not in result.metadata
+    )
+
+
+@pytest.mark.asyncio
+async def test_ollama_does_not_override_multi_tool_final_answer(
+) -> None:
+    client = FakeClient()
+
+    provider = OllamaProvider(
+        Settings(
+            default_provider="ollama",
+            default_model=DEFAULT_OLLAMA_MODEL,
+            ollama_model=DEFAULT_OLLAMA_MODEL,
+        ),
+        client=client,
+    )
+
+    request = Request(
+        "Inspect the system and status."
+    )
+
+    raw_data = {
+        "release": "11",
+        "version": "10.0.26200",
+        "logical_cpu_count": 8,
+        "memory_total_gib": 7.84,
+        "memory_available_gib": 1.43,
+        "disk_total_gib": 118.01,
+        "disk_free_gib": 7.95,
+    }
+
+    context = Context()
+
+    context.values["messages"] = [
+        {
+            "role": "user",
+            "content": request.text,
+        },
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "system-call",
+                    "type": "function",
+                    "function": {
+                        "name": "get_windows_system_info",
+                        "arguments": "{}",
+                    },
+                },
+                {
+                    "id": "status-call",
+                    "type": "function",
+                    "function": {
+                        "name": "status",
+                        "arguments": "{}",
+                    },
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "system-call",
+            "content": str(raw_data),
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "status-call",
+            "content": "{'status': 'ok'}",
+        },
+    ]
+
+    result = await provider.generate(
+        request,
+        context,
+    )
+
+    assert result.text == "local response"
+
+    assert (
+        "deterministic_finalization"
+        not in result.metadata
+    )
+
+
 def test_provider_preferences_accept_ollama(
     tmp_path,
 ) -> None:

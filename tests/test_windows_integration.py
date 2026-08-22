@@ -20,6 +20,7 @@ from app.platform.windows.models import WindowsLaunchOutcome
 from app.providers.base import ModelResponse
 from app.providers.mock import MockProvider
 from app.tools.executor import ToolExecutor
+from tests.security_helpers import bound_approval
 
 
 def make_application(executable: str) -> WindowsApplication:
@@ -261,12 +262,21 @@ def test_windows_service_registers_verified_tools(tmp_path) -> None:
         "launch_windows_application",
         parameters={"application": "editor"},
     )
+    approved_launch = executor.execute(
+        "launch_windows_application",
+        parameters={"application": "editor"},
+        **bound_approval(
+            "launch_windows_application",
+            parameters={"application": "editor"},
+        ),
+    )
 
     assert applications.status is ToolExecutionStatus.SUCCESS
     assert applications.verified is True
     assert processes.verified is True
-    assert launched.verified is True
-    assert launched.data["pid"] == 321
+    assert launched.status is ToolExecutionStatus.BLOCKED
+    assert approved_launch.verified is True
+    assert approved_launch.data["pid"] == 321
 
 
 def test_windows_service_reports_unverified_launch_as_failure() -> None:

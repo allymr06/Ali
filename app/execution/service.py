@@ -629,6 +629,9 @@ class ExecutionService:
                             task_id=execution_context.task_id,
                             plan_id=plan.plan_id,
                             step_id=step.step_id,
+                            request_id=execution_context.request_id,
+                            conversation_id=execution_context.conversation_id,
+                            approval_operation_id=approval_grant.operation_id,
                         )
                     )
 

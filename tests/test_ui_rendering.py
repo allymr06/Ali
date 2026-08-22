@@ -4,14 +4,19 @@ import time
 import tkinter as tk
 from concurrent.futures import Future
 from dataclasses import replace
-from threading import Thread
+from datetime import timedelta
+from threading import Thread, get_ident
+from uuid import uuid4
 
 import pytest
 
 from app.bootstrap import create_application
 from app.config.settings import Settings
+from app.core.models import RiskLevel
+from app.core.time import utc_now
+from app.security.interactive import InteractiveApprovalRequest
 from app.ui.controller import DesktopController
-from app.ui.desktop import DesktopWindow, RoundedSurface
+from app.ui.desktop import ApprovalPrompt, DesktopWindow, RoundedSurface
 from app.ui.models import ChatMessage, UIScreen
 
 
@@ -238,6 +243,63 @@ def test_worker_completion_is_applied_by_the_ui_event_pump() -> None:
         assert window._stream_target_text == ""
         assert window._complete_voice_operation(voice_operation_id)
         assert controller.state.voice_active is False
+    finally:
+        if window is not None:
+            window.close()
+        else:
+            application.close()
+            root.destroy()
+
+
+def test_tool_approval_event_is_main_thread_only_and_stale_safe(
+    monkeypatch,
+) -> None:
+    root = _tk_root()
+    application = create_application(
+        Settings(windows_integrations_enabled=False, task_runtime_directory=None)
+    )
+    window: DesktopWindow | None = None
+    try:
+        window = DesktopWindow(DesktopController(application), root=root)
+        operation_id = window._begin_operation("PROCESSING")
+        assert operation_id is not None
+        request = InteractiveApprovalRequest(
+            operation_id=uuid4(),
+            request_id=uuid4(),
+            conversation_id=uuid4(),
+            request_source="text",
+            tool_name="write_text_file",
+            operation="write_text_file",
+            risk_level=RiskLevel.MEDIUM,
+            reason="confirmation",
+            parameters={"path": "note.txt", "content": "<6 karakter>"},
+            expires_at=utc_now() + timedelta(minutes=1),
+        )
+        main_thread = get_ident()
+        observed_threads = []
+        monkeypatch.setattr(
+            "app.ui.desktop.messagebox.askyesno",
+            lambda *args, **kwargs: observed_threads.append(get_ident()) or True,
+        )
+        approved: Future[bool] = Future()
+        window._queue_ui_event(
+            operation_id,
+            "approval_request",
+            ApprovalPrompt(request, approved),
+        )
+        window._drain_ui_events()
+        assert approved.result(timeout=1) is True
+        assert observed_threads == [main_thread]
+
+        stale: Future[bool] = Future()
+        window._queue_ui_event(
+            operation_id + 99,
+            "approval_request",
+            ApprovalPrompt(request, stale),
+        )
+        window._drain_ui_events()
+        assert stale.result(timeout=1) is False
+        assert window._complete_operation(operation_id)
     finally:
         if window is not None:
             window.close()

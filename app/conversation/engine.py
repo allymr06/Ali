@@ -234,6 +234,7 @@ class ConversationEngine:
         tool_call_id: str,
         content: str,
         metadata: dict[str, Any] | None = None,
+        provider_content: str | None = None,
     ) -> ConversationTurn:
         with self._lock:
             conversation = self.ensure(context.conversation_id)
@@ -247,6 +248,13 @@ class ConversationEngine:
             )
             conversation.add_turn(turn)
             self._sync_context(conversation, context, request_id)
+            if provider_content is not None:
+                messages = list(context.values.get("messages", []))
+                if messages and messages[-1].get("tool_call_id") == tool_call_id:
+                    transient = dict(messages[-1])
+                    transient["content"] = provider_content
+                    messages[-1] = transient
+                    context.values["messages"] = messages
             return turn
 
     def complete_response(

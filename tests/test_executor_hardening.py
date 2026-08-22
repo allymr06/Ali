@@ -50,7 +50,7 @@ def test_executor_async_handler_works_through_async_api() -> None:
 
         assert result.status is ToolExecutionStatus.SUCCESS
         assert result.data == 42
-        assert result.verified is False
+        assert result.verified is True
 
     asyncio.run(run())
 
@@ -96,7 +96,7 @@ def test_executor_accepts_none_for_optional_argument() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "none"
-    assert result.verified is False
+    assert result.verified is True
 
 
 def test_executor_validates_nested_list_types() -> None:
@@ -212,7 +212,7 @@ def test_executor_accepts_valid_literal_value() -> None:
 
     assert result.status is ToolExecutionStatus.SUCCESS
     assert result.data == "safe"
-    assert result.verified is False
+    assert result.verified is True
 
 
 def test_executor_validates_annotated_type() -> None:

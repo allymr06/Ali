@@ -39,6 +39,20 @@ ALL_NAMES = {
     "diagnostics_health",
     "diagnostics_events",
     "diagnostics_metrics",
+    "list_allowed_file_roots",
+    "list_directory",
+    "read_text_file",
+    "write_text_file",
+    "create_directory",
+    "copy_file",
+    "move_file",
+    "read_windows_clipboard",
+    "write_windows_clipboard",
+    "clear_windows_clipboard",
+    "list_allowed_windows",
+    "activate_allowed_window",
+    "minimize_allowed_window",
+    "restore_allowed_window",
 }
 
 
@@ -115,6 +129,25 @@ def test_unknown_destructive_request_fails_closed():
     assert result.names == frozenset()
 
 
+def test_bounded_file_write_exposes_root_lookup_and_write_only():
+    result = select("notlar dosyasına yaz")
+    assert result.names == frozenset(
+        {"list_allowed_file_roots", "write_text_file"}
+    )
+
+
+def test_clipboard_clear_exposes_only_confirmed_clear_tool():
+    result = select("panoyu temizle")
+    assert result.names == frozenset({"clear_windows_clipboard"})
+
+
+def test_window_minimize_exposes_lookup_and_bounded_action():
+    result = select("pencereyi küçült")
+    assert result.names == frozenset(
+        {"list_allowed_windows", "minimize_allowed_window"}
+    )
+
+
 def test_selector_never_expands_available_tools():
     result = ToolSchemaSelector().select(
         Request(
@@ -129,12 +162,13 @@ def test_selector_never_expands_available_tools():
 
 
 class CapturingProvider(AIProvider):
-    def __init__(self):
+    def __init__(self, name: str = "ollama"):
+        self._name = name
         self.calls = []
 
     @property
     def name(self):
-        return "ollama"
+        return self._name
 
     @property
     def capabilities(self):
@@ -173,7 +207,7 @@ class CapturingProvider(AIProvider):
                 model
                 or "llama3.2:latest"
             ),
-            provider="ollama",
+            provider=self._name,
         )
 
 
@@ -283,3 +317,73 @@ def test_core_sends_only_relevant_tool_to_llama():
             "launch_windows_application",
         ]
     )
+
+
+def test_core_sends_only_relevant_file_tools_to_gemini():
+    provider = CapturingProvider("gemini")
+
+    registry = ProviderRegistry(
+        default_provider="gemini",
+    )
+    registry.register(provider)
+
+    executor = ToolExecutor()
+
+    executor.register(
+        ToolDefinition(
+            name="list_allowed_file_roots",
+            description="List roots.",
+        ),
+        lambda: [],
+    )
+    executor.register(
+        ToolDefinition(
+            name="write_text_file",
+            description="Write text.",
+        ),
+        lambda root_id, relative_path, content: {
+            "root_id": root_id,
+            "relative_path": relative_path,
+        },
+    )
+    executor.register(
+        ToolDefinition(
+            name="diagnostics_metrics",
+            description="Read metrics.",
+        ),
+        lambda: {},
+    )
+
+    engine = CoreEngine(
+        provider_registry=registry,
+        memory_manager=MemoryManager(InMemoryStore()),
+        tool_executor=executor,
+        provider_gateway=ProviderGateway(
+            registry,
+            max_retries=0,
+            fallback_enabled=False,
+        ),
+        tool_schema_selector=ToolSchemaSelector(),
+    )
+
+    response = asyncio.run(
+        engine.handle(
+            Request(
+                "İzinli test klasöründe phase8-onay.txt "
+                "dosyasına sadece TEST OK yaz."
+            ),
+            Context(),
+        )
+    )
+
+    tools = provider.calls[0]["tools"]
+    assert tools is not None
+    assert {
+        item["function"]["name"]
+        for item in tools
+    } == {
+        "list_allowed_file_roots",
+        "write_text_file",
+    }
+    assert response.metadata["tool_schema_count_before"] == 3
+    assert response.metadata["tool_schema_count_after"] == 2

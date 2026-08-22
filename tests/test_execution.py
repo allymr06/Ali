@@ -56,6 +56,18 @@ def test_verified_success_passes():
     assert VerificationEngine().verify(result).passed is True
 
 
+def test_unverified_success_fails_closed_without_custom_verifier():
+    result = ToolResult(
+        status=ToolExecutionStatus.SUCCESS,
+        tool_name="test",
+        data={"ok": True},
+        verified=False,
+    )
+    verification = VerificationEngine().verify(result)
+    assert verification.passed is False
+    assert "postcondition" in verification.reason
+
+
 def test_custom_verifier_rejects_result():
     result = ToolResult(
         status=ToolExecutionStatus.SUCCESS,

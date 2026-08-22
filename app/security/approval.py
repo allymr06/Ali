@@ -27,6 +27,9 @@ class ApprovalExecutionContext:
     task_id: UUID | None
     plan_id: UUID | None
     step_id: UUID
+    conversation_id: UUID | None = None
+    request_id: UUID | None = None
+    approval_operation_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +47,8 @@ def approval_binding_digest(
     plan_id: UUID | None,
     step_id: UUID,
     tool_version: str | None = None,
+    conversation_id: UUID | None = None,
+    request_id: UUID | None = None,
 ) -> str:
     """Create a stable fingerprint for the exact approved action."""
     if not isinstance(operation, str) or not operation.strip():
@@ -65,6 +70,10 @@ def approval_binding_digest(
         "plan_id": str(plan_id) if plan_id is not None else None,
         "step_id": str(step_id),
         "tool_version": tool_version,
+        "conversation_id": (
+            str(conversation_id) if conversation_id is not None else None
+        ),
+        "request_id": str(request_id) if request_id is not None else None,
     }
 
     try:
@@ -99,6 +108,11 @@ def validate_approval_grant(
         return ApprovalValidation(False, "Approval grant type is invalid.")
     if context is None or not isinstance(context, ApprovalExecutionContext):
         return ApprovalValidation(False, "Approval execution context is required.")
+    if (
+        context.approval_operation_id is not None
+        and grant.operation_id != context.approval_operation_id
+    ):
+        return ApprovalValidation(False, "Approval operation identity does not match.")
     if grant.expires_at is not None:
         if grant.expires_at.tzinfo is None:
             return ApprovalValidation(False, "Approval expiry must be timezone-aware.")
@@ -116,6 +130,8 @@ def validate_approval_grant(
             plan_id=context.plan_id,
             step_id=context.step_id,
             tool_version=tool_version,
+            conversation_id=context.conversation_id,
+            request_id=context.request_id,
         )
     except ValueError as exc:
         return ApprovalValidation(False, str(exc))

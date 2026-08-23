@@ -10,7 +10,7 @@ Last verified: 22 August 2026
 - Next action: code signing and live-service qualification (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1088 tests passing, 2 skipped (`scripts/verify.py`)
+- Automated verification: 1132 tests passing, 2 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
 
 ## Provider consolidation (22 August 2026)
@@ -69,6 +69,39 @@ Google's OpenAI-compatible API surface.
   frozen smoke test (`ok=true`, `screens=11`, `tcl=8.6.15`), portable ZIP,
   Inno Setup installer compile, silent clean install, installed-location smoke
   test, in-place reinstall, and silent uninstall with user data preserved.
+
+## Application integrations and live awareness (23 August 2026)
+
+JARVIS now drives real applications and watches the screen. Every
+capability is a permission-checked tool; nothing bypasses the approval
+gate or the verification contract.
+
+- **Spotify**: transport control through media keys verified against the
+  window title, search deep links, and an optional Web API tier behind
+  one-time PKCE OAuth for exact playback, private playlist creation, and
+  listening statistics.
+- **WhatsApp**: contact book, deep links that prefill without sending,
+  chat and conversation reading through the native UIA3 accessibility
+  tree, HIGH-risk approval-gated sending that reports PARTIAL when the
+  send button cannot be verified, and a bounded delegation agent that
+  answers a named contact on the user's behalf with draft screening for
+  credentials and commitments.
+- **System**: http/https-only browser navigation, web search, volume.
+- **Reminders**: persistent SQLite reminders with exactly-once delivery
+  and native toast notifications.
+- **Screen watching**: continuous observation with local 12x12 luminance
+  change detection (0.11ms per frame) that calls the vision model only
+  on real change; frames are discarded immediately after signature.
+
+Intent handling was hardened alongside: unresolved phrasings expose the
+full tool inventory instead of failing closed, tool-bearing turns
+escalate to the stronger action model with a graceful rate-limit
+fallback, and an action-integrity directive forbids claiming an action
+without calling its tool.
+
+Local Turkish speech now goes through WinRT ("Microsoft Tolga"), which
+SAPI does not expose, and races cloud synthesis so the reply starts with
+whichever source answers first.
 
 ## Implemented architecture
 

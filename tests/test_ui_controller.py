@@ -308,7 +308,10 @@ async def test_voice_messages_can_be_marshaled_to_the_ui_thread() -> None:
 
 
 @pytest.mark.asyncio
-async def test_voice_uses_an_independent_context_and_history() -> None:
+async def test_voice_shares_the_conversation_with_text() -> None:
+    """What is said aloud must be remembered when typing later: voice
+    turns run in the same conversation context and appear in the chat
+    history alongside text turns."""
     app = application()
 
     class ContextVoice:
@@ -334,9 +337,11 @@ async def test_voice_uses_an_independent_context_and_history() -> None:
 
     await controller.run_voice()
 
-    assert voice.context is controller.voice_context
-    assert voice.context is not controller.context
-    assert controller.state.messages == text_messages
+    assert voice.context is controller.context
+    assert controller.state.messages == text_messages + [
+        ChatMessage("user", "Sesli soru"),
+        ChatMessage("assistant", "Sesli yanıt"),
+    ]
     assert controller.state.voice_messages == [
         ChatMessage("user", "Sesli soru"),
         ChatMessage("assistant", "Sesli yanıt"),

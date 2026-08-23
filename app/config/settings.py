@@ -159,7 +159,9 @@ class Settings:
     voice_input_device_id: str | None = None
     voice_require_wake_word: bool = False
     voice_wake_word: str = "jarvis"
-    voice_language: str | None = None
+    # The user speaks Turkish; without this hint the transcriber
+    # guesses per utterance and sometimes lands on another language.
+    voice_language: str | None = "tr"
     voice_stt_provider: str = "auto"
     voice_tts_provider: str = "auto"
     # Style directive prepended to every synthesis request. English
@@ -189,7 +191,9 @@ class Settings:
     # spends ~11s reasoning before answering; transcription needs speed.
     voice_gemini_stt_model: str = "gemini-3.5-flash-lite"
     voice_gemini_tts_model: str = "gemini-3.1-flash-tts-preview"
-    voice_gemini_tts_voice: str = "Charon"
+    # The user auditioned the prebuilt voices on 23 August 2026 and
+    # chose Orus; it is the voice of JARVIS everywhere.
+    voice_gemini_tts_voice: str = "Orus"
 
     # Optional purchased voice (ElevenLabs). When an API key is present
     # and voice_tts_provider is "auto", ElevenLabs becomes the cloud
@@ -220,6 +224,13 @@ class Settings:
     spotify_client_id: str | None = None
     whatsapp_contacts_path: str | None = None
     reminders_database_path: str | None = None
+
+    # Automatic long-term memory: after each turn a cheap model pass
+    # extracts durable personal facts (identity, preferences,
+    # decisions, ongoing projects) so remembering does not depend on
+    # the user saying the literal word "hatırla".
+    memory_auto_capture_enabled: bool = True
+    memory_extraction_model: str = "gemini-3.5-flash-lite"
 
     research_enabled: bool = False
     research_searxng_url: str | None = None
@@ -555,7 +566,9 @@ class Settings:
                 "JARVIS_VOICE_REQUIRE_WAKE_WORD"
             ),
             voice_wake_word=os.getenv("JARVIS_VOICE_WAKE_WORD", "jarvis"),
-            voice_language=os.getenv("JARVIS_VOICE_LANGUAGE"),
+            voice_language=(
+                os.getenv("JARVIS_VOICE_LANGUAGE") or "tr"
+            ),
             voice_stt_provider=os.getenv(
                 "JARVIS_VOICE_STT_PROVIDER",
                 "auto",
@@ -613,7 +626,7 @@ class Settings:
             ),
             voice_gemini_tts_voice=os.getenv(
                 "JARVIS_VOICE_GEMINI_TTS_VOICE",
-                "Charon",
+                "Orus",
             ),
             voice_elevenlabs_api_key=(
                 os.getenv("JARVIS_ELEVENLABS_API_KEY") or None
@@ -652,6 +665,14 @@ class Settings:
                 "JARVIS_VISION_TASKBAR_HEIGHT", 64
             ),
             vision_retain_last_image=_get_bool("JARVIS_VISION_RETAIN_LAST_IMAGE"),
+            memory_auto_capture_enabled=_get_bool(
+                "JARVIS_MEMORY_AUTO_CAPTURE",
+                True,
+            ),
+            memory_extraction_model=os.getenv(
+                "JARVIS_MEMORY_EXTRACTION_MODEL",
+                "gemini-3.5-flash-lite",
+            ),
             spotify_client_id=(
                 os.getenv("JARVIS_SPOTIFY_CLIENT_ID", "").strip()
                 or None

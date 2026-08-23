@@ -147,6 +147,30 @@ whichever source answers first.
   route; Gemini remains the active cloud voice). Host credentials are
   scrubbed in the test suite so the suite stays hermetic.
 
+## Voice identity, Turkish recognition, and real memory (23 August 2026, session 3)
+
+- **Orus is the voice of JARVIS.** The user auditioned the prebuilt
+  voices and chose Orus; it is now the default everywhere, and the
+  same multilingual voice speaks both Turkish and English.
+- **Recognition is pinned to Turkish** (`voice_language` defaults to
+  `tr` with a firm transcription directive), ending wrong-language
+  transcripts, and one transient transcription failure is retried
+  before the turn can fail.
+- **Voice and text now share one conversation.** Voice turns appear in
+  the chat history, persist with the conversation store, and are
+  restored on restart; asking in text about something said aloud
+  works.
+- **Long-term memory actually captures now.** Three layers: the
+  explicit-prefix analyzer understands more Turkish ("unutma", "not
+  al", "aklında tut") plus identity statements; the policy's
+  preference path writes (it used to be dead code because the engine
+  demanded an analyzer candidate); and an automatic post-turn model
+  pass (`memory_auto_capture_enabled`, lite model) distills durable
+  personal facts into third-person memories with paraphrase-aware
+  deduplication, off the latency path, never able to fail a turn.
+  Verified live against real Gemini: a casual sentence about the
+  user's project became a stored memory.
+
 ## Implemented architecture
 
 - `CoreEngine` provides bounded request, provider, conversation, memory, and

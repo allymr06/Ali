@@ -680,7 +680,7 @@ class VoiceEarcons:
 # list does not, so Turkish text stays intelligible offline. Awaiting
 # WinRT IAsyncOperation from Windows PowerShell needs the AsTask bridge.
 _LOCAL_TTS_SCRIPT = r"""
-param([string]$In, [string]$Out, [string]$VoiceName)
+param([string]$In, [string]$Out, [string]$VoiceName, [string]$LangPrefix)
 $ErrorActionPreference = 'Stop'
 $text = [System.IO.File]::ReadAllText($In, [System.Text.Encoding]::UTF8)
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -693,6 +693,15 @@ function Await($op, $t) { $task = $asTask.MakeGenericMethod($t).Invoke($null, @(
 $synth = New-Object Windows.Media.SpeechSynthesis.SpeechSynthesizer
 $voice = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices |
     Where-Object { $_.DisplayName -eq $VoiceName } | Select-Object -First 1
+if (-not $voice -and $LangPrefix) {
+    $voice = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices |
+        Where-Object { $_.Language -like "$LangPrefix*" -and $_.Gender -eq 'Male' } |
+        Select-Object -First 1
+    if (-not $voice) {
+        $voice = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices |
+            Where-Object { $_.Language -like "$LangPrefix*" } | Select-Object -First 1
+    }
+}
 if (-not $voice) {
     $voice = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices |
         Where-Object { $_.Language -like 'tr*' } | Select-Object -First 1
@@ -708,14 +717,40 @@ $reader.ReadBytes($bytes)
 """
 
 
+# Model replies in Turkish reliably contain Turkish-specific letters;
+# a reply with none of them and none of these everyday words is
+# English and deserves an English local voice instead of Tolga
+# spelling it out phonetically.
+_TURKISH_LETTERS = set("çğıöşüÇĞİÖŞÜ")
+_TURKISH_WORDS = frozenset(
+    {
+        "ve", "bir", "bu", "ben", "sen", "evet", "ne", "gibi",
+        "daha", "sonra", "var", "yok", "tamam", "ama", "ile",
+        "merhaba", "efendim", "nasıl", "iyi", "olarak", "hazır",
+    }
+)
+
+
+def pick_local_voice(text: str) -> tuple[str, str]:
+    """Choose (voice display name, language prefix) for local speech."""
+    if any(char in _TURKISH_LETTERS for char in text):
+        return "Microsoft Tolga", "tr"
+    words = [w.strip(".,!?;:'\"()") for w in text.casefold().split()]
+    if any(word in _TURKISH_WORDS for word in words if word):
+        return "Microsoft Tolga", "tr"
+    return "Microsoft David", "en"
+
+
 async def synthesize_local_turkish(
     text: str,
     *,
-    voice_name: str = "Microsoft Tolga",
+    voice_name: str | None = None,
     timeout_seconds: float = 30.0,
 ) -> bytes | None:
-    """Synthesize Turkish speech offline to WAV bytes via WinRT.
+    """Synthesize speech offline to WAV bytes via WinRT.
 
+    Despite the historical name this is the bilingual local fallback:
+    the voice follows the text's language unless one is forced.
     Returns WAV bytes on success so the caller can play them through the
     normal (interruptible, verified) audio path, or None when no local
     voice is available.
@@ -725,6 +760,10 @@ async def synthesize_local_turkish(
     normalized = text.strip()
     if not normalized:
         return None
+    if voice_name is None:
+        voice_name, language_prefix = pick_local_voice(normalized)
+    else:
+        language_prefix = "tr"
 
     import subprocess
     import tempfile
@@ -754,6 +793,8 @@ async def synthesize_local_turkish(
                     out_path,
                     "-VoiceName",
                     voice_name,
+                    "-LangPrefix",
+                    language_prefix,
                 ],
                 capture_output=True,
                 timeout=timeout_seconds,

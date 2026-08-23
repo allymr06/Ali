@@ -48,14 +48,98 @@ class UiaClient:
             )
         return self._automation
 
+    def window_handle_for_process(self, executable: str) -> int:
+        """First visible, titled top-level window of the process, else 0.
+
+        Windows whose title changes constantly (Spotify shows the
+        playing track) cannot be found by name, so this walks the HWND
+        list and matches on the owning executable instead.
+        """
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        target = executable.casefold()
+        found: list[int] = []
+
+        @ctypes.WINFUNCTYPE(
+            ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p
+        )
+        def callback(hwnd, _lparam):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            if user32.GetWindowTextLengthW(hwnd) <= 0:
+                return True
+            pid = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            process = kernel32.OpenProcess(0x1000, False, pid.value)
+            if not process:
+                return True
+            try:
+                size = ctypes.c_ulong(1024)
+                buffer = ctypes.create_unicode_buffer(size.value)
+                if kernel32.QueryFullProcessImageNameW(
+                    process, 0, buffer, ctypes.byref(size)
+                ):
+                    name = buffer.value.rsplit("\\", 1)[-1].casefold()
+                    if name == target:
+                        found.append(int(hwnd))
+                        return False
+            finally:
+                kernel32.CloseHandle(process)
+            return True
+
+        user32.EnumWindows(callback, 0)
+        return found[0] if found else 0
+
+    def bring_handle_to_foreground(self, handle: int) -> bool:
+        if not handle:
+            return False
+        user32 = ctypes.WinDLL("user32")
+        user32.ShowWindow(handle, 9)  # SW_RESTORE
+        user32.SetForegroundWindow(handle)
+        time.sleep(1.0)
+        return True
+
+    def invoke_first_button_in_handle(
+        self, handle: int, matcher: Any
+    ) -> str | None:
+        """Press the first button whose name satisfies the matcher.
+
+        Returns the pressed button's accessible name, or None when no
+        matching, invokable button exists in the window right now.
+        """
+        uia = self._uia()
+        element = uia.ElementFromHandle(handle)
+        buttons = element.FindAll(
+            _TREE_SCOPE_DESCENDANTS,
+            uia.CreatePropertyCondition(
+                _CONTROL_TYPE_PROPERTY, _CONTROL_BUTTON
+            ),
+        )
+        for index in range(buttons.Length):
+            item = buttons.GetElement(index)
+            name = (item.CurrentName or "").strip()
+            if not name or not matcher(name):
+                continue
+            pattern = item.GetCurrentPattern(_INVOKE_PATTERN)
+            if pattern is None:
+                continue
+            pattern.QueryInterface(
+                self._module.IUIAutomationInvokePattern
+            ).Invoke()
+            return name
+        return None
+
     def find_window(self, title: str):
         uia = self._uia()
         condition = uia.CreatePropertyCondition(
             _NAME_PROPERTY, title
         )
-        return uia.GetRootElement().FindFirst(
+        element = uia.GetRootElement().FindFirst(
             _TREE_SCOPE_CHILDREN, condition
         )
+        # comtypes hands back a falsy NULL pointer (not None) when
+        # nothing matches; touching it raises ValueError, so normalize.
+        return element if element else None
 
     def window_exists(self, title: str) -> bool:
         try:
@@ -108,6 +192,102 @@ class UiaClient:
             if len(names) >= limit:
                 break
         return names
+
+    @staticmethod
+    def _click_screen_point(x: int, y: int) -> None:
+        user32 = ctypes.WinDLL("user32")
+        user32.SetCursorPos(x, y)
+        user32.mouse_event(0x0002, 0, 0, 0, 0)  # LEFTDOWN
+        user32.mouse_event(0x0004, 0, 0, 0, 0)  # LEFTUP
+
+    def click_item_by_name(
+        self, title: str, name_contains: str
+    ) -> str | None:
+        """Open a named list row with a real click; returns its name.
+
+        WhatsApp's chat rows expose no Invoke or SelectionItem pattern
+        (LegacyIAccessible's default action is a no-op stub), so the
+        only working activation is a genuine click at the row's
+        on-screen centre after fronting the window.
+        """
+        if not self.bring_to_foreground(title):
+            return None
+        window = self.find_window(title)
+        if window is None:
+            return None
+        uia = self._uia()
+        rows = window.FindAll(
+            _TREE_SCOPE_DESCENDANTS,
+            uia.CreatePropertyCondition(
+                _CONTROL_TYPE_PROPERTY, _CONTROL_DATA_ITEM
+            ),
+        )
+        needle = name_contains.strip().casefold()
+        if not needle:
+            return None
+        for index in range(rows.Length):
+            element = rows.GetElement(index)
+            name = " ".join((element.CurrentName or "").split())
+            if needle not in name.casefold():
+                continue
+            rect = element.CurrentBoundingRectangle
+            if rect.right <= rect.left or rect.bottom <= rect.top:
+                continue  # virtualized row that is not on screen
+            self._click_screen_point(
+                (rect.left + rect.right) // 2,
+                (rect.top + rect.bottom) // 2,
+            )
+            time.sleep(1.2)
+            return name
+        return None
+
+    def type_into_edit(
+        self, title: str, name_contains: str, text: str
+    ) -> bool:
+        """Click a named edit control and type text into it.
+
+        Keystrokes go to whatever is focused, so the target window is
+        re-fronted first and control characters are stripped: an Enter
+        would submit, and a stray dialog must not receive the text.
+        """
+        window = self.find_window(title)
+        if window is None:
+            return False
+        handle = window.CurrentNativeWindowHandle
+        user32 = ctypes.WinDLL("user32")
+        if handle and user32.GetForegroundWindow() != handle:
+            if not self.bring_to_foreground(title):
+                return False
+            window = self.find_window(title)
+            if window is None:
+                return False
+        text = "".join(
+            char if ord(char) >= 32 else " " for char in text
+        )
+        uia = self._uia()
+        edits = window.FindAll(
+            _TREE_SCOPE_DESCENDANTS,
+            uia.CreatePropertyCondition(
+                _CONTROL_TYPE_PROPERTY, _CONTROL_EDIT
+            ),
+        )
+        needle = name_contains.casefold()
+        for index in range(edits.Length):
+            element = edits.GetElement(index)
+            name = (element.CurrentName or "").casefold()
+            if needle not in name:
+                continue
+            rect = element.CurrentBoundingRectangle
+            if rect.right <= rect.left or rect.bottom <= rect.top:
+                continue
+            self._click_screen_point(
+                (rect.left + rect.right) // 2,
+                (rect.top + rect.bottom) // 2,
+            )
+            time.sleep(0.3)
+            self._type_unicode(text)
+            return True
+        return False
 
     def read_conversation(
         self,

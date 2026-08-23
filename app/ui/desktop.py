@@ -1169,6 +1169,16 @@ class ScrollableWorkspace(tk.Frame):
         self._target = self._offset
         self._apply_offset()
 
+    def jump_to_bottom(self) -> None:
+        """Pin the viewport to the end of the content.
+
+        Direct canvas yview calls get undone by the next geometry sync,
+        which restores the tracked offset; going through _jump_to keeps
+        the offset, the canvas, and the thumb in agreement.
+        """
+        self.update_idletasks()
+        self._jump_to(self._max_offset())
+
     def reset(self) -> None:
         if self._engine is not None:
             self._engine.stop(f"scroll:{id(self)}")
@@ -2680,6 +2690,9 @@ class DesktopWindow:
         for value, button in self._nav_buttons.items():
             button.apply(selected=value is screen, collapsed=collapsed)
         getattr(self, f"_render_{screen.value}")()
+        # A conversation opens at its newest message, not its oldest.
+        if screen is UIScreen.CHAT and self.controller.state.messages:
+            self.workspace_scroller.jump_to_bottom()
         self._play_screen_transition()
         self.root.after_idle(self._glide_nav_indicator)
 
@@ -4244,8 +4257,7 @@ class DesktopWindow:
                 self._typing_frame += 1
             self._schedule_typewriter(180)
 
-        self.workspace_scroller.canvas.update_idletasks()
-        self.workspace_scroller.canvas.yview_moveto(1.0)
+        self.workspace_scroller.jump_to_bottom()
 
     def _on_command_done(
         self,
@@ -4325,8 +4337,7 @@ class DesktopWindow:
     def _scroll_chat_to_bottom(self) -> None:
         if self.controller.state.screen is not UIScreen.CHAT:
             return
-        self.workspace_scroller.canvas.update_idletasks()
-        self.workspace_scroller.canvas.yview_moveto(1.0)
+        self.workspace_scroller.jump_to_bottom()
 
     def _start_api_test(self) -> None:
         if self.api_settings is None or self._active_operation_id is not None:

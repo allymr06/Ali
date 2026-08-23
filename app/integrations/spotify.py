@@ -61,6 +61,9 @@ class SpotifyIntegration:
         media_keys: MediaKeySender | None = None,
         uri_launcher: UriLauncher | None = None,
         http_client_factory: Callable[..., Any] | None = None,
+        uia_client_factory: Callable[[], Any] | None = None,
+        ui_settle_seconds: float = 2.0,
+        ui_retry_seconds: float = 1.0,
     ) -> None:
         self._client_id = (client_id or "").strip() or None
         self._credentials = credential_store
@@ -68,6 +71,9 @@ class SpotifyIntegration:
         self._media_keys = media_keys or MediaKeySender()
         self._uri = uri_launcher or UriLauncher()
         self._http_client_factory = http_client_factory
+        self._uia_client_factory = uia_client_factory
+        self._ui_settle_seconds = ui_settle_seconds
+        self._ui_retry_seconds = ui_retry_seconds
         self._access_token: str | None = None
         self._access_expires_at = 0.0
 
@@ -212,6 +218,98 @@ class SpotifyIntegration:
             message=(
                 "Arama gönderildi ancak Spotify penceresi doğrulanamadı."
             ),
+        )
+
+    # ------------------------------------------------------------------
+    # Local UI tier: play a searched track without any account setup
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_play_button(name: str) -> bool:
+        lowered = name.casefold()
+        return (
+            lowered.startswith(("play ", "çal "))
+            or lowered.endswith(" çal")
+        )
+
+    def _press_search_play_sync(self, query: str) -> tuple[str | None, str]:
+        """Drive the desktop app: search, then press the top play button.
+
+        Spotify's search results expose each row's play control as a
+        button named "Play <track>" (or the localized equivalent), so
+        the first match in document order is the top result — the same
+        thing a person would click. Returns (button_name, error_code).
+        """
+        if self._uia_client_factory is not None:
+            client = self._uia_client_factory()
+        else:
+            from app.integrations.uia import UiaClient
+
+            client = UiaClient()
+        handle = client.window_handle_for_process("spotify.exe")
+        if not handle:
+            if not self._uri.open("spotify:"):
+                return None, "spotify_launch_failed"
+            for _ in range(16):
+                time.sleep(max(0.05, self._ui_retry_seconds / 2))
+                handle = client.window_handle_for_process("spotify.exe")
+                if handle:
+                    break
+            if not handle:
+                return None, "spotify_not_running"
+        client.bring_handle_to_foreground(handle)
+        self._uri.open("spotify:search:" + urllib.parse.quote(query))
+        time.sleep(self._ui_settle_seconds)
+        for _ in range(6):
+            try:
+                pressed = client.invoke_first_button_in_handle(
+                    handle, self._is_play_button
+                )
+            except Exception:
+                pressed = None
+            if pressed:
+                return pressed, ""
+            time.sleep(self._ui_retry_seconds)
+        return None, "play_button_not_found"
+
+    async def _play_locally(self, query: str) -> ToolResult:
+        before = await self.window_title()
+        try:
+            pressed, error = await asyncio.to_thread(
+                self._press_search_play_sync, query
+            )
+        except Exception as exc:
+            pressed, error = None, f"ui_play_failed:{exc}"
+        if pressed is None:
+            return ToolResult(
+                ToolExecutionStatus.PARTIAL,
+                "spotify_play_track",
+                message=(
+                    f"Spotify'da '{query}' araması açıldı ancak parça "
+                    "otomatik başlatılamadı; ekrandan seçebilirsin."
+                ),
+                error=error,
+            )
+        label = pressed
+        for prefix in ("Play ", "play ", "Çal ", "çal "):
+            if label.startswith(prefix):
+                label = label[len(prefix):]
+                break
+        verified = False
+        for _ in range(12):
+            await asyncio.sleep(0.5)
+            title = await self.window_title()
+            state = self.parse_title(title)
+            if state.get("playing") and title != before:
+                label = f"{state['artist']} — {state['track']}"
+                verified = True
+                break
+        return ToolResult(
+            ToolExecutionStatus.SUCCESS,
+            "spotify_play_track",
+            message=f"Çalınıyor: {label}",
+            data={"track": label, "via": "local_ui"},
+            verified=verified,
         )
 
     # ------------------------------------------------------------------
@@ -412,7 +510,9 @@ class SpotifyIntegration:
     async def play_track(self, query: str) -> ToolResult:
         token = await self._bearer()
         if token is None:
-            return self._configuration_error("spotify_play_track")
+            # No account linked: drive the desktop app's own UI instead
+            # of refusing — the user asked for music, not for OAuth.
+            return await self._play_locally(query)
         search = await self._api(
             "GET",
             "/search",
@@ -439,15 +539,9 @@ class SpotifyIntegration:
             json_body={"uris": [track["uri"]]},
         )
         if play.status_code == 404:
-            return ToolResult(
-                ToolExecutionStatus.BLOCKED,
-                "spotify_play_track",
-                message=(
-                    "Aktif bir Spotify cihazı yok. Uygulamayı açıp "
-                    "bir kez oynat, sonra tekrar dene."
-                ),
-                error="no_active_device",
-            )
+            # No active device registered with the API; the desktop
+            # app's own UI can still start playback.
+            return await self._play_locally(query)
         if play.status_code not in (200, 202, 204):
             return ToolResult(
                 ToolExecutionStatus.FAILED,
@@ -737,10 +831,11 @@ class SpotifyIntegration:
         executor.register(
             define(
                 "spotify_play_track",
-                "Adı verilen şarkıyı Spotify'da hemen çal "
-                "(Web API, Premium gerektirir).",
+                "Adı verilen şarkıyı veya sanatçıyı Spotify'da hemen "
+                "çal. Hesap bağlı değilse masaüstü uygulamasını "
+                "kendisi kullanır.",
                 risk=RiskLevel.LOW,
-                timeout=30.0,
+                timeout=45.0,
             ),
             play_track,
             source="integration:spotify",

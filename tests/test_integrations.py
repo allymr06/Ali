@@ -47,10 +47,22 @@ class FakeUri:
 
 
 class FakeUia:
-    def __init__(self, *, items=None, window=True, invoke=False):
+    def __init__(
+        self,
+        *,
+        items=None,
+        window=True,
+        invoke=False,
+        rows=(),
+        composer=True,
+    ):
         self.items = items
         self.window = window
         self.invoke = invoke
+        self.rows = list(rows)
+        self.composer = composer
+        self.clicked = []
+        self.typed = []
 
     def read_items(self, title, *, limit, minimum_length=6):
         if not self.window:
@@ -62,6 +74,22 @@ class FakeUia:
 
     def invoke_button(self, title, names):
         return self.invoke
+
+    def click_item_by_name(self, title, name_contains):
+        for row in self.rows:
+            if name_contains.casefold() in row.casefold():
+                self.clicked.append(row)
+                return row
+        return None
+
+    def find_edit_value(self, title, name_contains):
+        return self.composer
+
+    def type_into_edit(self, title, name_contains, text):
+        if not self.composer:
+            return False
+        self.typed.append(text)
+        return True
 
 
 # ---------------------------------------------------------------- Spotify
@@ -101,12 +129,73 @@ async def test_spotify_media_action_blocks_without_app() -> None:
     assert result.status is ToolExecutionStatus.BLOCKED
 
 
+class FakeSpotifyUia:
+    """Stands in for the desktop app's UI Automation surface."""
+
+    def __init__(self, *, handle=101, play_button="Play Test Song"):
+        self.handle = handle
+        self.play_button = play_button
+        self.pressed = []
+
+    def window_handle_for_process(self, executable):
+        return self.handle
+
+    def bring_handle_to_foreground(self, handle):
+        return bool(handle)
+
+    def invoke_first_button_in_handle(self, handle, matcher):
+        if self.play_button and matcher(self.play_button):
+            self.pressed.append(self.play_button)
+            return self.play_button
+        return None
+
+
 @pytest.mark.asyncio
-async def test_spotify_web_api_blocks_without_configuration() -> None:
-    spotify = SpotifyIntegration(powershell=FakePowerShell([]))
-    result = await spotify.play_track("test")
-    assert result.status is ToolExecutionStatus.BLOCKED
-    assert result.error == "not_configured"
+async def test_spotify_play_track_uses_local_ui_without_account() -> None:
+    """No OAuth setup must not refuse: the desktop app gets driven."""
+    shell = FakePowerShell(
+        [(0, "Spotify Premium"), (0, "Test Artist - Test Song")]
+    )
+    uia = FakeSpotifyUia(play_button="Play Test Song")
+    uri = FakeUri()
+    spotify = SpotifyIntegration(
+        powershell=shell,
+        uri_launcher=uri,
+        uia_client_factory=lambda: uia,
+        ui_settle_seconds=0.0,
+        ui_retry_seconds=0.0,
+    )
+
+    result = await spotify.play_track("test song")
+
+    assert result.status is ToolExecutionStatus.SUCCESS
+    assert result.verified is True
+    assert "Test Artist — Test Song" in result.message
+    assert uia.pressed == ["Play Test Song"]
+    assert any(u.startswith("spotify:search:") for u in uri.opened)
+
+
+@pytest.mark.asyncio
+async def test_spotify_local_play_partial_when_no_button() -> None:
+    spotify = SpotifyIntegration(
+        powershell=FakePowerShell([]),
+        uri_launcher=FakeUri(),
+        uia_client_factory=lambda: FakeSpotifyUia(play_button=None),
+        ui_settle_seconds=0.0,
+        ui_retry_seconds=0.0,
+    )
+    result = await spotify.play_track("obscure query")
+    assert result.status is ToolExecutionStatus.PARTIAL
+    assert result.error == "play_button_not_found"
+
+
+def test_spotify_play_button_matcher_ignores_transport() -> None:
+    matcher = SpotifyIntegration._is_play_button
+    assert matcher("Play Hayatı Yaşa") is True
+    assert matcher("Çal Hayatı Yaşa") is True
+    assert matcher("Play") is False  # bare transport button
+    assert matcher("Playlist Duman") is False
+    assert matcher("Enable Shuffle for Her Şeyi Yak") is False
 
 
 def test_spotify_registers_expected_risk_levels() -> None:
@@ -160,6 +249,53 @@ async def test_whatsapp_open_chat_builds_deep_link(tmp_path) -> None:
         "whatsapp://send?phone=905551112233&text="
     )
     assert "Selam" in result.message or result.verified is True
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_open_chat_by_visible_name(tmp_path) -> None:
+    """An empty contact book must not block people already in the list."""
+    uia = FakeUia(rows=["Mehmet 21:30 Selam"])
+    integration = WhatsAppIntegration(
+        contacts_path=tmp_path / "contacts.json",
+        uia_client=uia,
+        uri_launcher=FakeUri(),
+    )
+
+    result = await integration.open_chat("Mehmet", "Naber?")
+
+    assert result.status is ToolExecutionStatus.SUCCESS
+    assert result.data["via"] == "chat_list"
+    assert result.verified is True
+    assert uia.typed == ["Naber?"]
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_unknown_name_fails_actionably(tmp_path) -> None:
+    integration = WhatsAppIntegration(
+        contacts_path=tmp_path / "contacts.json",
+        uia_client=FakeUia(rows=[]),
+        uri_launcher=FakeUri(),
+    )
+    result = await integration.open_chat("Bilinmeyen Kişi")
+    assert result.status is ToolExecutionStatus.FAILED
+    assert result.error == "contact_not_found"
+    assert "whatsapp_add_contact" in result.message
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_send_by_name_end_to_end(tmp_path) -> None:
+    uia = FakeUia(rows=["Mehmet 21:30 Selam"], invoke=True)
+    integration = WhatsAppIntegration(
+        contacts_path=tmp_path / "contacts.json",
+        uia_client=uia,
+        uri_launcher=FakeUri(),
+    )
+
+    result = await integration.send_message("Mehmet", "Selam!")
+
+    assert result.status is ToolExecutionStatus.SUCCESS
+    assert result.verified is True
+    assert uia.typed == ["Selam!"]
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 import urllib.parse
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,7 @@ _PHONE_PATTERN = re.compile(r"^\+?[0-9]{7,15}$")
 
 _WINDOW_TITLE = "WhatsApp"
 _SEND_BUTTON_NAMES = ("Gönder", "Gonder", "Send")
+_COMPOSER_HINTS = ("mesaj yaz", "type a message")
 
 
 class WhatsAppIntegration:
@@ -144,9 +146,36 @@ class WhatsAppIntegration:
     # Window observation and actions
     # ------------------------------------------------------------------
 
+    async def _ensure_window(
+        self, timeout_seconds: float = 18.0
+    ) -> bool:
+        """Launch WhatsApp if it is not running and wait for it.
+
+        The user asked for a message, not for an errand; a closed app
+        is JARVIS's problem to solve, not something to bounce back.
+        """
+        client = self._uia_client()
+        if await asyncio.to_thread(
+            client.window_exists, _WINDOW_TITLE
+        ):
+            return True
+        if not self._uri.open("whatsapp:"):
+            return False
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            await asyncio.sleep(1.0)
+            if await asyncio.to_thread(
+                client.window_exists, _WINDOW_TITLE
+            ):
+                # Cold start: give the chat list a moment to populate.
+                await asyncio.sleep(2.5)
+                return True
+        return False
+
     async def read_recent_chats(self, limit: int = 8) -> ToolResult:
         bounded = max(1, min(int(limit), 20))
         client = self._uia_client()
+        await self._ensure_window()
         try:
             entries = await asyncio.to_thread(
                 client.read_items, _WINDOW_TITLE, limit=bounded
@@ -183,6 +212,7 @@ class WhatsAppIntegration:
         """Read message bubbles from the currently open chat."""
         bounded = max(1, min(int(limit), 40))
         client = self._uia_client()
+        await self._ensure_window()
         try:
             messages = await asyncio.to_thread(
                 client.read_conversation,
@@ -212,20 +242,95 @@ class WhatsAppIntegration:
             verified=bool(messages),
         )
 
+    async def _open_chat_by_name(
+        self, contact: str, message: str | None
+    ) -> ToolResult:
+        """Open an existing chat by its visible name in the chat list.
+
+        Works with an empty contact book: whoever appears in the
+        WhatsApp chat list is reachable by name alone. New numbers
+        still require 'whatsapp_add_contact'.
+        """
+        if not await self._ensure_window():
+            return ToolResult(
+                ToolExecutionStatus.BLOCKED,
+                "whatsapp_open_chat",
+                message="WhatsApp başlatılamadı.",
+                error="window_not_found",
+                verified=True,
+            )
+        client = self._uia_client()
+        try:
+            row = await asyncio.to_thread(
+                client.click_item_by_name, _WINDOW_TITLE, contact
+            )
+        except Exception as exc:
+            return ToolResult(
+                ToolExecutionStatus.FAILED,
+                "whatsapp_open_chat",
+                message="Sohbet listesi taranamadı.",
+                error=f"uia_{type(exc).__name__}",
+            )
+        if row is None:
+            return ToolResult(
+                ToolExecutionStatus.FAILED,
+                "whatsapp_open_chat",
+                message=(
+                    f"'{contact}' rehberde kayıtlı değil ve sohbet "
+                    "listesinde de görünmüyor. Numarasını "
+                    "'whatsapp_add_contact' ile ekleyebilirsin."
+                ),
+                error="contact_not_found",
+            )
+
+        def composer_open() -> bool:
+            return any(
+                client.find_edit_value(_WINDOW_TITLE, hint)
+                for hint in _COMPOSER_HINTS
+            )
+
+        placed = True
+        if message and message.strip():
+            # Typed keystrokes are live: a newline would press Enter
+            # and SEND from a tool that promises it never sends.
+            # Collapse all whitespace (and thus every control
+            # character) into single spaces before anything is typed.
+            draft = " ".join(message.split())
+
+            def place() -> bool:
+                for hint in _COMPOSER_HINTS:
+                    if client.type_into_edit(
+                        _WINDOW_TITLE, hint, draft
+                    ):
+                        return True
+                return False
+
+            placed = await asyncio.to_thread(place)
+        verified = await asyncio.to_thread(composer_open)
+        return ToolResult(
+            ToolExecutionStatus.SUCCESS
+            if placed
+            else ToolExecutionStatus.PARTIAL,
+            "whatsapp_open_chat",
+            message=(
+                f"'{contact}' sohbeti açıldı"
+                + (
+                    "; mesaj yazı kutusuna yerleştirildi."
+                    if message and placed
+                    else "."
+                )
+            ),
+            data={"contact": contact, "via": "chat_list"},
+            error=None if placed else "composer_not_found",
+            verified=verified,
+        )
+
     async def open_chat(
         self, contact: str, message: str | None = None
     ) -> ToolResult:
         phone = self._resolve_phone(contact)
         if phone is None:
-            return ToolResult(
-                ToolExecutionStatus.FAILED,
-                "whatsapp_open_chat",
-                message=(
-                    f"'{contact}' rehberde yok. Önce "
-                    "'whatsapp_add_contact' ile numarasını ekle."
-                ),
-                error="unknown_contact",
-            )
+            return await self._open_chat_by_name(contact, message)
         uri = f"whatsapp://send?phone={phone}"
         if message and message.strip():
             uri += "&text=" + urllib.parse.quote(message.strip())
@@ -236,11 +341,19 @@ class WhatsAppIntegration:
                 message="WhatsApp sohbeti açılamadı.",
                 error="uri_launch_failed",
             )
-        await asyncio.sleep(2.0)
+        # A cold start takes far longer than a foreground switch, so
+        # poll for the window instead of sleeping a fixed beat.
         client = self._uia_client()
-        window_present = await asyncio.to_thread(
-            client.window_exists, _WINDOW_TITLE
-        )
+        window_present = False
+        deadline = time.monotonic() + 18.0
+        while time.monotonic() < deadline:
+            await asyncio.sleep(1.0)
+            if await asyncio.to_thread(
+                client.window_exists, _WINDOW_TITLE
+            ):
+                window_present = True
+                await asyncio.sleep(1.5)
+                break
         return ToolResult(
             ToolExecutionStatus.SUCCESS,
             "whatsapp_open_chat",
@@ -389,9 +502,11 @@ class WhatsAppIntegration:
         executor.register(
             define(
                 "whatsapp_open_chat",
-                "Bir kişinin WhatsApp sohbetini aç; istersen mesajı "
-                "kutuya hazır yaz (göndermez).",
+                "Bir kişinin WhatsApp sohbetini aç (rehberden veya "
+                "sohbet listesindeki adıyla); istersen mesajı kutuya "
+                "hazır yaz (göndermez).",
                 risk=RiskLevel.LOW,
+                timeout=45.0,
             ),
             open_chat,
             source="integration:whatsapp",
@@ -399,11 +514,11 @@ class WhatsAppIntegration:
         executor.register(
             define(
                 "whatsapp_send_message",
-                "Rehberdeki bir kişiye WhatsApp mesajı GÖNDER. "
-                "Onay gerektirir.",
+                "Bir kişiye WhatsApp mesajı GÖNDER (rehberden veya "
+                "sohbet listesindeki adıyla). Onay gerektirir.",
                 risk=RiskLevel.HIGH,
                 confirm=True,
-                timeout=40.0,
+                timeout=60.0,
             ),
             send_message,
             source="integration:whatsapp",

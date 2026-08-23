@@ -378,10 +378,20 @@ def create_application(
             )
         )
 
+        # A purchased ElevenLabs voice wins automatic selection: the
+        # user paid for exactly this sound. Explicit provider choices
+        # are honored unchanged.
+        requested_tts = active_settings.voice_tts_provider
+        if (
+            requested_tts.strip().casefold() == "auto"
+            and active_settings.voice_elevenlabs_api_key
+        ):
+            requested_tts = "elevenlabs"
+
         tts_provider = (
             voice_provider_registry
             .resolve_synthesizer_provider(
-                active_settings.voice_tts_provider,
+                requested_tts,
                 default_provider=(
                     active_settings.default_provider
                 ),
@@ -421,6 +431,9 @@ def create_application(
             language=active_settings.voice_language,
             require_wake_word=active_settings.voice_require_wake_word,
             retain_audio=active_settings.voice_retain_last_audio,
+            cloud_grace_seconds=(
+                active_settings.voice_cloud_grace_seconds
+            ),
         )
 
     vision = None

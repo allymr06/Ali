@@ -314,6 +314,7 @@ def create_application(
         tool_executor=tool_executor,
         task_manager=task_manager,
         provider_gateway=provider_gateway,
+        action_model=active_settings.gemini_action_model,
         fast_action_router=fast_action_router,
         tool_schema_selector=tool_schema_selector,
         conversation_engine=conversation_engine,

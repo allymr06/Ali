@@ -722,12 +722,19 @@ class ToolSchemaSelector:
         )
 
         if not selected:
+            # No deterministic keyword matched. Rather than fail closed
+            # — which left the model blind and unable to act on any
+            # paraphrase the vocabulary did not anticipate — expose the
+            # full available inventory and let the model resolve intent.
+            # Interaction policy has already suppressed tools for social
+            # and identity turns before this point, so anything reaching
+            # here is a plausibly actionable request.
             return ToolSchemaSelection(
-                frozenset(),
-                "no_safe_tool_match",
+                available,
+                "intent_unresolved_full_exposure",
             )
 
-        if len(selected) > 3:
+        if len(selected) > 5:
             raise RuntimeError(
                 "Tool schema selector exceeded "
                 "its maximum exposure bound."

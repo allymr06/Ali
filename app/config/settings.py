@@ -116,6 +116,10 @@ class Settings:
     openai_model: str | None = None
     gemini_model: str | None = DEFAULT_GEMINI_MODEL
     gemini_reasoning_effort: str = "auto"
+    # Requests that expose tools escalate to this model: the lite chat
+    # model happily narrates actions it never took, while the stronger
+    # model reliably emits the tool call instead.
+    gemini_action_model: str = "gemini-3.7-flash"
 
     provider_timeout_seconds: float = 15.0
     provider_max_retries: int = 1
@@ -436,6 +440,10 @@ class Settings:
                 "JARVIS_GEMINI_REASONING_EFFORT",
                 "auto",
             ).strip().lower(),
+            gemini_action_model=(
+                os.getenv("JARVIS_GEMINI_ACTION_MODEL", "").strip()
+                or "gemini-3.7-flash"
+            ),
             provider_timeout_seconds=_get_float(
                 "JARVIS_PROVIDER_TIMEOUT",
                 15.0,

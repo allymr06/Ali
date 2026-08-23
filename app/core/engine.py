@@ -71,6 +71,14 @@ class CoreEngine:
     interfaces.
     """
 
+    ACTION_INTEGRITY_DIRECTIVE = (
+        "Eylem bütünlüğü: Bir eylemi yalnızca ilgili aracı ÇAĞIRARAK "
+        "yapabilirsin; araç çağırmadan 'yapıyorum', 'başlattım', "
+        "'ayarladım' deme. İstek bir eylem gerektiriyorsa uygun aracı "
+        "çağır; uygun araç yoksa bunu açıkça söyle. Araç sonucu "
+        "başarısızsa başarılı gibi anlatma."
+    )
+
     VOICE_RESPONSE_DIRECTIVE = (
         "Bu istek sesli olarak yanıtlanacak. En fazla iki kısa ve "
         "doğal cümleyle cevap ver; liste, başlık ve kod kullanma. "
@@ -87,6 +95,7 @@ class CoreEngine:
         task_manager: TaskManager | None = None,
         execution_limits: ExecutionLimits | None = None,
         provider_gateway: ProviderGateway | None = None,
+        action_model: str | None = None,
         fast_action_router: ApprovedApplicationFastRouter | None = None,
         tool_schema_selector: ToolSchemaSelector | None = None,
         conversation_engine: ConversationEngine | None = None,
@@ -121,6 +130,9 @@ class CoreEngine:
             provider_registry,
             max_retries=0,
         )
+        self._action_model = (
+            action_model.strip() if action_model else None
+        ) or None
         self._fast_action_router = fast_action_router
         self._tool_schema_selector = tool_schema_selector
         self._conversation_engine = conversation_engine or ConversationEngine()
@@ -986,6 +998,30 @@ class CoreEngine:
             tool_schemas
         )
 
+        if tool_schemas:
+            # Assistant-level no-false-completion guard: with tools in
+            # hand, claiming an action without calling one is a lie the
+            # user cannot detect.
+            action_directive = self.ACTION_INTEGRITY_DIRECTIVE
+            provider_system_prompt = (
+                f"{provider_system_prompt}\n\n{action_directive}"
+                if provider_system_prompt
+                else action_directive
+            )
+            # Tool-bearing turns escalate to the action model: correct
+            # tool selection beats the latency of the lite chat model.
+            if (
+                self._action_model
+                and provider.name == "gemini"
+                and request.metadata.get("model") is None
+            ):
+                provider_model_override = self._action_model
+            # Tool selection needs deliberate reasoning even when the
+            # rate-limit fallback drops the turn to the lite model.
+            request.metadata.setdefault(
+                "reasoning_task_type", "complex"
+            )
+
         while usage.model_iterations < active_limits.max_model_iterations:
             if interaction_decision.direct_response is not None:
                 model_response = ModelResponse(
@@ -1154,6 +1190,22 @@ class CoreEngine:
                     budget_reason = "time"
                     break
                 except Exception as exc:
+                    if (
+                        provider_model_override is not None
+                        and type(exc).__name__
+                        == "ProviderRateLimitError"
+                    ):
+                        # The escalated action model is rate limited;
+                        # the default model answers instead of the
+                        # whole request failing.
+                        self._record_diagnostic(
+                            "request.model_fallback",
+                            "Action model rate limited; retrying "
+                            "on the default model.",
+                            trace_id=str(request.request_id),
+                        )
+                        provider_model_override = None
+                        continue
                     self._record_diagnostic(
                         "request.failed",
                         "Core provider request failed.",

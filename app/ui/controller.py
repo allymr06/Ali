@@ -334,11 +334,15 @@ class DesktopController:
         metadata = getattr(result, "metadata", None) or {}
         if (
             isinstance(metadata, dict)
-            and metadata.get("speech_fallback") == "windows-sapi"
+            and metadata.get("speech_error") == "provider"
+            and metadata.get("speech_fallback") == "windows-local"
         ):
+            # Only worth mentioning when the cloud voice actually
+            # failed. The local voice simply winning the speed race is
+            # normal operation, not something to apologize for.
             return (
-                "Bulut sesi şu an kullanılamıyor; yedek Windows "
-                "sesiyle yanıtladım."
+                "Bulut sesi şu an kullanılamıyor; yerel Türkçe sesle "
+                "yanıtladım."
             )
         error_code = getattr(result, "error_code", None)
         if isinstance(error_code, str):

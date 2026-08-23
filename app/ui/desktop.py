@@ -1623,6 +1623,7 @@ class DesktopWindow:
         self._schedule_ui_event_pump()
         self._reminder_future = None
         self._start_reminder_delivery()
+        self._connect_screen_watcher()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
     def _start_reminder_delivery(self) -> None:
@@ -1644,6 +1645,29 @@ class DesktopWindow:
             )
         except RuntimeError:
             self._reminder_future = None
+
+    def _connect_screen_watcher(self) -> None:
+        """Surface live screen observations in the conversation."""
+        watcher = getattr(
+            self.controller.application, "screen_watcher", None
+        )
+        if watcher is None:
+            return
+        watcher._notify = lambda entry: self._queue_ui_event(
+            0, "screen_observation", entry
+        )
+
+    def _apply_screen_observation(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            return
+        text = str(payload.get("text", "")).strip()
+        if not text:
+            return
+        self.controller.state.messages.append(
+            ChatMessage("system", f"👁 Ekran: {text}")
+        )
+        if self.controller.state.screen is UIScreen.CHAT:
+            self.render(UIScreen.CHAT)
 
     def _apply_reminder_due(self, payload: object) -> None:
         if not isinstance(payload, dict):
@@ -3770,6 +3794,8 @@ class DesktopWindow:
                         event.operation_id,
                         event.payload,
                     )
+                elif event.kind == "screen_observation":
+                    self._apply_screen_observation(event.payload)
                 elif event.kind == "reminder_due":
                     self._apply_reminder_due(event.payload)
                 elif event.kind == "voice_state":

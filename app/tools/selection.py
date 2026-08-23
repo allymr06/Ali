@@ -696,6 +696,32 @@ class ToolSchemaSelector:
                     {"create_reminder", "list_reminders"}
                 )
 
+        screen_watch_domain = self._has_stem(
+            tokens, ("ekran", "screen", "monitor")
+        ) and self._has_stem(
+            tokens,
+            (
+                "izle",
+                "takip",
+                "watch",
+                "gozetle",
+                "surekli",
+                "canli",
+            ),
+        )
+
+        if screen_watch_domain and not selected:
+            if self._has_stem(
+                tokens, ("durdur", "birak", "kes", "stop", "kapat")
+            ):
+                selected.add("watch_screen_stop")
+            elif self._has_stem(tokens, ("durum", "status", "ne oldu")):
+                selected.add("watch_screen_status")
+            else:
+                selected.update(
+                    {"watch_screen_start", "watch_screen_status"}
+                )
+
         browser_domain = self._has_stem(
             tokens,
             (

@@ -675,59 +675,111 @@ class VoiceEarcons:
         self._play(self._close_wav)
 
 
-async def speak_text_with_windows_sapi(
+# WinRT synthesis to a WAV file using the Turkish neural voice. WinRT
+# exposes "Microsoft Tolga" (tr-TR, male) which the classic SAPI voice
+# list does not, so Turkish text stays intelligible offline. Awaiting
+# WinRT IAsyncOperation from Windows PowerShell needs the AsTask bridge.
+_LOCAL_TTS_SCRIPT = r"""
+param([string]$In, [string]$Out, [string]$VoiceName)
+$ErrorActionPreference = 'Stop'
+$text = [System.IO.File]::ReadAllText($In, [System.Text.Encoding]::UTF8)
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() |
+    Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
+    $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
+function Await($op, $t) { $task = $asTask.MakeGenericMethod($t).Invoke($null, @($op)); $task.Wait(-1) | Out-Null; $task.Result }
+[Windows.Media.SpeechSynthesis.SpeechSynthesizer, Windows.Media, ContentType=WindowsRuntime] | Out-Null
+[Windows.Storage.Streams.DataReader, Windows.Storage.Streams, ContentType=WindowsRuntime] | Out-Null
+$synth = New-Object Windows.Media.SpeechSynthesis.SpeechSynthesizer
+$voice = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices |
+    Where-Object { $_.DisplayName -eq $VoiceName } | Select-Object -First 1
+if (-not $voice) {
+    $voice = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices |
+        Where-Object { $_.Language -like 'tr*' } | Select-Object -First 1
+}
+if ($voice) { $synth.Voice = $voice }
+$stream = Await ($synth.SynthesizeTextToStreamAsync($text)) ([Windows.Media.SpeechSynthesis.SpeechSynthesisStream])
+$size = $stream.Size
+$reader = New-Object Windows.Storage.Streams.DataReader($stream)
+Await ($reader.LoadAsync($size)) ([uint32]) | Out-Null
+$bytes = New-Object byte[] $size
+$reader.ReadBytes($bytes)
+[System.IO.File]::WriteAllBytes($Out, $bytes)
+"""
+
+
+async def synthesize_local_turkish(
     text: str,
     *,
-    timeout_seconds: float = 45.0,
-) -> bool:
-    """Best-effort local speech through the built-in Windows SAPI voice.
+    voice_name: str = "Microsoft Tolga",
+    timeout_seconds: float = 30.0,
+) -> bytes | None:
+    """Synthesize Turkish speech offline to WAV bytes via WinRT.
 
-    Used only when cloud synthesis is unavailable (for example an
-    exhausted provider quota) so JARVIS always answers audibly. A
-    Turkish voice is selected when one is installed. Returns True only
-    when the voice actually spoke.
+    Returns WAV bytes on success so the caller can play them through the
+    normal (interruptible, verified) audio path, or None when no local
+    voice is available.
     """
     if sys.platform != "win32":
-        return False
+        return None
     normalized = text.strip()
     if not normalized:
-        return False
+        return None
 
-    import base64 as _base64
     import subprocess
+    import tempfile
 
-    encoded = _base64.b64encode(
-        normalized.encode("utf-8")
-    ).decode("ascii")
-    script = (
-        "$t=[Text.Encoding]::UTF8.GetString("
-        f"[Convert]::FromBase64String('{encoded}'));"
-        "$v=New-Object -ComObject SAPI.SpVoice;"
-        "$tr=@($v.GetVoices() | Where-Object {"
-        " $_.GetAttribute('Language') -eq '41F' }) |"
-        " Select-Object -First 1;"
-        "if($tr){$v.Voice=$tr};"
-        "[void]$v.Speak($t)"
-    )
-
-    def run() -> bool:
-        completed = subprocess.run(
-            [
-                "powershell",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                script,
-            ],
-            capture_output=True,
-            timeout=timeout_seconds,
-            creationflags=getattr(
-                subprocess, "CREATE_NO_WINDOW", 0
-            ),
-        )
-        return completed.returncode == 0
+    def run() -> bytes | None:
+        temp_dir = tempfile.mkdtemp(prefix="jarvis_tts_")
+        script_path = os.path.join(temp_dir, "synth.ps1")
+        in_path = os.path.join(temp_dir, "in.txt")
+        out_path = os.path.join(temp_dir, "out.wav")
+        try:
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write(_LOCAL_TTS_SCRIPT)
+            with open(in_path, "w", encoding="utf-8") as handle:
+                handle.write(normalized)
+            completed = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    script_path,
+                    "-In",
+                    in_path,
+                    "-Out",
+                    out_path,
+                    "-VoiceName",
+                    voice_name,
+                ],
+                capture_output=True,
+                timeout=timeout_seconds,
+                creationflags=getattr(
+                    subprocess, "CREATE_NO_WINDOW", 0
+                ),
+            )
+            if completed.returncode != 0 or not os.path.exists(
+                out_path
+            ):
+                return None
+            with open(out_path, "rb") as handle:
+                data = handle.read()
+            return data or None
+        finally:
+            for path in (script_path, in_path, out_path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+            try:
+                os.rmdir(temp_dir)
+            except OSError:
+                pass
 
     try:
         return await asyncio.to_thread(run)
     except Exception:
-        return False
+        return None

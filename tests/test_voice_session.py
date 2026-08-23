@@ -427,13 +427,13 @@ async def test_synthesis_failure_keeps_answer_and_uses_local_fallback(
 ) -> None:
     spoken = []
 
-    async def fake_sapi(text):
+    async def fake_local(text, **kwargs):
         spoken.append(text)
-        return True
+        return b"RIFFlocal-wav"
 
     monkeypatch.setattr(
-        "app.voice.audio.speak_text_with_windows_sapi",
-        fake_sapi,
+        "app.voice.audio.synthesize_local_turkish",
+        fake_local,
     )
 
     session, parts = make_session(synthesizer=FailingSynthesizer())
@@ -441,21 +441,26 @@ async def test_synthesis_failure_keeps_answer_and_uses_local_fallback(
 
     assert result.state is VoiceSessionState.COMPLETED
     assert result.response_text == "All systems operational."
-    assert result.metadata["speech_fallback"] == "windows-sapi"
-    assert result.metadata["speech_error"] == "provider"
+    # Cloud synthesis failed, so the local Turkish voice carried the
+    # reply and playback still went through the normal audio path.
+    assert result.metadata["speech_fallback"] == "windows-local"
     assert spoken == ["All systems operational."]
+    assert parts["audio_output"].played
+    assert (
+        parts["audio_output"].played[0].voice == "Microsoft Tolga"
+    )
 
 
 @pytest.mark.asyncio
 async def test_synthesis_failure_without_fallback_preserves_text(
     monkeypatch,
 ) -> None:
-    async def no_sapi(text):
-        return False
+    async def no_local(text, **kwargs):
+        return None
 
     monkeypatch.setattr(
-        "app.voice.audio.speak_text_with_windows_sapi",
-        no_sapi,
+        "app.voice.audio.synthesize_local_turkish",
+        no_local,
     )
 
     session, parts = make_session(synthesizer=FailingSynthesizer())
@@ -465,3 +470,56 @@ async def test_synthesis_failure_without_fallback_preserves_text(
     assert result.error_code == "synthesis"
     # The core answer survives the speech failure.
     assert result.response_text == "All systems operational."
+
+
+class SlowSynthesizer:
+    """Cloud synthesis that always loses the race."""
+
+    def __init__(self, delay=0.4):
+        self.delay = delay
+        self.texts = []
+
+    async def synthesize(self, text):
+        self.texts.append(text)
+        await asyncio.sleep(self.delay)
+        return SynthesizedSpeech(
+            b"RIFFcloud", AudioEncoding.WAV, "fake-tts", "tts-1", "voice-1"
+        )
+
+
+@pytest.mark.asyncio
+async def test_local_voice_wins_race_when_cloud_is_slow(
+    monkeypatch,
+) -> None:
+    async def fast_local(text, **kwargs):
+        return b"RIFFlocal-wav"
+
+    monkeypatch.setattr(
+        "app.voice.audio.synthesize_local_turkish", fast_local
+    )
+
+    session, parts = make_session(synthesizer=SlowSynthesizer())
+    result = await session.run_once()
+
+    assert result.state is VoiceSessionState.COMPLETED
+    assert result.metadata["speech_race_winner"] == "local"
+    assert parts["audio_output"].played[0].data == b"RIFFlocal-wav"
+
+
+@pytest.mark.asyncio
+async def test_cloud_voice_wins_race_when_it_is_ready_first(
+    monkeypatch,
+) -> None:
+    async def slow_local(text, **kwargs):
+        await asyncio.sleep(0.4)
+        return b"RIFFlocal-wav"
+
+    monkeypatch.setattr(
+        "app.voice.audio.synthesize_local_turkish", slow_local
+    )
+
+    session, parts = make_session()
+    result = await session.run_once()
+
+    assert result.metadata["speech_race_winner"] == "cloud"
+    assert parts["audio_output"].played[0].provider == "fake-tts"

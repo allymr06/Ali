@@ -90,10 +90,6 @@ async def _await_task(task: "asyncio.Task[T]") -> T:
     return await task
 
 
-class _SpeechRecovered(Exception):
-    """Control-flow marker: retried cloud speech played successfully."""
-
-
 class VoiceSession:
     """One bounded, interruptible microphone-to-Core-to-speaker turn."""
 
@@ -142,6 +138,9 @@ class VoiceSession:
         self._active = False
         self._finished = False
         self._state = VoiceSessionState.IDLE
+        # Whichever synthesis source wins the first chunk speaks the
+        # whole reply, so the voice never changes mid-answer.
+        self._speech_source: str | None = None
         self.last_capture: AudioCapture | None = None
         self._started_monotonic: float | None = None
         self._record(VoiceSessionState.IDLE)
@@ -269,112 +268,64 @@ class VoiceSession:
             # If cloud synthesis fails (for example an exhausted quota),
             # the reply is never lost: the local Windows voice speaks it
             # and the text still reaches the conversation.
-            try:
-                chunks = split_speech_chunks(response.text)
-                self._record(VoiceSessionState.SYNTHESIZING)
-                stage_started = time.monotonic()
-                speech = await self._await_interruptible(
-                    self._synthesizer.synthesize(chunks[0])
-                )
-                metadata["synthesis_latency_seconds"] = (
-                    time.monotonic() - stage_started
-                )
-                metadata["speech_chunks"] = len(chunks)
-                metadata.update(
-                    synthesis_provider=speech.provider,
-                    synthesis_model=speech.model,
-                    synthesis_voice=speech.voice,
-                )
-
-                self._record(VoiceSessionState.SPEAKING)
-                stage_started = time.monotonic()
-                pending: asyncio.Task | None = None
-                try:
-                    for index in range(len(chunks)):
-                        if index + 1 < len(chunks):
-                            pending = asyncio.create_task(
-                                self._synthesizer.synthesize(
-                                    chunks[index + 1]
-                                )
-                            )
-                        await self._await_interruptible(
-                            self._audio_output.play(
-                                speech,
-                                cancel_event=self._interrupt_event,
-                            )
-                        )
-                        if pending is not None:
-                            speech = await self._await_interruptible(
-                                _await_task(pending)
-                            )
-                            pending = None
-                finally:
-                    if pending is not None:
-                        pending.cancel()
-                        with contextlib.suppress(
-                            asyncio.CancelledError, Exception
-                        ):
-                            await pending
-                metadata["playback_latency_seconds"] = (
-                    time.monotonic() - stage_started
-                )
-            except (
-                VoiceProviderError,
-                VoiceConfigurationError,
-            ) as speech_exc:
-                if getattr(speech_exc, "transient", False):
-                    # A per-minute rate limit usually clears within a
-                    # breath; one short retry keeps the cloud voice.
-                    await asyncio.sleep(1.5)
-                    try:
-                        speech = await self._await_interruptible(
-                            self._synthesizer.synthesize(
-                                split_speech_chunks(response.text)[0]
-                            )
-                        )
-                        await self._await_interruptible(
-                            self._audio_output.play(
-                                speech,
-                                cancel_event=self._interrupt_event,
-                            )
-                        )
-                        remaining_chunks = split_speech_chunks(
-                            response.text
-                        )[1:]
-                        for chunk in remaining_chunks:
-                            speech = await self._await_interruptible(
-                                self._synthesizer.synthesize(chunk)
-                            )
-                            await self._await_interruptible(
-                                self._audio_output.play(
-                                    speech,
-                                    cancel_event=self._interrupt_event,
-                                )
-                            )
-                        metadata["speech_retry"] = "recovered"
-                        raise _SpeechRecovered()
-                    except _SpeechRecovered:
-                        raise
-                    except VoiceInterrupted:
-                        raise
-                    except Exception:
-                        pass
+            chunks = split_speech_chunks(response.text)
+            metadata["speech_chunks"] = len(chunks)
+            self._record(VoiceSessionState.SYNTHESIZING)
+            stage_started = time.monotonic()
+            speech = await self._await_interruptible(
+                self._synthesize_chunk(chunks[0], metadata, first=True)
+            )
+            metadata["synthesis_latency_seconds"] = (
+                time.monotonic() - stage_started
+            )
+            if speech is None:
                 metadata["speech_error"] = "provider"
-                self._record(VoiceSessionState.SPEAKING, "fallback")
-                spoke = await self._speak_with_local_fallback(
-                    response.text
+                return self._failed(
+                    "synthesis",
+                    transcript,
+                    wake_detected,
+                    metadata,
+                    response_text=response.text,
                 )
-                if not spoke:
-                    return self._failed(
-                        "synthesis",
-                        transcript,
-                        wake_detected,
-                        metadata,
-                        response_text=response.text,
-                    )
-                metadata["speech_fallback"] = "windows-sapi"
-            except _SpeechRecovered:
-                pass
+            metadata.update(
+                synthesis_provider=speech.provider,
+                synthesis_model=speech.model,
+                synthesis_voice=speech.voice,
+            )
+
+            self._record(VoiceSessionState.SPEAKING)
+            stage_started = time.monotonic()
+            pending: asyncio.Task | None = None
+            try:
+                for index in range(len(chunks)):
+                    if index + 1 < len(chunks):
+                        pending = asyncio.create_task(
+                            self._synthesize_chunk(
+                                chunks[index + 1], metadata
+                            )
+                        )
+                    if speech is not None:
+                        await self._await_interruptible(
+                            self._audio_output.play(
+                                speech,
+                                cancel_event=self._interrupt_event,
+                            )
+                        )
+                    if pending is not None:
+                        speech = await self._await_interruptible(
+                            _await_task(pending)
+                        )
+                        pending = None
+            finally:
+                if pending is not None:
+                    pending.cancel()
+                    with contextlib.suppress(
+                        asyncio.CancelledError, Exception
+                    ):
+                        await pending
+            metadata["playback_latency_seconds"] = (
+                time.monotonic() - stage_started
+            )
             self._record(VoiceSessionState.COMPLETED)
             return self._result(
                 transcript=transcript,
@@ -478,20 +429,107 @@ class VoiceSession:
             metadata=metadata,
         )
 
-    async def _speak_with_local_fallback(self, text: str) -> bool:
-        """Speak through the built-in Windows voice, best effort."""
-        try:
-            from app.voice.audio import (
-                speak_text_with_windows_sapi,
-            )
+    @staticmethod
+    def _wrap_local_speech(data: bytes):
+        from app.voice.models import AudioEncoding, SynthesizedSpeech
 
-            return await self._await_interruptible(
-                speak_text_with_windows_sapi(text)
+        return SynthesizedSpeech(
+            data=data,
+            encoding=AudioEncoding.WAV,
+            provider="windows-local",
+            model="winrt-speech",
+            voice="Microsoft Tolga",
+        )
+
+    async def _synthesize_chunk(
+        self,
+        text: str,
+        metadata: dict[str, object],
+        *,
+        first: bool = False,
+    ):
+        """Return speech for one chunk from the fastest usable source.
+
+        The opening chunk races cloud synthesis against the local
+        Turkish voice, because whichever answers first decides how soon
+        the user hears anything. Whichever source wins then speaks the
+        whole reply: switching voices between sentences would be jarring.
+        Returns None only when no source can produce audio.
+        """
+        from app.voice.audio import synthesize_local_turkish
+
+        async def local_speech():
+            data = await synthesize_local_turkish(text)
+            return self._wrap_local_speech(data) if data else None
+
+        async def cloud_speech():
+            try:
+                return await self._synthesizer.synthesize(text)
+            except (
+                VoiceProviderError,
+                VoiceConfigurationError,
+            ):
+                return None
+
+        if not first:
+            if self._speech_source == "local":
+                return await local_speech()
+            speech = await cloud_speech()
+            if speech is not None:
+                return speech
+            self._speech_source = "local"
+            metadata["speech_fallback"] = "windows-local"
+            return await local_speech()
+
+        cloud = asyncio.create_task(
+            self._synthesizer.synthesize(text)
+        )
+        local = asyncio.create_task(synthesize_local_turkish(text))
+        try:
+            done, _pending = await asyncio.wait(
+                {cloud, local},
+                return_when=asyncio.FIRST_COMPLETED,
             )
-        except VoiceInterrupted:
-            raise
-        except Exception:
-            return False
+            if cloud in done and cloud.exception() is None:
+                self._speech_source = "cloud"
+                metadata["speech_race_winner"] = "cloud"
+                return cloud.result()
+
+            if cloud in done:
+                # Cloud failed outright; the local voice carries the
+                # whole reply and the user is told why.
+                self._speech_source = "local"
+                metadata["speech_race_winner"] = "local_after_error"
+                metadata["speech_fallback"] = "windows-local"
+                metadata["speech_error"] = "provider"
+                data = await local
+                return self._wrap_local_speech(data) if data else None
+
+            data = local.result()
+            if data:
+                self._speech_source = "local"
+                metadata["speech_race_winner"] = "local"
+                return self._wrap_local_speech(data)
+
+            # No local voice on this machine: wait for the cloud.
+            self._speech_source = "cloud"
+            metadata["speech_race_winner"] = "cloud_only"
+            try:
+                return await cloud
+            except (
+                VoiceProviderError,
+                VoiceConfigurationError,
+            ):
+                metadata["speech_error"] = "provider"
+                return None
+        finally:
+            for task in (cloud, local):
+                if not task.done():
+                    task.cancel()
+                    with contextlib.suppress(
+                        asyncio.CancelledError, Exception
+                    ):
+                        await task
 
     def _record(self, state: VoiceSessionState, detail: str | None = None) -> None:
         self._state = state

@@ -10,7 +10,7 @@ Last verified: 22 August 2026
 - Next action: code signing and live-service qualification (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1132 tests passing, 2 skipped (`scripts/verify.py`)
+- Automated verification: 1143 tests passing, 1 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
 
 ## Provider consolidation (22 August 2026)
@@ -93,6 +93,16 @@ gate or the verification contract.
   change detection (0.11ms per frame) that calls the vision model only
   on real change; frames are discarded immediately after signature.
 
+Hardening from live use on 23 August 2026: Spotify plays a named
+track with no account setup by driving the desktop app's own search
+UI (verified against the window title); WhatsApp launches itself when
+closed and opens chats by their visible list name with an empty
+contact book; every chat render lands at the newest message instead of
+the top; PowerShell output is forced to UTF-8 so Turkish titles
+survive; and an optional purchased ElevenLabs voice
+(JARVIS_ELEVENLABS_API_KEY) wins automatic TTS selection when
+present.
+
 Intent handling was hardened alongside: unresolved phrasings expose the
 full tool inventory instead of failing closed, tool-bearing turns
 escalate to the stronger action model with a graceful rate-limit
@@ -102,6 +112,40 @@ without calling its tool.
 Local Turkish speech now goes through WinRT ("Microsoft Tolga"), which
 SAPI does not expose, and races cloud synthesis so the reply starts with
 whichever source answers first.
+
+## Voice quality and integration robustness (23 August 2026, session 2)
+
+- The first spoken sentence now gives the high-quality cloud voice a
+  bounded head start (`voice_cloud_grace_seconds`, default 3.0s):
+  within the window the cloud voice wins even when the instant local
+  voice finished first, so the robotic Windows voice is heard only
+  during real outages or past-deadline slowness. 0 restores the pure
+  latency race.
+- Every synthesis request carries a JARVIS persona style directive
+  (`voice_tts_instructions` now defaults on), and the local fallback
+  is bilingual: replies without Turkish letters or everyday Turkish
+  words are spoken by the English Windows voice instead of Tolga
+  spelling English out phonetically.
+- End-of-turn silence is 1.5s (was 0.9s), per user tuning.
+- Spotify `play_track` works with zero account setup: when no Web API
+  token exists (or no active device is registered) it drives the
+  desktop app itself — search deep link, then the top result's play
+  button through UI Automation — and verifies via the window title.
+  Verified live: both an artist query and a specific-song query.
+- WhatsApp launches itself when closed, and chats are reachable by
+  their visible chat-list name with an empty contact book (real-click
+  row activation, composer verification). Typed drafts are
+  whitespace-collapsed so a newline can never act as Enter from the
+  non-sending open-chat tool, and typing re-fronts the window and
+  strips control characters. comtypes NULL window pointers no longer
+  raise.
+- PowerShell output is forced to UTF-8 so Turkish titles survive.
+- Chat auto-scroll goes through the scroller's own offset bookkeeping;
+  replies no longer bounce the conversation to the top.
+- An optional ElevenLabs TTS adapter exists behind
+  `JARVIS_ELEVENLABS_API_KEY` (the user currently declines the paid
+  route; Gemini remains the active cloud voice). Host credentials are
+  scrubbed in the test suite so the suite stays hermetic.
 
 ## Implemented architecture
 

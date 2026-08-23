@@ -103,6 +103,16 @@ def _get_vision_model_override() -> str | None:
     return value
 
 
+# English steers the multilingual TTS model best, whatever language
+# the reply itself is in. Module-level because the slots=True dataclass
+# exposes no readable class-level default.
+_DEFAULT_TTS_INSTRUCTIONS = (
+    "Speak as JARVIS, a composed and refined AI assistant: calm, "
+    "confident, articulate, with subtle warmth. Natural pace, "
+    "crisp diction, never theatrical."
+)
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     """Runtime configuration loaded from environment variables."""
@@ -152,7 +162,16 @@ class Settings:
     voice_language: str | None = None
     voice_stt_provider: str = "auto"
     voice_tts_provider: str = "auto"
-    voice_tts_instructions: str | None = None
+    # Style directive prepended to every synthesis request. English
+    # steers the multilingual TTS model best, whatever language the
+    # reply itself is in.
+    voice_tts_instructions: str | None = _DEFAULT_TTS_INSTRUCTIONS
+    # How long the first sentence waits for the high-quality cloud
+    # voice before the robotic local voice may take over. Within this
+    # window the cloud voice wins even if the local one finished
+    # first; past it, whichever source is ready speaks. 0 restores the
+    # pure latency race.
+    voice_cloud_grace_seconds: float = 3.0
     voice_max_tts_characters: int = 4_000
     voice_max_audio_bytes: int = 20_000_000
     voice_retain_last_audio: bool = False
@@ -160,10 +179,10 @@ class Settings:
     voice_vad_enabled: bool = True
     voice_silence_threshold_rms: int = 350
     voice_min_speech_seconds: float = 0.15
-    # Long enough that natural mid-sentence pauses do not end the
-    # capture; end-of-turn detection cost is worth not cutting people
-    # off.
-    voice_trailing_silence_seconds: float = 0.9
+    # How long the user must stay silent before the turn is considered
+    # finished. Tuned by the user on 23 August 2026: 0.9s cut them off
+    # mid-thought, 1.5s feels natural.
+    voice_trailing_silence_seconds: float = 1.5
     voice_start_timeout_seconds: float = 8.0
 
     # The lite model transcribes in ~1.3s where the thinking model
@@ -171,6 +190,15 @@ class Settings:
     voice_gemini_stt_model: str = "gemini-3.5-flash-lite"
     voice_gemini_tts_model: str = "gemini-3.1-flash-tts-preview"
     voice_gemini_tts_voice: str = "Charon"
+
+    # Optional purchased voice (ElevenLabs). When an API key is present
+    # and voice_tts_provider is "auto", ElevenLabs becomes the cloud
+    # voice; the local Windows voice stays as the latency/outage
+    # fallback. The voice id can point at any library or cloned voice
+    # in the user's ElevenLabs account.
+    voice_elevenlabs_api_key: str | None = None
+    voice_elevenlabs_voice_id: str = "onwK4e9ZLuTAKqWW03F9"  # Daniel
+    voice_elevenlabs_model: str = "eleven_flash_v2_5"
 
     vision_enabled: bool = False
     # Optional dedicated vision model. When unset, VISION requests route to
@@ -332,6 +360,10 @@ class Settings:
             and not self.voice_tts_instructions.strip()
         ):
             raise ValueError("voice_tts_instructions cannot be empty when set.")
+        if self.voice_cloud_grace_seconds < 0:
+            raise ValueError(
+                "voice_cloud_grace_seconds cannot be negative."
+            )
         if self.voice_max_tts_characters < 1:
             raise ValueError("voice_max_tts_characters must be positive.")
         if self.voice_max_audio_bytes < 1:
@@ -532,7 +564,14 @@ class Settings:
                 "JARVIS_VOICE_TTS_PROVIDER",
                 "auto",
             ),
-            voice_tts_instructions=os.getenv("JARVIS_VOICE_TTS_INSTRUCTIONS"),
+            voice_tts_instructions=(
+                (os.getenv("JARVIS_VOICE_TTS_INSTRUCTIONS") or "").strip()
+                or _DEFAULT_TTS_INSTRUCTIONS
+            ),
+            voice_cloud_grace_seconds=_get_float(
+                "JARVIS_VOICE_CLOUD_GRACE_SECONDS",
+                3.0,
+            ),
             voice_max_tts_characters=_get_positive_int(
                 "JARVIS_VOICE_MAX_TTS_CHARACTERS",
                 4_000,
@@ -558,7 +597,7 @@ class Settings:
             ),
             voice_trailing_silence_seconds=_get_float(
                 "JARVIS_VOICE_TRAILING_SILENCE_SECONDS",
-                0.9,
+                1.5,
             ),
             voice_start_timeout_seconds=_get_float(
                 "JARVIS_VOICE_START_TIMEOUT_SECONDS",
@@ -575,6 +614,17 @@ class Settings:
             voice_gemini_tts_voice=os.getenv(
                 "JARVIS_VOICE_GEMINI_TTS_VOICE",
                 "Charon",
+            ),
+            voice_elevenlabs_api_key=(
+                os.getenv("JARVIS_ELEVENLABS_API_KEY") or None
+            ),
+            voice_elevenlabs_voice_id=os.getenv(
+                "JARVIS_ELEVENLABS_VOICE_ID",
+                "onwK4e9ZLuTAKqWW03F9",
+            ),
+            voice_elevenlabs_model=os.getenv(
+                "JARVIS_ELEVENLABS_MODEL",
+                "eleven_flash_v2_5",
             ),
             vision_enabled=_get_bool("JARVIS_VISION_ENABLED"),
             vision_model=_get_vision_model_override(),

@@ -446,8 +446,10 @@ async def test_synthesis_failure_keeps_answer_and_uses_local_fallback(
     assert result.metadata["speech_fallback"] == "windows-local"
     assert spoken == ["All systems operational."]
     assert parts["audio_output"].played
+    # The local voice follows the reply's language: this reply is
+    # English, so the English Windows voice speaks it.
     assert (
-        parts["audio_output"].played[0].voice == "Microsoft Tolga"
+        parts["audio_output"].played[0].voice == "Microsoft David"
     )
 
 
@@ -470,6 +472,23 @@ async def test_synthesis_failure_without_fallback_preserves_text(
     assert result.error_code == "synthesis"
     # The core answer survives the speech failure.
     assert result.response_text == "All systems operational."
+
+
+def test_pick_local_voice_follows_reply_language() -> None:
+    from app.voice.audio import pick_local_voice
+
+    assert pick_local_voice("Görev tamamlandı efendim.") == (
+        "Microsoft Tolga",
+        "tr",
+    )
+    # No special letters, but everyday Turkish words decide it.
+    assert pick_local_voice("tamam ben sana haber veririm")[0] == (
+        "Microsoft Tolga"
+    )
+    assert pick_local_voice("All systems operational, sir.") == (
+        "Microsoft David",
+        "en",
+    )
 
 
 class SlowSynthesizer:
@@ -498,12 +517,42 @@ async def test_local_voice_wins_race_when_cloud_is_slow(
         "app.voice.audio.synthesize_local_turkish", fast_local
     )
 
-    session, parts = make_session(synthesizer=SlowSynthesizer())
+    session, parts = make_session(
+        synthesizer=SlowSynthesizer(),
+        # Cloud is slower than its grace window, so the fast local
+        # voice takes over.
+        cloud_grace_seconds=0.05,
+    )
     result = await session.run_once()
 
     assert result.state is VoiceSessionState.COMPLETED
     assert result.metadata["speech_race_winner"] == "local"
     assert parts["audio_output"].played[0].data == b"RIFFlocal-wav"
+
+
+@pytest.mark.asyncio
+async def test_cloud_voice_preferred_within_grace_window(
+    monkeypatch,
+) -> None:
+    """A slower but high-quality cloud voice beats the instant local
+    voice as long as it answers inside the grace window."""
+
+    async def instant_local(text, **kwargs):
+        return b"RIFFlocal-wav"
+
+    monkeypatch.setattr(
+        "app.voice.audio.synthesize_local_turkish", instant_local
+    )
+
+    session, parts = make_session(
+        synthesizer=SlowSynthesizer(delay=0.1),
+        cloud_grace_seconds=2.0,
+    )
+    result = await session.run_once()
+
+    assert result.state is VoiceSessionState.COMPLETED
+    assert result.metadata["speech_race_winner"] == "cloud"
+    assert parts["audio_output"].played[0].provider == "fake-tts"
 
 
 @pytest.mark.asyncio

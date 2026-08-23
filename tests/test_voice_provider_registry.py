@@ -203,7 +203,7 @@ def test_default_registry_exposes_built_in_providers_for_both_roles(
 
     assert set(
         registry.list_synthesizer_providers()
-    ) == {"gemini"}
+    ) == {"gemini", "elevenlabs"}
 
 
 def test_settings_load_independent_voice_provider_environment(

@@ -64,6 +64,7 @@ class VoiceService:
         language: str | None = None,
         require_wake_word: bool = False,
         retain_audio: bool = False,
+        cloud_grace_seconds: float = 3.0,
     ) -> VoiceService:
         def factory() -> VoiceSession:
             return VoiceSession(
@@ -78,6 +79,7 @@ class VoiceService:
                 language=language,
                 require_wake_word=require_wake_word,
                 retain_audio=retain_audio,
+                cloud_grace_seconds=cloud_grace_seconds,
             )
 
         return cls(

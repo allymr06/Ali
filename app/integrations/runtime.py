@@ -34,7 +34,11 @@ class PowerShellRunner:
                     "-NoProfile",
                     "-NonInteractive",
                     "-Command",
-                    script,
+                    # PowerShell downgrades output to the OEM codepage,
+                    # which turns Turkish characters into '?'. Force
+                    # UTF-8 so the decode below is lossless.
+                    "[Console]::OutputEncoding="
+                    "[Text.Encoding]::UTF8; " + script,
                 ],
                 capture_output=True,
                 timeout=limit,

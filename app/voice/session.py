@@ -108,6 +108,7 @@ class VoiceSession:
         require_wake_word: bool = False,
         retain_audio: bool = False,
         event_capacity: int = 100,
+        cloud_grace_seconds: float = 3.0,
     ) -> None:
         if not 0 < max_recording_seconds <= 300:
             raise ValueError("Recording duration must be between 0 and 300 seconds.")
@@ -127,6 +128,7 @@ class VoiceSession:
         self._language = language
         self._require_wake_word = require_wake_word
         self._retain_audio = retain_audio
+        self._cloud_grace_seconds = max(0.0, cloud_grace_seconds)
         self._events: deque[VoiceSessionEvent] = deque(maxlen=event_capacity)
         # Optional observer for live state changes (e.g. the desktop
         # voice HUD). Set after construction; called on the session's
@@ -430,15 +432,17 @@ class VoiceSession:
         )
 
     @staticmethod
-    def _wrap_local_speech(data: bytes):
+    def _wrap_local_speech(data: bytes, text: str = ""):
+        from app.voice.audio import pick_local_voice
         from app.voice.models import AudioEncoding, SynthesizedSpeech
 
+        voice, _language = pick_local_voice(text or "merhaba")
         return SynthesizedSpeech(
             data=data,
             encoding=AudioEncoding.WAV,
             provider="windows-local",
             model="winrt-speech",
-            voice="Microsoft Tolga",
+            voice=voice,
         )
 
     async def _synthesize_chunk(
@@ -460,7 +464,7 @@ class VoiceSession:
 
         async def local_speech():
             data = await synthesize_local_turkish(text)
-            return self._wrap_local_speech(data) if data else None
+            return self._wrap_local_speech(data, text) if data else None
 
         async def cloud_speech():
             try:
@@ -486,6 +490,34 @@ class VoiceSession:
         )
         local = asyncio.create_task(synthesize_local_turkish(text))
         try:
+            # The high-quality cloud voice gets a bounded head start:
+            # within the grace window it wins even when the robotic
+            # local voice finished first. The local task keeps warming
+            # in the background as the outage/quota parachute.
+            if self._cloud_grace_seconds > 0:
+                await asyncio.wait(
+                    {cloud}, timeout=self._cloud_grace_seconds
+                )
+            if cloud.done() and cloud.exception() is None:
+                self._speech_source = "cloud"
+                metadata["speech_race_winner"] = "cloud"
+                return cloud.result()
+
+            if cloud.done():
+                # Cloud failed outright; the local voice carries the
+                # whole reply and the user is told why.
+                self._speech_source = "local"
+                metadata["speech_race_winner"] = "local_after_error"
+                metadata["speech_fallback"] = "windows-local"
+                metadata["speech_error"] = "provider"
+                data = await local
+                return (
+                    self._wrap_local_speech(data, text)
+                    if data
+                    else None
+                )
+
+            # Cloud is slow past its grace: fastest source wins now.
             done, _pending = await asyncio.wait(
                 {cloud, local},
                 return_when=asyncio.FIRST_COMPLETED,
@@ -496,20 +528,22 @@ class VoiceSession:
                 return cloud.result()
 
             if cloud in done:
-                # Cloud failed outright; the local voice carries the
-                # whole reply and the user is told why.
                 self._speech_source = "local"
                 metadata["speech_race_winner"] = "local_after_error"
                 metadata["speech_fallback"] = "windows-local"
                 metadata["speech_error"] = "provider"
                 data = await local
-                return self._wrap_local_speech(data) if data else None
+                return (
+                    self._wrap_local_speech(data, text)
+                    if data
+                    else None
+                )
 
             data = local.result()
             if data:
                 self._speech_source = "local"
                 metadata["speech_race_winner"] = "local"
-                return self._wrap_local_speech(data)
+                return self._wrap_local_speech(data, text)
 
             # No local voice on this machine: wait for the cloud.
             self._speech_source = "cloud"

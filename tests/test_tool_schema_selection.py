@@ -113,19 +113,28 @@ def test_metrics_exposes_only_metrics():
 
 
 def test_process_termination_does_not_invent_tool():
+    # No process-termination tool exists in JARVIS, so even under
+    # full-exposure fallback the selector can never surface one — it
+    # only ever exposes tools that are actually available.
     result = select(
         "Bu processi kapat."
     )
 
-    assert result.names == frozenset()
+    assert "kill_process" not in result.names
+    assert "terminate_process" not in result.names
 
 
-def test_unknown_destructive_request_fails_closed():
+def test_unresolved_intent_exposes_available_tools_for_the_model():
+    # A phrasing the deterministic vocabulary does not recognize must
+    # not leave the model blind; it sees the available inventory and
+    # resolves intent itself. Destructive tools remain gated by the
+    # permission engine at execution time, not by hiding them here.
     result = select(
         "Bunu tamamen sil."
     )
 
-    assert result.names == frozenset()
+    assert result.reason == "intent_unresolved_full_exposure"
+    assert result.names == frozenset(ALL_NAMES)
 
 
 def test_bounded_file_write_exposes_root_lookup_and_write_only():
@@ -148,6 +157,8 @@ def test_window_minimize_exposes_lookup_and_bounded_action():
 
 
 def test_selector_never_expands_available_tools():
+    # The launcher is not available, so even a clear launch intent can
+    # only fall back to the available inventory \u2014 never invent a tool.
     result = ToolSchemaSelector().select(
         Request(
             "Chrome a\u00e7."
@@ -157,7 +168,7 @@ def test_selector_never_expands_available_tools():
         },
     )
 
-    assert result.names == frozenset()
+    assert result.names.issubset({"diagnostics_metrics"})
 
 
 class CapturingProvider(AIProvider):

@@ -558,6 +558,154 @@ class ToolSchemaSelector:
                     "list_windows_applications"
                 )
 
+        # --------------------------------------------------
+        # Application integrations
+        # --------------------------------------------------
+
+        music_domain = self._has_stem(
+            tokens,
+            (
+                "spotify",
+                "muzi",
+                "music",
+                "sarki",
+                "song",
+                "parca",
+                "playlist",
+            ),
+        )
+
+        if music_domain and not selected:
+            if self._has_stem(tokens, ("playlist", "liste")):
+                selected.update(
+                    {
+                        "spotify_create_playlist",
+                        "spotify_play_track",
+                    }
+                )
+            elif self._has_stem(
+                tokens, ("istatistik", "stat", "dinleme", "top")
+            ):
+                selected.add("spotify_listening_stats")
+            elif self._has_stem(
+                tokens, ("sonraki", "next", "atla", "skip", "gec")
+            ):
+                selected.add("spotify_next_track")
+            elif self._has_stem(
+                tokens, ("onceki", "previous", "geri")
+            ):
+                selected.add("spotify_previous_track")
+            elif self._has_stem(
+                tokens,
+                ("caliyor", "calan", "hangi", "ne", "nedir"),
+            ):
+                selected.add("spotify_now_playing")
+            else:
+                selected.update(
+                    {
+                        "spotify_play_pause",
+                        "spotify_play_track",
+                        "spotify_now_playing",
+                    }
+                )
+
+        whatsapp_domain = self._has_stem(
+            tokens, ("whatsapp", "vatsap", "wp")
+        )
+
+        if whatsapp_domain and not selected:
+            if self._has_stem(
+                tokens, ("ekle", "kaydet", "add")
+            ) and self._has_stem(
+                tokens, ("kisi", "numara", "contact", "rehber")
+            ):
+                selected.update(
+                    {
+                        "whatsapp_add_contact",
+                        "whatsapp_list_contacts",
+                    }
+                )
+            elif self._has_stem(
+                tokens,
+                ("gonder", "yaz", "ilet", "send", "at", "atar"),
+            ):
+                selected.update(
+                    {
+                        "whatsapp_send_message",
+                        "whatsapp_open_chat",
+                        "whatsapp_list_contacts",
+                    }
+                )
+            elif self._has_stem(
+                tokens, ("oku", "goster", "read", "son", "mesaj")
+            ):
+                selected.add("whatsapp_read_chats")
+            else:
+                selected.update(
+                    {
+                        "whatsapp_read_chats",
+                        "whatsapp_open_chat",
+                        "whatsapp_list_contacts",
+                    }
+                )
+
+        reminder_domain = self._has_stem(
+            tokens, ("hatirlat", "reminder", "alarm")
+        )
+
+        if reminder_domain and not selected:
+            if self._has_stem(tokens, self._CANCEL):
+                selected.update(
+                    {"cancel_reminder", "list_reminders"}
+                )
+            elif self._has_stem(tokens, self._LIST):
+                selected.add("list_reminders")
+            else:
+                selected.update(
+                    {"create_reminder", "list_reminders"}
+                )
+
+        browser_domain = self._has_stem(
+            tokens,
+            (
+                "site",
+                "web",
+                "tarayici",
+                "browser",
+                "google",
+                "internet",
+                "url",
+                "www",
+                "http",
+            ),
+        )
+
+        if browser_domain and not selected:
+            selected.update(
+                {"open_website", "open_web_search"}
+            )
+
+        volume_domain = self._has_stem(
+            tokens, ("ses", "volume")
+        ) and self._has_stem(
+            tokens,
+            (
+                "ac",
+                "kis",
+                "yukselt",
+                "azalt",
+                "artir",
+                "dusur",
+                "sessiz",
+                "mute",
+                "kapat",
+                "seviye",
+            ),
+        )
+
+        if volume_domain and not selected:
+            selected.add("system_volume")
+
         # If no stronger domain matched, an explicit open/start
         # request can only target the approved app launcher among
         # the current JARVIS tool inventory.

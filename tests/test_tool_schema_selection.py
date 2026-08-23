@@ -377,3 +377,48 @@ def test_core_sends_only_relevant_file_tools_to_gemini():
     }
     assert response.metadata["tool_schema_count_before"] == 3
     assert response.metadata["tool_schema_count_after"] == 2
+
+
+def _select(text):
+    from app.core.models import Request
+    from app.tools.selection import ToolSchemaSelector
+
+    available = {
+        "spotify_play_pause", "spotify_play_track", "spotify_now_playing",
+        "spotify_next_track", "spotify_previous_track",
+        "spotify_create_playlist", "spotify_listening_stats",
+        "whatsapp_read_chats", "whatsapp_open_chat",
+        "whatsapp_send_message", "whatsapp_add_contact",
+        "whatsapp_list_contacts",
+        "create_reminder", "list_reminders", "cancel_reminder",
+        "open_website", "open_web_search", "system_volume",
+        "launch_windows_application",
+    }
+    return set(ToolSchemaSelector().select(Request(text), available_names=available).names)
+
+
+def test_selector_exposes_spotify_tools() -> None:
+    assert "spotify_next_track" in _select("Spotify'da sonraki şarkıya geç")
+    assert "spotify_play_pause" in _select("Müziği başlat")
+    assert _select("Spotify dinleme istatistiklerime bak") == {
+        "spotify_listening_stats"
+    }
+    assert "spotify_create_playlist" in _select(
+        "Spotify'da bana bir playlist oluştur"
+    )
+
+
+def test_selector_exposes_whatsapp_tools() -> None:
+    send = _select("WhatsApp'tan Ali'ye mesaj gönder")
+    assert "whatsapp_send_message" in send and len(send) <= 3
+    assert _select("WhatsApp mesajlarımı oku") == {"whatsapp_read_chats"}
+    assert "whatsapp_add_contact" in _select(
+        "WhatsApp rehberine yeni kişi ekle"
+    )
+
+
+def test_selector_exposes_reminder_web_volume_tools() -> None:
+    assert "create_reminder" in _select("Bana 10 dakika sonra çayı hatırlat")
+    assert "cancel_reminder" in _select("Hatırlatıcıyı iptal et")
+    assert "open_web_search" in _select("Google'da hava durumunu araştır")
+    assert _select("Sesi biraz kıs") == {"system_volume"}

@@ -71,6 +71,7 @@ class JARVISApplication:
     voice: VoiceService | None = None
     vision: VisionService | None = None
     research: ResearchService | None = None
+    reminders: object | None = None
 
     @property
     def agent_loop(self):
@@ -484,6 +485,39 @@ def create_application(
         )
         research.register_tools(tool_executor)
 
+    from app.config.paths import default_state_path
+    from app.reminders import ReminderService
+
+    reminders = ReminderService(
+        active_settings.reminders_database_path
+        or default_state_path("jarvis_reminders.sqlite3")
+    )
+    reminders.register_tools(tool_executor)
+
+    if windows is not None:
+        from app.integrations import (
+            SpotifyIntegration,
+            WhatsAppIntegration,
+        )
+        from app.integrations.system_control import (
+            SystemControlIntegration,
+        )
+        from app.security.credentials import WindowsCredentialStore
+
+        SpotifyIntegration(
+            client_id=active_settings.spotify_client_id,
+            credential_store=WindowsCredentialStore(
+                "JARVIS/Spotify OAuth"
+            ),
+        ).register_tools(tool_executor)
+        WhatsAppIntegration(
+            contacts_path=(
+                active_settings.whatsapp_contacts_path
+                or default_state_path("whatsapp_contacts.json")
+            ),
+        ).register_tools(tool_executor)
+        SystemControlIntegration().register_tools(tool_executor)
+
     health_timeout = active_settings.diagnostics_health_timeout_seconds
     diagnostics.health.register(
         HealthCheck(
@@ -618,4 +652,5 @@ def create_application(
         voice=voice,
         vision=vision,
         research=research,
+        reminders=reminders,
     )

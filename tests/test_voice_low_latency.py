@@ -318,7 +318,7 @@ async def test_gemini_tts_wraps_inline_pcm_into_wav() -> None:
     voice = call["config"]["speech_config"]["voice_config"][
         "prebuilt_voice_config"
     ]["voice_name"]
-    assert voice == "Orus"
+    assert voice == "Charon"
 
 
 class DummyInput:

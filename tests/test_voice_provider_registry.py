@@ -201,9 +201,10 @@ def test_default_registry_exposes_built_in_providers_for_both_roles(
         registry.list_recognizer_providers()
     ) == {"gemini"}
 
+    # Charon on Gemini is the single registered voice of JARVIS.
     assert set(
         registry.list_synthesizer_providers()
-    ) == {"gemini", "elevenlabs"}
+    ) == {"gemini"}
 
 
 def test_settings_load_independent_voice_provider_environment(

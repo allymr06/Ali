@@ -192,17 +192,8 @@ class Settings:
     voice_gemini_stt_model: str = "gemini-3.5-flash-lite"
     voice_gemini_tts_model: str = "gemini-3.1-flash-tts-preview"
     # The user auditioned the prebuilt voices on 23 August 2026 and
-    # chose Orus; it is the voice of JARVIS everywhere.
-    voice_gemini_tts_voice: str = "Orus"
-
-    # Optional purchased voice (ElevenLabs). When an API key is present
-    # and voice_tts_provider is "auto", ElevenLabs becomes the cloud
-    # voice; the local Windows voice stays as the latency/outage
-    # fallback. The voice id can point at any library or cloned voice
-    # in the user's ElevenLabs account.
-    voice_elevenlabs_api_key: str | None = None
-    voice_elevenlabs_voice_id: str = "onwK4e9ZLuTAKqWW03F9"  # Daniel
-    voice_elevenlabs_model: str = "eleven_flash_v2_5"
+    # settled on Charon; it is the single voice of JARVIS everywhere.
+    voice_gemini_tts_voice: str = "Charon"
 
     vision_enabled: bool = False
     # Optional dedicated vision model. When unset, VISION requests route to
@@ -626,18 +617,7 @@ class Settings:
             ),
             voice_gemini_tts_voice=os.getenv(
                 "JARVIS_VOICE_GEMINI_TTS_VOICE",
-                "Orus",
-            ),
-            voice_elevenlabs_api_key=(
-                os.getenv("JARVIS_ELEVENLABS_API_KEY") or None
-            ),
-            voice_elevenlabs_voice_id=os.getenv(
-                "JARVIS_ELEVENLABS_VOICE_ID",
-                "onwK4e9ZLuTAKqWW03F9",
-            ),
-            voice_elevenlabs_model=os.getenv(
-                "JARVIS_ELEVENLABS_MODEL",
-                "eleven_flash_v2_5",
+                "Charon",
             ),
             vision_enabled=_get_bool("JARVIS_VISION_ENABLED"),
             vision_model=_get_vision_model_override(),

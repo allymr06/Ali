@@ -45,14 +45,10 @@ def isolate_runtime_memory_database(monkeypatch, tmp_path) -> None:
         "JARVIS_TASK_RUNTIME_DIRECTORY",
         str(tmp_path / "task-runtime"),
     )
-    # Host credentials must never steer the suite: a real ElevenLabs
-    # key in the environment would silently flip automatic voice
-    # provider selection inside bootstrap tests.
+    # Host voice preferences must never steer the suite.
     for variable in (
-        "JARVIS_ELEVENLABS_API_KEY",
-        "JARVIS_ELEVENLABS_VOICE_ID",
-        "JARVIS_ELEVENLABS_MODEL",
         "JARVIS_VOICE_GEMINI_TTS_VOICE",
         "JARVIS_VOICE_TTS_INSTRUCTIONS",
+        "JARVIS_VOICE_LANGUAGE",
     ):
         monkeypatch.delenv(variable, raising=False)

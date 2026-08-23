@@ -137,11 +137,10 @@ settings documented above.
 | `JARVIS_VOICE_LANGUAGE` | `tr` | ISO language hint for recognition; keeps Turkish speech from being transcribed in other languages. |
 | `JARVIS_VOICE_GEMINI_STT_MODEL` | `gemini-3.5-flash-lite` | Speech recognition model. |
 | `JARVIS_VOICE_GEMINI_TTS_MODEL` | `gemini-3.1-flash-tts-preview` | Speech synthesis model. |
-| `JARVIS_VOICE_GEMINI_TTS_VOICE` | `Orus` | Speech synthesis voice (user-chosen). |
+| `JARVIS_VOICE_GEMINI_TTS_VOICE` | `Charon` | Speech synthesis voice (user-chosen; the single voice of JARVIS). |
 | `JARVIS_VOICE_TTS_INSTRUCTIONS` | JARVIS persona | Speaking-style instruction prepended to every synthesis. |
 | `JARVIS_VOICE_CLOUD_GRACE_SECONDS` | `3.0` | Head start the cloud voice gets before the local voice may speak; `0` restores the pure latency race. |
 | `JARVIS_VOICE_TRAILING_SILENCE_SECONDS` | `1.5` | Silence that ends the user's turn. |
-| `JARVIS_ELEVENLABS_API_KEY` | unset | Optional purchased voice; when set, ElevenLabs becomes the cloud voice under automatic selection. |
 | `JARVIS_MEMORY_AUTO_CAPTURE` | `true` | Post-turn model pass that stores durable personal facts automatically. |
 | `JARVIS_MEMORY_EXTRACTION_MODEL` | `gemini-3.5-flash-lite` | Model used by automatic memory capture. |
 | `JARVIS_VOICE_MAX_TTS_CHARACTERS` | `4000` | Maximum text length sent for synthesis. |

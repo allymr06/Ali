@@ -98,10 +98,8 @@ track with no account setup by driving the desktop app's own search
 UI (verified against the window title); WhatsApp launches itself when
 closed and opens chats by their visible list name with an empty
 contact book; every chat render lands at the newest message instead of
-the top; PowerShell output is forced to UTF-8 so Turkish titles
-survive; and an optional purchased ElevenLabs voice
-(JARVIS_ELEVENLABS_API_KEY) wins automatic TTS selection when
-present.
+the top; and PowerShell output is forced to UTF-8 so Turkish titles
+survive.
 
 Intent handling was hardened alongside: unresolved phrasings expose the
 full tool inventory instead of failing closed, tool-bearing turns
@@ -142,16 +140,19 @@ whichever source answers first.
 - PowerShell output is forced to UTF-8 so Turkish titles survive.
 - Chat auto-scroll goes through the scroller's own offset bookkeeping;
   replies no longer bounce the conversation to the top.
-- An optional ElevenLabs TTS adapter exists behind
-  `JARVIS_ELEVENLABS_API_KEY` (the user currently declines the paid
-  route; Gemini remains the active cloud voice). Host credentials are
-  scrubbed in the test suite so the suite stays hermetic.
+- Host voice-preference environment variables are scrubbed in the
+  test suite so the suite stays hermetic. (An ElevenLabs adapter was
+  built this session and fully removed the next: the user settled on
+  a single built-in voice instead of a purchased one.)
 
 ## Voice identity, Turkish recognition, and real memory (23 August 2026, session 3)
 
-- **Orus is the voice of JARVIS.** The user auditioned the prebuilt
-  voices and chose Orus; it is now the default everywhere, and the
-  same multilingual voice speaks both Turkish and English.
+- **Charon is the single voice of JARVIS.** After hearing samples
+  the user settled on Charon; it is the default everywhere, the only
+  registered cloud voice path, and the same multilingual voice speaks
+  both Turkish and English. The stray `JARVIS_VOICE_GEMINI_TTS_VOICE`
+  user-environment override was deleted so the setting's default is
+  authoritative.
 - **Recognition is pinned to Turkish** (`voice_language` defaults to
   `tr` with a firm transcription directive), ending wrong-language
   transcripts, and one transient transcription failure is retried

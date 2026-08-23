@@ -345,7 +345,6 @@ def create_default_voice_provider_registry(
     Adding another STT or TTS adapter no longer requires
     changing the JARVIS bootstrap routing logic.
     """
-    from app.voice.elevenlabs import ElevenLabsSpeechSynthesizer
     from app.voice.gemini import (
         GeminiSpeechRecognizer,
         GeminiSpeechSynthesizer,
@@ -359,10 +358,6 @@ def create_default_voice_provider_registry(
     registry.register_synthesizer(
         "gemini",
         GeminiSpeechSynthesizer,
-    )
-    registry.register_synthesizer(
-        "elevenlabs",
-        ElevenLabsSpeechSynthesizer,
     )
 
     return registry

@@ -1621,7 +1621,44 @@ class DesktopWindow:
         self.render(UIScreen.HOME)
         self._animate_status()
         self._schedule_ui_event_pump()
+        self._reminder_future = None
+        self._start_reminder_delivery()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
+
+    def _start_reminder_delivery(self) -> None:
+        reminders = getattr(
+            self.controller.application, "reminders", None
+        )
+        if reminders is None:
+            return
+
+        def deliver(reminder: dict) -> None:
+            self._queue_ui_event(0, "reminder_due", reminder)
+
+        try:
+            self._reminder_future = (
+                self.controller.submit_background(
+                    reminders.run_delivery_loop(deliver),
+                    lambda _future: None,
+                )
+            )
+        except RuntimeError:
+            self._reminder_future = None
+
+    def _apply_reminder_due(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            return
+        text = str(payload.get("text", "")).strip()
+        if not text:
+            return
+        from app.reminders.service import show_windows_toast
+
+        show_windows_toast("JARVIS Hatırlatıcı", text)
+        self.controller.state.messages.append(
+            ChatMessage("system", f"⏰ Hatırlatıcı: {text}")
+        )
+        if self.controller.state.screen is UIScreen.CHAT:
+            self.render(UIScreen.CHAT)
 
     def _configure_window(self) -> None:
         self.root.title("J.A.R.V.I.S. Beta")
@@ -3733,6 +3770,8 @@ class DesktopWindow:
                         event.operation_id,
                         event.payload,
                     )
+                elif event.kind == "reminder_due":
+                    self._apply_reminder_due(event.payload)
                 elif event.kind == "voice_state":
                     self._apply_voice_session_state(
                         event.operation_id,
@@ -4601,6 +4640,9 @@ class DesktopWindow:
         self._pending_approvals.clear()
         self._stop_orb_animation()
         self.engine.close()
+        if self._reminder_future is not None:
+            self._reminder_future.cancel()
+            self._reminder_future = None
         if self._ui_poll_job is not None:
             self.root.after_cancel(self._ui_poll_job)
             self._ui_poll_job = None

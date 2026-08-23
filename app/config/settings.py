@@ -185,6 +185,10 @@ class Settings:
     vision_taskbar_height: int = 64
     vision_retain_last_image: bool = False
 
+    spotify_client_id: str | None = None
+    whatsapp_contacts_path: str | None = None
+    reminders_database_path: str | None = None
+
     research_enabled: bool = False
     research_searxng_url: str | None = None
     research_allow_http: bool = False
@@ -590,6 +594,18 @@ class Settings:
                 "JARVIS_VISION_TASKBAR_HEIGHT", 64
             ),
             vision_retain_last_image=_get_bool("JARVIS_VISION_RETAIN_LAST_IMAGE"),
+            spotify_client_id=(
+                os.getenv("JARVIS_SPOTIFY_CLIENT_ID", "").strip()
+                or None
+            ),
+            whatsapp_contacts_path=os.getenv(
+                "JARVIS_WHATSAPP_CONTACTS_PATH",
+                default_state_path("whatsapp_contacts.json"),
+            ),
+            reminders_database_path=os.getenv(
+                "JARVIS_REMINDERS_DATABASE_PATH",
+                default_state_path("jarvis_reminders.sqlite3"),
+            ),
             research_enabled=_get_bool("JARVIS_RESEARCH_ENABLED"),
             research_searxng_url=os.getenv("JARVIS_RESEARCH_SEARXNG_URL"),
             research_allow_http=_get_bool("JARVIS_RESEARCH_ALLOW_HTTP"),

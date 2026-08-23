@@ -115,11 +115,13 @@ class UiaClient:
         *,
         limit: int,
     ) -> list[str] | None:
-        """Read message bubbles from the open conversation.
+        """Read message rows from the conversation pane.
 
-        WhatsApp renders each bubble as a Group whose accessible name
-        carries the text and a HH:MM timestamp, so time-stamped groups
-        are the message rows. The tail (most recent) is returned.
+        WhatsApp publishes both the chat list and the open conversation
+        as DataItem rows carrying a HH:MM timestamp in their accessible
+        name. Conversation rows are the ones the chat-list reader does
+        not also return, so the caller can subtract them; here we return
+        the timestamped rows in document order, most recent last.
         """
         import re
 
@@ -129,23 +131,24 @@ class UiaClient:
         if window is None:
             return None
         uia = self._uia()
-        groups = window.FindAll(
+        rows = window.FindAll(
             _TREE_SCOPE_DESCENDANTS,
             uia.CreatePropertyCondition(
-                _CONTROL_TYPE_PROPERTY, 50026  # Group
+                _CONTROL_TYPE_PROPERTY, _CONTROL_DATA_ITEM
             ),
         )
         time_pattern = re.compile(r"\b\d{1,2}:\d{2}\b")
         messages: list[str] = []
         seen: set[str] = set()
-        for index in range(groups.Length):
-            name = groups.GetElement(index).CurrentName or ""
+        for index in range(rows.Length):
+            name = rows.GetElement(index).CurrentName or ""
             cleaned = " ".join(name.split())
             if (
                 len(cleaned) < 3
                 or cleaned in seen
                 or not time_pattern.search(cleaned)
                 or "kaybolacak" in cleaned  # disappearing-msg banner
+                or "okunmamış mesaj" in cleaned  # chat-list badge
             ):
                 continue
             seen.add(cleaned)

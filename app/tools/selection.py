@@ -613,6 +613,37 @@ class ToolSchemaSelector:
             tokens, ("whatsapp", "vatsap", "wp")
         )
 
+        delegation_intent = self._has_stem(
+            tokens,
+            (
+                "devral",
+                "devret",
+                "yerime",
+                "adima",
+                "benim yerime",
+                "delegate",
+            ),
+        ) or (
+            self._has_stem(tokens, ("yanitla", "cevapla", "konus"))
+            and self._has_stem(tokens, ("sorular", "mesajlar", "kisi"))
+        )
+
+        if whatsapp_domain and delegation_intent and not selected:
+            selected.update(
+                {
+                    "whatsapp_delegate_chat",
+                    "whatsapp_delegation_status",
+                    "whatsapp_stop_delegation",
+                    "whatsapp_list_contacts",
+                }
+            )
+        elif (
+            delegation_intent
+            and self._has_stem(tokens, ("birak", "durdur", "kes"))
+            and not selected
+        ):
+            selected.add("whatsapp_stop_delegation")
+
         if whatsapp_domain and not selected:
             if self._has_stem(
                 tokens, ("ekle", "kaydet", "add")

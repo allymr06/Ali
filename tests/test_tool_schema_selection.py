@@ -433,3 +433,29 @@ def test_selector_exposes_reminder_web_volume_tools() -> None:
     assert "cancel_reminder" in _select("Hatırlatıcıyı iptal et")
     assert "open_web_search" in _select("Google'da hava durumunu araştır")
     assert _select("Sesi biraz kıs") == {"system_volume"}
+
+
+def test_selector_exposes_whatsapp_delegation_tools() -> None:
+    from app.core.models import Request
+    from app.tools.selection import ToolSchemaSelector
+
+    available = {
+        "whatsapp_delegate_chat", "whatsapp_stop_delegation",
+        "whatsapp_delegation_status", "whatsapp_list_contacts",
+        "whatsapp_send_message", "whatsapp_read_chats",
+        "whatsapp_open_chat", "whatsapp_add_contact",
+    }
+
+    def pick(text):
+        return set(
+            ToolSchemaSelector()
+            .select(Request(text), available_names=available)
+            .names
+        )
+
+    assert "whatsapp_delegate_chat" in pick(
+        "WhatsApp'ta Ali ile benim yerime konuş"
+    )
+    assert "whatsapp_delegate_chat" in pick(
+        "WhatsApp'ta Ayşe'nin sorularını yanıtla"
+    )

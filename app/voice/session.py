@@ -199,7 +199,7 @@ class VoiceSession:
             self._record(VoiceSessionState.TRANSCRIBING)
             stage_started = time.monotonic()
             transcription = await self._await_interruptible(
-                self._recognizer.transcribe(capture, language=self._language)
+                self._transcribe_with_retry(capture)
             )
             metadata["transcription_latency_seconds"] = (
                 time.monotonic() - stage_started
@@ -444,6 +444,18 @@ class VoiceSession:
             model="winrt-speech",
             voice=voice,
         )
+
+    async def _transcribe_with_retry(self, capture):
+        """One transient transcription failure must not kill the turn."""
+        try:
+            return await self._recognizer.transcribe(
+                capture, language=self._language
+            )
+        except VoiceProviderError:
+            await asyncio.sleep(0.4)
+            return await self._recognizer.transcribe(
+                capture, language=self._language
+            )
 
     async def _synthesize_chunk(
         self,

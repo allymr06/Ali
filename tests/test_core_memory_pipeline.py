@@ -57,6 +57,113 @@ def test_engine_does_not_remember_normal_request() -> None:
 
     assert response.metadata["memory_decision"] is False
     assert memory_manager.count() == 0
+
+
+def test_engine_remembers_preferences_without_explicit_prefix() -> None:
+    """The policy's preference path must actually write: it used to be
+    dead code because the engine also required an analyzer candidate."""
+    engine, memory_manager = create_engine()
+
+    response = asyncio.run(
+        engine.handle(
+            Request("Kahvemi sütsüz istiyorum, öyle tercih ederim")
+        )
+    )
+
+    assert response.metadata["memory_decision"] is True
+    assert response.metadata["memory_saved"] is True
+    assert memory_manager.count() == 1
+
+
+def test_engine_remembers_identity_statements() -> None:
+    engine, memory_manager = create_engine()
+
+    asyncio.run(
+        engine.handle(
+            Request("Benim adım Ali ve 20 yaşındayım")
+        )
+    )
+
+    memories = memory_manager.active()
+    assert len(memories) == 1
+    assert "Ali" in memories[0].content
+
+
+def test_engine_remembers_unutma_prefix() -> None:
+    engine, memory_manager = create_engine()
+
+    asyncio.run(
+        engine.handle(
+            Request("Unutma: yarın saat 15'te toplantım var")
+        )
+    )
+
+    memories = memory_manager.active()
+    assert len(memories) == 1
+    assert "toplantım" in memories[0].content
+
+
+def test_auto_extractor_runs_for_unremembered_turns() -> None:
+    """Voice or text turns with no deterministic signal still get a
+    model-assisted memory pass in the background."""
+    from app.memory.auto import AutoMemoryExtractor
+
+    class FakeGateway:
+        def __init__(self, answer: str):
+            self.answer = answer
+            self.calls = []
+
+        async def generate(self, request, context, **kwargs):
+            self.calls.append((request.text, kwargs))
+            return type("R", (), {"text": self.answer})()
+
+    memory_manager = MemoryManager(InMemoryStore())
+    gateway = FakeGateway("Kullanıcı rock müzik seviyor.")
+    extractor = AutoMemoryExtractor(
+        provider_gateway=gateway,
+        memory_manager=memory_manager,
+        model="test-lite",
+    )
+
+    stored = asyncio.run(
+        extractor.extract("bana biraz rock çalar mısın", "req-1")
+    )
+
+    assert stored is True
+    assert memory_manager.count() == 1
+    assert memory_manager.active()[0].content == (
+        "Kullanıcı rock müzik seviyor."
+    )
+    assert gateway.calls[0][1]["model"] == "test-lite"
+
+    # Same fact again: deduplicated, not stored twice.
+    stored_again = asyncio.run(
+        extractor.extract("rock müzik çok iyiydi", "req-2")
+    )
+    assert stored_again is False
+    assert memory_manager.count() == 1
+
+
+def test_auto_extractor_ignores_transient_requests() -> None:
+    from app.memory.auto import AutoMemoryExtractor
+
+    class NoGateway:
+        async def generate(self, request, context, **kwargs):
+            return type("R", (), {"text": "YOK"})()
+
+    memory_manager = MemoryManager(InMemoryStore())
+    extractor = AutoMemoryExtractor(
+        provider_gateway=NoGateway(),
+        memory_manager=memory_manager,
+        model="test-lite",
+    )
+
+    stored = asyncio.run(
+        extractor.extract("şu şarkıyı bir sonrakine geçir", "req-3")
+    )
+
+    assert stored is False
+    assert memory_manager.count() == 0
 def test_engine_injects_recalled_memories_into_context() -> None:
     registry = ProviderRegistry()
     provider = MockProvider()

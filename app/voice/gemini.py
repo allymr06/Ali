@@ -182,8 +182,12 @@ class GeminiSpeechRecognizer(
 
         if language:
             instruction += (
-                " The expected language is "
-                f"{language}."
+                " The speaker's language is "
+                f"'{language}'. Transcribe in that language's "
+                "orthography, with its correct special characters. "
+                "Do not translate. Only transcribe in a different "
+                "language if the audio is clearly and entirely "
+                "spoken in that other language."
             )
 
         try:

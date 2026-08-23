@@ -13,6 +13,44 @@ EXPLICIT_MEMORY_PREFIXES = (
     "hatirla ",
     "remember:",
     "remember ",
+    "unutma:",
+    "unutma ",
+    "not al:",
+    "not al ",
+    "aklında tut:",
+    "aklında tut ",
+    "aklinda tut:",
+    "aklinda tut ",
+    "kaydet:",
+)
+
+# First-person identity statements are durable by nature: whoever
+# says "benim adım X" expects X to be known tomorrow.
+IDENTITY_MEMORY_PREFIXES = (
+    "benim adım",
+    "benim adim",
+    "adım ",
+    "adim ",
+    "ben ",
+    "my name is",
+)
+_IDENTITY_MARKERS = (
+    "adım",
+    "adim",
+    "yaşındayım",
+    "yasindayim",
+    "yaşıyorum",
+    "yasiyorum",
+    "çalışıyorum",
+    "calisiyorum",
+    "okuyorum",
+    "öğrenciyim",
+    "ogrenciyim",
+    "doğum günüm",
+    "dogum gunum",
+    "mesleğim",
+    "meslegim",
+    "my name is",
 )
 
 
@@ -58,5 +96,15 @@ class MemoryAnalyzer:
                     confidence=1.0,
                     reason="Explicit user memory request.",
                 )
+
+        if any(marker in lowered for marker in _IDENTITY_MARKERS) and (
+            lowered.startswith(IDENTITY_MEMORY_PREFIXES)
+        ):
+            return MemoryCandidate(
+                content=normalized,
+                memory_type=MemoryType.FACT,
+                confidence=0.8,
+                reason="Identity statement.",
+            )
 
         return None

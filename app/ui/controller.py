@@ -71,7 +71,6 @@ class DesktopController:
     application: Any
     state: UIState = field(default_factory=UIState)
     context: Context = field(default_factory=Context)
-    voice_context: Context = field(default_factory=Context)
     approval_callback: InteractiveApprovalCallback | None = field(
         default=None,
         repr=False,
@@ -186,9 +185,6 @@ class DesktopController:
         previous_conversation_id = (
             self.context.conversation_id
         )
-        previous_voice_conversation_id = (
-            self.voice_context.conversation_id
-        )
 
         self.application = application
 
@@ -204,17 +200,6 @@ class DesktopController:
                 conversation_id=(
                     previous_conversation_id
                 )
-            )
-
-        try:
-            self.application.conversation_engine.get(
-                previous_voice_conversation_id
-            )
-        except KeyError:
-            self.voice_context = Context()
-        else:
-            self.voice_context = Context(
-                conversation_id=previous_voice_conversation_id
             )
 
         close = getattr(
@@ -389,6 +374,9 @@ class DesktopController:
                 )
                 if manage_state:
                     self.state.voice_messages.append(message)
+                    # Voice and text share one conversation: what was
+                    # said aloud must exist in the chat history too.
+                    self.state.messages.append(message)
                 if message_callback is not None:
                     message_callback(message)
 
@@ -409,6 +397,7 @@ class DesktopController:
                 )
                 if manage_state:
                     self.state.voice_messages.append(message)
+                    self.state.messages.append(message)
                 if message_callback is not None:
                     message_callback(message)
 
@@ -429,7 +418,9 @@ class DesktopController:
         if callable(run_continuous):
             options = {
                 "max_turns": 100,
-                "context": self.voice_context,
+                # One shared conversation for voice and text, so a
+                # voice exchange is remembered when typing later.
+                "context": self.context,
                 "max_consecutive_failures": 2,
                 "result_callback": record_result,
             }
@@ -444,7 +435,7 @@ class DesktopController:
                 if self.approval_callback is not None
                 else {}
             )
-            results = (await voice.run_once(self.voice_context, **options),)
+            results = (await voice.run_once(self.context, **options),)
             record_result(results[0])
 
         if last_response is not None:

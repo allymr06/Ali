@@ -98,6 +98,7 @@ class CoreEngine:
         action_model: str | None = None,
         fast_action_router: ApprovedApplicationFastRouter | None = None,
         tool_schema_selector: ToolSchemaSelector | None = None,
+        memory_extractor=None,
         conversation_engine: ConversationEngine | None = None,
         task_runtime_directory: str | None = None,
         diagnostics=None,
@@ -109,6 +110,7 @@ class CoreEngine:
         self._memory_manager = memory_manager
         self._memory_policy = memory_policy or MemoryPolicy()
         self._memory_analyzer = MemoryAnalyzer()
+        self._memory_extractor = memory_extractor
         self._tool_executor = (
             tool_executor
             if tool_executor is not None
@@ -708,16 +710,26 @@ class CoreEngine:
 
         memory_saved = False
         memory_write_reason: str | None = None
-        if (
-            decision.should_remember
-            and candidate is not None
-        ):
+        if decision.should_remember:
+            # The policy can decide to remember without an analyzer
+            # candidate (for example preference phrasing); the raw
+            # request text is the memory then. Requiring a candidate
+            # here used to silently disable that whole path.
+            memory_text = (
+                candidate.content
+                if candidate is not None
+                else request.text.strip()
+            )
             try:
                 self._memory_manager.remember(
-                    candidate.content,
+                    memory_text,
                     memory_type=decision.memory_type,
                     importance=decision.importance,
-                    confidence=candidate.confidence,
+                    confidence=(
+                        candidate.confidence
+                        if candidate is not None
+                        else 0.8
+                    ),
                     source_reference=f"request:{request.request_id}",
                     metadata={"reason": decision.reason},
                 )
@@ -1631,6 +1643,21 @@ class CoreEngine:
                 self._diagnostics.metrics.increment("core.requests")
                 self._diagnostics.metrics.observe(
                     "core.request.duration", usage.elapsed_seconds
+                )
+            except Exception:
+                pass
+        # Off the latency path: a cheap model pass may distill this
+        # turn into a durable memory. Voice and text turns alike.
+        if (
+            self._memory_extractor is not None
+            and not memory_saved
+            and outcome == "completed"
+            and request.source
+            in (RequestSource.TEXT, RequestSource.VOICE)
+        ):
+            try:
+                self._memory_extractor.extract_in_background(
+                    request.text, str(request.request_id)
                 )
             except Exception:
                 pass

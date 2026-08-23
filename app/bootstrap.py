@@ -309,6 +309,19 @@ def create_application(
 
     tool_schema_selector = ToolSchemaSelector()
 
+    memory_extractor = None
+    if (
+        active_settings.memory_auto_capture_enabled
+        and active_settings.default_provider == "gemini"
+    ):
+        from app.memory.auto import AutoMemoryExtractor
+
+        memory_extractor = AutoMemoryExtractor(
+            provider_gateway=provider_gateway,
+            memory_manager=memory_manager,
+            model=active_settings.memory_extraction_model,
+        )
+
     engine = CoreEngine(
         provider_registry=provider_registry,
         memory_manager=memory_manager,
@@ -318,6 +331,7 @@ def create_application(
         action_model=active_settings.gemini_action_model,
         fast_action_router=fast_action_router,
         tool_schema_selector=tool_schema_selector,
+        memory_extractor=memory_extractor,
         conversation_engine=conversation_engine,
         task_runtime_directory=active_settings.task_runtime_directory,
         diagnostics=diagnostics,

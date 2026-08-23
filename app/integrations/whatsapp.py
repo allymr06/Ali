@@ -177,6 +177,41 @@ class WhatsAppIntegration:
             verified=bool(entries),
         )
 
+    async def read_open_conversation(
+        self, limit: int = 12
+    ) -> ToolResult:
+        """Read message bubbles from the currently open chat."""
+        bounded = max(1, min(int(limit), 40))
+        client = self._uia_client()
+        try:
+            messages = await asyncio.to_thread(
+                client.read_conversation,
+                _WINDOW_TITLE,
+                limit=bounded,
+            )
+        except Exception as exc:
+            return ToolResult(
+                ToolExecutionStatus.FAILED,
+                "whatsapp_read_conversation",
+                message="Sohbet içeriği okunamadı.",
+                error=f"uia_{type(exc).__name__}",
+            )
+        if messages is None:
+            return ToolResult(
+                ToolExecutionStatus.BLOCKED,
+                "whatsapp_read_conversation",
+                message="WhatsApp penceresi bulunamadı.",
+                error="window_not_found",
+                verified=True,
+            )
+        return ToolResult(
+            ToolExecutionStatus.SUCCESS,
+            "whatsapp_read_conversation",
+            message=f"{len(messages)} mesaj okundu.",
+            data={"messages": messages},
+            verified=bool(messages),
+        )
+
     async def open_chat(
         self, contact: str, message: str | None = None
     ) -> ToolResult:
@@ -302,6 +337,9 @@ class WhatsAppIntegration:
         async def read_chats(limit: int = 8) -> ToolResult:
             return await self.read_recent_chats(limit)
 
+        async def read_conversation(limit: int = 12) -> ToolResult:
+            return await self.read_open_conversation(limit)
+
         async def open_chat(
             contact: str, message: str = ""
         ) -> ToolResult:
@@ -338,6 +376,14 @@ class WhatsAppIntegration:
                 "erişilebilirlik ağacından oku.",
             ),
             read_chats,
+            source="integration:whatsapp",
+        )
+        executor.register(
+            define(
+                "whatsapp_read_conversation",
+                "Açık olan WhatsApp sohbetindeki son mesajları oku.",
+            ),
+            read_conversation,
             source="integration:whatsapp",
         )
         executor.register(

@@ -511,11 +511,22 @@ def create_application(
                 "JARVIS/Spotify OAuth"
             ),
         ).register_tools(tool_executor)
-        WhatsAppIntegration(
+        whatsapp = WhatsAppIntegration(
             contacts_path=(
                 active_settings.whatsapp_contacts_path
                 or default_state_path("whatsapp_contacts.json")
             ),
+        )
+        whatsapp.register_tools(tool_executor)
+        # Delegated conversations need the core engine to draft
+        # replies, so the agent is wired once the engine exists.
+        from app.integrations.whatsapp_agent import (
+            WhatsAppConversationAgent,
+        )
+
+        WhatsAppConversationAgent(
+            whatsapp=whatsapp,
+            engine=engine,
         ).register_tools(tool_executor)
         SystemControlIntegration().register_tools(tool_executor)
 

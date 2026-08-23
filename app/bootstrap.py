@@ -72,6 +72,7 @@ class JARVISApplication:
     vision: VisionService | None = None
     research: ResearchService | None = None
     reminders: object | None = None
+    screen_watcher: object | None = None
 
     @property
     def agent_loop(self):
@@ -423,6 +424,7 @@ def create_application(
         )
 
     vision = None
+    screen_watcher = None
     if active_settings.vision_enabled:
         if os.name != "nt":
             raise OSError("The configured vision source currently requires Windows.")
@@ -448,6 +450,17 @@ def create_application(
             taskbar_height=active_settings.vision_taskbar_height,
             retain_last_image=active_settings.vision_retain_last_image,
         )
+        from app.vision.watcher import ScreenWatcher
+
+        screen_watcher = ScreenWatcher(
+            vision=vision,
+            source=WindowsScreenSource(
+                max_width=active_settings.vision_max_width,
+                max_height=active_settings.vision_max_height,
+                max_pixels=active_settings.vision_max_pixels,
+            ),
+        )
+        screen_watcher.register_tools(tool_executor)
 
     research = None
     if active_settings.research_enabled:
@@ -665,4 +678,5 @@ def create_application(
         vision=vision,
         research=research,
         reminders=reminders,
+        screen_watcher=screen_watcher,
     )

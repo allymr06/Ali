@@ -459,3 +459,23 @@ def test_selector_exposes_whatsapp_delegation_tools() -> None:
     assert "whatsapp_delegate_chat" in pick(
         "WhatsApp'ta Ayşe'nin sorularını yanıtla"
     )
+
+
+def test_selector_exposes_screen_watch_tools() -> None:
+    from app.core.models import Request
+    from app.tools.selection import ToolSchemaSelector
+
+    available = {
+        "watch_screen_start", "watch_screen_stop",
+        "watch_screen_status", "diagnostics_health",
+    }
+
+    def pick(text):
+        return set(
+            ToolSchemaSelector()
+            .select(Request(text), available_names=available)
+            .names
+        )
+
+    assert "watch_screen_start" in pick("Ekranımı sürekli takip et")
+    assert pick("Ekran izlemeyi durdur") == {"watch_screen_stop"}

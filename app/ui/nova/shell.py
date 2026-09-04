@@ -34,7 +34,7 @@ from datetime import date, datetime
 from enum import Enum
 from math import isfinite
 from pathlib import Path, PurePath
-from threading import Lock
+from threading import Lock, RLock
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -57,6 +57,7 @@ STREAM_FLUSH_SECONDS = 0.05
 APPROVAL_SAFETY_MARGIN_SECONDS = 2.0
 APPROVAL_MINIMUM_WAIT_SECONDS = 5.0
 CONNECTION_TEST_TIMEOUT_SECONDS = 30.0
+SHUTDOWN_LOCK_TIMEOUT_SECONDS = 2.0
 MAX_RESEARCH_SOURCES = 10
 
 
@@ -136,7 +137,11 @@ class NovaBridge:
         self._window: webview.Window | None = None
         self._ready = False
         self._closing = False
-        self._lock = Lock()
+        # Re-entrant on purpose: a background operation can finish before
+        # its completion callback is registered, in which case
+        # concurrent.futures runs the callback synchronously on the thread
+        # that is still holding this lock inside submit_command/start_voice.
+        self._lock = RLock()
         self._push_lock = Lock()
         self._stream_buffer: list[str] = []
         self._stream_last_flush = 0.0
@@ -191,8 +196,14 @@ class NovaBridge:
         }
 
     def _shutdown(self) -> None:
-        """Fail every pending decision closed and stop reporting."""
-        with self._lock:
+        """Fail every pending decision closed and stop reporting.
+
+        Shutdown must never hang on a worker that is stuck inside the
+        bridge, so the lock is acquired with a deadline and the closing
+        flags are set even when it could not be taken.
+        """
+        acquired = self._lock.acquire(timeout=SHUTDOWN_LOCK_TIMEOUT_SECONDS)
+        try:
             self._closing = True
             self._ready = False
             pending = list(self._approvals.values())
@@ -201,6 +212,9 @@ class NovaBridge:
             command_future = self._command_future
             self._voice_future = None
             self._command_future = None
+        finally:
+            if acquired:
+                self._lock.release()
         for decision in pending:
             if not decision.done():
                 decision.set_result(False)

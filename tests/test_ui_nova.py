@@ -889,3 +889,84 @@ def test_packaged_entrypoint_accepts_classic_flag(monkeypatch, tmp_path) -> None
     assert entrypoint.main(["--classic", "--state-dir", state]) == 0
     assert entrypoint.main(["--state-dir", state]) == 0
     assert calls == [True, False]
+
+
+# ---------------------------------------------------------------------------
+# regression: completion callbacks that fire synchronously
+# ---------------------------------------------------------------------------
+
+
+def _immediate_submit_background(self, operation, callback):
+    """Mimic concurrent.futures when the work finishes before the callback
+    is registered: the callback then runs synchronously on the caller's
+    thread, while submit_command/start_voice still hold the bridge lock."""
+    from concurrent.futures import Future as ConcurrentFuture
+
+    future: ConcurrentFuture = ConcurrentFuture()
+    try:
+        result = asyncio.run(operation)
+    except BaseException as exc:  # noqa: BLE001 - mirrors the real runner
+        future.set_exception(exc)
+    else:
+        future.set_result(result)
+    callback(future)
+    return future
+
+
+def _run_with_deadline(function, timeout: float = 5.0):
+    outcome: dict[str, object] = {}
+
+    def target() -> None:
+        try:
+            outcome["result"] = function()
+        except BaseException as exc:  # noqa: BLE001
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=target, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    assert not worker.is_alive(), "bridge call deadlocked"
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["result"]
+
+
+def test_command_callback_firing_synchronously_does_not_deadlock(
+    booted, monkeypatch
+) -> None:
+    class InstantEngine:
+        async def handle(self, request, context, **_kwargs):
+            return Response("anında", request_id=request.request_id)
+
+    booted.app.engine = InstantEngine()
+    monkeypatch.setattr(
+        DesktopController, "submit_background", _immediate_submit_background
+    )
+
+    assert _run_with_deadline(lambda: booted.bridge.submit_command("hızlı")) == {
+        "ok": True
+    }
+    assert booted.window.payloads("reply")[0]["text"] == "anında"
+    assert booted.bridge._command_future is not None
+    assert booted.bridge._command_future.done()
+    # The busy guard is released, so the next command is accepted.
+    assert _run_with_deadline(lambda: booted.bridge.submit_command("yine")) == {
+        "ok": True
+    }
+
+
+def test_voice_callback_firing_synchronously_does_not_deadlock(
+    booted, monkeypatch
+) -> None:
+    booted.app.voice = FakeVoice(fail=True)
+    monkeypatch.setattr(
+        DesktopController, "submit_background", _immediate_submit_background
+    )
+
+    assert _run_with_deadline(lambda: booted.bridge.start_voice()) == {"ok": True}
+    assert booted.window.payloads("voice_state") == [
+        {"active": False, "error": "Sesli oturum sonlandı (RuntimeError)."}
+    ]
+    assert booted.bridge._voice_future is not None
+    assert booted.bridge._voice_future.done()
+    assert _run_with_deadline(lambda: booted.bridge.start_voice()) == {"ok": True}

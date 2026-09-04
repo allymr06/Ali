@@ -262,6 +262,8 @@ The Phase 17 regression coverage includes:
   without internals, plus research source bounds;
 - approval tokens: masked parameters, single use, non-boolean answers denied,
   timeout denied, denied without a ready page, and denied on shutdown;
+- completion callbacks that fire synchronously (work finished before the
+  callback was registered) neither deadlock nor leave the busy guard set;
 - frozen and source asset resolution, explicit missing-asset errors, the
   per-user WebView2 profile location, exactly-once resource release on window
   close, and the `--classic` / import-fallback paths of `launch_desktop` and

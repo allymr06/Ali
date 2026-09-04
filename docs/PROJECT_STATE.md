@@ -48,7 +48,12 @@ Stabilization changes, all covered by tests:
   closed on timeout, on shutdown, on a non-boolean answer, and when the page is
   not ready. Window close releases the bridge, the async runner, and the
   application exactly once, whether the `closed` event fires or `webview.start`
-  simply returns.
+  simply returns. The bridge lock is re-entrant: when a background task
+  finishes before its completion callback is registered, concurrent.futures
+  runs that callback synchronously on the submitting thread, which used to
+  deadlock the pywebview worker (found as an intermittent test hang, fixed
+  with a deterministic regression test); shutdown acquires the lock with a
+  deadline so it can never hang on a stuck worker.
 - **Credential deletion needs two explicit steps.** The Settings screen opens
   an in-app confirmation dialog (separate from the tool-approval modal) and the
   bridge ignores `delete_api_key()` unless it is called with `confirmed=True`.

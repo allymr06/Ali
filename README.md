@@ -31,8 +31,10 @@ Implemented:
 - opt-in bounded web research with SearXNG-compatible search
 - SSRF-resistant IP-pinned retrieval, redirect revalidation, and download limits
 - source timestamps, content hashes, freshness, citation checks, and uncertainties
-- refined monochrome desktop shell with eleven live views, subtle optional
-  motion, scroll-safe layouts, and documented keyboard shortcuts
+- Nova desktop shell (pywebview/WebView2) with eleven live views, a
+  compositor-animated core, honest bridge-failure handling, conditional chat
+  auto-scroll, and documented keyboard shortcuts; the classic Tk shell stays
+  available behind `--classic`
 - in-app Gemini model setup with connection testing and the API secret stored
   in Windows Credential Manager
 - sanitized structured diagnostics, tamper-evident events, bounded metrics, and
@@ -55,7 +57,7 @@ Not implemented yet:
 
 ## Verification status
 
-The current test suite contains **1088 passing tests (`scripts/verify.py`), verified on 22 August 2026
+The current test suite contains **1197 passing tests, 1 skipped** (`scripts/verify.py`), verified on 5 September 2026.
 
 The project does not yet claim production readiness. The first real Windows
 vertical slice is implemented and verified:
@@ -88,7 +90,7 @@ app/
 |-- security/    Permission and risk evaluation
 |-- tasks/       Task and task-step lifecycle management
 |-- tools/       Tool definitions, registration, and execution
-|-- ui/          Native desktop shell, controller, state, and grayscale theme
+|-- ui/          Desktop shells (Nova WebView2 + classic Tk), controller, state
 |-- voice/       Audio devices, speech providers, wake gate, and sessions
 `-- vision/      Consent, capture, redaction, provenance, and analysis
 ```
@@ -113,11 +115,18 @@ Microphone support is optional and can be installed with:
 python -m pip install -e .[voice]
 ```
 
-Launch the desktop interface with a Python 3.12 installation that includes
-Tcl/Tk:
+Launch the desktop interface (Nova, hosted in the Microsoft Edge WebView2
+Runtime that ships with Windows 11):
 
 ```powershell
 python -m app.ui
+```
+
+The classic Tkinter shell remains available for a Python installation that
+includes Tcl/Tk, and is used automatically when pywebview is not installed:
+
+```powershell
+python -m app.ui --classic
 ```
 
 ## Engineering principles
@@ -135,10 +144,11 @@ An action must not be reported as completed merely because execution returned wi
 
 The reproducible PyInstaller application, portable archive, Inno Setup source,
 icon assets, strict frozen-runtime smoke test, and SHA-256 manifest are
-implemented. See `docs/PACKAGING.md`. The current sandbox cannot initialize Tcl
-through its native file API or install the Inno compiler, so the generated
-portable artifact is explicitly marked `environment_limited`; it is not a
-production-qualified release.
+implemented. See `docs/PACKAGING.md`. On the development host the pinned
+toolchain produces a `qualified` build whose frozen smoke test renders all
+eleven screens against bundled Tcl/Tk and finds the Nova web assets (rebuilt
+5 September 2026). The artifacts are unsigned, so they are not yet a
+production release.
 
 ## Documentation
 

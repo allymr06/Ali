@@ -1,17 +1,100 @@
 # JARVIS Project State
 
-Last verified: 22 August 2026
+Last verified: 5 September 2026
 
 ## Current status
 
 - Completed implementation milestone: Phase 17 — Windows packaging and installer
 - Completed validation milestone: Phase 18 — final audit and delivery evidence
 - Completed maintenance milestone: single-provider (Gemini) consolidation
-- Next action: code signing and live-service qualification (`docs/FINAL_AUDIT.md`)
+- Completed stabilization milestone: Nova desktop shell (pywebview/WebView2),
+  5 September 2026
+- Next action: manifest-based plugin runtime, Windows system tray, and the
+  safe-filesystem extensions (snapshot/undo, dry-run, indexed search); code
+  signing and a user-attended voice qualification remain release blockers
+  (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1143 tests passing, 1 skipped (`scripts/verify.py`)
+- Automated verification: 1197 tests passing, 1 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Nova desktop shell stabilization (5 September 2026)
+
+Nova (`app/ui/nova/`) is now the default desktop shell: a pywebview window
+hosting `web/index.html` in Microsoft Edge WebView2, with every animation on
+the browser compositor and every fact coming from the Python core through the
+`NovaBridge` JS API and the `window.NOVA.push(...)` channel. The Tkinter shell
+remains available with `python -m app.ui --classic` (or `JARVIS.exe --classic`)
+and is used automatically when pywebview is not installed.
+
+Stabilization changes, all covered by tests:
+
+- **No silent demo.** The page previously fell back to sample data when the
+  Python bridge did not answer within 1.6 s. It now waits up to 10 s for
+  `pywebviewready` and, on failure, shows an explicit "çekirdek köprüsü
+  kurulamadı" screen with a retry button; nothing is simulated. The demo bridge
+  runs only when the page is opened directly in a browser with `?demo=1`, never
+  inside pywebview, and is labelled DEMO in the top bar, the boot log, every
+  reply, and a persistent toast.
+- **Frozen asset resolution.** `resolve_web_root()` looks below
+  `sys._MEIPASS/app/ui/nova/web` first, then the source tree, and reports a
+  missing file set instead of opening an empty window. `installer/JARVIS.spec`
+  bundles the three page files at that path, the frozen smoke test records them
+  as `nova_assets`, and `scripts/build_windows.py` refuses a report without all
+  three.
+- **Race-free bridge.** The busy check and the submission share one lock, so a
+  double send cannot slip past the guard; voice start/stop and shutdown are
+  guarded the same way. Approval requests are single-use tokens that fail
+  closed on timeout, on shutdown, on a non-boolean answer, and when the page is
+  not ready. Window close releases the bridge, the async runner, and the
+  application exactly once, whether the `closed` event fires or `webview.start`
+  simply returns.
+- **Credential deletion needs two explicit steps.** The Settings screen opens
+  an in-app confirmation dialog (separate from the tool-approval modal) and the
+  bridge ignores `delete_api_key()` unless it is called with `confirmed=True`.
+- **Persistent WebView2 profile.** The window runs with `private_mode=False`
+  and `storage_path=%LOCALAPPDATA%\JARVIS\webview`, so the theme and the
+  in-app "Hareketi azalt" switch survive restarts (verified live). The OS-wide
+  `prefers-reduced-motion` setting is deliberately not inherited.
+- **Reading is never interrupted.** Chat auto-scrolls only when the reader is
+  already at the bottom; otherwise a "yeni mesaj" pill appears. Arrow, Page,
+  Home, and End keys scroll the active screen when no input has focus, and a
+  send attempted while JARVIS is busy keeps the draft and says so.
+- **Packaged entry point.** `JARVIS.exe --classic` is accepted, and the
+  `.venv` is now expected to be re-synchronized from `requirements-dev.txt`
+  whenever `pyproject.toml` changes (`pip check` cannot detect a dependency
+  that was declared but never installed).
+- **Tests.** `tests/test_ui_nova.py` (34 tests) drives `NovaBridge` against the
+  real controller with a recording window; `tests/test_nova_web.py` (18 tests)
+  parses `nova.js` with QuickJS, checks that every JavaScript bridge call
+  matches a Python method and arity, that the demo bridge mirrors the Python
+  API, that demo mode is opt-in only, and that the page declares the failure
+  and confirmation UI. The packaging tests require the Nova assets in the spec
+  and in the smoke report. `scripts/verify.py`: 1197 passed, 1 skipped.
+
+### Verified live on this host (5 September 2026)
+
+Source launch (`python -m app.ui`, real Gemini credential from Credential
+Manager, WebView2 Runtime 152): boot into Nova; every screen reachable by rail
+click and Alt+digit; mouse-wheel, PageUp/PageDown, Home/End scrolling; a text
+command answered by the core (about 10 s round trip, tool-verified time
+query); a reply arriving while scrolled up left the view in place and showed
+the pill; Ctrl+M opened the text-free full-screen HUD and, with no speech, the
+session closed itself with the honest "Ses algılanmadığı için sesli modu
+kapattım" notice; Vision and Research (both disabled in this configuration)
+failed closed with visible messages; a clipboard write raised the ORTA
+approval modal with masked parameters, was denied, produced "İşlem iptal
+edildi; bilgisayarında değişiklik yapılmadı", and left the clipboard
+untouched; the Settings connection test succeeded against the live model; the
+delete-key dialog was cancelled with Escape; the motion switch persisted
+across a restart; Alt+F4 left no process behind and an empty stderr. The
+frozen `JARVIS.exe` from the rebuilt package also opened Nova and closed
+cleanly.
+
+Not re-qualified in this pass: a spoken voice turn (cloud Charon speech and
+the local Windows fallback). The host has no microphone input JARVIS could be
+driven with unattended, so that path keeps its 23 August qualification from
+the classic shell and still needs a run with the user's own microphone.
 
 ## Provider consolidation (22 August 2026)
 
@@ -207,9 +290,10 @@ whichever source answers first.
 - `ResearchService`, `URLPolicy`, and `SafeWebFetcher` own opt-in search,
   IP-pinned safe retrieval, untrusted-content isolation, provenance, freshness,
   bounded multi-source synthesis, uncertainties, and citation integrity.
-- `DesktopController` and `DesktopWindow` own native grayscale presentation,
-  responsive background dispatch, live service state, and explicit user input
-  while preserving all Core security boundaries.
+- `DesktopController` owns responsive background dispatch, live service state,
+  and explicit user input while preserving all Core security boundaries; the
+  Nova shell (`app/ui/nova`, pywebview/WebView2) is the default presentation
+  and the classic Tk `DesktopWindow` remains behind `--classic`.
 - `DiagnosticsService`, `DiagnosticLedger`, `MetricRegistry`, and
   `HealthRegistry` own sanitized structured events, tamper evidence, bounded
   low-cardinality metrics, and timeout-contained live health checks.
@@ -285,9 +369,11 @@ whichever source answers first.
   Timeout results explicitly report when side effects may continue.
 - System tray and plugin runtime remain future extensions.
 - Publisher code signing is not configured.
-- The current sandbox cannot complete native Tcl rendering or install the Inno
-  compiler; the portable artifact therefore remains environment-limited and
-  the installer EXE has not been produced in this environment.
+- Nova needs the Microsoft Edge WebView2 Runtime (shipped with Windows 11);
+  without pywebview the classic shell opens instead. A missing runtime is not
+  yet detected before the window is created.
+- Voice from the Nova shell was exercised without speech input only; a spoken
+  cloud (Charon) and local-fallback turn still needs the user's microphone.
 
 ## Verified Phase 7 vertical slice
 

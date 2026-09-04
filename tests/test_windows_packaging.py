@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from app.ui.nova import shell as nova_shell
 from scripts import build_windows
 
 
@@ -26,6 +27,7 @@ def test_verify_smoke_report_accepts_complete_frozen_result(tmp_path: Path) -> N
         "frozen": True,
         "health": "healthy",
         "screens": 11,
+        "nova_assets": ["index.html", "nova.css", "nova.js"],
         "tcl": "8.6.14",
     }
     path.write_text(json.dumps(expected), encoding="utf-8")
@@ -40,6 +42,8 @@ def test_verify_smoke_report_accepts_complete_frozen_result(tmp_path: Path) -> N
         ("frozen", False),
         ("health", "degraded"),
         ("screens", 10),
+        ("nova_assets", ["index.html"]),
+        ("nova_assets", None),
         ("tcl", ""),
     ],
 )
@@ -54,6 +58,7 @@ def test_verify_smoke_report_rejects_incomplete_result(
         "frozen": True,
         "health": "healthy",
         "screens": 11,
+        "nova_assets": ["index.html", "nova.css", "nova.js"],
         "tcl": "8.6.14",
     }
     report[field] = value
@@ -154,3 +159,19 @@ def test_release_evidence_hashes_only_supplied_artifacts(tmp_path: Path) -> None
     assert (tmp_path / "SHA256SUMS.txt").read_text(encoding="utf-8") == (
         f"{build_windows.sha256_file(artifact)}  artifact.bin\n"
     )
+
+
+def test_nova_asset_list_is_shared_with_the_shell() -> None:
+    assert build_windows.NOVA_WEB_ASSETS == nova_shell.WEB_ASSETS
+
+
+def test_spec_bundles_nova_web_assets_where_the_shell_looks() -> None:
+    spec = (build_windows.PROJECT_ROOT / "installer" / "JARVIS.spec").read_text(
+        encoding="utf-8"
+    )
+    assert 'nova_web = root / "app" / "ui" / "nova" / "web"' in spec
+    for name in build_windows.NOVA_WEB_ASSETS:
+        assert f'(str(nova_web / "{name}"), "app/ui/nova/web")' in spec, name
+    for hidden in ('"app.ui.nova"', '"app.ui.nova.shell"', '"webview"'):
+        assert hidden in spec, hidden
+    assert str(nova_shell.WEB_RELATIVE_PATH).replace("\\", "/") == "app/ui/nova/web"

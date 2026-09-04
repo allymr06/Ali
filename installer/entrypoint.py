@@ -58,6 +58,15 @@ def smoke_test(output: Path, state_directory: Path) -> int:
         from app.ui.desktop import DesktopWindow
         from app.ui.models import UIScreen
 
+        from app.ui.nova.shell import WEB_ASSETS, resolve_web_root
+
+        # Nova must be importable and its web assets bundled, otherwise
+        # the frozen desktop would open an empty WebView2 window.
+        nova_root = resolve_web_root()
+        result["nova_assets"] = sorted(
+            name for name in WEB_ASSETS if (nova_root / name).is_file()
+        )
+
         application = create_application()
         report = __import__("asyncio").run(
             application.diagnostics.health_report()
@@ -101,6 +110,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--smoke-test", action="store_true")
     parser.add_argument("--output")
     parser.add_argument("--state-dir")
+    parser.add_argument(
+        "--classic",
+        action="store_true",
+        help="open the classic Tkinter shell instead of Nova",
+    )
     arguments = parser.parse_args(argv)
     state = _state_directory(arguments.state_dir)
     if arguments.smoke_test:
@@ -115,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     # runtime whose every provider call fails authentication.
     from app.ui.desktop import launch_desktop
 
-    launch_desktop()
+    launch_desktop(classic=arguments.classic)
     return 0
 
 

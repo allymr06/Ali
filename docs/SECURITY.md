@@ -201,8 +201,29 @@ authorization grant.
 Voice, vision, and research controls fail closed when their services are not
 configured. Vision displays the provider-transfer and retention disclosure and
 requires an immediate affirmative action before creating the one-use consent
-grant. Window close cancels the UI-owned future and closes its background event
-loop; it does not claim that an already-running synchronous side effect stopped.
+grant. Window close cancels the UI-owned futures and closes the background
+event loop; it does not claim that an already-running synchronous side effect
+stopped.
+
+The Nova shell adds a JavaScript boundary with the same posture:
+
+- Only the public methods of `NovaBridge` are callable from the page;
+  lifecycle hooks are private. Every method validates its input and returns a
+  result dictionary instead of raising into the page.
+- The page renders only what Python pushed. There is no simulated data path in
+  production: a missing bridge produces a visible failure screen, and the demo
+  bridge requires an explicit `?demo=1` outside pywebview.
+- Tool approvals reach the page as single-use tokens with parameters already
+  masked by `safe_approval_parameters`. A decision is accepted once, only as a
+  real boolean; timeout, shutdown, an unknown token, or a page that has not
+  booted all mean "denied".
+- No secret crosses the bridge. Settings snapshots carry only whether a
+  credential exists, connection-test messages are redacted upstream, and
+  bridge error texts contain exception class names, never messages.
+- Deleting the stored credential requires an in-app confirmation dialog and a
+  `confirmed=True` argument; a bare call is a no-op.
+- The page is self-contained (`default-src 'self'`, no remote scripts or
+  styles) and loads from the application's own files.
 
 ## Observability privacy and integrity
 

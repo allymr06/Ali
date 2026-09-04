@@ -191,6 +191,9 @@ cannot read an `init.tcl` that Python and the operating system can both read, so
 the release evidence records `native_ui_rendered=false`. Controller and
 presentation modules remain fully deterministic and headless-testable, but this
 environment-limited result is not equivalent to a native render pass.
+Since 22 August 2026 this limitation no longer applies on the development
+host: Tcl/Tk 8.6.15 renders all eleven screens natively from source and from
+the frozen build.
 
 The Phase 14 regression coverage includes:
 
@@ -239,3 +242,57 @@ The Phase 17 regression coverage includes:
 - SHA-256 evidence for only the declared release artifacts;
 - application, executable, window, installer, and shortcut icon integration;
 - pinned PyInstaller dependencies and Authenticode-checked build-tool bootstrap.
+
+## Nova shell regression coverage (5 September 2026)
+
+`tests/test_ui_nova.py` exercises `NovaBridge` against the real
+`DesktopController` and a recording window, without opening WebView2:
+
+- import safety (importing `app.ui.nova` creates no window);
+- `_jsonable` handling of dataclasses, enums, UUIDs, dates, paths, mapping
+  proxies, sets, bytes, NaN/infinity, and unknown objects;
+- `boot()` returning the live snapshot, restored history, and a settings
+  snapshot that never contains the API key;
+- empty-command rejection before the async runner exists, a second command
+  rejected while the first runs, ordered stream flushes, and core failures
+  reported as system messages without exception details;
+- voice start/stop, double-start rejection, honest session failure, and the
+  shared text/voice conversation;
+- vision and research failures and unconfigured services reported to the page
+  without internals, plus research source bounds;
+- approval tokens: masked parameters, single use, non-boolean answers denied,
+  timeout denied, denied without a ready page, and denied on shutdown;
+- frozen and source asset resolution, explicit missing-asset errors, the
+  per-user WebView2 profile location, exactly-once resource release on window
+  close, and the `--classic` / import-fallback paths of `launch_desktop` and
+  the packaged entry point.
+
+`tests/test_nova_web.py` keeps the page honest without a browser harness: it
+parses `nova.js` with QuickJS (a syntax error fails the gate), checks that
+every `Bridge.*` call in JavaScript exists on `NovaBridge` with a compatible
+arity, that the demo bridge mirrors the Python API exactly, that lifecycle
+hooks are not exposed, that every Python push kind has a page handler, that
+demo mode is opt-in (`?demo=1`, never inside pywebview) and never a fallback,
+that the failure and confirmation UI exist, that deleting the key asks first,
+and that the stylesheet ignores the OS reduced-motion setting.
+
+The packaging tests require the spec to bundle the three page files at
+`app/ui/nova/web` and the frozen smoke report to list them as `nova_assets`.
+
+Run the focused set with:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_ui_nova.py tests/test_nova_web.py tests/test_windows_packaging.py -q
+```
+
+### Manual live acceptance
+
+WebView2 behaviour is verified by hand on a Windows 11 host; the 5 September
+2026 run is recorded under "Verified live on this host" in
+`docs/PROJECT_STATE.md`: boot, every screen, wheel and keyboard scrolling, a
+real core reply, the scrolled-up "yeni mesaj" pill, the voice HUD and its
+silence close, fail-closed vision and research, a denied approval with no side
+effect, the connection test, the cancelled delete-key dialog, preference
+persistence across a restart, and a clean Alt+F4 exit, from source and from
+the frozen executable. A spoken voice turn still requires a person at the
+microphone.

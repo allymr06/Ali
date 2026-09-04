@@ -16,6 +16,8 @@ from typing import Iterable, Sequence
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
 PRODUCT = "JARVIS"
+# The Nova shell page; the frozen smoke test must find every file.
+NOVA_WEB_ASSETS = ("index.html", "nova.css", "nova.js")
 
 
 def _inside_project(path: Path) -> Path:
@@ -100,6 +102,7 @@ def verify_smoke_report(
         "frozen": True,
         "health": "healthy",
         "screens": 11,
+        "nova_assets": list(NOVA_WEB_ASSETS),
     }
     mismatches = {
         key: (report.get(key), expected)

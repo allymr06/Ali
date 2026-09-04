@@ -23,6 +23,7 @@ python scripts/verify.py
 
 Phase 17 additionally requires a native Windows build whose frozen executable
 renders every desktop screen against bundled Tcl/Tk, reports healthy services,
-and produces a portable archive, current-user installer, release manifest, and
+bundles the Nova shell's web assets (`nova_assets` in the smoke report), and
+produces a portable archive, current-user installer, release manifest, and
 SHA-256 checksums. Signing status must be explicit; an unsigned artifact may be
 validated locally but must not be represented as publisher-authenticated.

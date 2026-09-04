@@ -317,24 +317,39 @@ every claim as observation or inference and lists unresolved limitations.
 
 ## Desktop interface
 
-Phase 13 adds a native Tk desktop shell derived from the approved monochrome
-prototype. Presentation remains outside Core: `DesktopController` translates UI
-intent into typed `Request`, voice, vision, research, task, memory, and tool
-service calls. A persistent background asyncio loop keeps provider and device
-operations off Tk's event thread; completed work returns to the UI only through
-the Tk event queue.
+Two shells share one controller. Presentation remains outside Core:
+`DesktopController` translates UI intent into typed `Request`, voice, vision,
+research, task, memory, and tool service calls, and a persistent background
+asyncio loop keeps provider and device operations off the UI thread.
 
-The shell provides Home, Chat, Tasks, Memory, Voice, Vision, Research, Tools,
-Integrations, Diagnostics, and Settings screens, a collapsible navigation rail,
-live context panel, and command composer. All counts and states come from the
-active application instance rather than prototype data. Disabled capabilities
-remain visibly disabled and fail closed at the controller boundary.
+**Nova** (`app/ui/nova/`, the default since 5 September 2026) is a pywebview
+window hosting `web/index.html` in Microsoft Edge WebView2. `NovaBridge` is the
+`js_api` object: pywebview calls its public methods on worker threads, each
+returns a small `{ok, error?}` dictionary immediately, and long-running work is
+submitted to the controller's runner. Results flow back through
+`window.evaluate_js("window.NOVA.push({kind, payload})")` after `_jsonable`
+serialization, so the page only ever renders data the core produced: snapshot,
+reply, stream, busy, voice_message, voice_phase, voice_state, vision_result,
+research_result, approval, and approval_closed. All motion (starfield, arc
+core, HUD) runs on the browser compositor at the monitor refresh rate and the
+canvases scale with `devicePixelRatio`.
 
-Vision approval is user-visible and immediately precedes the exact one-capture
-consent grant. The interface does not bypass tool permissions or synthesize an
-approval grant. Security-sensitive runtime configuration remains environment
-controlled; the Settings screen exposes appearance and observes configuration
-without rewriting secrets or policy.
+Nova's honesty rules: the page waits for the real bridge and shows an explicit
+failure screen if it never arrives; the demo bridge is reachable only with
+`?demo=1` in a plain browser and is labelled everywhere; approvals are
+single-use tokens that fail closed; secrets never cross the bridge; deleting
+the credential needs an in-app confirmation and a `confirmed=True` argument.
+Web assets are resolved by `resolve_web_root()` from `sys._MEIPASS` in a
+frozen build or from the source tree otherwise, and the WebView2 profile lives
+in `%LOCALAPPDATA%\JARVIS\webview` so theme and motion preferences persist.
+
+The **classic** Tk shell (`DesktopWindow`, Phase 13) remains available with
+`--classic` and is used automatically when pywebview is not installed. Both
+shells provide Home, Chat, Tasks, Memory, Voice, Vision, Research, Tools,
+Integrations, Diagnostics, and Settings screens fed by live application
+snapshots; disabled capabilities stay visibly disabled and fail closed at the
+controller boundary, and neither shell can bypass tool permissions or
+synthesize an approval grant.
 
 ## Diagnostics and observability
 
@@ -390,3 +405,9 @@ conditions, creates a portable archive, compiles the current-user Inno Setup
 installer when ISCC is available, and records hashes and signing status. An
 explicit environment-limited switch records a failed native-render result; it
 cannot convert that evidence into a production qualification.
+
+Since 5 September 2026 the spec also bundles Nova's `index.html`, `nova.css`,
+and `nova.js` below `_internal/app/ui/nova/web`, and the frozen smoke test
+imports `app.ui.nova.shell` and lists the files it finds as `nova_assets`; the
+build fails unless all three are present. `JARVIS.exe --classic` opens the Tk
+shell from the same package.

@@ -26,3 +26,6 @@ CODEX_WIP_REPORT.txt
 JARVIS_INTERACTION_HANDOFF/
 JARVIS_INTERACTION_HANDOFF.zip
 data/*.local.json
+
+# Local AI-tooling configuration (per machine, per user)
+.claude/

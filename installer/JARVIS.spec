@@ -2,6 +2,10 @@ from pathlib import Path
 
 root = Path(SPEC).resolve().parent.parent
 entrypoint = root / "installer" / "entrypoint.py"
+# Nova (pywebview/WebView2) shell assets. They land below
+# _internal/app/ui/nova/web so app.ui.nova.shell.resolve_web_root()
+# finds them through sys._MEIPASS exactly as in a source checkout.
+nova_web = root / "app" / "ui" / "nova" / "web"
 
 a = Analysis(
     [str(entrypoint)],
@@ -13,8 +17,14 @@ a = Analysis(
         (str(root / "docs" / "CONFIGURATION.md"), "docs"),
         (str(root / "docs" / "ACCEPTANCE.md"), "docs"),
         (str(root / "assets" / "branding" / "jarvis.ico"), "assets"),
+        (str(nova_web / "index.html"), "app/ui/nova/web"),
+        (str(nova_web / "nova.css"), "app/ui/nova/web"),
+        (str(nova_web / "nova.js"), "app/ui/nova/web"),
     ],
     hiddenimports=[
+        "app.ui.nova",
+        "app.ui.nova.shell",
+        "webview",
         "app.voice.audio",
         "app.voice.gemini",
         "app.vision.capture",

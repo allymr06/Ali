@@ -4708,12 +4708,34 @@ class DesktopWindow:
         self.root.mainloop()
 
 
-def launch_desktop() -> None:
+def launch_desktop(*, classic: bool | None = None) -> None:
+    """Open the desktop: the Nova shell by default, Tkinter on request.
+
+    ``classic`` may be given explicitly (the packaged entry point does)
+    or through a ``--classic`` command-line flag. When pywebview is not
+    installed the classic shell is used and the reason is noted.
+    """
     from app.bootstrap import create_application
+
+    if classic is None:
+        classic = "--classic" in sys.argv[1:]
 
     enable_high_dpi_rendering()
     api_settings = create_api_settings_service()
     application = create_application(api_settings.build_runtime_settings())
-    DesktopWindow(
-        DesktopController(application), api_settings=api_settings
-    ).run()
+    controller = DesktopController(application)
+
+    if not classic:
+        try:
+            from app.ui.nova import launch_nova
+        except ImportError as exc:
+            print(
+                f"[jarvis] Nova shell unavailable ({exc}); "
+                "using the classic shell.",
+                file=sys.stderr,
+            )
+        else:
+            launch_nova(controller, api_settings)
+            return
+
+    DesktopWindow(controller, api_settings=api_settings).run()

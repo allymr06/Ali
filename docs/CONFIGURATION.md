@@ -55,6 +55,26 @@ precedence over desktop preferences.
 
 Enter the model name, test the connection, then save and activate it.
 
+Deleting the stored key from the Settings screen requires confirming an in-app
+dialog; the shell's bridge also refuses a deletion that was not explicitly
+confirmed.
+
+## Desktop shell
+
+`python -m app.ui` (and the packaged `JARVIS.exe`) opens the Nova shell, a
+pywebview window rendered by the Microsoft Edge WebView2 Runtime that ships
+with Windows 11. `--classic` opens the Tkinter shell instead, which is also
+used automatically when pywebview is not installed.
+
+| Location | Purpose |
+| --- | --- |
+| `%LOCALAPPDATA%\JARVIS\webview` | WebView2 profile holding the page's own preferences (theme, "Hareketi azalt"). Follows `JARVIS_STATE_DIRECTORY` when that override is set. |
+
+The page never falls back to sample data. Opening `app/ui/nova/web/index.html`
+in a plain browser with `?demo=1` shows a clearly labelled demo for visual
+work only; without the parameter the page reports that the core bridge is
+missing.
+
 ## Conversation context
 
 | Variable | Default | Purpose |

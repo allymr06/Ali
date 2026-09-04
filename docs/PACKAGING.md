@@ -25,6 +25,12 @@ renders all eleven native UI screens against bundled Tcl/Tk, checks live health,
 creates a portable ZIP and a current-user Inno Setup installer, and writes
 SHA-256 release evidence.
 
+The frozen smoke test also proves that the Nova shell's page (`index.html`,
+`nova.css`, `nova.js`) is bundled below `_internal/app/ui/nova/web` and
+reports it as `nova_assets`. The packaged desktop opens Nova (Microsoft Edge
+WebView2, shipped with Windows 11) by default; `JARVIS.exe --classic` opens
+the Tkinter shell.
+
 The executable, installer, Start menu shortcut, desktop shortcut, and native
 window use the monochrome JARVIS logo derived from
 `assets/branding/jarvis-shortcut-icon.pdf`. The generated ICO contains Windows

@@ -9,6 +9,7 @@ description = "JARVIS - Just A Rather Very Intelligent System"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "openai==3.3.0",
+    "pywebview==6.2.1",
 ]
 
 [project.scripts]
@@ -22,6 +23,7 @@ voice = [
 dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
+    "quickjs==1.19.4",
 ]
 package = [
     "pyinstaller==6.22.2",

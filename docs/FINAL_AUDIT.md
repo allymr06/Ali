@@ -2,6 +2,7 @@
 
 Audit date: 21 August 2026
 Revised: 22 August 2026 (single-provider consolidation and re-verification)
+Revised: 5 September 2026 (Nova desktop shell stabilization and rebuild)
 
 ## Decision
 
@@ -22,12 +23,16 @@ install lifecycle test.
 - Runtime dependency audit: no known vulnerabilities in `requirements.txt`
   using `pip-audit` 2.10.1 on the audit date.
 - Bytecode compilation: all application and test modules pass.
-- Deterministic test suite: 1088 tests pass, 2 skipped, with `PYTHONHASHSEED=17`.
+- Deterministic test suite: 1197 tests pass, 1 skipped, with `PYTHONHASHSEED=17`
+  (5 September 2026).
 - Static security gate: no runtime `shell=True`, `os.system`, `eval`, or `exec`.
 - Windows package: rebuilt on 22 August from the consolidated source with
   PyInstaller 6.22.2. The frozen smoke test reports `ok=true`,
   `health=healthy`, `screens=11`, `tcl=8.6.15`, and the manifest records
-  `release_status=qualified` with fresh SHA-256 hashes.
+  `release_status=qualified` with fresh SHA-256 hashes. Rebuilt again on
+  5 September 2026 with the Nova shell: the smoke report adds `nova_assets`
+  (all three page files) and the frozen `JARVIS.exe` opened Nova and closed
+  cleanly on this host.
 - Installer: Inno Setup 7.0.2 (Authenticode-verified) compiled
   `JARVIS-Setup-0.1.0-x64.exe`. Verified on this host: silent per-user clean
   install, frozen smoke test from the installed location, silent in-place
@@ -41,7 +46,7 @@ install lifecycle test.
 | # | Requirement | Status | Evidence or remaining work |
 |---:|---|---|---|
 | 1 | Application starts reliably | Pass | Source and frozen builds start on a normal Windows 11 account; the frozen smoke test reports healthy (Tcl/Tk 8.6.15). |
-| 2 | UI loads | Pass | All eleven screens render natively from source and from the frozen, installed build. |
+| 2 | UI loads | Pass | All eleven screens render in the Nova (WebView2) shell from source and from the frozen build, and in the classic Tk shell; re-verified 5 September 2026. |
 | 3 | AI provider connects | Conditional | Mock provider is verified; the Gemini adapter is tested without a live credential or network call. |
 | 4 | Conversation works | Pass | Core/conversation integration and context lifecycle tests pass. |
 | 5 | Tool calling works | Pass | Provider tool calls, contracts, discovery, and execution are covered. |
@@ -60,7 +65,7 @@ install lifecycle test.
 | 18 | Errors are handled | Pass | Typed failures, bounded retries, recovery, and circuit breakers are covered. |
 | 19 | Logs are useful | Pass | Sanitized structured diagnostics, metrics, health, and hash-chained events are implemented. |
 | 20 | Secrets are not exposed | Pass | Configuration, diagnostics, memory, and tests enforce secret handling and redaction. |
-| 21 | Tests pass | Pass | 1088 deterministic tests pass, 2 skipped. |
+| 21 | Tests pass | Pass | 1197 deterministic tests pass, 1 skipped. |
 | 22 | Build succeeds | Pass | EXE, portable ZIP, and Inno Setup installer build; the frozen smoke gate reports qualified. |
 | 23 | Repeated launch/shutdown has no obvious leak | Pass | Controller and service shutdown are idempotent; the frozen build launched and shut down repeatedly across install, upgrade, and uninstall checks. |
 | 24 | UI remains responsive during background work | Pass | A persistent background event loop isolates Core/device work from Tk callbacks. |
@@ -77,6 +82,10 @@ Totals: 23 pass, 5 conditional, 0 missing.
    installer before public distribution.
 2. Run configured live provider, microphone/speaker, and vision qualification
    tests without storing credentials or captured private content.
+
+Exercised on 5 September 2026 from the Nova shell with the configured
+credential: live chat with a tool-verified reply, a denied approval, and the
+connection test. The microphone/speaker and vision items remain open.
 
 Resolved on 22 August 2026: the frozen smoke gate (`ok=true`,
 `health=healthy`, `screens=11`, `tcl=8.6.15`) and the Inno Setup

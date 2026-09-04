@@ -405,7 +405,9 @@ def test_second_command_is_rejected_while_the_first_runs(booted) -> None:
     assert "başka bir istek" in second["error"]
 
     release.set()
-    wait_until(lambda: "busy" in booted.window.kinds())
+    # "snapshot" is the last event the completion callback pushes; waiting
+    # for "busy" alone races the final push (seen once on CI).
+    wait_until(lambda: "snapshot" in booted.window.kinds())
 
     kinds = booted.window.kinds()
     assert kinds.index("reply") < kinds.index("busy") < kinds.index("snapshot")
@@ -423,7 +425,7 @@ def test_second_command_is_rejected_while_the_first_runs(booted) -> None:
 
     # The guard releases once the first command has finished.
     assert booted.bridge.submit_command("üçüncü") == {"ok": True}
-    wait_until(lambda: booted.window.kinds().count("busy") == 2)
+    wait_until(lambda: booted.window.kinds().count("snapshot") == 2)
 
 
 def test_streamed_chunks_reach_the_page_in_order(booted) -> None:

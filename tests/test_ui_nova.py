@@ -843,6 +843,9 @@ def desktop_entry(monkeypatch):
         "launch_nova",
         lambda controller, api_settings=None: calls.append(("nova", controller)),
     )
+    monkeypatch.setattr(
+        nova_package, "detect_webview2_runtime", lambda: "test-runtime"
+    )
     return desktop, calls
 
 
@@ -874,6 +877,50 @@ def test_launch_desktop_falls_back_when_nova_cannot_import(
     desktop.launch_desktop(classic=False)
     assert [name for name, _ in calls] == ["classic", "classic-run"]
     assert "Nova shell unavailable" in capsys.readouterr().err
+
+
+def test_launch_desktop_falls_back_when_webview2_runtime_is_missing(
+    desktop_entry, monkeypatch, capsys
+) -> None:
+    desktop, calls = desktop_entry
+    monkeypatch.setattr(nova_package, "detect_webview2_runtime", lambda: None)
+
+    desktop.launch_desktop(classic=False)
+
+    assert [name for name, _ in calls] == ["classic", "classic-run"]
+    controller = calls[0][1]
+    notice = controller.state.messages[-1]
+    assert notice.role == "system"
+    assert "WebView2" in notice.text and "Klasik arayüz" in notice.text
+    events = controller.application.diagnostics.events(component="ui")["events"]
+    assert any(
+        event["name"] == "nova.unavailable" and event["level"] == "warning"
+        for event in events
+    )
+    assert "webview2_runtime_missing" in capsys.readouterr().err
+
+
+def test_detect_webview2_runtime_never_raises() -> None:
+    version = shell.detect_webview2_runtime()
+    assert version is None or (isinstance(version, str) and version)
+
+
+def test_detection_prefers_the_loader_then_the_registry(monkeypatch) -> None:
+    monkeypatch.setattr(shell, "_webview2_loader_path", lambda: None)
+    monkeypatch.setattr(shell, "_registry_webview2_version", lambda: "1.2.3")
+    assert shell.detect_webview2_runtime() == "1.2.3"
+
+    monkeypatch.setattr(shell, "_registry_webview2_version", lambda: None)
+    assert shell.detect_webview2_runtime() is None
+
+
+def test_detection_survives_a_broken_loader(monkeypatch, tmp_path) -> None:
+    bogus = tmp_path / "WebView2Loader.dll"
+    bogus.write_bytes(b"not a library")
+    monkeypatch.setattr(shell, "_webview2_loader_path", lambda: bogus)
+    monkeypatch.setattr(shell, "_registry_webview2_version", lambda: None)
+
+    assert shell.detect_webview2_runtime() is None
 
 
 def test_packaged_entrypoint_accepts_classic_flag(monkeypatch, tmp_path) -> None:

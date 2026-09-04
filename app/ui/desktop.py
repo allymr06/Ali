@@ -15,6 +15,7 @@ from tkinter import filedialog, font as tkfont, messagebox, ttk
 from typing import Any, Callable
 
 from app.core.time import utc_now
+from app.diagnostics.models import DiagnosticLevel
 from app.security.interactive import InteractiveApprovalRequest
 from app.ui.api_settings import APISettingsService, create_api_settings_service
 from app.ui.controller import DesktopController
@@ -4708,6 +4709,32 @@ class DesktopWindow:
         self.root.mainloop()
 
 
+NOVA_FALLBACK_NOTICE = (
+    "Nova arayüzü açılamadı: Microsoft Edge WebView2 çalışma zamanı bu "
+    "bilgisayarda bulunamadı. Klasik arayüz kullanılıyor. WebView2'yi Windows "
+    "Update veya Microsoft'un Evergreen yükleyicisiyle kurduktan sonra JARVIS'i "
+    "yeniden başlat."
+)
+
+
+def announce_nova_fallback(controller: DesktopController, reason: str) -> None:
+    """Say why the classic shell opened: in the chat, the ledger, and stderr."""
+    controller.state.messages.append(ChatMessage("system", NOVA_FALLBACK_NOTICE))
+    diagnostics = getattr(controller.application, "diagnostics", None)
+    if diagnostics is not None:
+        diagnostics.record(
+            "ui",
+            "nova.unavailable",
+            "Nova shell unavailable; the classic shell opened instead.",
+            level=DiagnosticLevel.WARNING,
+            attributes={"reason": reason},
+        )
+    print(
+        f"[jarvis] Nova shell unavailable ({reason}); using the classic shell.",
+        file=sys.stderr,
+    )
+
+
 def launch_desktop(*, classic: bool | None = None) -> None:
     """Open the desktop: the Nova shell by default, Tkinter on request.
 
@@ -4727,7 +4754,7 @@ def launch_desktop(*, classic: bool | None = None) -> None:
 
     if not classic:
         try:
-            from app.ui.nova import launch_nova
+            from app.ui.nova import detect_webview2_runtime, launch_nova
         except ImportError as exc:
             print(
                 f"[jarvis] Nova shell unavailable ({exc}); "
@@ -4735,7 +4762,12 @@ def launch_desktop(*, classic: bool | None = None) -> None:
                 file=sys.stderr,
             )
         else:
-            launch_nova(controller, api_settings)
-            return
+            # Ask before creating any window: a missing runtime would
+            # otherwise surface as a crash out of pywebview.
+            if detect_webview2_runtime() is None:
+                announce_nova_fallback(controller, "webview2_runtime_missing")
+            else:
+                launch_nova(controller, api_settings)
+                return
 
     DesktopWindow(controller, api_settings=api_settings).run()

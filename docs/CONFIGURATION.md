@@ -64,7 +64,9 @@ confirmed.
 `python -m app.ui` (and the packaged `JARVIS.exe`) opens the Nova shell, a
 pywebview window rendered by the Microsoft Edge WebView2 Runtime that ships
 with Windows 11. `--classic` opens the Tkinter shell instead, which is also
-used automatically when pywebview is not installed.
+used automatically when pywebview is not installed or no WebView2 Runtime is
+detected; the chat then shows a Turkish notice and the diagnostics ledger
+records a `nova.unavailable` warning.
 
 | Location | Purpose |
 | --- | --- |

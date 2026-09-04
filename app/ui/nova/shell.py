@@ -24,7 +24,9 @@ Honesty rules that this module enforces:
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import json
+import platform
 import sys
 import time
 from collections.abc import Mapping
@@ -59,6 +61,8 @@ APPROVAL_MINIMUM_WAIT_SECONDS = 5.0
 CONNECTION_TEST_TIMEOUT_SECONDS = 30.0
 SHUTDOWN_LOCK_TIMEOUT_SECONDS = 2.0
 MAX_RESEARCH_SOURCES = 10
+# Microsoft's Evergreen WebView2 runtime client id (EdgeUpdate registry).
+WEBVIEW2_CLIENT_ID = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 
 
 def resolve_web_root() -> Path:
@@ -87,6 +91,87 @@ def resolve_web_root() -> Path:
 def webview_storage_directory() -> Path:
     """Per-user WebView2 profile so theme/motion preferences persist."""
     return default_state_directory() / "webview"
+
+
+def _webview2_loader_path() -> Path | None:
+    """Locate Microsoft's WebView2Loader.dll that pywebview ships."""
+    if sys.platform != "win32":
+        return None
+    machine = platform.machine().lower()
+    if "arm" in machine:
+        arch = "win-arm64"
+    elif machine in {"amd64", "x86_64"}:
+        arch = "win-x64"
+    else:
+        arch = "win-x86"
+    candidate = (
+        Path(webview.__file__).resolve().parent
+        / "lib"
+        / "runtimes"
+        / arch
+        / "native"
+        / "WebView2Loader.dll"
+    )
+    return candidate if candidate.is_file() else None
+
+
+def _loader_reported_version(loader: Path) -> str | None:
+    """Ask the loader which browser build WebView2 would use (None: none)."""
+    library = ctypes.WinDLL(str(loader))
+    version = ctypes.c_wchar_p()
+    result = library.GetAvailableCoreWebView2BrowserVersionString(
+        None, ctypes.byref(version)
+    )
+    text = version.value if result == 0 else None
+    if version.value is not None:
+        ctypes.windll.ole32.CoTaskMemFree(version)
+    return str(text) if text else None
+
+
+def _registry_webview2_version() -> str | None:
+    """Evergreen runtime version from the EdgeUpdate registry, if present."""
+    if sys.platform != "win32":
+        return None
+    import winreg
+
+    locations = (
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\EdgeUpdate\Clients"),
+        (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\EdgeUpdate\Clients"),
+    )
+    for hive, prefix in locations:
+        try:
+            with winreg.OpenKey(hive, prefix + "\\" + WEBVIEW2_CLIENT_ID) as key:
+                value, _kind = winreg.QueryValueEx(key, "pv")
+        except OSError:
+            continue
+        text = str(value).strip()
+        if text and text != "0.0.0.0":
+            return text
+    return None
+
+
+def detect_webview2_runtime() -> str | None:
+    """Return the WebView2 browser version Nova would run on, or None.
+
+    Microsoft's loader is authoritative (it also accepts Edge Beta/Dev/
+    Canary channels); the Evergreen registry entries are the fallback.
+    Never raises: callers treat None as "open the classic shell".
+    """
+    if sys.platform != "win32":
+        return None
+    loader = _webview2_loader_path()
+    if loader is not None:
+        try:
+            version = _loader_reported_version(loader)
+        except (OSError, AttributeError, ValueError):
+            version = None
+        if version:
+            return version
+    try:
+        return _registry_webview2_version()
+    except Exception:
+        return None
 
 
 def _jsonable(value: Any) -> Any:

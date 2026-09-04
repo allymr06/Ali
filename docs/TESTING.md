@@ -264,6 +264,9 @@ The Phase 17 regression coverage includes:
   timeout denied, denied without a ready page, and denied on shutdown;
 - completion callbacks that fire synchronously (work finished before the
   callback was registered) neither deadlock nor leave the busy guard set;
+- WebView2 runtime detection (loader first, registry fallback, broken loader
+  tolerated) and the classic-shell fallback with its notice and diagnostics
+  event;
 - frozen and source asset resolution, explicit missing-asset errors, the
   per-user WebView2 profile location, exactly-once resource release on window
   close, and the `--classic` / import-fallback paths of `launch_desktop` and

@@ -65,6 +65,11 @@ Stabilization changes, all covered by tests:
   already at the bottom; otherwise a "yeni mesaj" pill appears. Arrow, Page,
   Home, and End keys scroll the active screen when no input has focus, and a
   send attempted while JARVIS is busy keeps the draft and says so.
+- **Runtime detection.** `detect_webview2_runtime()` asks Microsoft's
+  WebView2Loader (bundled with pywebview) and then the Evergreen registry
+  entries before any window exists; without a runtime `launch_desktop`
+  records a warning event, posts a Turkish system message, and opens the
+  classic shell instead of crashing out of pywebview.
 - **Packaged entry point.** `JARVIS.exe --classic` is accepted, and the
   `.venv` is now expected to be re-synchronized from `requirements-dev.txt`
   whenever `pyproject.toml` changes (`pip check` cannot detect a dependency
@@ -374,9 +379,10 @@ whichever source answers first.
   Timeout results explicitly report when side effects may continue.
 - System tray and plugin runtime remain future extensions.
 - Publisher code signing is not configured.
-- Nova needs the Microsoft Edge WebView2 Runtime (shipped with Windows 11);
-  without pywebview the classic shell opens instead. A missing runtime is not
-  yet detected before the window is created.
+- Nova needs the Microsoft Edge WebView2 Runtime (shipped with Windows 11).
+  When pywebview is missing or no runtime is detected, the classic shell opens
+  with a Turkish notice in the chat and a `nova.unavailable` warning in the
+  diagnostics ledger; nothing crashes silently.
 - Voice from the Nova shell was exercised without speech input only; a spoken
   cloud (Charon) and local-fallback turn still needs the user's microphone.
 

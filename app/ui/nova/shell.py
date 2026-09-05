@@ -37,7 +37,7 @@ import platform
 import sys
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import Future
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
@@ -51,6 +51,8 @@ from uuid import UUID, uuid4
 import webview
 
 from app.config.paths import default_state_directory
+from app.notifications import NotificationCenter, ReminderWatch
+from app.reminders.service import show_windows_toast
 from app.security.interactive import (
     InteractiveApprovalRequest,
     safe_approval_parameters,
@@ -93,6 +95,22 @@ APPROVAL_SAFETY_MARGIN_SECONDS = 2.0
 APPROVAL_MINIMUM_WAIT_SECONDS = 5.0
 CONNECTION_TEST_TIMEOUT_SECONDS = 30.0
 HEALTH_REPORT_TIMEOUT_SECONDS = 20.0
+NOTIFICATION_LIST_LIMIT = 100
+OS_NOTIFICATION_MAX_IN_FLIGHT = 4
+# User-visible titles of the notifications the bridge raises itself.
+NOTIFICATION_TITLES: Mapping[str, str] = {
+    "reminder": "Hatırlatıcı",
+    "approval": "Onay bekleniyor",
+    "reply": "Yanıt hazır",
+    "vision": "Görüş sonucu hazır",
+    "research": "Araştırma tamamlandı",
+    "observation": "Ekran gözlemi",
+}
+DIAGNOSTIC_NOTIFICATION_TITLES: Mapping[str, str] = {
+    "warning": "Uyarı",
+    "error": "Hata",
+    "critical": "Kritik olay",
+}
 SHUTDOWN_LOCK_TIMEOUT_SECONDS = 2.0
 MAX_RESEARCH_SOURCES = 10
 MAX_DIAGNOSTIC_EVENTS = 500
@@ -132,6 +150,7 @@ RUNTIME_SETTING_FIELDS: tuple[str, ...] = (
     "tray_close_to_tray",
     "single_instance_enabled",
     "approval_ttl_seconds",
+    "notifications_os_enabled",
 )
 SECRET_SETTING_FIELDS = frozenset(
     {"api_key", "gemini_api_key", "api_base_url", "gemini_base_url"}
@@ -350,6 +369,12 @@ class ProcessMonitor:
         }
 
 
+def _message_field(message: Any, name: str) -> Any:
+    if isinstance(message, Mapping):
+        return message.get(name)
+    return getattr(message, name, None)
+
+
 class NovaBridge:
     """The ``pywebview`` JS API: every UI action lands here.
 
@@ -389,6 +414,17 @@ class NovaBridge:
         self._started_at = datetime.now().astimezone()
         self._webview2_version: str | None | bool = False  # False: not probed
         self._process = ProcessMonitor()
+        # Attention: the in-session notification centre, whether the
+        # window is currently attended (visible and not minimized), the
+        # native notifier launch_nova installs for unattended moments,
+        # and the daemon watch that delivers due reminders.
+        self._notifications = NotificationCenter()
+        self._notifications.subscribe(self._on_notification)
+        self._attended = True
+        self._os_notifier: Callable[[str, str], Any] | None = None
+        self._os_lock = Lock()
+        self._os_in_flight = 0
+        self._reminder_watch: ReminderWatch | None = None
         controller.approval_callback = self._request_approval
         self._observe_application()
 
@@ -447,6 +483,12 @@ class NovaBridge:
         subscribe = getattr(diagnostics, "subscribe", None)
         if callable(subscribe):
             self._detachers.append(subscribe(self._on_diagnostic_event))
+        watcher = getattr(application, "screen_watcher", None)
+        if watcher is not None and hasattr(watcher, "_notify"):
+            watcher._notify = self._on_screen_observation
+            self._detachers.append(lambda: setattr(watcher, "_notify", None))
+        if self._ready:
+            self._start_reminder_watch()
 
     def _detach_observers(self) -> None:
         detachers, self._detachers = self._detachers, []
@@ -455,6 +497,7 @@ class NovaBridge:
                 detach()
             except Exception:
                 pass
+        self._stop_reminder_watch()
 
     def _on_tool_event(self, event: Any) -> None:
         payload: dict[str, Any] = {
@@ -496,6 +539,19 @@ class NovaBridge:
                 "trace_id": event.trace_id,
             },
         )
+        level = str(getattr(event.level, "value", event.level)).lower()
+        title = DIAGNOSTIC_NOTIFICATION_TITLES.get(level)
+        if title is None:
+            return
+        self._publish(
+            "diagnostic",
+            title,
+            f"{event.component} · {event.name}: {event.message}",
+            severity="warning" if level == "warning" else "error",
+            target="diagnostics",
+            data={"component": event.component, "name": event.name},
+            dedupe_key=f"diagnostic:{event.component}:{event.name}",
+        )
 
     def _on_voice_level(self, level: float) -> None:
         now = time.monotonic()
@@ -507,6 +563,160 @@ class NovaBridge:
         except (TypeError, ValueError):
             return
         self._push("voice_level", {"level": round(value, 3)})
+
+    # ------------------------------------------------------------------
+    # Attention: notifications, reminders and the unattended window
+    # ------------------------------------------------------------------
+    def _publish(
+        self,
+        kind: str,
+        title: str,
+        body: str = "",
+        *,
+        severity: str = "info",
+        target: str | None = None,
+        reference: str | None = None,
+        data: Mapping[str, Any] | None = None,
+        dedupe_key: str | None = None,
+        alert: bool = False,
+    ) -> None:
+        """Record a notification; ``alert`` also reaches the OS when
+        nobody is looking at the window."""
+        try:
+            entry = self._notifications.publish(
+                kind,
+                title,
+                body,
+                severity=severity,
+                target=target,
+                reference=reference,
+                data=dict(data) if data else None,
+                dedupe_key=dedupe_key,
+            )
+        except ValueError:
+            return
+        if alert and not self._attended:
+            self._notify_os(entry.title, entry.body)
+
+    def _on_notification(self, entry: Any, unread: int) -> None:
+        self._push(
+            "notification",
+            {
+                "notification": entry.to_dict(),
+                "unread": int(unread),
+                "attended": self._attended,
+            },
+        )
+
+    def _os_notifications_enabled(self) -> bool:
+        settings = getattr(self.controller.application, "settings", None)
+        return bool(getattr(settings, "notifications_os_enabled", True))
+
+    def _notify_os(self, title: str, body: str) -> bool:
+        """Best-effort native notification on its own thread.
+
+        Publishers run on core threads (the reminder watch, the
+        diagnostics ledger, the screen watcher), and a toast can block
+        for seconds, so it never runs inline; a small in-flight bound
+        keeps a burst from spawning threads without end.
+        """
+        notifier = self._os_notifier
+        if notifier is None or not self._os_notifications_enabled():
+            return False
+        with self._os_lock:
+            if self._os_in_flight >= OS_NOTIFICATION_MAX_IN_FLIGHT:
+                return False
+            self._os_in_flight += 1
+
+        def run() -> None:
+            outcome: Any = False
+            try:
+                outcome = notifier(title, body)
+            except Exception:
+                outcome = False
+            finally:
+                with self._os_lock:
+                    self._os_in_flight -= 1
+            # The body is user content and stays out of the ledger.
+            self._record_ui_event(
+                "notification.native",
+                "A native notification was attempted for an unattended window.",
+                delivered=bool(outcome),
+                via=outcome if isinstance(outcome, str) else None,
+                title=title,
+            )
+
+        threading.Thread(
+            target=run, name="jarvis-os-notification", daemon=True
+        ).start()
+        return True
+
+    def _set_window_visible(self, visible: bool) -> None:
+        attended = bool(visible)
+        if attended == self._attended:
+            return
+        self._attended = attended
+        self._record_ui_event(
+            "window.visibility",
+            "The Nova window became attended."
+            if attended
+            else "The Nova window became unattended.",
+            attended=attended,
+        )
+
+    def _start_reminder_watch(self) -> None:
+        """(Re)start delivery for the current application's reminders."""
+        self._stop_reminder_watch()
+        reminders = getattr(self.controller.application, "reminders", None)
+        if reminders is None or not callable(getattr(reminders, "claim_due", None)):
+            return
+        watch = ReminderWatch(reminders, self._deliver_reminder)
+        self._reminder_watch = watch
+        watch.start()
+
+    def _stop_reminder_watch(self) -> None:
+        watch, self._reminder_watch = self._reminder_watch, None
+        if watch is not None:
+            watch.stop()
+
+    def _deliver_reminder(self, reminder: Mapping[str, Any]) -> None:
+        text = str(reminder.get("text", "")).strip()
+        if not text:
+            return
+        self._publish(
+            "reminder",
+            NOTIFICATION_TITLES["reminder"],
+            text,
+            reference=str(reminder.get("reminder_id", "")) or None,
+            alert=True,
+        )
+
+    def _on_screen_observation(self, entry: Any) -> None:
+        if not isinstance(entry, Mapping):
+            return
+        text = str(entry.get("text", "")).strip()
+        if not text:
+            return
+        self._publish(
+            "observation",
+            NOTIFICATION_TITLES["observation"],
+            text,
+            target="vision",
+            data={"at": entry.get("at"), "state": entry.get("state")},
+            alert=True,
+        )
+
+    def _notify_reply(self, message: Any) -> None:
+        """A reply that lands on a hidden window becomes a notification."""
+        if self._attended:
+            return
+        role = _message_field(message, "role")
+        text = str(_message_field(message, "text") or "").strip()
+        if str(role) != "assistant" or not text:
+            return
+        self._publish(
+            "reply", NOTIFICATION_TITLES["reply"], text, target="chat", alert=True
+        )
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -560,7 +770,7 @@ class NovaBridge:
         settings: dict[str, Any] | None = None
         if self.api_settings is not None:
             settings = _jsonable(self.api_settings.snapshot())
-        return {
+        payload = {
             "snapshot": _jsonable(snapshot),
             "settings": settings,
             "messages": _jsonable(self.controller.state.messages),
@@ -573,7 +783,12 @@ class NovaBridge:
                 self.controller.list_conversations(limit=MAX_CONVERSATION_LIST)
             ),
             "fileRoots": self._file_roots_payload(),
+            "notifications": self._notification_state(),
         }
+        # Started after the payload is built so a reminder that is due
+        # right now reaches the page as a push it merges after boot.
+        self._start_reminder_watch()
+        return payload
 
     def _shutdown(self) -> None:
         """Fail every pending decision closed and stop reporting.
@@ -641,6 +856,7 @@ class NovaBridge:
                 )
             else:
                 self._push("reply", message)
+                self._notify_reply(message)
             self._push("busy", {"busy": False, "status": READY_STATUS})
             self._push_snapshot()
 
@@ -863,6 +1079,14 @@ class NovaBridge:
                 )
             else:
                 self._push("vision_result", {"ok": True, "text": text})
+                if not self._attended:
+                    self._publish(
+                        "task",
+                        NOTIFICATION_TITLES["vision"],
+                        str(text or ""),
+                        target="vision",
+                        alert=True,
+                    )
 
         try:
             self.controller.submit_background(
@@ -901,6 +1125,14 @@ class NovaBridge:
                 )
             else:
                 self._push("research_result", {"ok": True, "report": report})
+                if not self._attended:
+                    self._publish(
+                        "task",
+                        NOTIFICATION_TITLES["research"],
+                        f"“{normalized}” için rapor hazır.",
+                        target="research",
+                        alert=True,
+                    )
 
         try:
             self.controller.submit_background(
@@ -960,6 +1192,16 @@ class NovaBridge:
                 "description": self._tool_description(request.tool_name),
             },
         )
+        if not self._attended:
+            self._publish(
+                "approval",
+                NOTIFICATION_TITLES["approval"],
+                self._tool_description(request.tool_name) or request.tool_name,
+                severity="warning",
+                data={"tool": request.tool_name, "risk": request.risk_level.value},
+                dedupe_key=f"approval:{request.tool_name}",
+                alert=True,
+            )
         try:
             return bool(
                 await asyncio.wait_for(
@@ -1258,6 +1500,65 @@ class NovaBridge:
         return {"ok": True, "compact": compact}
 
     # ------------------------------------------------------------------
+    # Notifications
+    # ------------------------------------------------------------------
+    def _notification_state(
+        self, limit: int = NOTIFICATION_LIST_LIMIT
+    ) -> dict[str, Any]:
+        summary = self._notifications.summary()
+        return {
+            "items": [
+                entry.to_dict() for entry in self._notifications.list(limit=limit)
+            ],
+            "unread": summary["unread"],
+            "total": summary["total"],
+        }
+
+    def list_notifications(self, limit: Any = NOTIFICATION_LIST_LIMIT) -> dict[str, Any]:
+        try:
+            bound = int(limit)
+        except (TypeError, ValueError):
+            bound = NOTIFICATION_LIST_LIMIT
+        bound = max(1, min(bound, NOTIFICATION_LIST_LIMIT))
+        return {"ok": True, **self._notification_state(bound)}
+
+    def mark_notifications_read(self, notification_ids: Any = None) -> dict[str, Any]:
+        """Mark the given entries read; ``None`` marks every entry."""
+        ids: list[str] | None = None
+        if notification_ids is not None:
+            if isinstance(notification_ids, (str, bytes)) or not isinstance(
+                notification_ids, Iterable
+            ):
+                ids = [str(notification_ids)]
+            else:
+                ids = [str(item) for item in notification_ids][:NOTIFICATION_LIST_LIMIT]
+        changed = self._notifications.mark_read(ids)
+        return {
+            "ok": True,
+            "changed": changed,
+            "unread": self._notifications.unread_count(),
+        }
+
+    def dismiss_notification(self, notification_id: str) -> dict[str, Any]:
+        removed = self._notifications.dismiss(str(notification_id or ""))
+        unread = self._notifications.unread_count()
+        if not removed:
+            return {"ok": False, "error": "Bildirim bulunamadı.", "unread": unread}
+        return {"ok": True, "unread": unread}
+
+    def clear_notifications(self) -> dict[str, Any]:
+        cleared = self._notifications.clear()
+        return {"ok": True, "cleared": cleared, "unread": 0}
+
+    def set_visible(self, visible: Any) -> dict[str, Any]:
+        """The page reports document visibility; hidden means unattended."""
+        attended = visible is True or (
+            isinstance(visible, str) and visible.strip().lower() == "true"
+        )
+        self._set_window_visible(attended)
+        return {"ok": True, "visible": self._attended}
+
+    # ------------------------------------------------------------------
     # File access: roots the user grants, snapshots the user restores
     # ------------------------------------------------------------------
     def _filesystem(self) -> tuple[Any | None, Any | None]:
@@ -1288,7 +1589,7 @@ class NovaBridge:
             ],
         }
 
-    def _record_file_event(self, name: str, message: str, **attributes: Any) -> None:
+    def _record_ui_event(self, name: str, message: str, **attributes: Any) -> None:
         diagnostics = getattr(self.controller.application, "diagnostics", None)
         if diagnostics is None:
             return
@@ -1344,7 +1645,7 @@ class NovaBridge:
             grant = windows.grant_filesystem_root(candidate)
         except Exception as exc:
             return {"ok": False, "error": _grant_failure_message(exc)}
-        self._record_file_event(
+        self._record_ui_event(
             "filesystem.root_granted",
             "A filesystem root was granted from the desktop.",
             root_id=grant.root_id,
@@ -1365,7 +1666,7 @@ class NovaBridge:
             }
         if not removed:
             return {"ok": False, "error": "Bu kimlikle bir klasör erişimi yok."}
-        self._record_file_event(
+        self._record_ui_event(
             "filesystem.root_revoked",
             "A filesystem root was revoked from the desktop.",
             root_id=str(root_id),
@@ -1404,7 +1705,7 @@ class NovaBridge:
         if not result.succeeded:
             return {"ok": False, "error": _restore_failure_message(result.error)}
         data = result.data or {}
-        self._record_file_event(
+        self._record_ui_event(
             "filesystem.snapshot_restored",
             "A filesystem snapshot was restored from the desktop.",
             root_id=str(data.get("root_id")),
@@ -1609,11 +1910,13 @@ class NovaTrayActions:
                 native.BeginInvoke(Action(native.Activate))
         except Exception:
             pass
+        self._bridge._set_window_visible(True)
         if self.service is not None:
             self.service.set_window_visible(True)
 
     def hide(self) -> None:
         self._window.hide()
+        self._bridge._set_window_visible(False)
         if self.service is not None:
             self.service.set_window_visible(False)
 
@@ -1741,6 +2044,32 @@ def launch_nova(
             on_error=lambda item, exc: _record_tray_problem(controller, item, exc),
         )
         actions.service = tray
+
+    def notify_os(title: str, body: str) -> str | bool:
+        # Unattended-window notifications: the tray balloon when the icon
+        # exists, otherwise a plain Windows toast. Both are best effort;
+        # the returned channel lands in the ledger for later inspection.
+        if tray is not None and tray.active:
+            tray.notify(title, body)
+            return "tray"
+        return "toast" if show_windows_toast(title, body) else False
+
+    bridge._os_notifier = notify_os
+    # pywebview fires ``restored`` only for a return to the Normal state;
+    # a maximized window that was minimized comes back as ``maximized``.
+    for event_name, visible in (
+        ("minimized", False),
+        ("restored", True),
+        ("maximized", True),
+        ("shown", True),
+    ):
+        hook = getattr(window.events, event_name, None)
+        if hook is None:
+            continue
+        try:
+            hook += (lambda *_args, visible=visible: bridge._set_window_visible(visible))
+        except Exception:
+            pass
     hidden_notice_shown = False
 
     def on_closing() -> bool | None:

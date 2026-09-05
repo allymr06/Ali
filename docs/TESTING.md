@@ -383,6 +383,23 @@ notifies and exits; first launch watches and releases; classic also holds
 the instance), and settings parsing. The real WinForms icon is exercised by
 an opt-in test (`JARVIS_TRAY_LIVE_TESTS=1`).
 
+## Notification centre coverage (5 September 2026)
+
+`tests/test_notifications.py` covers the centre (bounded titles, bodies and
+data; kind and severity validation; newest-first bounded listing; mark
+read, dismiss, clear; dedupe within the window only; broken listeners;
+concurrent publishing) and the reminder watch (exactly-once delivery per
+claim, delivery and store errors swallowed, immediate first poll, periodic
+polling, idempotent start and stop, restart). `tests/test_ui_nova.py`
+covers the bridge: the boot payload and the watch lifecycle, due reminders
+reaching the page and following a replaced runtime, the centre API,
+unattended routing to the OS notifier with the setting and the in-flight
+bound, replies, approvals (no parameters), vision and research results on a
+hidden window, screen observations and collapsed ledger warnings, tray
+actions and `launch_nova` wiring. `tests/test_nova_web.py` checks the page
+declares the bell and popover, handles the `notification` push, reports
+visibility, and never invents entries.
+
 ## Safe-filesystem regression coverage (5 September 2026)
 
 `tests/test_filesystem_snapshots.py` covers the store: sealed bytes with a

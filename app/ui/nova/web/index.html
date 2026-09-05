@@ -59,6 +59,7 @@
       <span id="demo-badge" class="demo-badge" hidden
             title="Örnek veriler; çekirdek bağlı değil, hiçbir eylem gerçek değil">Demo · çekirdek yok</span>
       <div id="system-chips" class="system-chips"></div>
+      <button id="notify-btn" class="top-btn notify-btn" type="button" title="Bildirimler (Ctrl+Shift+N)" aria-haspopup="dialog" aria-expanded="false"><span id="notify-badge" class="notify-badge" hidden>0</span></button>
       <button id="pause-btn" class="top-btn" type="button" title="JARVIS'i duraklat"></button>
       <button id="palette-btn" class="top-btn" type="button" title="Komut paleti (Ctrl+K)"></button>
       <button id="context-btn" class="top-btn" type="button" title="Bağlam paneli (Ctrl+Shift+C)"></button>
@@ -69,6 +70,19 @@
       </div>
     </div>
   </header>
+
+  <!-- Notification centre: session-scoped, fed only by the core (reminders,
+       unattended replies and approvals, ledger warnings, screen observations). -->
+  <section id="notify-panel" class="notify-panel" role="dialog" aria-label="Bildirimler" hidden>
+    <div class="notify-head">
+      <span class="kicker">Bildirimler</span>
+      <span id="notify-summary" class="notify-summary"></span>
+      <button id="notify-read-all" class="btn btn-ghost small" type="button">Tümünü okundu say</button>
+      <button id="notify-clear" class="btn btn-ghost small" type="button">Temizle</button>
+      <button id="notify-close" class="icon-btn small" type="button" title="Kapat"></button>
+    </div>
+    <div id="notify-list" class="notify-list"></div>
+  </section>
 
   <nav id="rail" aria-label="Ana gezinme">
     <div id="rail-indicator" aria-hidden="true"></div>

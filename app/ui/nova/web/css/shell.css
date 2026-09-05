@@ -206,6 +206,65 @@ body.light #topbar { background: linear-gradient(180deg, rgba(255,255,255,0.82),
 .top-btn.active { color: var(--accent); border-color: var(--line-2); }
 .top-btn kbd { font-family: var(--font-mono); font-size: 0.6rem; color: var(--ink-4); }
 
+/* notification bell + centre */
+.notify-btn { position: relative; }
+.notify-btn.has-unread { color: var(--ink-1); }
+.notify-btn.has-unread svg { filter: drop-shadow(0 0 5px rgba(var(--accent-rgb), 0.55)); }
+.notify-badge {
+  position: absolute; top: -0.3rem; right: -0.3rem;
+  min-width: 1.05rem; height: 1.05rem; padding: 0 0.28rem;
+  border-radius: 999px;
+  background: var(--accent); color: var(--bg);
+  font-family: var(--font-mono); font-size: 0.6rem; font-weight: 600; letter-spacing: 0;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.6);
+}
+.notify-badge[hidden] { display: none; }
+.notify-panel {
+  position: fixed; top: calc(var(--top-h) + 0.5rem); right: 0.9rem; z-index: var(--z-veil);
+  width: min(26rem, calc(100vw - 1.8rem)); max-height: min(34rem, calc(100vh - var(--top-h) - 1.5rem));
+  display: flex; flex-direction: column;
+  border-radius: var(--radius-3);
+  background: var(--surface-3);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-2), var(--inset-light);
+  backdrop-filter: blur(16px) saturate(1.2);
+  overflow: hidden;
+  animation: rise-in var(--motion-panel) var(--ease-enter);
+}
+.notify-panel[hidden] { display: none; }
+.notify-head {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.55rem 0.6rem 0.55rem 1rem;
+  border-bottom: 1px solid var(--line-1);
+}
+.notify-head .kicker { margin-right: auto; }
+.notify-summary { color: var(--ink-4); font-size: var(--text-xs); letter-spacing: 0.08em; }
+.notify-list { overflow-y: auto; padding: 0.35rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.notify-empty { color: var(--ink-4); font-size: var(--text-sm); line-height: 1.5; padding: 1.2rem 1rem 1.4rem; text-align: center; }
+.notify-item {
+  display: grid; grid-template-columns: 1.6rem minmax(0, 1fr) auto; gap: 0.55rem; align-items: start;
+  width: 100%; padding: 0.6rem 0.55rem 0.6rem 0.65rem;
+  border: 1px solid transparent; border-radius: var(--radius-2);
+  background: none; color: var(--ink-2); text-align: left;
+  transition: background var(--motion-fast), border-color var(--motion-fast);
+}
+.notify-item:hover { background: rgba(var(--accent-rgb), 0.06); border-color: var(--line-1); }
+.notify-item.unread { color: var(--ink-1); }
+.notify-item.unread .notify-title::before { content: ""; display: inline-block; width: 0.4rem; height: 0.4rem; margin-right: 0.4rem; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px var(--accent); vertical-align: middle; }
+.notify-item .notify-icon { width: 1.6rem; height: 1.6rem; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--line-1); color: var(--accent-2); }
+.notify-item .notify-icon svg { width: 0.85rem; height: 0.85rem; }
+.notify-item.warning .notify-icon { color: var(--warn); border-color: rgba(var(--warn-rgb), 0.45); }
+.notify-item.error .notify-icon { color: var(--bad); border-color: rgba(var(--bad-rgb), 0.45); }
+.notify-item .notify-title { font-size: var(--text-sm); letter-spacing: 0.02em; }
+.notify-item .notify-body { color: var(--ink-3); font-size: var(--text-xs); line-height: 1.45; margin-top: 0.15rem; overflow-wrap: anywhere; }
+.notify-item .notify-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 0.3rem; }
+.notify-item .notify-time { font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-4); white-space: nowrap; }
+.notify-item .notify-count { font-family: var(--font-mono); font-size: 0.62rem; color: var(--accent-2); }
+.notify-item .notify-dismiss { width: 1.4rem; height: 1.4rem; border-color: transparent; opacity: 0; }
+.notify-item:hover .notify-dismiss, .notify-item:focus-within .notify-dismiss { opacity: 1; }
+.notify-item .notify-dismiss svg { width: 0.75rem; height: 0.75rem; }
+
 .clock { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; }
 #clock-time { font-family: var(--font-system); font-size: 0.95rem; letter-spacing: 0.1em; color: var(--ink-1); }
 #clock-date { font-family: var(--font-system); font-size: var(--text-xs); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); }

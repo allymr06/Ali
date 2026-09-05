@@ -98,6 +98,7 @@ roots can never contain that directory.
 | --- | --- | --- |
 | `JARVIS_TRAY_ENABLED` | `true` | Show the notification-area icon with Aç, Sesli mod, Duraklat/Devam, Tanılama, Ayarlar, Çıkış (Nova shell, Windows). |
 | `JARVIS_TRAY_CLOSE_TO_TRAY` | `true` | Closing the window hides it to the tray; `Çıkış` in the tray menu exits. Set to `false` to make the close button exit. |
+| `JARVIS_NOTIFICATIONS_OS_ENABLED` | `true` | Native Windows notification (tray balloon, otherwise a toast) for reminders, replies, approval requests and results that arrive while the Nova window is hidden or minimized. The in-window notification centre is always on. |
 | `JARVIS_SINGLE_INSTANCE` | `true` | One desktop per user session; a second launch brings the running window forward and exits. |
 
 `Duraklat` refuses new commands, voice, vision, and research requests and

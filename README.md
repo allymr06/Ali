@@ -54,6 +54,10 @@ Implemented:
 - Windows system tray for the Nova shell (open, voice mode, pause/resume,
   diagnostics, settings, exit; close-to-tray) and one instance per user
   session
+- a notification centre in the Nova shell: reminders delivered in the
+  window, replies, approvals and results that arrived while the window was
+  hidden, ledger warnings and screen observations, with a native Windows
+  notification when nobody is looking
 - manifest-based plugin runtime (disabled by default; plugin tools go through
   the same executor, permission engine, and approvals; in-process, not
   sandboxed)

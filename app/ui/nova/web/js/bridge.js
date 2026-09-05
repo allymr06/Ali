@@ -46,13 +46,23 @@ const DEMO_SNAPSHOT = {
   ],
 };
 
+const DEMO_NOTIFICATIONS = [
+  { notification_id: "demo-n1", kind: "reminder", title: "Hatırlatıcı", body: "DEMO: Toplantı notlarını gözden geçir.",
+    severity: "info", created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    target: null, reference: "demo-r1", data: {}, count: 1, read: false },
+  { notification_id: "demo-n2", kind: "diagnostic", title: "Uyarı", body: "DEMO: providers · circuit.opened: örnek uyarı.",
+    severity: "warning", created_at: new Date(Date.now() - 3600_000).toISOString(), updated_at: new Date(Date.now() - 3600_000).toISOString(),
+    target: "diagnostics", reference: null, data: { component: "providers", name: "circuit.opened" }, count: 2, read: true },
+];
+
 const DEMO_RUNTIME = {
   version: null, python: "3.12", platform: "Windows 11", webview2: null, user_name: "Ali",
   started_at: new Date().toISOString(), conversation_id: "demo-conv-1",
   configuration: { voice_enabled: true, voice_wake_word: "jarvis", voice_require_wake_word: false,
     voice_language: "tr", voice_gemini_tts_voice: "Charon", vision_enabled: true, research_enabled: true,
     windows_integrations_enabled: true, memory_auto_capture_enabled: true, tray_enabled: true,
-    tray_close_to_tray: true, single_instance_enabled: true, plugins_enabled: false, approval_ttl_seconds: 300 },
+    tray_close_to_tray: true, single_instance_enabled: true, plugins_enabled: false, approval_ttl_seconds: 300,
+    notifications_os_enabled: true },
   applications: [{ id: "spotify", name: "Spotify" }, { id: "notepad", name: "Not Defteri" }],
   state_directory: "(demo)",
 };
@@ -83,6 +93,7 @@ const DemoBridge = {
       fileRoots: { available: true, roots: [
         { root_id: "belgeler-1a2b3c4d5e", name: "Belgeler", path: "C:\\Users\\Ali\\Documents" },
       ] },
+      notifications: { items: DEMO_NOTIFICATIONS, unread: 1, total: DEMO_NOTIFICATIONS.length },
     };
   },
   async submit_command(text) {
@@ -221,6 +232,13 @@ const DemoBridge = {
     if (confirmed !== true) return { ok: false, error: "Geri yükleme onaylanmadı." };
     return { ok: false, error: "Demo modu: dosya geri yüklenmedi." };
   },
+  async list_notifications() {
+    return { ok: true, items: DEMO_NOTIFICATIONS, unread: 1, total: DEMO_NOTIFICATIONS.length };
+  },
+  async mark_notifications_read() { return { ok: true, changed: 0, unread: 0 }; },
+  async dismiss_notification() { return { ok: false, error: "Demo modu: bildirim kaldırılmadı." }; },
+  async clear_notifications() { return { ok: true, cleared: 0, unread: 0 }; },
+  async set_visible(visible) { return { ok: true, visible: visible === true }; },
   async get_settings() { return { provider: "gemini", model: "gemini-2.5-pro",
     credential_configured: true, credential_required: true }; },
   async save_settings() {
@@ -376,6 +394,10 @@ const PUSH = {
 
   /* Every sealed ledger event; the diagnostics screen shows the tail. */
   diagnostic_event(payload) { Diagnostics.onEvent(payload); },
+
+  /* One entry of the notification centre (new or updated), with the
+     live unread count; the core decides what deserves attention. */
+  notification(payload) { Notify.onPush(payload); },
 
   /* Tray menu: jump to a screen (only known ids are accepted). */
   navigate({ screen }) {

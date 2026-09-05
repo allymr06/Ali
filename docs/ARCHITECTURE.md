@@ -386,7 +386,7 @@ submitted to the controller's runner. Results flow back through
 serialization, so the page only ever renders data the core produced: snapshot,
 reply, stream, busy, voice_message, voice_phase, voice_state, voice_level,
 vision_result, research_result, approval, approval_closed, tool_activity,
-diagnostic_event, navigate, and paused. The bridge subscribes, read-only, to
+diagnostic_event, notification, navigate, and paused. The bridge subscribes, read-only, to
 the tool executor (every execution start and outcome), to the diagnostics
 ledger (every sealed event) and to the microphone level, and re-subscribes
 when a settings save replaces the runtime. Since the 5 September 2026
@@ -409,6 +409,25 @@ the credential needs an in-app confirmation and a `confirmed=True` argument.
 Web assets are resolved by `resolve_web_root()` from `sys._MEIPASS` in a
 frozen build or from the source tree otherwise, and the WebView2 profile lives
 in `%LOCALAPPDATA%\JARVIS\webview` so theme and motion preferences persist.
+
+**Notification centre** (`app/notifications/`, 5 September 2026).
+`NotificationCenter` is a bounded, thread-safe, session-scoped attention
+list with kinds, severities, target screens and dedupe-by-key collapsing;
+`ReminderWatch` polls the reminder store on a daemon thread and hands each
+due reminder out exactly once. The bridge owns one centre per window
+session, publishes into it from the core's observers (reminders, ledger
+warnings, screen observations) and from its own completions when the
+window is unattended (replies, approval requests as tool name and risk
+only, vision and research results), pushes every entry to the page with the
+live unread count, and raises a native notification off-thread for
+alert-worthy entries nobody is looking at. Whether the window is attended
+comes from the page's visibility state, the tray's open/hide and
+pywebview's minimized/maximized/restored events (pywebview reports
+`restored` only for a return to the Normal state, so a maximized window
+coming back from the taskbar arrives as `maximized`). Each flip and each
+native attempt is a ledger event (`window.visibility`,
+`notification.native`). The page renders the bell, the popover and the
+toasts only from what the core pushed or returned.
 
 **System tray** (`app/ui/tray/`, 5 September 2026). A toolkit-independent
 menu model and controller (`Aç`/`Öne getir`, `Sesli mod`, `Duraklat`/`Devam`,

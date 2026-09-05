@@ -42,6 +42,8 @@ const ICONS = {
   stop: '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
   motion: '<path d="M3 12c3-5 6-5 9 0s6 5 9 0"/>',
+  bell: '<path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 1.5H5z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+  alarm: '<circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.5 1.5M4.5 6.5 7 4M19.5 6.5 17 4"/>',
 };
 function icon(name) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
@@ -184,6 +186,151 @@ function startClock() {
   setInterval(tick, 10_000);
 }
 
+/* ── notification centre: what happened while you were not looking ── */
+
+const Notify = {
+  open: false,
+  pending: [],              // pushes that arrived before boot finished
+
+  apply(state) {
+    State.notifications = Array.isArray(state?.items) ? state.items.slice() : [];
+    State.unread = Number(state?.unread) || 0;
+    const pending = this.pending.splice(0);
+    pending.forEach((payload) => this.merge(payload));
+    this.renderBadge();
+    if (this.open) this.render();
+  },
+
+  merge({ notification, unread }) {
+    if (!notification || !notification.notification_id) return;
+    const index = State.notifications.findIndex((n) => n.notification_id === notification.notification_id);
+    if (index >= 0) State.notifications.splice(index, 1);
+    State.notifications.unshift(notification);
+    State.notifications.length = Math.min(State.notifications.length, 100);
+    if (Number.isFinite(Number(unread))) State.unread = Number(unread);
+  },
+
+  onPush(payload) {
+    if (!State.booted) { this.pending.push(payload); return; }
+    const wasKnown = State.notifications.some((n) => n.notification_id === payload.notification?.notification_id);
+    this.merge(payload);
+    this.renderBadge();
+    if (this.open) this.render();
+    const item = payload.notification;
+    if (!item || wasKnown) return;
+    /* The approval overlay is already on screen for its own kind. */
+    if (item.kind !== "approval") toast(`${item.title} · ${item.body}`.slice(0, 220), item.severity === "error" ? "err" : "");
+    if (item.kind === "reminder") this.chatLine(`⏰ Hatırlatıcı: ${item.body}`);
+    else if (item.kind === "observation") this.chatLine(`👁 Ekran: ${item.body}`);
+    Engine.wake();
+  },
+
+  /* Reminders and screen observations also land in the conversation,
+     as the classic shell does; the centre keeps the durable record. */
+  chatLine(text) {
+    updateChat(() => appendMessage($("#chat-list"), { role: "system", text, at: Date.now() }, false));
+  },
+
+  set(open) {
+    if (open === this.open) return;
+    this.open = open;
+    $("#notify-panel").hidden = !open;
+    $("#notify-btn").classList.toggle("active", open);
+    $("#notify-btn").setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) { this.render(); $("#notify-close").focus(); }
+  },
+  toggle() { this.set(!this.open); },
+
+  renderBadge() {
+    const badge = $("#notify-badge");
+    const unread = State.unread;
+    badge.hidden = unread <= 0;
+    badge.textContent = unread > 99 ? "99+" : String(unread);
+    $("#notify-btn").classList.toggle("has-unread", unread > 0);
+    $("#notify-btn").title = unread > 0 ? `Bildirimler · ${unread} okunmamış (Ctrl+Shift+N)` : "Bildirimler (Ctrl+Shift+N)";
+  },
+
+  render() {
+    const host = $("#notify-list");
+    const items = State.notifications;
+    $("#notify-summary").textContent = items.length ? `${items.length} kayıt · ${State.unread} okunmamış` : "";
+    $("#notify-read-all").disabled = State.unread === 0;
+    $("#notify-clear").disabled = items.length === 0;
+    if (!items.length) {
+      host.innerHTML = '<div class="notify-empty">Bildirim yok. Hatırlatıcılar, sen bakmazken gelen yanıtlar ve onay istekleri, tanılama uyarıları burada birikir.</div>';
+      return;
+    }
+    host.innerHTML = items.map((item) => `
+      <div class="notify-item ${item.read ? "" : "unread"} ${esc(item.severity)}" data-id="${esc(item.notification_id)}" role="button" tabindex="0">
+        <span class="notify-icon" title="${esc(NOTIFICATION_KIND_TR[item.kind] || item.kind)}">${icon(NOTIFICATION_KIND_ICON[item.kind] || "spark")}</span>
+        <span><div class="notify-title">${esc(item.title)}</div><div class="notify-body">${esc(item.body)}</div></span>
+        <span class="notify-meta"><span class="notify-time" title="${esc(fmtTime(item.updated_at))}">${esc(fmtRelative(item.updated_at))}</span>${item.count > 1 ? `<span class="notify-count">×${item.count}</span>` : ""}<button type="button" class="icon-btn small notify-dismiss" data-act="dismiss" title="Kaldır">${icon("close")}</button></span>
+      </div>`).join("");
+    $$(".notify-item", host).forEach((row) => {
+      const id = row.dataset.id;
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("[data-act='dismiss']")) { event.stopPropagation(); this.dismiss(id); return; }
+        this.activate(id);
+      });
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.activate(id); }
+        else if (event.key === "Delete") { event.preventDefault(); this.dismiss(id); }
+      });
+    });
+  },
+
+  async activate(id) {
+    const item = State.notifications.find((n) => n.notification_id === id);
+    if (!item) return;
+    if (!item.read) {
+      const result = await call("mark_notifications_read", [id]);
+      if (result.ok === false) { toast(result.error || "Bildirim güncellenemedi.", true); return; }
+      item.read = true;
+      State.unread = Number(result.unread) || 0;
+      this.renderBadge();
+    }
+    if (item.target && NAV.some(([screen]) => screen === item.target)) { this.set(false); showScreen(item.target); }
+    else this.render();
+  },
+
+  async readAll() {
+    const result = await call("mark_notifications_read", null);
+    if (result.ok === false) { toast(result.error || "Bildirimler güncellenemedi.", true); return; }
+    State.notifications.forEach((n) => { n.read = true; });
+    State.unread = Number(result.unread) || 0;
+    this.renderBadge();
+    this.render();
+  },
+
+  async dismiss(id) {
+    const result = await call("dismiss_notification", id);
+    if (result.ok === false) { toast(result.error || "Bildirim kaldırılamadı.", true); return; }
+    State.notifications = State.notifications.filter((n) => n.notification_id !== id);
+    State.unread = Number(result.unread) || 0;
+    this.renderBadge();
+    this.render();
+  },
+
+  async clear() {
+    const result = await call("clear_notifications");
+    if (result.ok === false) { toast(result.error || "Bildirimler temizlenemedi.", true); return; }
+    State.notifications = [];
+    State.unread = 0;
+    this.renderBadge();
+    this.render();
+  },
+};
+
+/* The bridge routes attention (native notifications) by whether the
+   page is visible; the browser knows that better than pywebview does. */
+function reportVisibility() {
+  if (!Bridge || !State.booted || State.demo) return;
+  try {
+    const result = Bridge.set_visible(!document.hidden);
+    if (result && typeof result.catch === "function") result.catch(() => {});
+  } catch (err) { /* the window is closing; nothing to report */ }
+}
+
 /* ── context drawer: only what matters right now ──────────────────── */
 
 const Context = {
@@ -257,6 +404,7 @@ const Palette = {
     list.push({ group: "eylem", icon: State.paused ? "play" : "pause", label: State.paused ? "JARVIS'i sürdür" : "JARVIS'i duraklat", keywords: "dur bekle devam", run: () => togglePause() });
     list.push({ group: "eylem", icon: State.compact ? "expand" : "compact", label: State.compact ? "Tam görünüme dön" : "Kompakt moda geç", keywords: "mini küçük pencere", run: () => setCompact(!State.compact) });
     list.push({ group: "eylem", icon: "context", label: State.contextOpen ? "Bağlam panelini kapat" : "Bağlam panelini aç", keywords: "panel yürütme", run: () => Context.toggle() });
+    list.push({ group: "eylem", icon: "bell", label: State.unread > 0 ? `Bildirimler (${State.unread} okunmamış)` : "Bildirimler", keywords: "bildirim hatırlatıcı uyarı", run: () => Notify.set(true) });
     list.push({ group: "eylem", icon: "chevron", label: State.railCollapsed ? "Gezinmeyi genişlet" : "Gezinmeyi daralt", keywords: "menü rail", run: () => setRailCollapsed(!State.railCollapsed) });
     list.push({ group: "eylem", icon: "refresh", label: "Sistem sağlığını denetle", keywords: "tanılama health", run: () => { showScreen("diagnostics"); Diagnostics.refresh(); } });
     list.push({ group: "görünüm", icon: "motion", label: State.reducedMotion ? "Hareketi geri aç" : "Hareketi azalt", keywords: "animasyon", run: () => applyMotionPreference(!State.reducedMotion) });
@@ -429,6 +577,8 @@ function bindKeyboard() {
     if (event.ctrlKey && key === "n" && !event.shiftKey) { event.preventDefault(); newConversation(); }
     if (event.ctrlKey && event.shiftKey && key === "t") { event.preventDefault(); toggleTheme(); }
     if (event.ctrlKey && event.shiftKey && key === "c") { event.preventDefault(); Context.toggle(); }
+    if (event.ctrlKey && event.shiftKey && key === "n") { event.preventDefault(); Notify.toggle(); }
+    if (event.key === "Escape" && Notify.open) { event.preventDefault(); Notify.set(false); return; }
     if (event.ctrlKey && event.shiftKey && key === "b") { event.preventDefault(); setRailCollapsed(!State.railCollapsed); }
     if (event.key === "Escape" && !activeApproval && !confirmOpen) {
       if (VoiceStage.active) toggleVoice();
@@ -443,7 +593,8 @@ const SHORTCUTS = [
   ["Ctrl + K", "Komut paleti"], ["Enter", "Komutu gönder"], ["Shift + Enter", "Yeni satır"],
   ["Ctrl + L", "Komut alanına odaklan"], ["Ctrl + M", "Sesli modu aç/kapat"],
   ["Ctrl + N", "Yeni konuşma"], ["Ctrl + ,", "Ayarlar"],
-  ["Ctrl + Shift + C", "Bağlam paneli"], ["Ctrl + Shift + B", "Gezinmeyi daralt/genişlet"],
+  ["Ctrl + Shift + C", "Bağlam paneli"], ["Ctrl + Shift + N", "Bildirimler"],
+  ["Ctrl + Shift + B", "Gezinmeyi daralt/genişlet"],
   ["Ctrl + Shift + T", "Koyu/açık tema"], ["Alt + 1…9", "Ekranlar"], ["Alt + 0", "Tanılama"],
   ["↑ / ↓ · Page Up / Down", "Ekranı kaydır"], ["Home / End", "Başa / sona git"],
   ["Escape", "Kapat · Komuta Merkezi'ne dön"],
@@ -513,6 +664,7 @@ function applyBoot(bootData) {
   State.voiceMessages = bootData.voiceMessages || [];
   State.conversations = bootData.conversations || [];
   State.fileRoots = bootData.fileRoots || { available: false, roots: [] };
+  Notify.apply(bootData.notifications);
   $("#demo-badge").hidden = !State.demo;
   Presence.connected = true;
   State.status = bootData.status || READY;
@@ -529,6 +681,7 @@ function applyBoot(bootData) {
   Context.set(State.contextOpen);
   scrollChat({ force: true, instant: true });
   Presence.apply();
+  reportVisibility();
 }
 
 function bindShell() {
@@ -538,6 +691,18 @@ function bindShell() {
   $("#context-btn").addEventListener("click", () => Context.toggle());
   $("#context-close").innerHTML = icon("close");
   $("#context-close").addEventListener("click", () => Context.set(false));
+  $("#notify-btn").insertAdjacentHTML("afterbegin", icon("bell"));
+  $("#notify-btn").addEventListener("click", () => Notify.toggle());
+  $("#notify-close").innerHTML = icon("close");
+  $("#notify-close").addEventListener("click", () => Notify.set(false));
+  $("#notify-read-all").addEventListener("click", () => Notify.readAll());
+  $("#notify-clear").addEventListener("click", () => Notify.clear());
+  document.addEventListener("click", (event) => {
+    if (!Notify.open) return;
+    if (event.target.closest("#notify-panel") || event.target.closest("#notify-btn")) return;
+    Notify.set(false);
+  });
+  document.addEventListener("visibilitychange", reportVisibility);
   $("#compact-btn").innerHTML = icon("compact");
   $("#compact-btn").addEventListener("click", () => setCompact(true));
   $("#pause-btn").innerHTML = icon("pause");

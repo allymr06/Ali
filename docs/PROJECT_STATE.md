@@ -20,13 +20,77 @@ Last verified: 5 September 2026
   snapshots with recoverable delete and undo, dry-run plans applied by
   digest, bounded name search, critical-directory block, Nova file-access
   settings), 5 September 2026
-- Next action: notifications and proactive behaviour, or plugin process
-  isolation; code signing and a user-attended voice qualification remain
-  release blockers (`docs/FINAL_AUDIT.md`)
+- Completed feature milestone: Nova notification centre and attention
+  routing (reminders delivered in the Nova shell, unattended replies,
+  approvals and results collected, ledger warnings and screen observations,
+  native notification when the window is hidden), 5 September 2026
+- Next action: scheduled routines (a prompt that runs on a timer under the
+  same approval gates) or plugin process isolation; code signing and a
+  user-attended voice qualification remain release blockers
+  (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1346 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 1368 tests passing, 5 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Nova notification centre (5 September 2026)
+
+Before this milestone the Nova shell never delivered reminders: the
+delivery loop lived in the classic Tk window only, so a reminder created
+from Nova was stored and never shown. `app/notifications/` adds two small,
+UI-independent pieces. `NotificationCenter` is a bounded (200 entries),
+thread-safe, session-scoped list of things that deserve attention; every
+entry has a kind (`reminder`, `approval`, `reply`, `task`, `diagnostic`,
+`observation`, `system`), a Turkish title, a body bounded to 600
+characters, a severity, an optional target screen and a small data map,
+and repeats with the same dedupe key within 60 seconds collapse into one
+entry with a count. `ReminderWatch` polls `ReminderService.claim_due()` on
+a daemon thread (first poll immediately, then every 10 s), so each due
+reminder fires exactly once and reminders that came due while the desktop
+was closed fire right after boot.
+
+`NovaBridge` owns one centre per window session and feeds it from the
+running core: due reminders; ledger events at warning level or above
+(collapsed per component and name, target `Tanılama`); screen-watcher
+observations (target `Görüş`); and, only while the window is unattended,
+assistant replies (target `Sohbet`), approval requests (tool name and risk
+only, never parameters) and finished vision or research work. The page
+reports `document.visibilityState` through `set_visible`, the tray's
+open/hide and pywebview's minimized/restored events set the same flag, and
+for alert-worthy entries on an unattended window the bridge also raises a
+native notification on its own thread (tray balloon when the icon exists,
+otherwise the WinRT toast, at most four in flight); the ledger's warnings
+never reach the OS. `JARVIS_NOTIFICATIONS_OS_ENABLED=false` keeps native
+notifications off; the in-window centre is always on. Both decisions are
+observable in the ledger: `window.visibility` (attended true/false) and
+`notification.native` (delivered, channel `tray` or `toast`, title only;
+the body is user content and stays out).
+
+The page gains a bell in the top bar with the live unread count, a
+popover (`Ctrl+Shift+N`, palette entry, outside click and Escape close it)
+listing entries newest first with kind icon, relative time and repeat
+count, per-entry open (marks read, jumps to the target screen) and dismiss,
+`Tümünü okundu say` and `Temizle`, an in-page toast for each new entry, and
+a system line in the conversation for reminders and screen observations as
+the classic shell shows. Pushes that arrive before boot finishes are merged
+after it, so a reminder due at start-up is not lost. New bridge methods:
+`list_notifications`, `mark_notifications_read`, `dismiss_notification`,
+`clear_notifications`, `set_visible`; new push kind `notification`.
+
+Tests: `tests/test_notifications.py` (centre and watch) and new cases in
+`tests/test_ui_nova.py`, `tests/test_nova_web.py`, `tests/test_settings.py`.
+Live on this host from the Nova shell: a Gemini command created a
+one-minute reminder; when it came due the bell showed `1`, the popover
+listed it (`Ctrl+Shift+N`) and the conversation gained the `⏰ Hatırlatıcı`
+line. A second reminder was set, the maximized window was minimized, and
+the ledger recorded `window.visibility attended=false`, then
+`notification.native delivered=true via=tray`, then `attended=true` when
+the window came back with the badge at `1`; the same run exposed and fixed
+the `maximized` event gap. Whether Windows painted the balloon could not be
+observed because a full-screen video was on the desktop at the time
+(Windows suppresses notifications then); the bridge-side path is covered
+by the unit tests with a fake notifier. The frozen build was not rebuilt
+for this milestone.
 
 ## Safe-filesystem extensions (5 September 2026)
 
@@ -567,6 +631,10 @@ whichever source answers first.
   classified configuration error instead of answering.
 - Filesystem search covers names only (no content index); plans work within
   one root; the compact window assumes the primary monitor.
+- The notification centre is session-scoped (nothing is persisted across
+  restarts; the reminder store itself keeps its delivered flag). Native
+  notifications are best effort (tray balloon or a PowerShell WinRT toast)
+  and cannot deep-link back into the window; the tray's `Aç` does.
 - Python cannot forcibly stop an already-running synchronous worker thread.
   Timeout results explicitly report when side effects may continue.
 - The tray menu offers `Sesli mod`, which opens the voice screen and starts

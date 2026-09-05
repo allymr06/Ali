@@ -254,6 +254,10 @@ class Settings:
     tray_enabled: bool = True
     tray_close_to_tray: bool = True
     single_instance_enabled: bool = True
+    # Native Windows notifications (tray balloon or toast) for events
+    # that arrive while the Nova window is hidden or minimized. The
+    # in-window notification centre is always on.
+    notifications_os_enabled: bool = True
 
     diagnostics_event_capacity: int = 2_000
     diagnostics_metric_capacity: int = 200
@@ -754,6 +758,9 @@ class Settings:
             tray_enabled=_get_bool("JARVIS_TRAY_ENABLED", True),
             tray_close_to_tray=_get_bool("JARVIS_TRAY_CLOSE_TO_TRAY", True),
             single_instance_enabled=_get_bool("JARVIS_SINGLE_INSTANCE", True),
+            notifications_os_enabled=_get_bool(
+                "JARVIS_NOTIFICATIONS_OS_ENABLED", True
+            ),
             diagnostics_event_capacity=_get_positive_int(
                 "JARVIS_DIAGNOSTICS_EVENT_CAPACITY", 2_000
             ),

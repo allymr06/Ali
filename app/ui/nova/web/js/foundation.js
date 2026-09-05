@@ -281,6 +281,15 @@ const SETTING_LABELS = {
   tray_close_to_tray: ["Kapatınca tepsiye küçült", "JARVIS_TRAY_CLOSE_TO_TRAY"],
   single_instance_enabled: ["Tek örnek", "JARVIS_SINGLE_INSTANCE"],
   approval_ttl_seconds: ["Onay süresi (sn)", "JARVIS_APPROVAL_TTL_SECONDS"],
+  notifications_os_enabled: ["Pencere gizliyken Windows bildirimi", "JARVIS_NOTIFICATIONS_OS_ENABLED"],
+};
+const NOTIFICATION_KIND_TR = {
+  reminder: "Hatırlatıcı", approval: "Onay", reply: "Yanıt", task: "Görev",
+  diagnostic: "Tanılama", observation: "Ekran", system: "Sistem",
+};
+const NOTIFICATION_KIND_ICON = {
+  reminder: "alarm", approval: "integrations", reply: "chat", task: "tasks",
+  diagnostic: "diagnostics", observation: "vision", system: "spark",
 };
 const SETTING_GROUPS = {
   voice: ["voice_enabled", "voice_wake_word", "voice_require_wake_word", "voice_language",
@@ -289,7 +298,8 @@ const SETTING_GROUPS = {
   memory: ["memory_auto_capture_enabled", "memory_extraction_model"],
   models: ["gemini_action_model", "gemini_reasoning_effort"],
   system: ["windows_integrations_enabled", "plugins_enabled", "tray_enabled",
-           "tray_close_to_tray", "single_instance_enabled", "approval_ttl_seconds"],
+           "tray_close_to_tray", "single_instance_enabled", "approval_ttl_seconds",
+           "notifications_os_enabled"],
 };
 
 /* ── formatting ───────────────────────────────────────────────────── */
@@ -367,6 +377,8 @@ const State = {
   conversations: [],
   fileRoots: { available: false, roots: [] },
   snapshots: [],
+  notifications: [],       // session notification centre (newest first)
+  unread: 0,
   messages: [],
   voiceMessages: [],
   busy: false,

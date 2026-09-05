@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 from concurrent.futures import Future
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import PurePath
@@ -1585,3 +1585,326 @@ def test_snapshots_are_listed_and_restored_with_confirmation(booted, tmp_path) -
     }
     events = [event.name for event in booted.app.diagnostics.ledger.list(component="ui", limit=10)]
     assert "filesystem.snapshot_restored" in events
+
+
+# ---------------------------------------------------------------------------
+# notifications: reminders, the unattended window, the centre API
+# ---------------------------------------------------------------------------
+
+
+class RecordingReminders:
+    """Stands in for ReminderService: claim_due hands out scripted batches."""
+
+    def __init__(self, batches=None) -> None:
+        self.batches = list(batches or [])
+        self.claims = 0
+
+    def claim_due(self):
+        self.claims += 1
+        return self.batches.pop(0) if self.batches else []
+
+
+def test_boot_reports_the_centre_and_starts_reminder_delivery(booted) -> None:
+    assert booted.boot["notifications"] == {"items": [], "unread": 0, "total": 0}
+    watch = booted.bridge._reminder_watch
+    assert watch is not None and watch.running is True
+    # Delivery runs on its own daemon thread, not on the async runner.
+    assert booted.controller._runner is None
+    booted.bridge._shutdown()
+    assert booted.bridge._reminder_watch is None
+    assert watch.running is False
+
+
+def test_due_reminders_reach_the_page_as_notifications() -> None:
+    app = application()
+    app.reminders = RecordingReminders([[{"reminder_id": "r1", "text": "Toplantı 15:00"}]])
+    controller = DesktopController(app)
+    bridge = shell.NovaBridge(controller, None)
+    window = FakeWindow()
+    bridge._attach(window)
+    try:
+        assert bridge.boot()["notifications"]["items"] == []
+        wait_until(lambda: window.payloads("notification") != [])
+        payload = window.payloads("notification")[0]
+        assert payload["attended"] is True and payload["unread"] == 1
+        entry = payload["notification"]
+        assert entry["kind"] == "reminder" and entry["title"] == "Hatırlatıcı"
+        assert entry["body"] == "Toplantı 15:00" and entry["reference"] == "r1"
+        assert entry["read"] is False and entry["target"] is None
+        listing = bridge.list_notifications()
+        assert listing["ok"] is True and listing["unread"] == 1
+        assert [item["notification_id"] for item in listing["items"]] == [
+            entry["notification_id"]
+        ]
+        # A settings save replaces the runtime: the watch follows the new one.
+        replacement = RecordingReminders([[{"reminder_id": "r2", "text": "Su iç"}]])
+        controller.application.reminders = replacement
+        bridge._observe_application()
+        wait_until(lambda: len(window.payloads("notification")) == 2)
+        assert window.payloads("notification")[1]["notification"]["body"] == "Su iç"
+        assert bridge._reminder_watch is not None and bridge._reminder_watch.running
+    finally:
+        bridge._shutdown()
+        controller.close()
+    assert bridge._reminder_watch is None
+
+
+def test_notification_centre_api_marks_dismisses_and_clears(booted) -> None:
+    bridge = booted.bridge
+    first = bridge._notifications.publish("system", "Bir", "ilk")
+    second = bridge._notifications.publish("system", "İki", "ikinci")
+    assert bridge.list_notifications(1)["items"][0]["notification_id"] == second.notification_id
+    assert bridge.list_notifications("çok")["unread"] == 2
+    assert bridge.mark_notifications_read(first.notification_id) == {
+        "ok": True, "changed": 1, "unread": 1,
+    }
+    assert bridge.mark_notifications_read([second.notification_id, "nope"]) == {
+        "ok": True, "changed": 1, "unread": 0,
+    }
+    assert bridge.mark_notifications_read(None) == {"ok": True, "changed": 0, "unread": 0}
+    assert bridge.dismiss_notification("nope") == {
+        "ok": False, "error": "Bildirim bulunamadı.", "unread": 0,
+    }
+    assert bridge.dismiss_notification(first.notification_id) == {"ok": True, "unread": 0}
+    assert bridge.clear_notifications() == {"ok": True, "cleared": 1, "unread": 0}
+    assert bridge.list_notifications() == {"ok": True, "items": [], "unread": 0, "total": 0}
+    # Every publication reached the page with the live unread count.
+    assert [p["unread"] for p in booted.window.payloads("notification")] == [1, 2]
+
+
+def test_unattended_window_routes_alerts_to_the_os_notifier(booted) -> None:
+    sent: list[tuple[str, str]] = []
+    booted.bridge._os_notifier = lambda title, body: sent.append((title, body))
+    booted.bridge._deliver_reminder({"reminder_id": "r1", "text": "Su iç"})
+    time.sleep(0.05)
+    assert sent == []  # attended: the page shows it itself
+    assert booted.bridge.set_visible(False) == {"ok": True, "visible": False}
+    booted.bridge._deliver_reminder({"reminder_id": "r2", "text": "Ayağa kalk"})
+    wait_until(lambda: sent == [("Hatırlatıcı", "Ayağa kalk")])
+    assert booted.window.payloads("notification")[-1]["attended"] is False
+    wait_until(
+        lambda: any(
+            event.name == "notification.native"
+            for event in booted.app.diagnostics.ledger.list(component="ui", limit=20)
+        )
+    )
+    native = [
+        event
+        for event in booted.app.diagnostics.ledger.list(component="ui", limit=20)
+        if event.name == "notification.native"
+    ]
+    assert native[0].attributes == {"delivered": False, "via": None, "title": "Hatırlatıcı"}
+    assert "Ayağa kalk" not in json.dumps(native[0].attributes)
+    booted.bridge._deliver_reminder({"reminder_id": "r3", "text": "   "})
+    # Ledger warnings never alert the OS; they only enter the centre.
+    booted.bridge._on_diagnostic_event(
+        SimpleNamespace(
+            sequence=1, observed_at="t", component="ui", name="tray.error",
+            level="warning", message="icon failed", attributes={}, trace_id=None,
+        )
+    )
+    time.sleep(0.05)
+    assert len(sent) == 1
+    assert len(booted.window.payloads("notification")) == 3
+    assert booted.bridge.set_visible("true") == {"ok": True, "visible": True}
+    assert booted.bridge.set_visible("yes")["visible"] is False
+    assert booted.bridge.set_visible(1)["visible"] is False
+
+
+def test_os_notifications_respect_the_setting_and_the_in_flight_bound(booted) -> None:
+    sent: list[str] = []
+    booted.bridge._os_notifier = lambda title, body: sent.append(body)
+    booted.bridge.set_visible(False)
+    booted.app.settings = replace(booted.app.settings, notifications_os_enabled=False)
+    booted.bridge._deliver_reminder({"reminder_id": "r", "text": "sessiz"})
+    time.sleep(0.05)
+    assert sent == []
+    assert booted.bridge.list_notifications()["unread"] == 1  # still recorded
+
+    booted.app.settings = replace(booted.app.settings, notifications_os_enabled=True)
+    gate = threading.Event()
+    started: list[str] = []
+
+    def slow(title: str, body: str) -> None:
+        started.append(body)
+        gate.wait(5)
+
+    booted.bridge._os_notifier = slow
+    results = [booted.bridge._notify_os("t", str(i)) for i in range(6)]
+    assert results == [True] * 4 + [False] * 2
+    wait_until(lambda: len(started) == 4)
+    gate.set()
+    wait_until(lambda: booted.bridge._os_in_flight == 0)
+    assert booted.bridge._notify_os("t", "again") is True
+    booted.bridge._os_notifier = None
+    assert booted.bridge._notify_os("t", "nobody") is False
+
+
+def test_reply_on_a_hidden_window_becomes_a_notification(booted) -> None:
+    class Engine:
+        async def handle(self, request, context, **_kwargs):
+            return Response("Merhaba Ali", request_id=request.request_id)
+
+    booted.app.engine = Engine()
+    booted.bridge.set_visible(False)
+    assert booted.bridge.submit_command("merhaba") == {"ok": True}
+    wait_until(lambda: "snapshot" in booted.window.kinds())
+    notes = [p["notification"] for p in booted.window.payloads("notification")]
+    assert [n["kind"] for n in notes] == ["reply"]
+    assert notes[0]["title"] == "Yanıt hazır" and notes[0]["target"] == "chat"
+    assert notes[0]["body"] == "Merhaba Ali"
+    # While attended, replies are shown in place and not collected.
+    booted.bridge.set_visible(True)
+    assert booted.bridge.submit_command("tekrar") == {"ok": True}
+    wait_until(lambda: booted.window.kinds().count("snapshot") == 2)
+    assert len(booted.window.payloads("notification")) == 1
+
+
+def test_approval_on_a_hidden_window_is_collected_and_alerted(booted) -> None:
+    sent: list[tuple[str, str]] = []
+    booted.bridge._os_notifier = lambda title, body: sent.append((title, body))
+    booted.bridge.set_visible(False)
+    future = booted.controller.submit_background(
+        booted.bridge._request_approval(approval_request()), lambda f: None
+    )
+    wait_until(lambda: booted.window.payloads("approval") != [])
+    wait_until(lambda: sent != [])
+    assert sent == [("Onay bekleniyor", "fs.write")]
+    note = booted.window.payloads("notification")[0]["notification"]
+    assert note["kind"] == "approval" and note["severity"] == "warning"
+    assert note["data"] == {"tool": "fs.write", "risk": "high"}
+    assert "sk-hidden-value" not in json.dumps(booted.window.payloads("notification"))
+    token = booted.window.payloads("approval")[0]["token"]
+    assert booted.bridge.resolve_approval(token, False) == {"ok": True}
+    assert future.result(timeout=5) is False
+
+
+def test_vision_and_research_results_on_a_hidden_window_are_collected(booted) -> None:
+    class Vision:
+        def request_consent(self, purpose):
+            return SimpleNamespace(request_id="req-1")
+
+        def approve_consent(self, request_id):
+            return SimpleNamespace(request_id=request_id)
+
+        async def analyze(self, purpose, grant, context=None):
+            return SimpleNamespace(
+                response=SimpleNamespace(text="Ekranda bir tablo var."), error_code=None
+            )
+
+    class Research:
+        def research(self, query, *, max_sources):
+            return SimpleNamespace(
+                to_dict=lambda: {"query": query, "summary": "özet", "sources": []}
+            )
+
+    booted.bridge.set_visible(False)
+    booted.app.vision = Vision()
+    booted.app.research = Research()
+    assert booted.bridge.run_vision("ne var")["ok"] is True
+    assert booted.bridge.run_research("pywebview")["ok"] is True
+    wait_until(lambda: len(booted.window.payloads("notification")) == 2)
+    notes = {p["notification"]["kind"]: p["notification"] for p in booted.window.payloads("notification")}
+    assert set(notes) == {"task"} or len(notes) == 1
+    titles = sorted(p["notification"]["title"] for p in booted.window.payloads("notification"))
+    assert titles == ["Araştırma tamamlandı", "Görüş sonucu hazır"]
+    targets = sorted(p["notification"]["target"] for p in booted.window.payloads("notification"))
+    assert targets == ["research", "vision"]
+    bodies = [p["notification"]["body"] for p in booted.window.payloads("notification")]
+    assert "Ekranda bir tablo var." in bodies
+    assert any("pywebview" in body for body in bodies)
+
+
+def test_screen_observations_and_ledger_warnings_enter_the_centre(booted) -> None:
+    from app.diagnostics.models import DiagnosticLevel
+
+    watcher = SimpleNamespace(_notify=None)
+    booted.app.screen_watcher = watcher
+    booted.bridge._observe_application()
+    assert watcher._notify is not None
+    watcher._notify({"at": "12:00:00", "state": "completed", "text": "Tarayıcıda yeni sekme açıldı."})
+    watcher._notify({"text": "   "})
+    watcher._notify("not a mapping")
+    notes = [p["notification"] for p in booted.window.payloads("notification")]
+    assert [n["kind"] for n in notes] == ["observation"]
+    assert notes[0]["title"] == "Ekran gözlemi" and notes[0]["target"] == "vision"
+    assert notes[0]["data"] == {"at": "12:00:00", "state": "completed"}
+
+    diagnostics = booted.app.diagnostics
+    diagnostics.record(
+        "providers", "circuit.opened", "Provider circuit opened.", level=DiagnosticLevel.WARNING
+    )
+    diagnostics.record(
+        "providers", "circuit.opened", "Provider circuit opened again.", level=DiagnosticLevel.WARNING
+    )
+    diagnostics.record("core", "request.completed", "fine")
+    wait_until(lambda: len(booted.window.payloads("notification")) == 3)
+    warning = booted.window.payloads("notification")[-1]["notification"]
+    assert warning["kind"] == "diagnostic" and warning["title"] == "Uyarı"
+    assert warning["target"] == "diagnostics" and warning["count"] == 2
+    assert warning["body"].endswith("Provider circuit opened again.")
+    assert warning["data"] == {"component": "providers", "name": "circuit.opened"}
+    assert booted.bridge.list_notifications()["total"] == 2
+    booted.bridge._detach_observers()
+    assert watcher._notify is None
+
+
+def test_tray_actions_track_whether_the_window_is_attended(booted) -> None:
+    window = SimpleNamespace(show=lambda: None, hide=lambda: None, destroy=lambda: None)
+    actions = shell.NovaTrayActions(window, booted.bridge, booted.controller)
+    actions.hide()
+    assert booted.bridge._attended is False
+    actions.open()
+    assert booted.bridge._attended is True
+
+
+def test_launch_nova_installs_an_os_notifier_and_window_visibility_hooks(monkeypatch, tmp_path) -> None:
+    app = application()
+    controller = DesktopController(app)
+    handlers: dict[str, list] = {
+        "closed": [], "closing": [], "minimized": [], "restored": [], "maximized": [], "shown": [],
+    }
+    fake_window = SimpleNamespace(
+        events=SimpleNamespace(**{name: _Hook(sink) for name, sink in handlers.items()}),
+        evaluate_js=lambda script: None,
+        hide=lambda: None,
+        show=lambda: None,
+        destroy=lambda: None,
+    )
+    created: dict[str, object] = {}
+    toasts: list[tuple[str, str]] = []
+
+    def start(**options):
+        bridge = created["js_api"]
+        for handler in handlers["minimized"]:
+            handler()
+        assert bridge._attended is False
+        for handler in handlers["restored"]:
+            handler()
+        assert bridge._attended is True
+        for handler in handlers["minimized"]:
+            handler()
+        for handler in handlers["maximized"]:
+            handler()
+        assert bridge._attended is True
+        assert bridge._os_notifier("Başlık", "Gövde") == "toast"
+        for handler in handlers["closed"]:
+            handler()
+
+    monkeypatch.setattr(shell.webview, "create_window", lambda title, **kwargs: created.update(kwargs) or fake_window)
+    monkeypatch.setattr(shell.webview, "start", start)
+    monkeypatch.setattr(shell, "webview_storage_directory", lambda: tmp_path / "webview")
+    monkeypatch.setattr(shell, "show_windows_toast", lambda title, body: toasts.append((title, body)) or True)
+    monkeypatch.setattr(shell, "default_backend_factory", lambda: None)
+
+    shell.launch_nova(controller, None)
+
+    # Without a tray icon the plain Windows toast carries the alert.
+    assert toasts == [("Başlık", "Gövde")]
+    assert created["js_api"]._closing is True
+    visibility = [
+        event.attributes["attended"]
+        for event in app.diagnostics.ledger.list(component="ui", limit=20)
+        if event.name == "window.visibility"
+    ]
+    assert visibility == [True, False, True, False]

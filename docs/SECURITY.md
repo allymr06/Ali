@@ -275,6 +275,15 @@ The Nova shell adds a JavaScript boundary with the same posture:
 - Permanently deleting a memory requires an in-app confirmation and a
   `confirmed=True` argument, like deleting the credential; "unut" only
   deactivates. Compact mode changes window geometry and nothing else.
+- The notification centre is a session-scoped list the page renders but
+  never authors: entries come only from the core (reminders, ledger
+  warnings, screen observations) or from the bridge's own completions on an
+  unattended window. An approval notification carries the tool name and
+  risk level only, never parameters; text is bounded before it is stored;
+  native notifications are best effort, run off the core's threads, are
+  bounded in flight, and can be switched off with
+  `JARVIS_NOTIFICATIONS_OS_ENABLED=false`. Nothing in the centre grants,
+  approves or executes anything.
 - The system tray is an adapter over the same shell actions. `Duraklat`
   only gates new user-initiated work at the controller and page; it grants
   nothing and is not a substitute for permissions or approvals. `Çıkış`

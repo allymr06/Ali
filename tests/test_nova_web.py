@@ -350,3 +350,24 @@ def test_user_facing_text_is_turkish() -> None:
     visible = re.sub(r"<[^>]+>", " ", section(HTML, "<body>", "<script"))
     for english in ("Loading", "Settings", "Diagnostics", "Allow", "Deny", "Retry", "Send"):
         assert re.search(rf"\b{english}\b", visible) is None, english
+
+
+def test_notification_centre_is_declared_and_fed_only_by_pushes() -> None:
+    for element_id in ("notify-btn", "notify-badge", "notify-panel", "notify-list",
+                       "notify-read-all", "notify-clear", "notify-close"):
+        assert f'id="{element_id}"' in HTML, element_id
+    push = section(JS, "const PUSH = {", "\n};")
+    assert "notification(payload) { Notify.onPush(payload); }" in push
+    notify = section(JS, "const Notify = {", "\n};")
+    # The page never invents entries: it only merges what the core pushed
+    # or returned, and the unread count always comes from the core.
+    assert "Math.random" not in notify
+    assert 'call("mark_notifications_read"' in notify
+    assert 'call("dismiss_notification"' in notify
+    assert 'call("clear_notifications"' in notify
+    assert "Bildirim yok." in notify
+    assert "reportVisibility" in JS_SOURCES["js/shell.js"]
+    assert 'document.addEventListener("visibilitychange", reportVisibility)' in JS
+    assert "Bridge.set_visible(!document.hidden)" in JS
+    assert "notifications_os_enabled" in section(JS, "const SETTING_LABELS = {", "\n};")
+    assert '["Ctrl + Shift + N", "Bildirimler"]' in JS

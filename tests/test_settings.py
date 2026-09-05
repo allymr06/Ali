@@ -350,3 +350,9 @@ def test_settings_strips_whitespace_from_model_overrides(monkeypatch) -> None:
     assert settings.gemini_model == "gemini-3.7-flash"
     assert settings.default_model == DEFAULT_GEMINI_MODEL
     assert settings.vision_model is None
+
+
+def test_os_notifications_setting_reads_environment(monkeypatch) -> None:
+    assert Settings().notifications_os_enabled is True
+    monkeypatch.setenv("JARVIS_NOTIFICATIONS_OS_ENABLED", "false")
+    assert Settings.from_environment().notifications_os_enabled is False

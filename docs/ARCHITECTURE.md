@@ -323,6 +323,13 @@ Session results contain transcript, response text, states, and provider/model
 provenance, but never synthesized or captured audio. Raw capture uses mutable
 memory so it can be overwritten and released immediately after transcription.
 
+**Streamed speech** (5 September 2026). The Gemini synthesizer can return
+a `SpeechStream` of PCM chunks primed on the first one; `AudioOutput.play_stream`
+plays it, through sounddevice on Windows or buffered to WAV elsewhere. The
+voice session races the cloud's first audio chunk against the local voice,
+and starts synthesizing the reply's first sentence as soon as the streamed
+reply has moved past it, discarding that speech if the final text differs.
+
 ## Vision and screen understanding
 
 Phase 11 adds `VisionService` as a boundary around screen capture and visual

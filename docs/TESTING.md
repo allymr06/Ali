@@ -383,6 +383,18 @@ notifies and exits; first launch watches and releases; classic also holds
 the instance), and settings parsing. The real WinForms icon is exercised by
 an opt-in test (`JARVIS_TRAY_LIVE_TESTS=1`).
 
+## Voice time-to-first-audio coverage (5 September 2026)
+
+`tests/test_voice_session.py` covers the first sentence synthesized while the
+reply streams, the discard when the final text differs, engines without a
+stream callback, the streamed opening chunk played as a stream, the empty
+cloud stream falling back to the local voice, and the closed-sentence
+detector. `tests/test_voice_models.py` covers `SpeechStream` priming and
+replay; `tests/test_voice_audio.py` covers sounddevice streaming, interruption
+(device closed), device failures and the buffered fallback;
+`tests/test_voice_low_latency.py` covers the Gemini streaming synthesizer and
+its single-chunk fallback.
+
 ## Latency and Gemini 3 tool-turn coverage (5 September 2026)
 
 `tests/test_provider_gemini.py` covers the signed replay (unsigned calls

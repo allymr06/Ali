@@ -73,3 +73,32 @@ def test_wake_word_matching_is_exact_and_case_insensitive(
 def test_wake_word_cannot_be_empty() -> None:
     with pytest.raises(ValueError, match="empty"):
         TextWakeWordDetector(" ")
+
+
+@pytest.mark.asyncio
+async def test_speech_stream_primes_on_the_first_chunk_and_replays_it() -> None:
+    from app.voice.models import SpeechStream, pcm16_to_wav
+
+    async def produce():
+        yield b"", 16_000
+        yield b"\x01\x00", 16_000
+        yield b"\x02\x00", 16_000
+
+    stream = SpeechStream(chunks=produce(), provider="p", model="m", voice="v")
+    assert await stream.prime() == b"\x01\x00"
+    assert stream.sample_rate == 16_000 and stream.primed is True
+    assert await stream.prime() == b"\x01\x00"
+    assert [chunk async for chunk in stream] == [b"\x01\x00", b"\x02\x00"]
+
+    async def silent():
+        if False:
+            yield b"", 0
+
+    empty = SpeechStream(chunks=silent(), provider="p", model="m", voice="v")
+    with pytest.raises(ValueError):
+        await empty.prime()
+    with pytest.raises(ValueError):
+        SpeechStream(chunks=silent(), provider=" ", model="m", voice="v")
+
+    wav = pcm16_to_wav(b"\x01\x00\x02\x00", 8_000)
+    assert wav.startswith(b"RIFF") and b"WAVE" in wav

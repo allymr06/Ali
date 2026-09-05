@@ -24,6 +24,7 @@ from app.voice.models import (
     AudioDeviceKind,
     AudioEncoding,
     SynthesizedSpeech,
+    SpeechStream,
 )
 
 
@@ -485,6 +486,7 @@ class WindowsWaveAudioOutput(AudioOutput):
         self,
         *,
         module: Any | None = None,
+        stream_module: Any | None = None,
     ) -> None:
         if (
             os.name != "nt"
@@ -496,6 +498,94 @@ class WindowsWaveAudioOutput(AudioOutput):
             )
 
         self._module = module
+        # sounddevice (already used for capture) writes PCM as it
+        # arrives; without it the base class buffers to WAV.
+        self._stream_module = stream_module
+
+    def _sounddevice(self):
+        if self._stream_module is not None:
+            return self._stream_module
+        try:
+            return importlib.import_module("sounddevice")
+        except Exception:
+            return None
+
+    async def play_stream(
+        self,
+        stream: SpeechStream,
+        *,
+        cancel_event=None,
+    ) -> None:
+        """Write PCM chunks to the speakers as they arrive.
+
+        A worker thread owns the output stream and drains a queue the
+        event loop fills; an interruption stops the worker after the
+        chunk in flight (tens of milliseconds) and raises VoiceInterrupted
+        exactly like :meth:`play`.
+        """
+        sounddevice = self._sounddevice()
+        if sounddevice is None:
+            await super().play_stream(stream, cancel_event=cancel_event)
+            return
+        if cancel_event is not None and cancel_event.is_set():
+            raise VoiceInterrupted("Speech playback interrupted.")
+
+        import queue
+        import threading
+
+        pending: queue.Queue = queue.Queue()
+        stop = threading.Event()
+        failure: list[BaseException] = []
+
+        def worker() -> None:
+            try:
+                with sounddevice.RawOutputStream(
+                    samplerate=stream.sample_rate,
+                    channels=1,
+                    dtype="int16",
+                ) as output:
+                    while not stop.is_set():
+                        item = pending.get()
+                        if item is None:
+                            break
+                        output.write(item)
+            except BaseException as exc:  # noqa: BLE001 - reported below
+                failure.append(exc)
+
+        thread = threading.Thread(
+            target=worker, name="jarvis-speech-playback", daemon=True
+        )
+        thread.start()
+        try:
+            async for chunk in stream:
+                if cancel_event is not None and cancel_event.is_set():
+                    raise VoiceInterrupted("Speech playback interrupted.")
+                if failure:
+                    break
+                if chunk:
+                    pending.put(bytes(chunk))
+            pending.put(None)
+            while thread.is_alive():
+                if cancel_event is not None and cancel_event.is_set():
+                    raise VoiceInterrupted("Speech playback interrupted.")
+                await asyncio.sleep(0.02)
+        except VoiceInterrupted:
+            stop.set()
+            pending.put(None)
+            raise
+        except Exception as exc:
+            stop.set()
+            pending.put(None)
+            raise VoiceDeviceError("Speech playback failed.") from exc
+        finally:
+            if thread.is_alive():
+                stop.set()
+                pending.put(None)
+                # The device closes with the worker; waiting for it here
+                # is what makes an interruption actually go quiet.
+                await asyncio.to_thread(thread.join, 2.0)
+        if failure:
+            raise VoiceDeviceError("Speech playback failed.") from failure[0]
 
     def _winsound(self):
         return (

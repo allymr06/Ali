@@ -28,14 +28,53 @@ Last verified: 5 September 2026
   streamed answers on tool turns, lighter finalization, no default
   escalation, quota cooldown, connection warm-up, per-call latency
   diagnostics), 5 September 2026
+- Completed performance milestone: voice time to first audio (streamed
+  Gemini speech played as it arrives, first sentence synthesized while the
+  reply is still streaming), 5 September 2026
 - Next action: scheduled routines (a prompt that runs on a timer under the
   same approval gates) or plugin process isolation; code signing and a
   user-attended voice qualification remain release blockers
   (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1381 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 1394 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Voice time to first audio (5 September 2026)
+
+Measured without a microphone (a local voice spoke a Turkish command into
+a WAV, the real recognizer and synthesizer handled it): transcription on
+`gemini-3.5-flash-lite` 1.0-1.5 s for a 3 s clip; `gemini-3.1-flash-tts-preview`
+2.8-3.4 s for one sentence as a whole response but its first streamed
+audio chunk after 1.2-1.3 s; the local Windows voice 0.8 s. The reply
+itself now arrives in about 1 s (previous section), so speech synthesis
+had become the largest fixed cost between the user's last word and the
+first sound.
+
+- `GeminiSpeechSynthesizer.synthesize_stream` returns a `SpeechStream`: PCM
+  chunks as Gemini produces them, primed on the first chunk (that is the
+  moment audio exists and the real sample rate is known), bounded by the
+  same size limit; a client without an async streaming surface yields the
+  whole clip as one chunk, so callers have one code path.
+- `AudioOutput.play_stream` plays such a stream. The Windows output writes
+  chunks to the speakers through sounddevice from a worker thread as they
+  arrive, stops within the chunk in flight on interruption and reports
+  device failures like `play`; the base class buffers the chunks into one
+  WAV for outputs that cannot stream.
+- The voice session races the cloud's first audio chunk (not the whole
+  sentence) against the local voice under the existing grace rule, plays
+  the winner as a stream when it is one, and listens to the streamed reply:
+  as soon as the model has moved past the first sentence (a terminator
+  followed by more text, at least two words) that sentence is sent to
+  speech while the rest is still being written. When the final reply text
+  does not start with that sentence (a guard rewrote it) the early speech
+  is discarded and never heard. Engines that do not accept a stream
+  callback keep the previous behaviour. New metadata:
+  `first_sentence_early`, `first_audio_latency_seconds`.
+
+Live on this host: a streamed sentence through the real Windows output
+started playing 1.30 s after the request where the whole-clip path waited
+about 3 s. A spoken turn at the microphone remains a user-attended check.
 
 ## Gemini 3 tool turns and latency (5 September 2026)
 

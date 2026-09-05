@@ -572,3 +572,179 @@ async def test_cloud_voice_wins_race_when_it_is_ready_first(
 
     assert result.metadata["speech_race_winner"] == "cloud"
     assert parts["audio_output"].played[0].provider == "fake-tts"
+
+
+# ---------------------------------------------------------------------------
+# time to first audio: early first sentence, streamed opening chunk
+# ---------------------------------------------------------------------------
+
+
+class StreamingEngine(FakeEngine):
+    """Streams the reply in pieces before returning it, like the core."""
+
+    def __init__(self, *, partials, final, log):
+        super().__init__()
+        self.partials = partials
+        self.final = final
+        self.log = log
+
+    async def handle(self, request, context=None, *, cancel_event=None, stream_callback=None, **_):
+        self.requests.append((request, context, cancel_event))
+        for partial in self.partials:
+            if stream_callback is not None:
+                stream_callback(partial)
+                self.log.append(("stream", partial))
+                await asyncio.sleep(0)
+        self.log.append(("engine-done", self.final))
+        return Response(self.final, request_id=request.request_id)
+
+
+class LoggingSynthesizer(FakeSynthesizer):
+    def __init__(self, log):
+        super().__init__()
+        self.log = log
+
+    async def synthesize(self, text):
+        self.log.append(("synthesize", text))
+        return await super().synthesize(text)
+
+
+@pytest.mark.asyncio
+async def test_first_sentence_is_synthesized_while_the_reply_still_streams() -> None:
+    log: list = []
+    engine = StreamingEngine(
+        partials=["Merhaba Ali.", "Merhaba Ali. Bugün hava", "Merhaba Ali. Bugün hava güzel."],
+        final="Merhaba Ali. Bugün hava güzel. İyi günler dilerim.",
+        log=log,
+    )
+    session, parts = make_session(
+        engine=engine, synthesizer=LoggingSynthesizer(log), cloud_grace_seconds=0
+    )
+
+    result = await session.run_once(Context())
+
+    assert result.state is VoiceSessionState.COMPLETED
+    assert result.metadata["first_sentence_early"] is True
+    # The opening chunk went to speech before the engine had finished.
+    first_synthesis = next(i for i, entry in enumerate(log) if entry[0] == "synthesize")
+    engine_done = next(i for i, entry in enumerate(log) if entry[0] == "engine-done")
+    assert first_synthesis < engine_done
+    assert log[first_synthesis][1] == "Merhaba Ali."
+    assert [t for t in parts["synthesizer"].texts] == [
+        "Merhaba Ali.", "Bugün hava güzel. İyi günler dilerim.",
+    ]
+    assert len(parts["audio_output"].played) == 2
+    assert result.metadata["first_audio_latency_seconds"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_early_sentence_is_discarded_when_the_final_text_differs() -> None:
+    log: list = []
+    engine = StreamingEngine(
+        partials=["Şunu yapıyorum. Bir saniye", "Şunu yapıyorum. Bir saniye lütfen."],
+        final="Bu isteği yerine getiremiyorum.",
+        log=log,
+    )
+    session, parts = make_session(
+        engine=engine, synthesizer=LoggingSynthesizer(log), cloud_grace_seconds=0
+    )
+
+    result = await session.run_once(Context())
+
+    assert result.state is VoiceSessionState.COMPLETED
+    assert result.metadata["first_sentence_early"] is False
+    assert parts["synthesizer"].texts[-1] == "Bu isteği yerine getiremiyorum."
+    spoken = [s.data for s in parts["audio_output"].played]
+    assert len(spoken) == 1
+
+
+@pytest.mark.asyncio
+async def test_engines_without_streaming_support_still_work() -> None:
+    session, parts = make_session(cloud_grace_seconds=0)
+    result = await session.run_once(Context())
+    assert result.state is VoiceSessionState.COMPLETED
+    assert "first_sentence_early" not in result.metadata
+
+
+class FakeStreamingSynthesizer(FakeSynthesizer):
+    def __init__(self, chunks, *, gate=None):
+        super().__init__(gate=gate)
+        self.chunks = chunks
+        self.stream_texts: list[str] = []
+
+    async def synthesize_stream(self, text):
+        from app.voice.models import SpeechStream
+
+        self.stream_texts.append(text)
+
+        async def produce():
+            for chunk in self.chunks:
+                yield chunk, 24_000
+
+        return SpeechStream(chunks=produce(), provider="fake-tts", model="tts-1", voice="voice-1")
+
+
+class StreamingOutput(FakeOutput):
+    def __init__(self):
+        super().__init__()
+        self.streamed: list[list[bytes]] = []
+
+    async def play_stream(self, stream, *, cancel_event=None):
+        self.streamed.append([chunk async for chunk in stream])
+
+
+@pytest.mark.asyncio
+async def test_opening_chunk_is_played_as_a_stream_when_the_cloud_can_stream(monkeypatch) -> None:
+    import app.voice.audio as audio_module
+
+    async def no_local_voice(text, **kwargs):
+        return None
+
+    monkeypatch.setattr(audio_module, "synthesize_local_turkish", no_local_voice)
+    synthesizer = FakeStreamingSynthesizer([b"\x01\x00" * 40, b"\x02\x00" * 40])
+    output = StreamingOutput()
+    session, parts = make_session(
+        synthesizer=synthesizer, audio_output=output, cloud_grace_seconds=5
+    )
+
+    result = await session.run_once(Context())
+
+    assert result.state is VoiceSessionState.COMPLETED
+    assert synthesizer.stream_texts == ["All systems operational."]
+    assert output.streamed == [[b"\x01\x00" * 40, b"\x02\x00" * 40]]
+    assert output.played == []
+    assert result.metadata["speech_race_winner"] == "cloud"
+    assert result.metadata["synthesis_provider"] == "fake-tts"
+
+
+@pytest.mark.asyncio
+async def test_empty_cloud_stream_falls_back_to_the_local_voice(monkeypatch) -> None:
+    import app.voice.audio as audio_module
+
+    async def local_voice(text, **kwargs):
+        return b"RIFFlocal"
+
+    monkeypatch.setattr(audio_module, "synthesize_local_turkish", local_voice)
+    synthesizer = FakeStreamingSynthesizer([])
+    output = StreamingOutput()
+    session, parts = make_session(
+        synthesizer=synthesizer, audio_output=output, cloud_grace_seconds=5
+    )
+
+    result = await session.run_once(Context())
+
+    assert result.state is VoiceSessionState.COMPLETED
+    assert output.streamed == []
+    assert [s.data for s in output.played] == [b"RIFFlocal"]
+    assert result.metadata["speech_race_winner"] == "local_after_error"
+
+
+def test_first_closed_sentence_waits_for_the_model_to_move_on() -> None:
+    from app.voice.session import first_closed_sentence
+
+    assert first_closed_sentence("Merhaba Ali.") is None
+    assert first_closed_sentence("Merhaba Ali. Bugün") == "Merhaba Ali."
+    assert first_closed_sentence("Sonuç 3.5 oldu. Tamam") == "Sonuç 3.5 oldu."
+    assert first_closed_sentence("Evet. Hemen bakıyorum") is None
+    assert first_closed_sentence("Hemen bakıyorum! Bir saniye") == "Hemen bakıyorum!"
+    assert first_closed_sentence("   ") is None

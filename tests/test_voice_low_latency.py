@@ -649,3 +649,72 @@ def test_invalid_vad_settings_fail_closed(
         ValueError
     ):
         Settings(**kwargs)
+
+
+@pytest.mark.asyncio
+async def test_gemini_tts_streams_pcm_chunks_and_bounds_their_size() -> None:
+    from types import SimpleNamespace
+
+    from app.config.settings import Settings
+    from app.voice.errors import VoiceProviderError
+    from app.voice.gemini import GeminiSpeechSynthesizer
+
+    def chunk(data: bytes, mime: str = "audio/L16;codec=pcm;rate=24000"):
+        part = SimpleNamespace(inline_data=SimpleNamespace(mime_type=mime, data=data))
+        return SimpleNamespace(candidates=[SimpleNamespace(content=SimpleNamespace(parts=[part]))])
+
+    calls: list[dict] = []
+
+    class Models:
+        async def generate_content_stream(self, **kwargs):
+            calls.append(kwargs)
+
+            async def produce():
+                yield chunk(b"\x01\x00" * 4)
+                yield SimpleNamespace(candidates=[])
+                yield chunk(b"\x02\x00" * 4)
+
+            return produce()
+
+    client = SimpleNamespace(aio=SimpleNamespace(models=Models()))
+    synthesizer = GeminiSpeechSynthesizer(
+        Settings(gemini_api_key="k", voice_gemini_tts_voice="Charon"), client=client
+    )
+
+    stream = await synthesizer.synthesize_stream("Merhaba.")
+    assert await stream.prime() == b"\x01\x00" * 4
+    assert stream.sample_rate == 24_000
+    assert [c async for c in stream] == [b"\x01\x00" * 4, b"\x02\x00" * 4]
+    assert calls[0]["config"]["response_modalities"] == ["AUDIO"]
+    assert stream.provider == "gemini" and stream.voice == "Charon"
+
+    tiny = GeminiSpeechSynthesizer(
+        Settings(gemini_api_key="k", voice_max_audio_bytes=4), client=client
+    )
+    stream = await tiny.synthesize_stream("Merhaba.")
+    with pytest.raises(VoiceProviderError):
+        await stream.prime()
+
+
+@pytest.mark.asyncio
+async def test_gemini_tts_stream_falls_back_to_a_single_chunk_without_async_client() -> None:
+    from types import SimpleNamespace
+
+    from app.config.settings import Settings
+    from app.voice.gemini import GeminiSpeechSynthesizer
+    from app.voice.models import pcm16_to_wav
+
+    wav = pcm16_to_wav(b"\x03\x00" * 8, 16_000)
+    part = SimpleNamespace(inline_data=SimpleNamespace(mime_type="audio/wav", data=wav))
+    response = SimpleNamespace(candidates=[SimpleNamespace(content=SimpleNamespace(parts=[part]))])
+
+    class Models:
+        def generate_content(self, **kwargs):
+            return response
+
+    synthesizer = GeminiSpeechSynthesizer(
+        Settings(gemini_api_key="k"), client=SimpleNamespace(models=Models())
+    )
+    stream = await synthesizer.synthesize_stream("Merhaba.")
+    assert await stream.prime() == b"\x03\x00" * 8
+    assert stream.sample_rate == 16_000

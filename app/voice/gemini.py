@@ -19,6 +19,7 @@ from app.voice.errors import (
 from app.voice.models import (
     AudioCapture,
     AudioEncoding,
+    SpeechStream,
     SynthesizedSpeech,
     TranscriptionResult,
 )
@@ -72,6 +73,28 @@ async def _generate_content(
         result = await result
 
     return result
+
+
+async def _generate_content_stream(client, **kwargs):
+    """Start models.generate_content_stream on the async client.
+
+    Returns ``None`` when the client has no async streaming surface, so
+    callers can fall back to the whole-response path.
+    """
+    aio = getattr(client, "aio", None)
+    models = getattr(aio, "models", None)
+    method = getattr(models, "generate_content_stream", None)
+    if method is None:
+        return None
+    result = method(**kwargs)
+    if inspect.isawaitable(result):
+        result = await result
+    return result
+
+
+def _pcm_from_wav(data: bytes) -> tuple[bytes, int]:
+    with wave.open(io.BytesIO(data)) as handle:
+        return handle.readframes(handle.getnframes()), handle.getframerate()
 
 
 def _decode_inline_audio(part) -> tuple[bytes, str] | None:
@@ -312,6 +335,108 @@ class GeminiSpeechSynthesizer(
             wav.writeframes(data)
 
         return output.getvalue()
+
+    def _speech_request(self, text: str) -> tuple[str, dict]:
+        normalized = text.strip()
+        if not normalized:
+            raise ValueError("Speech text cannot be empty.")
+        if len(normalized) > self._max_text_characters:
+            raise ValueError(
+                "Speech text exceeds the configured character limit."
+            )
+        prompt = normalized
+        if self._instructions:
+            prompt = (
+                f"{self._instructions.strip()}\n\n"
+                "Speak the following response "
+                "naturally and faithfully:\n"
+                f"{normalized}"
+            )
+        config = {
+            "response_modalities": ["AUDIO"],
+            "speech_config": {
+                "voice_config": {
+                    "prebuilt_voice_config": {
+                        "voice_name": self._voice,
+                    }
+                }
+            },
+            "automatic_function_calling": {"disable": True},
+        }
+        return prompt, config
+
+    async def synthesize_stream(self, text: str) -> SpeechStream:
+        """Speech as PCM chunks while Gemini is still generating.
+
+        Measured on this host the first chunk of a sentence arrives in
+        about 1.2 s where the whole sentence takes about 3 s. Clients
+        without an async streaming surface get the whole response as a
+        single chunk, so callers never need two code paths.
+        """
+        prompt, config = self._speech_request(text)
+        client = self._require_client()
+        try:
+            iterator = await _generate_content_stream(
+                client, model=self._model, contents=prompt, config=config
+            )
+        except Exception as exc:
+            raise _provider_error(
+                "Gemini speech synthesis failed.", exc
+            ) from exc
+        if iterator is None:
+            speech = await self.synthesize(text)
+            pcm, rate = _pcm_from_wav(speech.data)
+
+            async def single():
+                yield pcm, rate
+
+            return SpeechStream(
+                chunks=single(),
+                provider="gemini",
+                model=self._model,
+                voice=self._voice,
+                sample_rate=rate,
+            )
+        return SpeechStream(
+            chunks=self._pcm_chunks(iterator),
+            provider="gemini",
+            model=self._model,
+            voice=self._voice,
+        )
+
+    async def _pcm_chunks(self, iterator):
+        total = 0
+        try:
+            async for chunk in iterator:
+                for candidate in getattr(chunk, "candidates", None) or []:
+                    content = getattr(candidate, "content", None)
+                    for part in getattr(content, "parts", None) or []:
+                        decoded = _decode_inline_audio(part)
+                        if decoded is None:
+                            continue
+                        data, mime_type = decoded
+                        base_mime = mime_type.split(";")[0].strip()
+                        if base_mime in {"audio/wav", "audio/x-wav"}:
+                            data, rate = _pcm_from_wav(data)
+                        elif base_mime in {"audio/l16", "audio/pcm"}:
+                            rate = _pcm_rate_from_mime(mime_type)
+                        else:
+                            raise VoiceProviderError(
+                                "Gemini returned an unsupported speech format."
+                            )
+                        total += len(data)
+                        if total > self._max_audio_bytes:
+                            raise VoiceProviderError(
+                                "Synthesized audio exceeds the configured size limit."
+                            )
+                        if data:
+                            yield data, rate
+        except VoiceProviderError:
+            raise
+        except Exception as exc:
+            raise _provider_error(
+                "Gemini speech synthesis failed.", exc
+            ) from exc
 
     async def synthesize(
         self,

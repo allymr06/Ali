@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
@@ -25,6 +26,7 @@ from app.voice.models import (
     VoiceSessionResult,
     VoiceSessionState,
     new_session_id,
+    SpeechStream,
 )
 from app.voice.wake import TextWakeWordDetector
 
@@ -32,6 +34,25 @@ from app.voice.wake import TextWakeWordDetector
 T = TypeVar("T")
 
 _SENTENCE_ENDINGS = (".", "!", "?", "…", ":", ";")
+
+
+def first_closed_sentence(text: str, *, min_words: int = 2) -> str | None:
+    """The first sentence of a streaming reply once the model has moved past it.
+
+    A terminator followed by more text is the signal; a terminator at the
+    very end may still be mid-number ("3." of "3.5"), so it does not count.
+    Short fragments are ignored so a lone "Evet." does not open a reply.
+    """
+    normalized = " ".join(text.split())
+    for index, character in enumerate(normalized):
+        if character in _SENTENCE_ENDINGS and index + 1 < len(normalized) and (
+            normalized[index + 1] == " "
+        ):
+            sentence = normalized[: index + 1].strip()
+            if len(sentence.split()) >= min_words:
+                return sentence
+            return None
+    return None
 
 
 def split_speech_chunks(
@@ -228,23 +249,50 @@ class VoiceSession:
 
             self._record(VoiceSessionState.PROCESSING)
             stage_started = time.monotonic()
+            processing_started = stage_started
             approval_options = (
                 {"approval_callback": approval_callback}
                 if approval_callback is not None
                 else {}
             )
-            response = await self._await_interruptible(
-                self._engine.handle(
-                    Request(
-                        command,
-                        source=RequestSource.VOICE,
-                        metadata={"voice_session_id": str(self.session_id)},
-                    ),
-                    context,
-                    cancel_event=self._interrupt_event,
-                    **approval_options,
+            # The reply streams in; as soon as its first chunk is closed
+            # (a second chunk has started) that chunk is sent to speech
+            # while the model is still writing the rest.
+            early: dict[str, object] = {}
+
+            def on_stream(text: str) -> None:
+                if "task" in early:
+                    return
+                sentence = first_closed_sentence(text)
+                if sentence is None:
+                    return
+                early["sentence"] = sentence
+                early["task"] = asyncio.create_task(
+                    self._synthesize_chunk(sentence, metadata, first=True)
                 )
+
+            stream_options = (
+                {"stream_callback": on_stream}
+                if self._engine_accepts("stream_callback")
+                else {}
             )
+            try:
+                response = await self._await_interruptible(
+                    self._engine.handle(
+                        Request(
+                            command,
+                            source=RequestSource.VOICE,
+                            metadata={"voice_session_id": str(self.session_id)},
+                        ),
+                        context,
+                        cancel_event=self._interrupt_event,
+                        **approval_options,
+                        **stream_options,
+                    )
+                )
+            except BaseException:
+                await self._discard_early(early)
+                raise
             metadata["core_latency_seconds"] = (
                 time.monotonic() - stage_started
             )
@@ -271,14 +319,43 @@ class VoiceSession:
             # the reply is never lost: the local Windows voice speaks it
             # and the text still reaches the conversation.
             chunks = split_speech_chunks(response.text)
+            early_task = early.get("task")
+            early_sentence = early.get("sentence")
+            normalized_reply = " ".join(response.text.split())
+            early_matches = isinstance(early_sentence, str) and (
+                normalized_reply == early_sentence
+                or normalized_reply.startswith(early_sentence + " ")
+            )
+            if isinstance(early_task, asyncio.Task) and early_matches:
+                # The sentence already being synthesized opens the reply;
+                # the rest is chunked as usual behind it.
+                remainder = normalized_reply[len(early_sentence):].strip()
+                chunks = [early_sentence] + split_speech_chunks(remainder)
             metadata["speech_chunks"] = len(chunks)
             self._record(VoiceSessionState.SYNTHESIZING)
             stage_started = time.monotonic()
-            speech = await self._await_interruptible(
-                self._synthesize_chunk(chunks[0], metadata, first=True)
-            )
+            speech = None
+            if isinstance(early_task, asyncio.Task):
+                if early_matches:
+                    metadata["first_sentence_early"] = True
+                    speech = await self._await_interruptible(
+                        _await_task(early_task)
+                    )
+                else:
+                    # The final text differs from what streamed (a
+                    # guard rewrote it): never speak words the user
+                    # will not read.
+                    metadata["first_sentence_early"] = False
+                    await self._discard_early(early)
+            if speech is None:
+                speech = await self._await_interruptible(
+                    self._synthesize_chunk(chunks[0], metadata, first=True)
+                )
             metadata["synthesis_latency_seconds"] = (
                 time.monotonic() - stage_started
+            )
+            metadata["first_audio_latency_seconds"] = (
+                time.monotonic() - processing_started
             )
             if speech is None:
                 metadata["speech_error"] = "provider"
@@ -308,10 +385,7 @@ class VoiceSession:
                         )
                     if speech is not None:
                         await self._await_interruptible(
-                            self._audio_output.play(
-                                speech,
-                                cancel_event=self._interrupt_event,
-                            )
+                            self._play(speech)
                         )
                     if pending is not None:
                         speech = await self._await_interruptible(
@@ -457,6 +531,51 @@ class VoiceSession:
                 capture, language=self._language
             )
 
+    def _engine_accepts(self, parameter: str) -> bool:
+        try:
+            signature = inspect.signature(self._engine.handle)
+        except (TypeError, ValueError):
+            return False
+        if parameter in signature.parameters:
+            return True
+        return any(
+            item.kind is inspect.Parameter.VAR_KEYWORD
+            for item in signature.parameters.values()
+        )
+
+    @staticmethod
+    async def _discard_early(early: dict[str, object]) -> None:
+        task = early.pop("task", None)
+        if isinstance(task, asyncio.Task) and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+
+    async def _play(self, speech) -> None:
+        if isinstance(speech, SpeechStream):
+            await self._audio_output.play_stream(
+                speech, cancel_event=self._interrupt_event
+            )
+            return
+        await self._audio_output.play(
+            speech, cancel_event=self._interrupt_event
+        )
+
+    async def _cloud_first_chunk(self, text: str):
+        """Cloud speech for the opening chunk: a primed stream when the
+        synthesizer can stream (the race then turns on first audio, not on
+        the whole sentence), else the whole clip."""
+        stream_method = getattr(self._synthesizer, "synthesize_stream", None)
+        if not callable(stream_method):
+            return await self._synthesizer.synthesize(text)
+        stream = await stream_method(text)
+        if isinstance(stream, SpeechStream):
+            try:
+                await stream.prime()
+            except ValueError as exc:
+                raise VoiceProviderError(str(exc)) from exc
+        return stream
+
     async def _synthesize_chunk(
         self,
         text: str,
@@ -497,9 +616,7 @@ class VoiceSession:
             metadata["speech_fallback"] = "windows-local"
             return await local_speech()
 
-        cloud = asyncio.create_task(
-            self._synthesizer.synthesize(text)
-        )
+        cloud = asyncio.create_task(self._cloud_first_chunk(text))
         local = asyncio.create_task(synthesize_local_turkish(text))
         try:
             # The high-quality cloud voice gets a bounded head start:

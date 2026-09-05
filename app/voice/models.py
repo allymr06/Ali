@@ -5,6 +5,7 @@ import wave
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import Any
 from uuid import UUID, uuid4
 
 from app.core.time import utc_now
@@ -136,6 +137,66 @@ class SynthesizedSpeech:
             raise ValueError("Synthesized speech cannot be empty.")
         if not self.provider.strip() or not self.model.strip() or not self.voice.strip():
             raise ValueError("Speech provenance cannot be empty.")
+
+
+def pcm16_to_wav(data: bytes, sample_rate: int, channels: int = 1) -> bytes:
+    """Wrap raw 16-bit PCM into a WAV container."""
+    import io
+    import wave
+
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(channels)
+        handle.setsampwidth(2)
+        handle.setframerate(sample_rate)
+        handle.writeframes(data)
+    return buffer.getvalue()
+
+
+@dataclass(slots=True)
+class SpeechStream:
+    """Speech that arrives as PCM16 chunks while it is being synthesized.
+
+    ``chunks`` yields ``(pcm_bytes, sample_rate)``. :meth:`prime` pulls the
+    first chunk so the caller knows the moment audio exists (and the real
+    sample rate); iterating the stream afterwards replays that chunk first.
+    """
+
+    chunks: Any
+    provider: str
+    model: str
+    voice: str
+    sample_rate: int = 24_000
+    head: list[bytes] = field(default_factory=list)
+    primed: bool = False
+    encoding: AudioEncoding = AudioEncoding.PCM16
+
+    def __post_init__(self) -> None:
+        if not self.provider.strip() or not self.model.strip() or not self.voice.strip():
+            raise ValueError("Speech provenance cannot be empty.")
+        if self.sample_rate < 1:
+            raise ValueError("Sample rate must be positive.")
+
+    async def prime(self) -> bytes:
+        """Wait for the first audio chunk; raises when the stream has none."""
+        if self.primed:
+            return self.head[0] if self.head else b""
+        async for data, rate in self.chunks:
+            if not data:
+                continue
+            self.sample_rate = int(rate) if rate else self.sample_rate
+            self.head.append(bytes(data))
+            self.primed = True
+            return self.head[0]
+        self.primed = True
+        raise ValueError("Speech stream produced no audio.")
+
+    async def __aiter__(self):
+        for data in self.head:
+            yield data
+        async for data, _rate in self.chunks:
+            if data:
+                yield bytes(data)
 
 
 @dataclass(frozen=True, slots=True)

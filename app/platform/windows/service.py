@@ -21,6 +21,10 @@ from app.platform.windows.clipboard import WindowsClipboardService
 from app.platform.windows.filesystem import BoundedFilesystemService
 from app.platform.windows.launcher import WindowsApplicationLauncher
 from app.platform.windows.processes import WindowsProcessInspector
+from app.platform.windows.snapshots import (
+    SNAPSHOT_DIRECTORY_NAME,
+    FilesystemSnapshotStore,
+)
 from app.platform.windows.root_grants import (
     FilesystemRootGrant,
     FilesystemRootGrantStore,
@@ -63,6 +67,8 @@ class WindowsIntegrationService:
         cls,
         *,
         verification_timeout_seconds: float = 3.0,
+        snapshot_max_entries: int = 200,
+        snapshot_max_bytes: int = 512 * 1024 * 1024,
     ) -> WindowsIntegrationService:
         if os.name != "nt":
             raise OSError("Windows integrations require Windows.")
@@ -79,7 +85,13 @@ class WindowsIntegrationService:
             verification_timeout_seconds=verification_timeout_seconds,
         )
         root_grants = FilesystemRootGrantStore.create_default()
-        filesystem = BoundedFilesystemService()
+        snapshots = FilesystemSnapshotStore(
+            default_state_directory() / SNAPSHOT_DIRECTORY_NAME,
+            max_entries=snapshot_max_entries,
+            max_total_bytes=snapshot_max_bytes,
+            max_file_bytes=min(16 * 1024 * 1024, snapshot_max_bytes),
+        )
+        filesystem = BoundedFilesystemService(snapshots=snapshots)
         for grant in root_grants.list():
             try:
                 filesystem.allow_root(grant.root_id, grant.path)

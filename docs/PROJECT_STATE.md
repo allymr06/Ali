@@ -16,14 +16,74 @@ Last verified: 5 September 2026
 - Completed interface milestone: Nova cinematic interface redesign (design
   system, presence-driven core, live execution timeline, command palette,
   compact window, voice stage), 5 September 2026
-- Next action: the safe-filesystem extensions (atomic snapshot/undo,
-  dry-run and bound approval for bulk targets, indexed search); code signing
-  and a user-attended voice qualification remain release blockers
-  (`docs/FINAL_AUDIT.md`)
+- Completed feature milestone: safe-filesystem extensions (verified
+  snapshots with recoverable delete and undo, dry-run plans applied by
+  digest, bounded name search, critical-directory block, Nova file-access
+  settings), 5 September 2026
+- Next action: notifications and proactive behaviour, or plugin process
+  isolation; code signing and a user-attended voice qualification remain
+  release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1316 tests passing, 3 skipped (`scripts/verify.py`)
+- Automated verification: 1346 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Safe-filesystem extensions (5 September 2026)
+
+`app/platform/windows/snapshots.py` adds `FilesystemSnapshotStore`: before a
+bounded tool replaces or removes a file, its exact bytes are sealed below the
+state directory (`filesystem_snapshots/<id>.bin` + `<id>.json` manifest with
+root, relative path, size, SHA-256, reason, time and tool). Payloads are only
+handed back after the digest and size are re-verified, the store is bounded
+by count and total bytes (`JARVIS_FILESYSTEM_SNAPSHOT_MAX_ENTRIES`,
+`JARVIS_FILESYSTEM_SNAPSHOT_MAX_BYTES`; oldest pruned first), and a file the
+store cannot hold blocks the mutation instead of proceeding unprotected.
+
+`BoundedFilesystemService` gains, all under the same root-and-relative-path
+policy and the same confirmation gates:
+
+- `delete_path` (HIGH, confirmation) — a real, recoverable delete: files are
+  sealed then unlinked, only empty directories are removed, links are
+  refused; without a snapshot store a file delete stays blocked.
+- `undo_filesystem_change` (HIGH, confirmation) — writes a snapshot back to
+  its original path; the file currently there is sealed first, so an undo
+  can itself be undone. `list_filesystem_snapshots` is read-only.
+- `write_text_file`, `copy_file` and `move_file` with `overwrite=True` seal
+  the file they replace and report the snapshot.
+- `search_files` (read-only) — a bounded name index per root (20 000
+  entries, refreshed after 60 s or on demand), case-insensitive substring or
+  glob, optional sub-path scope; links and reparse points are listed but
+  never followed.
+- `plan_filesystem_changes` (read-only dry run of up to 50
+  write/create_directory/copy/move/delete operations under one root:
+  reports per-operation readiness and conflicts, touches nothing) and
+  `apply_filesystem_plan(plan_id, digest)` (HIGH, confirmation): the plan is
+  single-use, expires after ten minutes, its digest must match, every target
+  is re-checked against the fingerprint taken at planning time
+  (`PLAN_TARGETS_CHANGED` otherwise), and execution stops at the first
+  failure reporting what was applied and its snapshots.
+- Critical directories can never be granted: Windows, Program Files,
+  ProgramData, the JARVIS state directory, the user profile root itself (its
+  subfolders remain grantable), `$Recycle.Bin` and `System Volume
+  Information`; the snapshot store cannot sit inside a granted root.
+
+The Nova settings screen gains "Dosyalar": granted roots with add (native
+folder picker on the UI thread, then an in-page confirmation) and remove, and
+the snapshot list with restore (confirmed in the page, `confirmed=True` on
+the bridge). Grants, revocations and restores are recorded in the ledger.
+
+Verification: `tests/test_filesystem_snapshots.py`,
+`tests/test_filesystem_recovery.py`, the updated
+`tests/test_bounded_filesystem.py` and the bridge tests in
+`tests/test_ui_nova.py`. Live on this host from the Nova shell: a test
+folder granted through the native picker and the in-page confirmation, a
+Gemini command that created `deneme.txt` after the `write_text_file`
+approval (content verified on disk), a second command that removed it
+after the `delete_path` approval (HIGH risk shown, file gone, one sealed
+snapshot in the store), the snapshot listed under Ayarlar › Dosyalar and
+restored from there with its confirmation (original bytes back on disk),
+and the grant removed again. The frozen build was not rebuilt for this
+milestone.
 
 ## Nova cinematic interface (5 September 2026)
 
@@ -505,8 +565,8 @@ whichever source answers first.
   controls remain future Windows extensions.
 - Gemini requires a configured API key. Without one the desktop reports a
   classified configuration error instead of answering.
-- The filesystem tool family has no undo/rollback snapshot, no dry-run plan for
-  bulk operations, and no indexed search tool.
+- Filesystem search covers names only (no content index); plans work within
+  one root; the compact window assumes the primary monitor.
 - Python cannot forcibly stop an already-running synchronous worker thread.
   Timeout results explicitly report when side effects may continue.
 - The tray menu offers `Sesli mod`, which opens the voice screen and starts

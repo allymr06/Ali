@@ -572,6 +572,7 @@ class NovaBridge:
             "conversations": _jsonable(
                 self.controller.list_conversations(limit=MAX_CONVERSATION_LIST)
             ),
+            "fileRoots": self._file_roots_payload(),
         }
 
     def _shutdown(self) -> None:
@@ -1257,6 +1258,166 @@ class NovaBridge:
         return {"ok": True, "compact": compact}
 
     # ------------------------------------------------------------------
+    # File access: roots the user grants, snapshots the user restores
+    # ------------------------------------------------------------------
+    def _filesystem(self) -> tuple[Any | None, Any | None]:
+        """(windows service, bounded filesystem) or (None, None)."""
+        windows = getattr(self.controller.application, "windows", None)
+        filesystem = getattr(windows, "filesystem", None)
+        if windows is None or filesystem is None:
+            return None, None
+        return windows, filesystem
+
+    def _file_roots_payload(self) -> dict[str, Any]:
+        windows, filesystem = self._filesystem()
+        if windows is None:
+            return {"available": False, "roots": []}
+        try:
+            grants = windows.filesystem_root_grants()
+        except Exception:
+            grants = ()
+        return {
+            "available": True,
+            "roots": [
+                {
+                    "root_id": grant.root_id,
+                    "name": grant.display_name,
+                    "path": str(grant.path),
+                }
+                for grant in grants
+            ],
+        }
+
+    def _record_file_event(self, name: str, message: str, **attributes: Any) -> None:
+        diagnostics = getattr(self.controller.application, "diagnostics", None)
+        if diagnostics is None:
+            return
+        try:
+            diagnostics.record("ui", name, message, attributes=attributes)
+        except Exception:
+            pass
+
+    def list_file_roots(self) -> dict[str, Any]:
+        return {"ok": True, **self._file_roots_payload()}
+
+    def pick_file_root(self) -> dict[str, Any]:
+        """Open the native folder picker; the choice is granted only after
+        the page confirms it through :meth:`grant_file_root`."""
+        window = self._window
+        if window is None:
+            return {"ok": False, "error": "Pencere hazır değil."}
+        if self._filesystem()[0] is None:
+            return {"ok": False, "error": FILE_ACCESS_UNAVAILABLE}
+        selection: list[Any] = []
+
+        def choose() -> None:
+            selection.append(
+                window.create_file_dialog(
+                    webview.FOLDER_DIALOG, directory=str(Path.home())
+                )
+            )
+
+        try:
+            _run_on_ui_thread(window, choose)
+        except Exception as exc:
+            return {
+                "ok": False,
+                "error": f"Klasör seçici açılamadı ({type(exc).__name__}).",
+            }
+        chosen = selection[0] if selection else None
+        if isinstance(chosen, (list, tuple)):
+            chosen = chosen[0] if chosen else None
+        if not chosen:
+            return {"ok": True, "path": None}
+        return {"ok": True, "path": str(chosen)}
+
+    def grant_file_root(self, path: str, confirmed: bool = False) -> dict[str, Any]:
+        if confirmed is not True:
+            return {"ok": False, "error": "Klasör erişimi onaylanmadı."}
+        windows, _filesystem = self._filesystem()
+        if windows is None:
+            return {"ok": False, "error": FILE_ACCESS_UNAVAILABLE}
+        candidate = str(path or "").strip()
+        if not candidate:
+            return {"ok": False, "error": "Klasör yolu boş olamaz."}
+        try:
+            grant = windows.grant_filesystem_root(candidate)
+        except Exception as exc:
+            return {"ok": False, "error": _grant_failure_message(exc)}
+        self._record_file_event(
+            "filesystem.root_granted",
+            "A filesystem root was granted from the desktop.",
+            root_id=grant.root_id,
+        )
+        self._push_snapshot()
+        return {"ok": True, "root_id": grant.root_id, **self._file_roots_payload()}
+
+    def revoke_file_root(self, root_id: str) -> dict[str, Any]:
+        windows, _filesystem = self._filesystem()
+        if windows is None:
+            return {"ok": False, "error": FILE_ACCESS_UNAVAILABLE}
+        try:
+            removed = windows.revoke_filesystem_root(str(root_id or ""))
+        except Exception as exc:
+            return {
+                "ok": False,
+                "error": f"Klasör erişimi kaldırılamadı ({type(exc).__name__}).",
+            }
+        if not removed:
+            return {"ok": False, "error": "Bu kimlikle bir klasör erişimi yok."}
+        self._record_file_event(
+            "filesystem.root_revoked",
+            "A filesystem root was revoked from the desktop.",
+            root_id=str(root_id),
+        )
+        self._push_snapshot()
+        return {"ok": True, **self._file_roots_payload()}
+
+    def list_snapshots(self, limit: Any = 50) -> dict[str, Any]:
+        _windows, filesystem = self._filesystem()
+        if filesystem is None:
+            return {"ok": True, "available": False, "snapshots": [], "usage": None}
+        try:
+            bounded = max(1, min(int(limit), 200))
+        except (TypeError, ValueError):
+            bounded = 50
+        result = filesystem.list_filesystem_snapshots(limit=bounded)
+        if not result.succeeded:
+            return {"ok": False, "error": f"Anlık görüntüler okunamadı ({result.error})."}
+        data = result.data or {}
+        return {
+            "ok": True,
+            "available": bool(data.get("available")),
+            "snapshots": _jsonable(data.get("snapshots") or []),
+            "total": data.get("total_snapshots", 0),
+            "usage": _jsonable(data.get("usage")),
+        }
+
+    def restore_snapshot(self, snapshot_id: str, confirmed: bool = False) -> dict[str, Any]:
+        """Write a snapshot back; the page confirms first, like a deletion."""
+        if confirmed is not True:
+            return {"ok": False, "error": "Geri yükleme onaylanmadı."}
+        _windows, filesystem = self._filesystem()
+        if filesystem is None:
+            return {"ok": False, "error": FILE_ACCESS_UNAVAILABLE}
+        result = filesystem.undo_filesystem_change(str(snapshot_id or ""))
+        if not result.succeeded:
+            return {"ok": False, "error": _restore_failure_message(result.error)}
+        data = result.data or {}
+        self._record_file_event(
+            "filesystem.snapshot_restored",
+            "A filesystem snapshot was restored from the desktop.",
+            root_id=str(data.get("root_id")),
+            snapshot_id=str(snapshot_id),
+        )
+        return {
+            "ok": True,
+            "message": "Dosya anlık görüntüden geri yüklendi.",
+            "root_id": data.get("root_id"),
+            "path": data.get("path"),
+        }
+
+    # ------------------------------------------------------------------
     # Settings
     # ------------------------------------------------------------------
     def get_settings(self) -> dict[str, Any] | None:
@@ -1330,6 +1491,39 @@ class NovaBridge:
             "message": "Anahtar silindi. Deneme modu etkin.",
             "settings": self.get_settings(),
         }
+
+
+FILE_ACCESS_UNAVAILABLE = "Dosya erişimi bu ortamda kullanılamıyor."
+_GRANT_MESSAGES = (
+    ("critical", "Kritik bir sistem klasörü verilemez; bir çalışma klasörü seç."),
+    ("drive root", "Sürücü kökü çok geniş; içindeki bir klasörü seç."),
+    ("Network", "Ağ klasörleri desteklenmiyor."),
+    ("must exist", "Klasör bulunamadı."),
+    ("must be a directory", "Seçim bir klasör değil."),
+    ("snapshot store", "Anlık görüntü deposu bu klasörün içinde; başka bir klasör seç."),
+    ("cannot be replaced", "Bu klasör zaten ekli."),
+)
+_RESTORE_MESSAGES = {
+    "SNAPSHOT_NOT_FOUND": "Anlık görüntü bulunamadı.",
+    "INVALID_SNAPSHOT_ID": "Anlık görüntü kimliği geçersiz.",
+    "SNAPSHOT_CORRUPT": "Anlık görüntü doğrulanamadı; geri yükleme reddedildi.",
+    "SNAPSHOT_STORE_UNAVAILABLE": "Anlık görüntü deposu kullanılamıyor.",
+    "ROOT_NOT_ALLOWED": "Dosyanın klasörüne artık erişim yok; önce klasörü yeniden ekle.",
+    "ROOT_UNAVAILABLE": "Dosyanın klasörüne şu an ulaşılamıyor.",
+    "PATH_NOT_FOUND": "Dosyanın üst klasörü artık yok.",
+}
+
+
+def _grant_failure_message(exc: BaseException) -> str:
+    detail = str(exc)
+    for needle, message in _GRANT_MESSAGES:
+        if needle in detail:
+            return message
+    return f"Klasör erişimi eklenemedi ({type(exc).__name__})."
+
+
+def _restore_failure_message(code: str | None) -> str:
+    return _RESTORE_MESSAGES.get(str(code or ""), f"Geri yükleme başarısız ({code or 'bilinmeyen hata'}).")
 
 
 def _run_on_ui_thread(window: Any, operation: Callable[[], None]) -> None:

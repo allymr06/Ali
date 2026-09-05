@@ -70,6 +70,26 @@ class ToolSchemaSelector:
         "find",
     )
 
+    _UNDO = (
+        "geri",
+        "kurtar",
+        "anlik",
+        "undo",
+        "restore",
+        "snapshot",
+        "recover",
+    )
+
+    _BATCH = (
+        "toplu",
+        "planla",
+        "plan",
+        "hepsini",
+        "tumunu",
+        "batch",
+        "bulk",
+    )
+
     _PAUSE = (
         "duraklat",
         "pause",
@@ -410,8 +430,22 @@ class ToolSchemaSelector:
 
         if filesystem_domain:
             selected.add("list_allowed_file_roots")
-            if self._has_stem(tokens, self._DELETE):
-                pass
+            if self._has_stem(tokens, self._UNDO):
+                selected.update(
+                    {"list_filesystem_snapshots", "undo_filesystem_change"}
+                )
+            elif self._has_stem(tokens, self._BATCH):
+                selected.update(
+                    {
+                        "list_directory",
+                        "plan_filesystem_changes",
+                        "apply_filesystem_plan",
+                    }
+                )
+            elif self._has_stem(tokens, self._DELETE):
+                selected.add("delete_path")
+            elif self._has_stem(tokens, self._SEARCH):
+                selected.add("search_files")
             elif self._has_stem(tokens, ("kopyala", "copy")):
                 selected.add("copy_file")
             elif self._has_stem(tokens, ("tasi", "move", "rename")):

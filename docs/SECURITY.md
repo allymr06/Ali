@@ -264,6 +264,14 @@ The Nova shell adds a JavaScript boundary with the same posture:
   observer cannot alter, delay or block a tool result, and a failing
   observer is ignored. Tool payloads carry status, verification and
   duration, never tool data or error text.
+- Filesystem root grants and snapshot restores from the settings screen
+  need an in-page confirmation and `confirmed=True`; the folder picker runs
+  on the UI thread and only the confirmed path is granted. Critical
+  directories (Windows, Program Files, ProgramData, the state directory,
+  the profile root, `$Recycle.Bin`, `System Volume Information`) can never
+  be granted. Recoverable delete seals a verified snapshot first and
+  refuses when no store is attached; plans apply only with the approved
+  digest and only while every target is unchanged.
 - Permanently deleting a memory requires an in-app confirmation and a
   `confirmed=True` argument, like deleting the credential; "unut" only
   deactivates. Compact mode changes window geometry and nothing else.

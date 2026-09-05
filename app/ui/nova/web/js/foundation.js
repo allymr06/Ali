@@ -63,6 +63,7 @@ const TR = {
   conversation: "KONUŞMA", observation: "GÖZLEM", configuration: "YAPILANDIRMA",
   fact: "BİLGİ", preference: "TERCİH", goal: "HEDEF", project: "PROJE", context: "BAĞLAM", instruction: "TALİMAT",
   archived: "ARŞİV",
+  overwrite: "ÜZERİNE YAZILDI", delete: "SİLİNDİ", move: "TAŞINDI", plan: "PLAN", undo: "GERİ ALMA",
   tool_verified: "ARAÇ DOĞRULADI", research_supported: "KAYNAK DESTEKLİ", unverified: "DOĞRULANMADI",
   minimal: "ASGARİ", auto: "OTOMATİK", demo: "DEMO",
 };
@@ -101,6 +102,11 @@ const TOOL_LABELS = {
   copy_file: ["Dosya kopyalanıyor", "Dosya kopyalandı"],
   move_file: ["Dosya taşınıyor", "Dosya taşındı"],
   delete_path: ["Dosya siliniyor", "Dosya silindi"],
+  search_files: ["Dosyalar aranıyor", "Dosyalar arandı"],
+  list_filesystem_snapshots: ["Anlık görüntüler okunuyor", "Anlık görüntüler okundu"],
+  undo_filesystem_change: ["Dosya geri yükleniyor", "Dosya geri yüklendi"],
+  plan_filesystem_changes: ["Dosya planı hazırlanıyor", "Dosya planı hazırlandı"],
+  apply_filesystem_plan: ["Dosya planı uygulanıyor", "Dosya planı uygulandı"],
   research_web: ["Web araştırılıyor", "Web araştırıldı"],
   list_memories: ["Hafıza okunuyor", "Hafıza okundu"],
   search_memories: ["Hafıza taranıyor", "Hafıza tarandı"],
@@ -207,7 +213,9 @@ function reasonLabel(reason) {
 const TOOL_EFFECTS = {
   launch_windows_application: "Kayıtlı bir Windows uygulaması başlatılır ve başlatma doğrulanır.",
   write_text_file: "İzinli kök altında bir metin dosyası yazılır ya da üzerine yazılır.",
-  delete_path: "İzinli kök altında bir dosya ya da klasör silinir.",
+  delete_path: "İzinli kök altında bir dosya (önce anlık görüntüsü alınarak) ya da boş bir klasör silinir; dosya geri yüklenebilir.",
+  undo_filesystem_change: "Bir anlık görüntü özgün yoluna geri yazılır; oradaki dosyanın şu anki hâli de saklanır.",
+  apply_filesystem_plan: "Onaylanan plan sırayla uygulanır; her adım anlık görüntü alır ve doğrulanır, ilk hatada durur.",
   move_file: "Bir dosya izinli kökler içinde taşınır.",
   copy_file: "Bir dosya izinli kökler içinde kopyalanır.",
   create_directory: "İzinli kök altında yeni bir klasör oluşturulur.",
@@ -313,6 +321,7 @@ function fmtDuration(ms) {
 }
 function fmtBytes(bytes) {
   if (!Number.isFinite(bytes)) return "—";
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
@@ -356,6 +365,8 @@ const State = {
   settings: null,
   runtime: null,
   conversations: [],
+  fileRoots: { available: false, roots: [] },
+  snapshots: [],
   messages: [],
   voiceMessages: [],
   busy: false,
@@ -440,6 +451,7 @@ function confirmDialog({ title, body, confirmLabel = "ONAYLA",
   return new Promise((resolve) => {
     const veil = $("#confirm");
     const ok = $("#confirm-ok"), cancel = $("#confirm-cancel");
+    const previous = document.activeElement;
     $("#confirm-title").textContent = title;
     $("#confirm-text").textContent = body;
     ok.textContent = confirmLabel;
@@ -450,6 +462,7 @@ function confirmDialog({ title, body, confirmLabel = "ONAYLA",
       window.removeEventListener("keydown", onKey, true);
       veil.hidden = true;
       confirmOpen = false;
+      if (previous && typeof previous.focus === "function" && document.contains(previous)) previous.focus();
       resolve(value);
     };
     const onKey = (event) => {

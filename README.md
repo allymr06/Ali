@@ -47,7 +47,9 @@ Implemented:
   breakers with single-probe recovery
 - automated unit and integration tests
 
-- root-allowlisted filesystem tools with traversal and reparse-point defenses
+- root-allowlisted filesystem tools with traversal and reparse-point defenses,
+  recoverable delete and undo through verified snapshots, dry-run plans applied
+  by digest, bounded name search, and a block on critical Windows directories
 - Windows clipboard and window-listing controls under the permission engine
 - Windows system tray for the Nova shell (open, voice mode, pause/resume,
   diagnostics, settings, exit; close-to-tray) and one instance per user
@@ -59,7 +61,7 @@ Implemented:
 Not implemented yet:
 
 - notifications and proactive behavior
-- filesystem undo/rollback, bulk dry-run plans, and indexed search
+- filesystem content search and multi-root plans
 - keyboard/mouse automation and general safe PowerShell execution
 - a tray icon for the classic Tkinter shell
 - plugin process isolation and a plugin settings screen

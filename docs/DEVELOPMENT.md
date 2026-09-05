@@ -82,6 +82,16 @@ single-instance guard and the tray: `JARVIS_SINGLE_INSTANCE=false` and
 `JARVIS_TRAY_ENABLED=false`. With the tray on, closing the window only hides
 it; exit through the tray menu.
 
+## Filesystem tools
+
+Bounded filesystem tools live in `app/platform/windows/filesystem.py` with
+the snapshot store in `snapshots.py`. Every mutation that replaces or
+removes a file must seal it first (`_snapshot_before_change`), every new
+tool must be registered with an explicit risk level and verification
+strategy, and tests must construct the service with `critical_paths=()`
+because pytest's temporary directories sit below the user profile, which
+the defaults protect.
+
 ## Verification
 
 ```powershell

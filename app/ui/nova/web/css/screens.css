@@ -251,6 +251,15 @@ body.paused .core-frame canvas { opacity: 0.55; transition: opacity var(--motion
 .shortcut-table { display: grid; grid-template-columns: auto 1fr; gap: 0.45rem 1rem; align-items: center; }
 .shortcut-table span { color: var(--ink-3); font-size: var(--text-sm); }
 .settings-note { color: var(--ink-4); font-size: var(--text-xs); line-height: 1.5; }
+.file-roots, .snapshot-list { display: flex; flex-direction: column; }
+.file-root, .snapshot-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.3rem 0.9rem; align-items: center;
+  padding: 0.6rem 0; border-bottom: 1px solid var(--line-1);
+}
+.file-root:last-child, .snapshot-row:last-child { border-bottom: none; }
+.file-root .root-name, .snapshot-row .snap-path { font-size: var(--text-md); color: var(--ink-1); overflow-wrap: anywhere; user-select: text; }
+.file-root .root-path, .snapshot-row .snap-meta { font-family: var(--font-mono); font-size: 0.66rem; color: var(--ink-4); overflow-wrap: anywhere; user-select: text; }
+.snapshot-row .snap-meta .chip { margin-right: 0.35rem; }
 
 /* ── Responsive ───────────────────────────────────────────────────── */
 

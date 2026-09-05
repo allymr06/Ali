@@ -112,6 +112,7 @@ function showScreen(id, { focus = true } = {}) {
   if (id === "memory") Memory.load();
   if (id === "integrations") Trust.refresh();
   if (id === "tasks") renderTasks(State.snapshot?.tasks || []);
+  if (id === "settings") Files.load();
   requestAnimationFrame(() => Engine.resize());
   Engine.wake();
 }
@@ -511,6 +512,7 @@ function applyBoot(bootData) {
   State.messages = bootData.messages || [];
   State.voiceMessages = bootData.voiceMessages || [];
   State.conversations = bootData.conversations || [];
+  State.fileRoots = bootData.fileRoots || { available: false, roots: [] };
   $("#demo-badge").hidden = !State.demo;
   Presence.connected = true;
   State.status = bootData.status || READY;

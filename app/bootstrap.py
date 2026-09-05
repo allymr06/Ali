@@ -271,7 +271,9 @@ def create_application(
         windows = WindowsIntegrationService.create_default(
             verification_timeout_seconds=(
                 active_settings.windows_launch_verification_timeout_seconds
-            )
+            ),
+            snapshot_max_entries=active_settings.filesystem_snapshot_max_entries,
+            snapshot_max_bytes=active_settings.filesystem_snapshot_max_bytes,
         )
         windows.register_tools(tool_executor)
     task_store = (

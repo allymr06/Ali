@@ -314,6 +314,10 @@ function closeApproval(token, approved) {
   }
   Activity.onApprovalClosed(current.token, approved);
   $("#approval").hidden = true;
+  // Hand the keyboard back to the conversation so the next command types.
+  if (State.compact) $("#mini-input").focus();
+  else if (State.screen === "chat") $("#chat-input").focus();
+  else if (State.screen === "home") $("#quick-input").focus();
 }
 
 /* ── trust screen ─────────────────────────────────────────────────── */

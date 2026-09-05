@@ -80,6 +80,9 @@ const DemoBridge = {
         { conversation_id: "demo-conv-1", title: "Jarvis, sistem durumu nedir?", status: "active",
           turn_count: 2, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), active: true },
       ],
+      fileRoots: { available: true, roots: [
+        { root_id: "belgeler-1a2b3c4d5e", name: "Belgeler", path: "C:\\Users\\Ali\\Documents" },
+      ] },
     };
   },
   async submit_command(text) {
@@ -198,6 +201,26 @@ const DemoBridge = {
     return { ok: true, paused: paused === true };
   },
   async set_compact(enabled) { return { ok: true, compact: enabled === true }; },
+  async list_file_roots() {
+    return { ok: true, available: true, roots: [
+      { root_id: "belgeler-1a2b3c4d5e", name: "Belgeler", path: "C:\\Users\\Ali\\Documents" },
+    ] };
+  },
+  async pick_file_root() { return { ok: true, path: "C:\\Users\\Ali\\Projeler" }; },
+  async grant_file_root(path, confirmed) {
+    if (confirmed !== true) return { ok: false, error: "Klasör erişimi onaylanmadı." };
+    return { ok: false, error: "Demo modu: klasör erişimi eklenmedi." };
+  },
+  async revoke_file_root() { return { ok: false, error: "Demo modu: klasör erişimi kaldırılmadı." }; },
+  async list_snapshots() {
+    return { ok: true, available: true, total: 1, usage: { entries: 1, bytes: 2048, max_entries: 200, max_total_bytes: 536870912 },
+      snapshots: [{ snapshot_id: "0123456789abcdef0123456789abcdef", root_id: "belgeler-1a2b3c4d5e", path: "notlar/toplanti.txt",
+        size_bytes: 2048, sha256: "demo", reason: "overwrite", created_at: new Date().toISOString(), tool_name: "write_text_file" }] };
+  },
+  async restore_snapshot(snapshotId, confirmed) {
+    if (confirmed !== true) return { ok: false, error: "Geri yükleme onaylanmadı." };
+    return { ok: false, error: "Demo modu: dosya geri yüklenmedi." };
+  },
   async get_settings() { return { provider: "gemini", model: "gemini-2.5-pro",
     credential_configured: true, credential_required: true }; },
   async save_settings() {

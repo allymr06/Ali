@@ -82,6 +82,16 @@ in a plain browser with `?demo=1` shows a clearly labelled demo for visual
 work only; without the parameter the page reports that the core bridge is
 missing.
 
+### Filesystem snapshots
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `JARVIS_FILESYSTEM_SNAPSHOT_MAX_ENTRIES` | `200` | How many replaced or deleted files stay recoverable (1–10000); the oldest are pruned first. |
+| `JARVIS_FILESYSTEM_SNAPSHOT_MAX_BYTES` | `536870912` | Total size of the snapshot store in bytes (1 MiB–8 GiB). A single file larger than 16 MiB, or than this bound, cannot be sealed and its mutation is refused. |
+
+Snapshots live below the state directory in `filesystem_snapshots/`; granted
+roots can never contain that directory.
+
 ### System tray and single instance
 
 | Variable | Default | Purpose |

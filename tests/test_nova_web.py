@@ -240,6 +240,9 @@ def test_page_declares_the_failure_and_confirmation_ui() -> None:
         "voice-stage",
         "mini",
         "context",
+        "file-roots",
+        "file-root-add",
+        "snapshot-list",
     ):
         assert f'id="{element_id}"' in HTML, element_id
     assert 'http-equiv="Content-Security-Policy"' in HTML
@@ -260,6 +263,15 @@ def test_memory_deletion_asks_for_confirmation_and_forgetting_is_explicit() -> N
     assert "danger: true" in body
     assert 'call("forget_memory", memoryId)' in body
     assert 'call("delete_memory", memoryId)' not in JS
+
+
+def test_file_access_changes_ask_first_and_pass_the_confirmation_flag() -> None:
+    files = section(JS, "const Files = {", "\n};")
+    assert files.index("confirmDialog(") < files.index('call("grant_file_root", picked.path, true)')
+    assert files.index('call("revoke_file_root"') > files.index("KALDIR")
+    assert 'call("restore_snapshot", snapshotId, true)' in files
+    assert 'call("grant_file_root", picked.path)' not in JS
+    assert 'call("restore_snapshot", snapshotId)' not in JS
 
 
 def test_approval_overlay_offers_no_blanket_permission() -> None:

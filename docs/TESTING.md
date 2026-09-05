@@ -382,3 +382,19 @@ recorded and the window keeps working), the desktop entry (second launch
 notifies and exits; first launch watches and releases; classic also holds
 the instance), and settings parsing. The real WinForms icon is exercised by
 an opt-in test (`JARVIS_TRAY_LIVE_TESTS=1`).
+
+## Safe-filesystem regression coverage (5 September 2026)
+
+`tests/test_filesystem_snapshots.py` covers the store: sealed bytes with a
+verified manifest, oversized and invalid captures refused, tampered payloads
+never handed back, unreadable manifests ignored, oldest-first pruning and
+bound validation. `tests/test_filesystem_recovery.py` covers recoverable
+delete and undo (including undoing an undo), refusal of non-empty directories
+and links, fail-closed delete without a store, snapshots on every overwrite,
+an oversized file blocking the mutation, name and glob search that never
+follows links, index and result bounds, dry-run plans (nothing touched,
+digest required, single use, drift refusal, conflict reporting, stop at the
+first failure) and the critical-directory block. `tests/test_ui_nova.py`
+covers the bridge: unavailable without Windows integrations, grant and revoke
+with confirmation and ledger events, the native folder picker on the UI
+thread, and snapshot listing and confirmed restore.

@@ -150,6 +150,10 @@ class Settings:
 
     windows_integrations_enabled: bool = True
     windows_launch_verification_timeout_seconds: float = 3.0
+    # Recoverable filesystem snapshots (files replaced or removed by
+    # bounded tools), bounded by count and total size.
+    filesystem_snapshot_max_entries: int = 200
+    filesystem_snapshot_max_bytes: int = 512 * 1024 * 1024
 
     voice_enabled: bool = False
     voice_max_recording_seconds: float = 30.0
@@ -430,6 +434,14 @@ class Settings:
             raise ValueError("research_user_agent cannot be empty.")
         if self.plugins_directory is not None and not self.plugins_directory.strip():
             raise ValueError("plugins_directory cannot be empty when set.")
+        if not 1 <= self.filesystem_snapshot_max_entries <= 10_000:
+            raise ValueError(
+                "filesystem_snapshot_max_entries must be between 1 and 10000."
+            )
+        if not 1024 * 1024 <= self.filesystem_snapshot_max_bytes <= 8 * 1024 ** 3:
+            raise ValueError(
+                "filesystem_snapshot_max_bytes must be between 1 MiB and 8 GiB."
+            )
         if not 0 < self.plugin_tool_timeout_seconds <= 120:
             raise ValueError(
                 "plugin_tool_timeout_seconds must be between 0 and 120."
@@ -732,6 +744,12 @@ class Settings:
             ),
             plugin_max_consecutive_failures=_get_positive_int(
                 "JARVIS_PLUGIN_MAX_CONSECUTIVE_FAILURES", 3
+            ),
+            filesystem_snapshot_max_entries=_get_positive_int(
+                "JARVIS_FILESYSTEM_SNAPSHOT_MAX_ENTRIES", 200
+            ),
+            filesystem_snapshot_max_bytes=_get_positive_int(
+                "JARVIS_FILESYSTEM_SNAPSHOT_MAX_BYTES", 512 * 1024 * 1024
             ),
             tray_enabled=_get_bool("JARVIS_TRAY_ENABLED", True),
             tray_close_to_tray=_get_bool("JARVIS_TRAY_CLOSE_TO_TRAY", True),

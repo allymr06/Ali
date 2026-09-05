@@ -13,7 +13,9 @@ from app.tools.executor import ToolExecutor
 
 
 def create_service(root: Path, **kwargs) -> BoundedFilesystemService:
-    return BoundedFilesystemService({"workspace": root}, **kwargs)
+    # No critical-path defaults here: pytest's temporary directories live
+    # below the user profile, which the defaults deliberately protect.
+    return BoundedFilesystemService({"workspace": root}, critical_paths=(), **kwargs)
 
 
 def test_no_filesystem_roots_are_allowed_by_default(tmp_path: Path) -> None:
@@ -355,7 +357,7 @@ def test_move_verifies_source_absence_and_destination_digest(tmp_path: Path) -> 
     assert (tmp_path / "moved.txt").read_text(encoding="utf-8") == "bounded-move"
 
 
-def test_delete_fails_closed_and_is_not_registered_as_a_tool(tmp_path: Path) -> None:
+def test_delete_fails_closed_without_snapshots_but_stays_registered(tmp_path: Path) -> None:
     target = tmp_path / "keep.txt"
     target.write_text("keep", encoding="utf-8")
     service = create_service(tmp_path)
@@ -367,7 +369,9 @@ def test_delete_fails_closed_and_is_not_registered_as_a_tool(tmp_path: Path) -> 
     assert result.status is ToolExecutionStatus.BLOCKED
     assert result.error == "RECOVERABLE_DELETE_UNAVAILABLE"
     assert target.exists()
-    assert "delete_path" not in executor.list_names()
+    # The contract exists (the model can plan with it) but a file delete
+    # is refused until a snapshot store makes it recoverable.
+    assert "delete_path" in executor.list_names()
 
 
 def test_registered_contracts_are_typed_scoped_and_risk_explicit(
@@ -380,10 +384,16 @@ def test_registered_contracts_are_typed_scoped_and_risk_explicit(
         "list_allowed_file_roots",
         "list_directory",
         "read_text_file",
+        "search_files",
         "write_text_file",
         "create_directory",
         "copy_file",
         "move_file",
+        "delete_path",
+        "list_filesystem_snapshots",
+        "undo_filesystem_change",
+        "plan_filesystem_changes",
+        "apply_filesystem_plan",
     )
     contracts = {
         contract.definition.name: contract

@@ -45,6 +45,12 @@ ALL_NAMES = {
     "create_directory",
     "copy_file",
     "move_file",
+    "delete_path",
+    "search_files",
+    "list_filesystem_snapshots",
+    "undo_filesystem_change",
+    "plan_filesystem_changes",
+    "apply_filesystem_plan",
     "read_windows_clipboard",
     "write_windows_clipboard",
     "clear_windows_clipboard",
@@ -141,6 +147,31 @@ def test_bounded_file_write_exposes_root_lookup_and_write_only():
     result = select("notlar dosyasına yaz")
     assert result.names == frozenset(
         {"list_allowed_file_roots", "write_text_file"}
+    )
+
+
+def test_bounded_file_delete_exposes_recoverable_delete_only():
+    result = select("deneme.txt dosyasını sil")
+    assert result.names == frozenset({"list_allowed_file_roots", "delete_path"})
+
+
+def test_bounded_file_search_exposes_search_only():
+    result = select("rapor adında bir dosya bul")
+    assert result.names == frozenset({"list_allowed_file_roots", "search_files"})
+
+
+def test_bounded_file_undo_exposes_snapshots_and_restore():
+    for text in ("sildiğin dosyayı geri al", "restore the deleted file"):
+        result = select(text)
+        assert result.names == frozenset(
+            {"list_allowed_file_roots", "list_filesystem_snapshots", "undo_filesystem_change"}
+        ), text
+
+
+def test_bounded_file_batch_exposes_plan_and_apply():
+    result = select("klasördeki dosyaları toplu olarak taşı")
+    assert result.names == frozenset(
+        {"list_allowed_file_roots", "list_directory", "plan_filesystem_changes", "apply_filesystem_plan"}
     )
 
 

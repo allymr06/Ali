@@ -224,6 +224,20 @@ verified results from native state. Application launch is classified `LOW` and
 uses the same bounded tool, permission, and result-verification runtime as all
 other actions.
 
+### Safe-filesystem extensions
+
+Bounded filesystem mutations are recoverable: `FilesystemSnapshotStore`
+(`app/platform/windows/snapshots.py`) seals the exact bytes of a file before
+it is replaced or removed and re-verifies digest and size before any restore.
+`delete_path` and `undo_filesystem_change` are HIGH-risk confirmed tools;
+`search_files` reads a bounded per-root name index that never follows links;
+`plan_filesystem_changes` is a pure dry run whose result carries a plan id
+and a SHA-256 digest, and `apply_filesystem_plan` consumes that plan once,
+re-checks every target's fingerprint and stops at the first failure.
+Critical Windows directories are refused at grant time. The Nova settings
+screen manages root grants and restores through the bridge; the tools stay
+model-callable only under the permission engine.
+
 ## Durable memory
 
 Phase 8 separates transient working context, conversation history, and durable

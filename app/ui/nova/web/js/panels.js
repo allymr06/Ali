@@ -536,6 +536,7 @@ function renderSettings() {
   $("#settings-ambient").checked = State.ambient;
   $("#settings-theme").checked = document.body.classList.contains("light");
   renderConfig();
+  Files.render();
 }
 
 function renderConfig() {
@@ -553,6 +554,107 @@ function renderConfig() {
     host.innerHTML = rows.length ? rows.join("") : '<div class="ctx-empty">Bu bölüm için yapılandırma bildirilmedi.</div>';
   }
 }
+
+/* ── file access: the roots the user grants, the snapshots they restore ── */
+
+const Files = {
+  async load() {
+    const [roots, snapshots] = await Promise.all([call("list_file_roots"), call("list_snapshots", 50)]);
+    if (roots.ok !== false) State.fileRoots = { available: !!roots.available, roots: roots.roots || [] };
+    if (snapshots.ok !== false) { State.snapshots = snapshots.snapshots || []; State.snapshotUsage = snapshots.usage || null; State.snapshotsAvailable = !!snapshots.available; }
+    this.render();
+  },
+
+  render() {
+    const host = $("#file-roots");
+    const roots = State.fileRoots?.roots || [];
+    $("#file-roots-count").textContent = State.fileRoots?.available ? `${roots.length} klasör` : "kullanılamıyor";
+    $("#file-root-add").disabled = !State.fileRoots?.available;
+    if (!State.fileRoots?.available) {
+      host.innerHTML = '<div class="ctx-empty">Dosya erişimi bu ortamda kullanılamıyor (Windows entegrasyonları kapalı).</div>';
+    } else if (!roots.length) {
+      host.innerHTML = '<div class="ctx-empty">Erişim verilen klasör yok. JARVIS dosyalara dokunamaz.</div>';
+    } else {
+      host.innerHTML = roots.map((root) => `
+        <div class="file-root" data-id="${esc(root.root_id)}">
+          <div><div class="root-name">${esc(root.name)}</div><div class="root-path">${esc(root.path)} · ${esc(root.root_id)}</div></div>
+          <button type="button" class="btn btn-ghost small" data-act="revoke">Kaldır</button>
+        </div>`).join("");
+      $$("[data-act='revoke']", host).forEach((btn) =>
+        btn.addEventListener("click", () => this.revoke(btn.closest(".file-root").dataset.id)));
+    }
+
+    const list = $("#snapshot-list");
+    const usage = State.snapshotUsage;
+    $("#snapshot-usage").textContent = usage ? `${usage.entries} kayıt · ${fmtBytes(usage.bytes)} / ${fmtBytes(usage.max_total_bytes)}` : "";
+    const snapshots = State.snapshots || [];
+    if (State.snapshotsAvailable === false) {
+      list.innerHTML = '<div class="ctx-empty">Anlık görüntü deposu bu ortamda kullanılamıyor.</div>';
+      return;
+    }
+    if (!snapshots.length) {
+      list.innerHTML = '<div class="ctx-empty">Henüz anlık görüntü yok. Bir araç bir dosyanın üzerine yazdığında ya da sildiğinde burada belirir.</div>';
+      return;
+    }
+    list.innerHTML = snapshots.map((item) => `
+      <div class="snapshot-row" data-id="${esc(item.snapshot_id)}">
+        <div>
+          <div class="snap-path">${esc(item.path)}</div>
+          <div class="snap-meta"><span class="chip ${item.reason === "delete" ? "warn" : ""}">${esc(tr(item.reason))}</span>${esc(item.root_id)} · ${esc(fmtBytes(Number(item.size_bytes)))} · ${esc(fmtRelative(item.created_at))} · ${esc(toolLabel(item.tool_name, true).toLocaleLowerCase("tr"))}</div>
+        </div>
+        <button type="button" class="btn btn-ghost small" data-act="restore">Geri yükle</button>
+      </div>`).join("");
+    $$("[data-act='restore']", list).forEach((btn) =>
+      btn.addEventListener("click", () => this.restore(btn.closest(".snapshot-row").dataset.id)));
+  },
+
+  async add() {
+    const picked = await call("pick_file_root");
+    if (picked.ok === false) { toast(picked.error || "Klasör seçilemedi.", true); return; }
+    if (!picked.path) return;
+    const confirmed = await confirmDialog({
+      title: "Klasör erişimi verilsin mi?",
+      body: `JARVIS yalnız bu klasörün içinde çalışabilecek:\n\n${picked.path}\n\nAraçların yapacağı her değişiklik yine ayrıca onaylanacak; değiştirilen ve silinen dosyalar anlık görüntüden geri alınabilecek.`,
+      confirmLabel: "ERİŞİM VER",
+    });
+    if (!confirmed) return;
+    const result = await call("grant_file_root", picked.path, true);
+    if (result.ok === false) { toast(result.error || "Klasör erişimi eklenemedi.", true); return; }
+    State.fileRoots = { available: true, roots: result.roots || [] };
+    this.render();
+    toast("Klasör erişimi eklendi.", "ok");
+  },
+
+  async revoke(rootId) {
+    const root = (State.fileRoots?.roots || []).find((item) => item.root_id === rootId);
+    const confirmed = await confirmDialog({
+      title: "Klasör erişimi kaldırılsın mı?",
+      body: `JARVIS erişimi hemen kaybedecek:\n\n${root ? root.path : rootId}`,
+      confirmLabel: "KALDIR",
+      danger: true,
+    });
+    if (!confirmed) return;
+    const result = await call("revoke_file_root", rootId);
+    if (result.ok === false) { toast(result.error || "Klasör erişimi kaldırılamadı.", true); return; }
+    State.fileRoots = { available: true, roots: result.roots || [] };
+    this.render();
+    toast("Klasör erişimi kaldırıldı.", "ok");
+  },
+
+  async restore(snapshotId) {
+    const item = (State.snapshots || []).find((entry) => entry.snapshot_id === snapshotId);
+    const confirmed = await confirmDialog({
+      title: "Dosya geri yüklensin mi?",
+      body: `“${item ? item.path : snapshotId}” bu anlık görüntüdeki hâline döndürülecek. Şu anki hâli de saklanır; bu işlem geri alınabilir.`,
+      confirmLabel: "GERİ YÜKLE",
+    });
+    if (!confirmed) return;
+    const result = await call("restore_snapshot", snapshotId, true);
+    if (result.ok === false) { toast(result.error || "Geri yükleme başarısız.", true); return; }
+    toast(result.message || "Dosya geri yüklendi.", "ok");
+    this.load();
+  },
+};
 
 function settingsStatus(text, ok) {
   const node = $("#settings-status");
@@ -628,6 +730,9 @@ function bindPanels() {
   $("#diag-refresh").innerHTML = `${icon("refresh")}<span>Yenile</span>`;
   $("#diag-refresh").addEventListener("click", () => Diagnostics.refresh());
   $("#diag-level").addEventListener("change", (event) => { Diagnostics.levelFilter = event.target.value; Diagnostics.renderEvents(); });
+  $("#file-root-add").addEventListener("click", () => Files.add());
+  $("#snapshot-refresh").innerHTML = icon("refresh");
+  $("#snapshot-refresh").addEventListener("click", () => Files.load());
   $("#trust-refresh").innerHTML = `${icon("refresh")}<span>Yenile</span>`;
   $("#trust-refresh").addEventListener("click", () => Trust.refresh());
 }

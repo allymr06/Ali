@@ -1436,3 +1436,152 @@ def test_logical_screen_bounds_fall_back_to_pywebview_screens(monkeypatch) -> No
     assert shell._logical_screen_bounds() == (10, 20, 1536, 864)
     monkeypatch.setattr(shell.webview, "screens", [], raising=False)
     assert shell._logical_screen_bounds() is None
+
+
+# ---------------------------------------------------------------------------
+# file access: root grants and snapshot restores from the settings screen
+# ---------------------------------------------------------------------------
+
+
+class FakeWindows:
+    """The slice of WindowsIntegrationService the bridge relies on."""
+
+    def __init__(self, tmp_path):
+        from app.platform.windows.filesystem import BoundedFilesystemService
+        from app.platform.windows.snapshots import FilesystemSnapshotStore
+
+        self.grants = {}
+        self.filesystem = BoundedFilesystemService(
+            snapshots=FilesystemSnapshotStore(tmp_path / "snapshots"),
+            critical_paths=(),
+        )
+        self.fail_with: Exception | None = None
+
+    def filesystem_root_grants(self):
+        return tuple(sorted(self.grants.values(), key=lambda item: item.root_id))
+
+    def grant_filesystem_root(self, path):
+        if self.fail_with is not None:
+            raise self.fail_with
+        from pathlib import Path as _Path
+
+        resolved = _Path(path).resolve(strict=True)
+        root_id = "root-" + resolved.name.lower()
+        grant = SimpleNamespace(root_id=root_id, path=resolved, display_name=resolved.name)
+        if root_id not in self.grants:
+            self.filesystem.allow_root(root_id, resolved)
+        self.grants[root_id] = grant
+        return grant
+
+    def revoke_filesystem_root(self, root_id):
+        self.filesystem.revoke_root(root_id)
+        return self.grants.pop(root_id, None) is not None
+
+
+def test_file_access_is_reported_unavailable_without_windows(booted) -> None:
+    assert booted.boot["fileRoots"] == {"available": False, "roots": []}
+    assert booted.bridge.list_file_roots() == {"ok": True, "available": False, "roots": []}
+    assert booted.bridge.pick_file_root()["ok"] is False
+    assert booted.bridge.grant_file_root("C:/x", True)["ok"] is False
+    assert booted.bridge.revoke_file_root("x")["ok"] is False
+    assert booted.bridge.list_snapshots()["available"] is False
+    assert booted.bridge.restore_snapshot("x", True)["ok"] is False
+
+
+def test_file_roots_are_granted_and_revoked_with_confirmation(booted, tmp_path) -> None:
+    windows = FakeWindows(tmp_path)
+    booted.app.windows = windows
+    folder = tmp_path / "Belgeler"
+    folder.mkdir()
+
+    assert booted.bridge.grant_file_root(str(folder)) == {
+        "ok": False,
+        "error": "Klasör erişimi onaylanmadı.",
+    }
+    assert booted.bridge.grant_file_root("   ", True)["error"] == "Klasör yolu boş olamaz."
+    granted = booted.bridge.grant_file_root(str(folder), True)
+
+    assert granted["ok"] is True and granted["available"] is True
+    assert granted["roots"] == [
+        {"root_id": "root-belgeler", "name": "Belgeler", "path": str(folder.resolve())}
+    ]
+    assert booted.bridge.list_file_roots()["roots"] == granted["roots"]
+    events = [event.name for event in booted.app.diagnostics.ledger.list(component="ui", limit=10)]
+    assert "filesystem.root_granted" in events
+    assert "snapshot" in booted.window.kinds()
+
+    assert booted.bridge.revoke_file_root("root-belgeler") == {
+        "ok": True,
+        "available": True,
+        "roots": [],
+    }
+    assert booted.bridge.revoke_file_root("root-belgeler")["error"] == (
+        "Bu kimlikle bir klasör erişimi yok."
+    )
+
+    windows.fail_with = ValueError("A critical system directory cannot be granted.")
+    refused = booted.bridge.grant_file_root(str(folder), True)
+    assert refused["ok"] is False
+    assert refused["error"].startswith("Kritik bir sistem klasörü")
+
+
+def test_pick_file_root_uses_the_native_folder_dialog(booted, tmp_path) -> None:
+    booted.app.windows = FakeWindows(tmp_path)
+    calls: list[tuple] = []
+
+    class DialogWindow(FakeWindow):
+        native = None
+        answer: object = ("C:/Users/Ali/Projeler",)
+
+        def create_file_dialog(self, kind, directory=""):
+            calls.append((kind, directory))
+            return self.answer
+
+    window = DialogWindow()
+    booted.bridge._attach(window)
+
+    assert booted.bridge.pick_file_root() == {"ok": True, "path": "C:/Users/Ali/Projeler"}
+    assert calls and calls[0][0] == shell.webview.FOLDER_DIALOG
+    window.answer = None
+    assert booted.bridge.pick_file_root() == {"ok": True, "path": None}
+
+    def explode(kind, directory=""):
+        raise RuntimeError("no dialog")
+
+    window.create_file_dialog = explode
+    assert booted.bridge.pick_file_root() == {
+        "ok": False,
+        "error": "Klasör seçici açılamadı (RuntimeError).",
+    }
+
+
+def test_snapshots_are_listed_and_restored_with_confirmation(booted, tmp_path) -> None:
+    windows = FakeWindows(tmp_path)
+    booted.app.windows = windows
+    folder = tmp_path / "Notlar"
+    folder.mkdir()
+    (folder / "a.txt").write_text("v1", encoding="utf-8")
+    assert booted.bridge.grant_file_root(str(folder), True)["ok"] is True
+    written = windows.filesystem.write_text_file("root-notlar", "a.txt", "v2", overwrite=True)
+    snapshot_id = written.data["snapshot"]["snapshot_id"]
+
+    listing = booted.bridge.list_snapshots(10)
+    assert listing["ok"] is True and listing["available"] is True
+    assert listing["total"] == 1
+    assert listing["snapshots"][0]["snapshot_id"] == snapshot_id
+    assert listing["snapshots"][0]["path"] == "a.txt"
+    assert listing["usage"]["entries"] == 1
+
+    assert booted.bridge.restore_snapshot(snapshot_id) == {
+        "ok": False,
+        "error": "Geri yükleme onaylanmadı.",
+    }
+    restored = booted.bridge.restore_snapshot(snapshot_id, True)
+    assert restored["ok"] is True and restored["path"] == "a.txt"
+    assert (folder / "a.txt").read_text(encoding="utf-8") == "v1"
+    assert booted.bridge.restore_snapshot("0" * 32, True) == {
+        "ok": False,
+        "error": "Anlık görüntü bulunamadı.",
+    }
+    events = [event.name for event in booted.app.diagnostics.ledger.list(component="ui", limit=10)]
+    assert "filesystem.snapshot_restored" in events

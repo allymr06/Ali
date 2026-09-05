@@ -340,6 +340,7 @@
           <button class="tab" type="button" data-target="memory">Hafıza</button>
           <button class="tab" type="button" data-target="models">Modeller</button>
           <button class="tab" type="button" data-target="system">Sistem</button>
+          <button class="tab" type="button" data-target="files">Dosyalar</button>
           <button class="tab" type="button" data-target="shortcuts">Kısayollar</button>
         </nav>
         <div class="settings-panels">
@@ -388,6 +389,19 @@
           <div id="settings-system" class="panel settings-card">
             <div class="panel-title"><span class="kicker">Sistem</span><span class="chip">salt okunur</span></div>
             <div id="config-system"></div>
+          </div>
+          <div id="settings-files" class="panel settings-card">
+            <div class="panel-title"><span class="kicker">Dosya erişimi</span><span id="file-roots-count" class="chip"></span></div>
+            <p class="settings-note">JARVIS yalnız burada eklediğin klasörlerin içinde, göreli yollarla çalışabilir. Varsayılan olarak hiçbir klasöre erişim yoktur; her değişiklik yine ayrıca onayına sunulur ve değiştirilen ya da silinen dosyalar geri alınabilir.</p>
+            <div id="file-roots" class="file-roots"></div>
+            <div class="btn-row" style="justify-content:flex-start">
+              <button type="button" id="file-root-add" class="btn btn-primary">Klasör ekle</button>
+            </div>
+          </div>
+          <div id="settings-snapshots" class="panel settings-card">
+            <div class="panel-title"><span class="kicker">Anlık görüntüler</span><span class="diag-toolbar"><span id="snapshot-usage" class="sys-label"></span><button type="button" id="snapshot-refresh" class="icon-btn small" title="Yenile"></button></span></div>
+            <p class="settings-note">Bir aracın üzerine yazdığı ya da sildiği her dosyanın kopyası burada tutulur. Geri yüklemek, dosyanın o anki hâlini de saklar; böylece geri alma da geri alınabilir.</p>
+            <div id="snapshot-list" class="snapshot-list"></div>
           </div>
           <div id="settings-shortcuts" class="panel settings-card">
             <div class="panel-title"><span class="kicker">Kısayollar</span></div>

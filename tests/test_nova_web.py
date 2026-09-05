@@ -398,3 +398,14 @@ def test_routine_editor_is_declared_and_uses_the_bridge() -> None:
     routines = section(JS, "const Routines = {", "\n};")
     assert 'call("create_routine", name, prompt' in routines
     assert "Rutin adı ve komutu gerekli." in routines
+
+
+def test_voice_silence_settings_are_labelled_for_the_settings_screen() -> None:
+    from app.ui.nova import shell
+
+    labels = section(JS, "const SETTING_LABELS = {", "\n};")
+    groups = section(JS, "const SETTING_GROUPS = {", "\n};")
+    for field in ("voice_trailing_silence_seconds", "voice_provisional_silence_seconds"):
+        assert field in shell.RUNTIME_SETTING_FIELDS
+        assert field in labels and field in groups
+    assert "Konuşma sonu sessizliği" in labels

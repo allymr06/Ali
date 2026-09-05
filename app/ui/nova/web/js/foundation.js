@@ -272,6 +272,8 @@ const SETTING_LABELS = {
   voice_gemini_tts_voice: ["Ses karakteri", "JARVIS_VOICE_GEMINI_TTS_VOICE"],
   voice_gemini_stt_model: ["Konuşma tanıma modeli", "JARVIS_VOICE_GEMINI_STT_MODEL"],
   voice_gemini_tts_model: ["Ses sentezi modeli", "JARVIS_VOICE_GEMINI_TTS_MODEL"],
+  voice_trailing_silence_seconds: ["Konuşma sonu sessizliği (sn)", "JARVIS_VOICE_TRAILING_SILENCE_SECONDS"],
+  voice_provisional_silence_seconds: ["Erken yazıya dökme sessizliği (sn)", "JARVIS_VOICE_PROVISIONAL_SILENCE_SECONDS"],
   vision_enabled: ["Görüş", "JARVIS_VISION_ENABLED"],
   vision_detail: ["Görüş ayrıntısı", "JARVIS_VISION_DETAIL"],
   vision_redact_taskbar: ["Görev çubuğu maskelenir", "JARVIS_VISION_REDACT_TASKBAR"],
@@ -298,7 +300,8 @@ const NOTIFICATION_KIND_ICON = {
 };
 const SETTING_GROUPS = {
   voice: ["voice_enabled", "voice_wake_word", "voice_require_wake_word", "voice_language",
-          "voice_gemini_tts_voice", "voice_gemini_stt_model", "voice_gemini_tts_model"],
+          "voice_gemini_tts_voice", "voice_gemini_stt_model", "voice_gemini_tts_model",
+          "voice_trailing_silence_seconds", "voice_provisional_silence_seconds"],
   vision: ["vision_enabled", "vision_detail", "vision_redact_taskbar", "research_enabled"],
   memory: ["memory_auto_capture_enabled", "memory_extraction_model"],
   models: ["gemini_action_model", "gemini_reasoning_effort"],

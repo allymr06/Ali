@@ -42,7 +42,7 @@ Last verified: 5 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1430 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 1431 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
 
 ## Persistent notification centre (5 September 2026)
@@ -161,7 +161,8 @@ first sound.
   without new speech (the final audio adds no more than the trailing
   silence to the provisional prefix) that transcript is the turn's; speech
   that resumes discards it and a fresh offer follows. With the user-tuned
-  1.5 s trailing silence this hides most of the ~1 s transcription. Inputs
+  1.5 s trailing silence this hides most of the ~1 s transcription; both
+  silences are shown read-only under Ayarlar › Ses. Inputs
   without the callback behave as before; metadata
   `transcription_provisional` says which path a turn took.
 - The speech adapters warm their client at Nova boot together with the

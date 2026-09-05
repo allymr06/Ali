@@ -144,6 +144,8 @@ RUNTIME_SETTING_FIELDS: tuple[str, ...] = (
     "voice_gemini_tts_voice",
     "voice_gemini_stt_model",
     "voice_gemini_tts_model",
+    "voice_trailing_silence_seconds",
+    "voice_provisional_silence_seconds",
     "vision_enabled",
     "vision_detail",
     "vision_redact_taskbar",

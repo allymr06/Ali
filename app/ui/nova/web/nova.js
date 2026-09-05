@@ -52,8 +52,10 @@ const STATUS_TR = {
   "LISTENING": "DİNLİYOR",
   "CAPTURING": "GÖRÜNTÜ ALINIYOR",
   "RESEARCHING": "ARAŞTIRIYOR",
+  "PAUSED": "DURAKLATILDI",
 };
 const READY = "LOCAL CORE READY";
+const PAUSED_NOTICE = "JARVIS duraklatıldı; önce tepsi menüsünden Devam'ı seç.";
 
 /* ── state ────────────────────────────────────────────────────────── */
 
@@ -74,6 +76,7 @@ const State = {
   reducedMotion: store("nova.motion") === "off",
   demo: false,
   booted: false,
+  paused: false,           // tray "Duraklat": new work is refused
 };
 
 /* ── bridge (pywebview, or the explicit demo) ─────────────────────── */
@@ -317,6 +320,16 @@ const PUSH = {
 
   approval(payload) { openApproval(payload); },
   approval_closed({ token }) { closeApproval(token, null); },
+
+  /* Tray menu: jump to a screen (only known ids are accepted). */
+  navigate({ screen }) {
+    if (NAV.some(([id]) => id === screen)) showScreen(screen);
+  },
+
+  paused({ paused, status }) {
+    setPaused(!!paused);
+    if (status) setStatus(status);
+  },
 };
 
 /* ── status & busy ────────────────────────────────────────────────── */
@@ -328,17 +341,39 @@ function setStatus(status) {
 function setBusy(busy, status) {
   State.busy = busy;
   if (status) setStatus(status);
-  $("#status-orb").dataset.mode = busy ? "busy"
+  $("#status-orb").dataset.mode = State.paused ? "paused" : busy ? "busy"
     : State.voiceActive ? "listening" : "ready";
   $("#status-stream").classList.toggle("on", busy);
-  $("#composer-send").disabled = busy;
+  $("#composer-send").disabled = busy || State.paused;
   if (!State.voiceActive) State.coreMode = busy ? "busy" : "idle";
   updateCoreCaption();
+}
+
+function setPaused(paused) {
+  const changed = State.paused !== paused;
+  State.paused = paused;
+  document.body.classList.toggle("paused", paused);
+  $("#composer-send").disabled = paused || State.busy;
+  $("#chat-input").disabled = paused;
+  $("#quick-input").disabled = paused;
+  $("#status-orb").dataset.mode = paused ? "paused"
+    : State.busy ? "busy" : State.voiceActive ? "listening" : "ready";
+  updateCoreCaption();
+  if (changed) {
+    toast(paused
+      ? "JARVIS duraklatıldı. Devam etmek için tepsi menüsünden Devam'ı seç."
+      : "JARVIS devam ediyor.");
+  }
 }
 
 function updateCoreCaption() {
   const stateEl = $("#core-state"), subEl = $("#core-sub");
   if (!State.snapshot) return;
+  if (State.paused) {
+    stateEl.textContent = "DURAKLATILDI";
+    subEl.textContent = "tepsi menüsünden devam et";
+    return;
+  }
   if (State.busy) {
     stateEl.textContent = "İŞLENİYOR";
     subEl.textContent = "çekirdek yanıt üretiyor";
@@ -664,6 +699,7 @@ function updateChat(mutate, { force = false } = {}) {
 
 async function sendCommand(raw) {
   const text = String(raw ?? "").trim();
+  if (State.paused) { toast(PAUSED_NOTICE, true); return; }
   if (!text || State.busy || !bridgeReady()) return;
   updateChat(() => {
     appendMessage($("#chat-list"), { role: "user", text }, false);
@@ -688,6 +724,7 @@ async function sendCommand(raw) {
 
 async function toggleVoice() {
   if (!bridgeReady()) return;
+  if (State.paused && !State.voiceActive) { toast(PAUSED_NOTICE, true); return; }
   if (State.voiceActive) {
     $("#voice-state").textContent = "DURDURULUYOR";
     let result;
@@ -741,6 +778,7 @@ function speakPulse() {
 
 async function submitVision(event) {
   event.preventDefault();
+  if (State.paused) { toast(PAUSED_NOTICE, true); return; }
   if (State.busy || !bridgeReady()) return;
   const purpose = $("#vision-input").value;
   const panel = $("#vision-result");
@@ -762,6 +800,7 @@ async function submitVision(event) {
 
 async function submitResearch(event) {
   event.preventDefault();
+  if (State.paused) { toast(PAUSED_NOTICE, true); return; }
   if (State.busy || !bridgeReady()) return;
   const query = $("#research-input").value.trim();
   if (!query) return;

@@ -328,3 +328,21 @@ microphone.
   trusted plugin starts at bootstrap and stops on close, settings parsing
   and validation, and plugin tools satisfy the global contract invariants
   (`tests/test_plugin_bootstrap.py`).
+
+## System tray regression coverage (5 September 2026)
+
+`tests/test_ui_tray.py` covers the menu model (labels follow pause and
+visibility state), the controller (dispatch, unknown items, post-exit
+silence, failing actions reported without killing the tray thread), the
+service with and without a backend, icon resolution from the frozen bundle,
+the single-instance guard with real named kernel objects (second acquire
+fails, activation reaches the first instance, release frees the name), the
+bridge pause gate (commands, voice, vision, and research refused with the
+Turkish notice; nothing submitted; resume restores service), Nova shell
+wiring (close-to-tray cancels the close and hides, Aç shows, Duraklat gates
+and pushes `paused`, Tanılama navigates, Çıkış destroys and lets the close
+proceed, the icon lives exactly as long as the window, a failing tray is
+recorded and the window keeps working), the desktop entry (second launch
+notifies and exits; first launch watches and releases; classic also holds
+the instance), and settings parsing. The real WinForms icon is exercised by
+an opt-in test (`JARVIS_TRAY_LIVE_TESTS=1`).

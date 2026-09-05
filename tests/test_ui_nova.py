@@ -758,8 +758,11 @@ def test_launch_nova_releases_resources_exactly_once(monkeypatch, tmp_path) -> N
     handlers: list = []
     created: dict[str, object] = {}
     fake_window = SimpleNamespace(
-        events=SimpleNamespace(closed=_Hook(handlers)),
+        events=SimpleNamespace(closed=_Hook(handlers), closing=_Hook([])),
         evaluate_js=lambda script: None,
+        hide=lambda: None,
+        show=lambda: None,
+        destroy=lambda: None,
     )
 
     def create_window(title, **kwargs):
@@ -778,6 +781,27 @@ def test_launch_nova_releases_resources_exactly_once(monkeypatch, tmp_path) -> N
     monkeypatch.setattr(
         shell, "webview_storage_directory", lambda: tmp_path / "webview"
     )
+    tray_events: list[str] = []
+
+    class FakeTrayBackend:
+        def __init__(self, tray_controller, icon_path) -> None:
+            tray_events.append("created")
+
+        def start(self) -> None:
+            tray_events.append("start")
+
+        def refresh(self) -> None:
+            tray_events.append("refresh")
+
+        def notify(self, title, text) -> None:
+            tray_events.append("notify")
+
+        def stop(self) -> None:
+            tray_events.append("stop")
+
+    monkeypatch.setattr(
+        shell, "default_backend_factory", lambda: FakeTrayBackend
+    )
 
     shell.launch_nova(controller, None)
 
@@ -794,6 +818,9 @@ def test_launch_nova_releases_resources_exactly_once(monkeypatch, tmp_path) -> N
     assert controller._runner is None
     assert closed == [app]
     assert created["js_api"]._closing is True
+    # The tray icon lives exactly as long as the window.
+    assert tray_events[:2] == ["created", "start"]
+    assert tray_events[-1] == "stop"
 
 
 def test_launch_nova_reports_missing_assets_before_opening(monkeypatch) -> None:
@@ -843,7 +870,7 @@ def desktop_entry(monkeypatch):
     monkeypatch.setattr(
         nova_package,
         "launch_nova",
-        lambda controller, api_settings=None: calls.append(("nova", controller)),
+        lambda controller, api_settings=None, **kwargs: calls.append(("nova", controller)),
     )
     monkeypatch.setattr(
         nova_package, "detect_webview2_runtime", lambda: "test-runtime"

@@ -29,7 +29,7 @@ import json
 import platform
 import sys
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from concurrent.futures import Future
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
@@ -49,12 +49,22 @@ from app.security.interactive import (
 )
 from app.ui.api_settings import APISettingsService
 from app.ui.controller import DesktopController
+from app.ui.tray.model import TrayItem
+from app.ui.tray.service import TrayService, default_backend_factory
 
 WEB_ASSETS: tuple[str, ...] = ("index.html", "nova.css", "nova.js")
 WEB_RELATIVE_PATH = PurePath("app", "ui", "nova", "web")
 SOURCE_WEB_ROOT = Path(__file__).resolve().parent / "web"
 WINDOW_TITLE = "JARVIS"
 READY_STATUS = "LOCAL CORE READY"
+PAUSED_STATUS = "PAUSED"
+PAUSED_MESSAGE = (
+    "JARVIS duraklatıldı; devam etmek için tepsi menüsünden Devam'ı seç."
+)
+TRAY_HIDDEN_NOTICE = (
+    "JARVIS tepside çalışmaya devam ediyor. Pencereyi açmak için simgeye "
+    "çift tıkla; çıkmak için menüden Çıkış'ı seç."
+)
 STREAM_FLUSH_SECONDS = 0.05
 APPROVAL_SAFETY_MARGIN_SECONDS = 2.0
 APPROVAL_MINIMUM_WAIT_SECONDS = 5.0
@@ -262,6 +272,15 @@ class NovaBridge:
     def _push_snapshot(self) -> None:
         self._push("snapshot", self.controller.snapshot())
 
+    def _push_paused(self, paused: bool) -> None:
+        self._push(
+            "paused",
+            {
+                "paused": bool(paused),
+                "status": PAUSED_STATUS if paused else READY_STATUS,
+            },
+        )
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -314,6 +333,8 @@ class NovaBridge:
         normalized = str(text or "").strip()
         if not normalized:
             return {"ok": False, "error": "Komut boş olamaz."}
+        if self.controller.paused:
+            return {"ok": False, "error": PAUSED_MESSAGE}
 
         def stream(chunk: str) -> None:
             if not chunk:
@@ -383,6 +404,8 @@ class NovaBridge:
         voice = self.controller.application.voice
         if voice is None:
             return {"ok": False, "error": "Sesli iletişim ayarlanmamış."}
+        if self.controller.paused:
+            return {"ok": False, "error": PAUSED_MESSAGE}
 
         def deliver(message: Any) -> None:
             self._push("voice_message", message)
@@ -471,6 +494,8 @@ class NovaBridge:
         goal = str(purpose or "").strip() or "Ekranda ne olduğunu açıkla."
         if self.controller.application.vision is None:
             return {"ok": False, "error": "Görüş özelliği ayarlanmamış."}
+        if self.controller.paused:
+            return {"ok": False, "error": PAUSED_MESSAGE}
 
         def done(future: Future[Any]) -> None:
             if future.cancelled():
@@ -502,6 +527,8 @@ class NovaBridge:
             return {"ok": False, "error": "Araştırma sorgusu boş olamaz."}
         if self.controller.application.research is None:
             return {"ok": False, "error": "Web araştırması ayarlanmamış."}
+        if self.controller.paused:
+            return {"ok": False, "error": PAUSED_MESSAGE}
         try:
             requested = int(max_sources)
         except (TypeError, ValueError):
@@ -673,17 +700,105 @@ class NovaBridge:
         }
 
 
+class NovaTrayActions:
+    """What the tray may do to the Nova window; every call is thread-safe."""
+
+    def __init__(
+        self, window: Any, bridge: NovaBridge, controller: DesktopController
+    ) -> None:
+        self._window = window
+        self._bridge = bridge
+        self._controller = controller
+        self.exiting = False
+        self.service: TrayService | None = None
+
+    def open(self) -> None:
+        self._window.show()
+        try:
+            native = getattr(self._window, "native", None)
+            if native is not None and hasattr(native, "BeginInvoke"):
+                from System import Action  # pythonnet; present with pywebview
+
+                native.BeginInvoke(Action(native.Activate))
+        except Exception:
+            pass
+        if self.service is not None:
+            self.service.set_window_visible(True)
+
+    def hide(self) -> None:
+        self._window.hide()
+        if self.service is not None:
+            self.service.set_window_visible(False)
+
+    def set_paused(self, paused: bool) -> None:
+        self._controller.set_paused(paused)
+        if paused:
+            self._bridge.stop_voice()
+        self._bridge._push_paused(paused)
+        if self.service is not None:
+            self.service.set_paused(paused)
+
+    def show_screen(self, screen: str) -> None:
+        self.open()
+        self._bridge._push("navigate", {"screen": screen})
+
+    def exit(self) -> None:
+        self.exiting = True
+        self._window.destroy()
+
+
+def _record_tray_problem(
+    controller: DesktopController, item: TrayItem | None, exc: BaseException
+) -> None:
+    diagnostics = getattr(controller.application, "diagnostics", None)
+    if diagnostics is None:
+        return
+    try:
+        from app.diagnostics.models import DiagnosticLevel
+
+        diagnostics.record(
+            "ui",
+            "tray.error",
+            "System tray action failed; the window keeps working.",
+            level=DiagnosticLevel.WARNING,
+            attributes={
+                "item": item.value if item is not None else None,
+                "error": type(exc).__name__,
+            },
+        )
+    except Exception:
+        pass
+
+
 def launch_nova(
     controller: DesktopController,
     api_settings: APISettingsService | None = None,
+    *,
+    settings: Any | None = None,
+    activation_watch: Callable[[Callable[[], None]], None] | None = None,
+    tray_backend_factory: Any = None,
 ) -> None:
-    """Open the Nova window and run it until the user closes it.
+    """Open the Nova window and run it until the user exits.
 
+    With the tray enabled, closing the window hides it to the
+    notification area and the tray's "Çıkış" performs the real exit.
     Resources are released exactly once, whether the window reports the
     ``closed`` event or ``webview.start`` simply returns.
     """
     web_root = resolve_web_root()
     bridge = NovaBridge(controller, api_settings)
+    runtime_settings = (
+        settings
+        if settings is not None
+        else getattr(controller.application, "settings", None)
+    )
+    tray_enabled = (
+        bool(getattr(runtime_settings, "tray_enabled", False))
+        and sys.platform == "win32"
+    )
+    close_to_tray = tray_enabled and bool(
+        getattr(runtime_settings, "tray_close_to_tray", True)
+    )
 
     start_options: dict[str, Any] = {"debug": False}
     storage = webview_storage_directory()
@@ -709,6 +824,37 @@ def launch_nova(
     )
     bridge._attach(window)
 
+    actions = NovaTrayActions(window, bridge, controller)
+    tray: TrayService | None = None
+    if tray_enabled:
+        factory = (
+            tray_backend_factory
+            if tray_backend_factory is not None
+            else default_backend_factory()
+        )
+        tray = TrayService(
+            actions,
+            backend_factory=factory,
+            on_error=lambda item, exc: _record_tray_problem(controller, item, exc),
+        )
+        actions.service = tray
+    hidden_notice_shown = False
+
+    def on_closing() -> bool | None:
+        nonlocal hidden_notice_shown
+        if (
+            close_to_tray
+            and tray is not None
+            and tray.active
+            and not actions.exiting
+        ):
+            actions.hide()
+            if not hidden_notice_shown:
+                hidden_notice_shown = True
+                tray.notify(WINDOW_TITLE, TRAY_HIDDEN_NOTICE)
+            return False  # cancel: the tray keeps JARVIS alive
+        return None
+
     released = False
 
     def release() -> None:
@@ -716,11 +862,24 @@ def launch_nova(
         if released:
             return
         released = True
+        if tray is not None:
+            tray.stop()
         bridge._shutdown()
         controller.close()
 
+    window.events.closing += on_closing
     window.events.closed += release
     try:
+        if tray is not None:
+            try:
+                tray.start()
+            except Exception as exc:
+                # No icon is better than no window: continue without it.
+                _record_tray_problem(controller, None, exc)
+                tray = None
+                actions.service = None
+        if activation_watch is not None:
+            activation_watch(actions.open)
         webview.start(**start_options)
     finally:
         release()

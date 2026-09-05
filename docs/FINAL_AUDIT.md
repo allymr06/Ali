@@ -103,7 +103,8 @@ from the deferred features below:
 ## Deferred product scope
 
 These are not hidden release defects; they are unimplemented product features
-from the broader long-term vision: system tray, reminders/scheduling,
+from the broader long-term vision (the system tray shipped on 5 September
+2026): reminders/scheduling,
 notifications, proactive behavior, keyboard/mouse automation, general safe
 PowerShell execution, plugin process isolation (the in-process plugin
 runtime v1 shipped on 5 September 2026), and broader application

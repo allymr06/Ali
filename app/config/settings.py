@@ -245,6 +245,12 @@ class Settings:
     plugin_tool_timeout_seconds: float = 10.0
     plugin_max_consecutive_failures: int = 3
 
+    # Desktop shell behaviour: notification-area icon, close-to-tray, and
+    # one instance per user session (a second launch activates the first).
+    tray_enabled: bool = True
+    tray_close_to_tray: bool = True
+    single_instance_enabled: bool = True
+
     diagnostics_event_capacity: int = 2_000
     diagnostics_metric_capacity: int = 200
     diagnostics_health_timeout_seconds: float = 2.0
@@ -727,6 +733,9 @@ class Settings:
             plugin_max_consecutive_failures=_get_positive_int(
                 "JARVIS_PLUGIN_MAX_CONSECUTIVE_FAILURES", 3
             ),
+            tray_enabled=_get_bool("JARVIS_TRAY_ENABLED", True),
+            tray_close_to_tray=_get_bool("JARVIS_TRAY_CLOSE_TO_TRAY", True),
+            single_instance_enabled=_get_bool("JARVIS_SINGLE_INSTANCE", True),
             diagnostics_event_capacity=_get_positive_int(
                 "JARVIS_DIAGNOSTICS_EVENT_CAPACITY", 2_000
             ),

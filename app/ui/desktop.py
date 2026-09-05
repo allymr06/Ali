@@ -4743,31 +4743,60 @@ def launch_desktop(*, classic: bool | None = None) -> None:
     installed the classic shell is used and the reason is noted.
     """
     from app.bootstrap import create_application
+    from app.ui.tray import SingleInstanceGuard
 
     if classic is None:
         classic = "--classic" in sys.argv[1:]
 
     enable_high_dpi_rendering()
     api_settings = create_api_settings_service()
-    application = create_application(api_settings.build_runtime_settings())
-    controller = DesktopController(application)
+    runtime_settings = api_settings.build_runtime_settings()
 
-    if not classic:
-        try:
-            from app.ui.nova import detect_webview2_runtime, launch_nova
-        except ImportError as exc:
+    # One desktop per user session: a second launch activates the first
+    # instead of opening a second window over the same databases.
+    guard: SingleInstanceGuard | None = None
+    if getattr(runtime_settings, "single_instance_enabled", False):
+        guard = SingleInstanceGuard()
+        if not guard.acquire():
+            guard.notify_existing()
             print(
-                f"[jarvis] Nova shell unavailable ({exc}); "
-                "using the classic shell.",
+                "[jarvis] JARVIS zaten çalışıyor; açık örnek öne getirildi.",
                 file=sys.stderr,
             )
-        else:
-            # Ask before creating any window: a missing runtime would
-            # otherwise surface as a crash out of pywebview.
-            if detect_webview2_runtime() is None:
-                announce_nova_fallback(controller, "webview2_runtime_missing")
-            else:
-                launch_nova(controller, api_settings)
-                return
+            return
 
-    DesktopWindow(controller, api_settings=api_settings).run()
+    application = create_application(runtime_settings)
+    controller = DesktopController(application)
+
+    try:
+        if not classic:
+            try:
+                from app.ui.nova import detect_webview2_runtime, launch_nova
+            except ImportError as exc:
+                print(
+                    f"[jarvis] Nova shell unavailable ({exc}); "
+                    "using the classic shell.",
+                    file=sys.stderr,
+                )
+            else:
+                # Ask before creating any window: a missing runtime would
+                # otherwise surface as a crash out of pywebview.
+                if detect_webview2_runtime() is None:
+                    announce_nova_fallback(
+                        controller, "webview2_runtime_missing"
+                    )
+                else:
+                    launch_nova(
+                        controller,
+                        api_settings,
+                        settings=runtime_settings,
+                        activation_watch=(
+                            guard.watch if guard is not None else None
+                        ),
+                    )
+                    return
+
+        DesktopWindow(controller, api_settings=api_settings).run()
+    finally:
+        if guard is not None:
+            guard.release()

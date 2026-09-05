@@ -75,10 +75,16 @@ class DesktopController:
         default=None,
         repr=False,
     )
+    paused: bool = False
     _runner: AsyncRunner | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.restore_latest_conversation()
+
+    def set_paused(self, paused: bool) -> None:
+        """Gate new user-initiated work; a UI pause, not a security control."""
+        self.paused = bool(paused)
+        self.state.status = "PAUSED" if self.paused else "LOCAL CORE READY"
 
     def restore_latest_conversation(
         self,

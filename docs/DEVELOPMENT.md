@@ -59,6 +59,11 @@ WebView2 profile below `%LOCALAPPDATA%\JARVIS\webview` (or below
 `JARVIS_STATE_DIRECTORY` when that override is set). Delete that folder to
 reset them.
 
+When running several development instances side by side, disable the
+single-instance guard and the tray: `JARVIS_SINGLE_INSTANCE=false` and
+`JARVIS_TRAY_ENABLED=false`. With the tray on, closing the window only hides
+it; exit through the tray menu.
+
 ## Verification
 
 ```powershell

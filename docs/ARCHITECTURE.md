@@ -378,6 +378,23 @@ Web assets are resolved by `resolve_web_root()` from `sys._MEIPASS` in a
 frozen build or from the source tree otherwise, and the WebView2 profile lives
 in `%LOCALAPPDATA%\JARVIS\webview` so theme and motion preferences persist.
 
+**System tray** (`app/ui/tray/`, 5 September 2026). A toolkit-independent
+menu model and controller (`Aç`/`Öne getir`, `Duraklat`/`Devam`, `Tanılama`,
+`Ayarlar`, `Çıkış`) drive a WinForms `NotifyIcon` that lives on its own STA
+thread with its own message loop; pythonnet is already loaded by pywebview,
+so no dependency was added. With the tray enabled, closing the Nova window
+hides it to the notification area (a one-time balloon says so) and `Çıkış`
+performs the same clean shutdown as before: the window is destroyed, the
+tray thread exits, the bridge fails pending approvals closed, and the
+controller releases its runner and stores exactly once. `Duraklat` is a
+user-interface gate: the controller refuses new commands, voice, vision, and
+research requests, an active voice session is stopped, and the page shows
+`DURAKLATILDI`; it is not a security control and never touches the
+permission engine. A named mutex plus a named event
+(`Local\JARVIS.Desktop`) keep one desktop per user session: a second launch
+signals the first, which brings its window forward, and exits. Tray failures
+are recorded as `tray.error` and the window keeps working without an icon.
+
 The **classic** Tk shell (`DesktopWindow`, Phase 13) remains available with
 `--classic` and is used automatically when pywebview is not installed. Both
 shells provide Home, Chat, Tasks, Memory, Voice, Vision, Research, Tools,

@@ -45,6 +45,8 @@ Implemented:
 
 - root-allowlisted filesystem tools with traversal and reparse-point defenses
 - Windows clipboard and window-listing controls under the permission engine
+- Windows system tray for the Nova shell (open, pause/resume, diagnostics,
+  settings, exit; close-to-tray) and one instance per user session
 - manifest-based plugin runtime (disabled by default; plugin tools go through
   the same executor, permission engine, and approvals; in-process, not
   sandboxed)
@@ -54,7 +56,7 @@ Not implemented yet:
 - notifications and proactive behavior
 - filesystem undo/rollback, bulk dry-run plans, and indexed search
 - keyboard/mouse automation and general safe PowerShell execution
-- system tray integration
+- a tray icon for the classic Tkinter shell
 - plugin process isolation and a plugin settings screen
 - production code signing and an installed-runtime qualification
 

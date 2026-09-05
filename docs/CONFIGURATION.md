@@ -77,6 +77,18 @@ in a plain browser with `?demo=1` shows a clearly labelled demo for visual
 work only; without the parameter the page reports that the core bridge is
 missing.
 
+### System tray and single instance
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `JARVIS_TRAY_ENABLED` | `true` | Show the notification-area icon with Aç, Duraklat/Devam, Tanılama, Ayarlar, Çıkış (Nova shell, Windows). |
+| `JARVIS_TRAY_CLOSE_TO_TRAY` | `true` | Closing the window hides it to the tray; `Çıkış` in the tray menu exits. Set to `false` to make the close button exit. |
+| `JARVIS_SINGLE_INSTANCE` | `true` | One desktop per user session; a second launch brings the running window forward and exits. |
+
+`Duraklat` refuses new commands, voice, vision, and research requests and
+stops an active voice session until `Devam`; reminders and other background
+services keep running. The classic Tkinter shell has no tray icon.
+
 ## Conversation context
 
 | Variable | Default | Purpose |

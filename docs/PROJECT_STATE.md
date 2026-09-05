@@ -11,13 +11,39 @@ Last verified: 5 September 2026
   5 September 2026
 - Completed feature milestone: manifest-based plugin runtime v1 (in-process,
   disabled by default), 5 September 2026
-- Next action: Windows system tray, then the safe-filesystem extensions
-  (snapshot/undo, dry-run, indexed search); code signing and a user-attended
-  voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
+- Completed feature milestone: Windows system tray with single-instance
+  behaviour, 5 September 2026
+- Next action: the safe-filesystem extensions (atomic snapshot/undo,
+  dry-run and bound approval for bulk targets, indexed search); code signing
+  and a user-attended voice qualification remain release blockers
+  (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
 - Automated verification: 1267 tests passing, 2 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## System tray and single instance (5 September 2026)
+
+`app/ui/tray/` adds the notification-area icon for the Nova shell: `Aç`
+(`Öne getir` while visible), `Duraklat`/`Devam`, `Tanılama`, `Ayarlar`, and
+`Çıkış`, plus double-click to open. The icon is a WinForms `NotifyIcon` on
+its own STA thread (pythonnet is already present through pywebview; no new
+dependency). Closing the window hides it to the tray with a one-time
+balloon; `Çıkış` runs the ordinary clean shutdown. `Duraklat` is a UI gate:
+the controller refuses new commands, voice, vision, and research, stops an
+active voice session, and the page shows `DURAKLATILDI`; reminders and other
+background services keep running. A named mutex and event keep one desktop
+per user session: a second launch activates the first and exits. A tray that
+cannot start is recorded as `tray.error` and the window runs without it.
+Settings: `JARVIS_TRAY_ENABLED`, `JARVIS_TRAY_CLOSE_TO_TRAY`,
+`JARVIS_SINGLE_INSTANCE` (all default true). The classic Tk shell has no
+tray icon (it still honours the single-instance guard).
+
+Verified live on this host: icon in the notification area with the JARVIS
+logo, balloon on close-to-tray, `Aç` restoring the window, `Duraklat`
+refusing a command with the Turkish notice and `Devam` restoring it,
+`Tanılama` opening that screen, `Çıkış` ending the process cleanly, and a
+second launch bringing the first window forward.
 
 ## Plugin runtime v1 (5 September 2026)
 
@@ -405,9 +431,11 @@ whichever source answers first.
   bulk operations, and no indexed search tool.
 - Python cannot forcibly stop an already-running synchronous worker thread.
   Timeout results explicitly report when side effects may continue.
-- System tray remains a future extension. The plugin runtime is in-process
-  (no operating-system sandbox) and has no settings-screen UI yet; plugins
-  are enabled through `PluginRuntime.enable()`.
+- The tray icon exists for the Nova shell only; the classic Tk shell keeps
+  the single-instance guard but has no icon. `Duraklat` does not stop
+  reminders or the screen watcher.
+- The plugin runtime is in-process (no operating-system sandbox) and has no
+  settings-screen UI yet; plugins are enabled through `PluginRuntime.enable()`.
 - Publisher code signing is not configured.
 - Nova needs the Microsoft Edge WebView2 Runtime (shipped with Windows 11).
   When pywebview is missing or no runtime is detected, the classic shell opens

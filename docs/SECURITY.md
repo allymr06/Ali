@@ -253,6 +253,12 @@ The Nova shell adds a JavaScript boundary with the same posture:
   `confirmed=True` argument; a bare call is a no-op.
 - The page is self-contained (`default-src 'self'`, no remote scripts or
   styles) and loads from the application's own files.
+- The system tray is an adapter over the same shell actions. `Duraklat`
+  only gates new user-initiated work at the controller and page; it grants
+  nothing and is not a substitute for permissions or approvals. `Çıkış`
+  runs the ordinary shutdown path, so pending approvals are denied and
+  resources are released. The single-instance objects live in the per-session
+  `Local\` namespace and carry no data beyond an activation signal.
 
 ## Observability privacy and integrity
 

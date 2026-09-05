@@ -204,6 +204,23 @@ def test_chat_autoscroll_is_conditional_and_keyboard_scrolling_exists() -> None:
         assert key in keys
 
 
+def test_page_handles_tray_navigation_and_pause() -> None:
+    push_block = section(JS, "const PUSH = {", "\n};")
+    assert "  navigate(" in push_block and "  paused(" in push_block
+    assert "NAV.some(([id]) => id === screen)" in push_block
+    assert '"PAUSED": "DURAKLATILDI"' in JS
+    assert "function setPaused(" in JS
+    for name in (
+        "async function sendCommand(",
+        "async function toggleVoice(",
+        "async function submitVision(",
+        "async function submitResearch(",
+    ):
+        body = JS[JS.index(name) : JS.index(name) + 400]
+        assert "State.paused" in body, name
+    assert '.status-orb[data-mode="paused"]' in CSS
+
+
 def test_css_ignores_the_os_reduced_motion_setting() -> None:
     # Documented invariant: motion stays on unless the in-app switch is used,
     # so no media query may key off the OS setting (a comment may mention it).

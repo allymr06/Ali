@@ -54,6 +54,9 @@ Implemented:
 - Windows system tray for the Nova shell (open, voice mode, pause/resume,
   diagnostics, settings, exit; close-to-tray) and one instance per user
   session
+- scheduled routines: a named prompt JARVIS runs on its own, daily at a
+  clock time or every N minutes, through the same core and approvals,
+  with the outcome delivered to the notification centre
 - a notification centre in the Nova shell: reminders delivered in the
   window, replies, approvals and results that arrived while the window was
   hidden, ledger warnings and screen observations, with a native Windows

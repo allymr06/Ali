@@ -1942,3 +1942,97 @@ def test_boot_warms_the_provider_connection_on_the_runner(booted) -> None:
         "gemini": True, "voice_stt": True, "voice_tts": False,
     }
     assert event.attributes["seconds"] >= 0
+
+
+# ---------------------------------------------------------------------------
+# routines: due prompts run through the core, outcome to the centre
+# ---------------------------------------------------------------------------
+
+
+def test_boot_lists_routines_and_starts_their_watch(booted) -> None:
+    assert booted.boot["routines"] == {"available": True, "routines": []}
+    assert booted.bridge._routine_watch is not None
+    assert booted.bridge._routine_watch.running is True
+    assert booted.bridge.list_routines() == {"ok": True, "available": True, "routines": []}
+    booted.bridge._shutdown()
+    assert booted.bridge._routine_watch is None
+
+
+def test_due_routine_runs_through_the_core_and_lands_in_the_centre(booted) -> None:
+    seen: list = []
+
+    class Engine:
+        async def handle(self, request, context, *, approval_callback=None, **_kwargs):
+            seen.append((request, context, approval_callback))
+            return Response("Hava güneşli, 24 derece.", request_id=request.request_id,
+                            metadata={"outcome": "completed"})
+
+    booted.app.engine = Engine()
+    created = booted.app.routines.create("Hava", "bugün hava nasıl", every_minutes=30)
+    routine = booted.app.routines.get(created.data["routine_id"])
+
+    booted.bridge._run_routine(routine)
+    wait_until(lambda: booted.window.payloads("notification") != [])
+
+    request, context, approval = seen[0]
+    assert request.source.value == "system"
+    assert request.metadata["routine_id"] == routine["routine_id"]
+    assert approval == booted.bridge._request_approval
+    note = booted.window.payloads("notification")[0]["notification"]
+    assert note["kind"] == "task" and note["title"] == "Rutin · Hava"
+    assert note["body"] == "Hava güneşli, 24 derece."
+    assert note["target"] == "chat"
+    assert note["data"]["conversation_id"] == str(context.conversation_id)
+    wait_until(lambda: booted.app.routines.get(routine["routine_id"])["run_count"] == 1)
+    stored = booted.app.routines.get(routine["routine_id"])
+    assert stored["last_outcome"] == "completed"
+    assert stored["conversation_id"] == str(context.conversation_id)
+    events = [e.name for e in booted.app.diagnostics.ledger.list(component="ui", limit=20)]
+    assert "routine.started" in events and "routine.completed" in events
+
+    # The second run reuses the routine's own conversation.
+    booted.bridge._run_routine(booted.app.routines.get(routine["routine_id"]))
+    wait_until(lambda: len(seen) == 2)
+    assert str(seen[1][1].conversation_id) == stored["conversation_id"]
+
+
+def test_routine_failures_are_reported_not_hidden(booted) -> None:
+    class Engine:
+        async def handle(self, request, context, **_kwargs):
+            raise RuntimeError("gizli ayrıntı")
+
+    booted.app.engine = Engine()
+    created = booted.app.routines.create("Kırık", "patla", every_minutes=30)
+    booted.bridge._run_routine(booted.app.routines.get(created.data["routine_id"]))
+    wait_until(lambda: booted.window.payloads("notification") != [])
+    note = booted.window.payloads("notification")[0]["notification"]
+    assert note["severity"] == "error"
+    assert note["body"] == "Rutin çalıştırılamadı (RuntimeError)."
+    assert "gizli ayrıntı" not in json.dumps(booted.window.events())
+
+
+def test_paused_or_busy_desktop_defers_a_due_routine(booted) -> None:
+    created = booted.app.routines.create("Sabah", "özetle", at="09:00")
+    routine = booted.app.routines.get(created.data["routine_id"])
+    before = routine["next_run_at"]
+    booted.controller.set_paused(True)
+    booted.bridge._run_routine(routine)
+    assert booted.window.payloads("notification") == []
+    after = booted.app.routines.get(routine["routine_id"])["next_run_at"]
+    assert after < before  # tried again soon, not skipped to tomorrow
+    events = [e.name for e in booted.app.diagnostics.ledger.list(component="ui", limit=20)]
+    assert "routine.deferred" in events
+
+
+def test_deleting_a_routine_needs_confirmation_and_is_recorded(booted) -> None:
+    created = booted.app.routines.create("Sabah", "özetle", at="09:00")
+    routine_id = created.data["routine_id"]
+    assert booted.bridge.delete_routine(routine_id) == {"ok": False, "error": "Rutin silme onaylanmadı."}
+    assert booted.bridge.delete_routine("nope", True)["ok"] is False
+    result = booted.bridge.delete_routine(routine_id, True)
+    assert result["ok"] is True and result["routines"] == []
+    events = [e.name for e in booted.app.diagnostics.ledger.list(component="ui", limit=20)]
+    assert "routine.deleted" in events
+    booted.app.routines = None
+    assert booted.bridge.list_routines()["ok"] is False
+    assert booted.bridge.delete_routine("x", True)["ok"] is False

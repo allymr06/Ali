@@ -364,3 +364,8 @@ def test_action_model_escalation_is_opt_in(monkeypatch) -> None:
     assert Settings.from_environment().gemini_action_model == ""
     monkeypatch.setenv("JARVIS_GEMINI_ACTION_MODEL", "  gemini-3.5-flash ")
     assert Settings.from_environment().gemini_action_model == "gemini-3.5-flash"
+
+
+def test_routines_database_path_reads_environment(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("JARVIS_ROUTINES_DATABASE_PATH", str(tmp_path / "r.sqlite3"))
+    assert Settings.from_environment().routines_database_path == str(tmp_path / "r.sqlite3")

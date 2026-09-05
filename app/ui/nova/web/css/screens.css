@@ -251,6 +251,16 @@ body.paused .core-frame canvas { opacity: 0.55; transition: opacity var(--motion
 .shortcut-table { display: grid; grid-template-columns: auto 1fr; gap: 0.45rem 1rem; align-items: center; }
 .shortcut-table span { color: var(--ink-3); font-size: var(--text-sm); }
 .settings-note { color: var(--ink-4); font-size: var(--text-xs); line-height: 1.5; }
+.routines-panel { margin-top: var(--space-5); max-width: 56rem; }
+.routine-hint { color: var(--ink-3); font-size: var(--text-sm); line-height: 1.5; margin: 0.2rem 0 0.8rem; }
+.routine-list { display: flex; flex-direction: column; }
+.routine-row { display: flex; align-items: center; gap: var(--space-3); padding: 0.6rem 0; border-bottom: 1px solid var(--line-1); }
+.routine-row:last-child { border-bottom: none; }
+.routine-row > div:first-child { flex: 1; min-width: 0; }
+.routine-row .routine-name { font-size: var(--text-md); color: var(--ink-1); }
+.routine-row .routine-prompt { color: var(--ink-3); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.routine-row .routine-meta { font-family: var(--font-mono); font-size: 0.66rem; color: var(--ink-4); margin-top: 0.15rem; }
+.routine-row .routine-meta .chip { margin-right: 0.35rem; }
 .file-roots, .snapshot-list { display: flex; flex-direction: column; }
 .file-root, .snapshot-row {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.3rem 0.9rem; align-items: center;

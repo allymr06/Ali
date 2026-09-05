@@ -439,6 +439,14 @@ Web assets are resolved by `resolve_web_root()` from `sys._MEIPASS` in a
 frozen build or from the source tree otherwise, and the WebView2 profile lives
 in `%LOCALAPPDATA%\JARVIS\webview` so theme and motion preferences persist.
 
+**Scheduled routines** (`app/routines/`, 5 September 2026). `RoutineService`
+is a bounded SQLite store of named prompts with a daily or interval
+schedule and an atomic due claim. The Nova bridge runs a due routine
+through the core like a typed command (same engine, permissions and
+approval overlay; `RequestSource.SYSTEM`; the routine's own conversation),
+defers it while the desktop is paused or busy, and publishes the outcome to
+the notification centre.
+
 **Notification centre** (`app/notifications/`, 5 September 2026).
 `NotificationCenter` is a bounded, thread-safe, session-scoped attention
 list with kinds, severities, target screens and dedupe-by-key collapsing;

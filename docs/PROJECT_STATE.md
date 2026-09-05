@@ -28,20 +28,51 @@ Last verified: 5 September 2026
   streamed answers on tool turns, lighter finalization, no default
   escalation, quota cooldown, connection warm-up, per-call latency
   diagnostics), 5 September 2026
+- Completed feature milestone: scheduled routines (a named prompt JARVIS
+  runs on its own daily at a clock time or every N minutes, through the
+  same core and approvals, outcome delivered to the notification centre),
+  5 September 2026
 - Completed performance milestone: desktop start-up (speech and model
   clients built on first use or by the boot warm-up instead of before the
   window opens; in-process start to boot 4.3 s to 0.8 s), 5 September 2026
 - Completed performance milestone: voice time to first audio (streamed
   Gemini speech played as it arrives, first sentence synthesized while the
   reply is still streaming), 5 September 2026
-- Next action: scheduled routines (a prompt that runs on a timer under the
-  same approval gates) or plugin process isolation; code signing and a
+- Next action: plugin process isolation, or a routines editor in the page
+  (today routines are created by speaking or typing); code signing and a
   user-attended voice qualification remain release blockers
   (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1405 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 1419 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Scheduled routines (5 September 2026)
+
+`app/routines/` adds `RoutineService`: a persistent, bounded (20) store of
+named prompts with a schedule, daily at a local clock time (`her gün 09:00`)
+or every N minutes (5 minutes to a week). Due routines are claimed
+atomically: the claim moves `next_run_at` to the following occurrence
+before the routine is handed out, so a run happens once even across a
+restart. The model gets `create_routine`, `list_routines` and
+`delete_routine` (the schema selector exposes them for phrases such as
+"her sabah 09:00'da ...", "rutinlerimi listele", "... rutinini sil";
+"her gün ... hatırlat" stays a reminder).
+
+The Nova bridge polls the store every 30 s with the same daemon watch that
+delivers reminders and runs a due routine through the core exactly like a
+typed command: same engine, permission engine and approval overlay (an
+approval nobody answers fails closed), `RequestSource.SYSTEM`, in the
+routine's own conversation which persists between runs. The outcome lands
+in the notification centre as `Rutin · <ad>` with the reply text, reaches
+the OS when the window is unattended, and opens the routine's conversation
+when clicked; failures are reported by exception class only. A paused or
+busy desktop defers a due routine by 90 s instead of dropping it. The
+Tasks screen lists routines (schedule, next run, last outcome, run count)
+with a confirmed delete; ledger events `routine.started`,
+`routine.completed`, `routine.deferred`, `routine.deleted`. Setting:
+`JARVIS_ROUTINES_DATABASE_PATH`. Routines execute nothing themselves and
+never bypass a gate a typed command would face.
 
 ## Faster start-up (5 September 2026)
 

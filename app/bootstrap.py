@@ -77,6 +77,7 @@ class JARVISApplication:
     vision: VisionService | None = None
     research: ResearchService | None = None
     reminders: object | None = None
+    routines: object | None = None
     screen_watcher: object | None = None
     plugins: PluginRuntime | None = None
 
@@ -544,6 +545,14 @@ def create_application(
     )
     reminders.register_tools(tool_executor)
 
+    from app.routines import RoutineService
+
+    routines = RoutineService(
+        active_settings.routines_database_path
+        or default_state_path("jarvis_routines.sqlite3")
+    )
+    routines.register_tools(tool_executor)
+
     if windows is not None:
         from app.integrations import (
             SpotifyIntegration,
@@ -736,6 +745,7 @@ def create_application(
         vision=vision,
         research=research,
         reminders=reminders,
+        routines=routines,
         screen_watcher=screen_watcher,
         plugins=plugins,
     )

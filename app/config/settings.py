@@ -227,6 +227,7 @@ class Settings:
     spotify_client_id: str | None = None
     whatsapp_contacts_path: str | None = None
     reminders_database_path: str | None = None
+    routines_database_path: str | None = None
 
     # Automatic long-term memory: after each turn a cheap model pass
     # extracts durable personal facts (identity, preferences,
@@ -718,6 +719,10 @@ class Settings:
             reminders_database_path=os.getenv(
                 "JARVIS_REMINDERS_DATABASE_PATH",
                 default_state_path("jarvis_reminders.sqlite3"),
+            ),
+            routines_database_path=os.getenv(
+                "JARVIS_ROUTINES_DATABASE_PATH",
+                default_state_path("jarvis_routines.sqlite3"),
             ),
             research_enabled=_get_bool("JARVIS_RESEARCH_ENABLED"),
             research_searxng_url=os.getenv("JARVIS_RESEARCH_SEARXNG_URL"),

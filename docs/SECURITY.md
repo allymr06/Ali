@@ -275,6 +275,11 @@ The Nova shell adds a JavaScript boundary with the same posture:
 - Permanently deleting a memory requires an in-app confirmation and a
   `confirmed=True` argument, like deleting the credential; "unut" only
   deactivates. Compact mode changes window geometry and nothing else.
+- Scheduled routines run a stored prompt through the same core, permission
+  engine and approval overlay as a typed command; an approval nobody
+  answers fails closed, a paused desktop defers the run, and the routine
+  store never executes anything itself. Creating or deleting a routine is
+  a LOW-risk tool call or a confirmed action in the page.
 - The notification centre is a session-scoped list the page renders but
   never authors: entries come only from the core (reminders, ledger
   warnings, screen observations) or from the bridge's own completions on an

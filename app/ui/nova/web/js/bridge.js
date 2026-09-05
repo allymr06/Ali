@@ -55,6 +55,12 @@ const DEMO_NOTIFICATIONS = [
     target: "diagnostics", reference: null, data: { component: "providers", name: "circuit.opened" }, count: 2, read: true },
 ];
 
+const DEMO_ROUTINES = [
+  { routine_id: "demo-rt1", name: "Sabah özeti", prompt: "DEMO: bugünkü hatırlatıcılarımı ve takvimi özetle", schedule: "her gün 09:00",
+    schedule_kind: "daily", schedule_value: "09:00", conversation_id: null, next_run_at: new Date(Date.now() + 3600_000).toISOString(),
+    next_run_local: "yarın 09:00", last_run_at: null, last_run_local: null, last_outcome: null, last_summary: null, run_count: 0 },
+];
+
 const DEMO_RUNTIME = {
   version: null, python: "3.12", platform: "Windows 11", webview2: null, user_name: "Ali",
   started_at: new Date().toISOString(), conversation_id: "demo-conv-1",
@@ -94,6 +100,7 @@ const DemoBridge = {
         { root_id: "belgeler-1a2b3c4d5e", name: "Belgeler", path: "C:\\Users\\Ali\\Documents" },
       ] },
       notifications: { items: DEMO_NOTIFICATIONS, unread: 1, total: DEMO_NOTIFICATIONS.length },
+      routines: { available: true, routines: DEMO_ROUTINES },
     };
   },
   async submit_command(text) {
@@ -239,6 +246,11 @@ const DemoBridge = {
   async dismiss_notification() { return { ok: false, error: "Demo modu: bildirim kaldırılmadı." }; },
   async clear_notifications() { return { ok: true, cleared: 0, unread: 0 }; },
   async set_visible(visible) { return { ok: true, visible: visible === true }; },
+  async list_routines() { return { ok: true, available: true, routines: DEMO_ROUTINES }; },
+  async delete_routine(routineId, confirmed) {
+    if (confirmed !== true) return { ok: false, error: "Rutin silme onaylanmadı." };
+    return { ok: false, error: "Demo modu: rutin silinmedi." };
+  },
   async get_settings() { return { provider: "gemini", model: "gemini-2.5-pro",
     credential_configured: true, credential_required: true }; },
   async save_settings() {

@@ -113,7 +113,7 @@ function showScreen(id, { focus = true } = {}) {
   if (id === "diagnostics") Diagnostics.refresh({ quiet: true });
   if (id === "memory") Memory.load();
   if (id === "integrations") Trust.refresh();
-  if (id === "tasks") renderTasks(State.snapshot?.tasks || []);
+  if (id === "tasks") { renderTasks(State.snapshot?.tasks || []); Routines.load(); }
   if (id === "settings") Files.load();
   requestAnimationFrame(() => Engine.resize());
   Engine.wake();
@@ -289,8 +289,13 @@ const Notify = {
       State.unread = Number(result.unread) || 0;
       this.renderBadge();
     }
-    if (item.target && NAV.some(([screen]) => screen === item.target)) { this.set(false); showScreen(item.target); }
-    else this.render();
+    const conversationId = item.data && item.data.conversation_id;
+    if (item.target && NAV.some(([screen]) => screen === item.target)) {
+      this.set(false);
+      showScreen(item.target);
+      /* A routine's outcome lives in its own conversation: open it. */
+      if (conversationId && typeof openConversation === "function") openConversation(String(conversationId));
+    } else this.render();
   },
 
   async readAll() {
@@ -665,6 +670,8 @@ function applyBoot(bootData) {
   State.conversations = bootData.conversations || [];
   State.fileRoots = bootData.fileRoots || { available: false, roots: [] };
   Notify.apply(bootData.notifications);
+  State.routines = bootData.routines || { available: false, routines: [] };
+  Routines.render();
   $("#demo-badge").hidden = !State.demo;
   Presence.connected = true;
   State.status = bootData.status || READY;

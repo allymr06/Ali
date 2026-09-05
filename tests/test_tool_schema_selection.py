@@ -433,6 +433,7 @@ def _select(text):
         "whatsapp_send_message", "whatsapp_add_contact",
         "whatsapp_list_contacts",
         "create_reminder", "list_reminders", "cancel_reminder",
+        "create_routine", "list_routines", "delete_routine",
         "open_website", "open_web_search", "system_volume",
         "launch_windows_application",
     }
@@ -510,3 +511,11 @@ def test_selector_exposes_screen_watch_tools() -> None:
 
     assert "watch_screen_start" in pick("Ekranımı sürekli takip et")
     assert pick("Ekran izlemeyi durdur") == {"watch_screen_stop"}
+
+
+def test_routine_intents_expose_only_routine_tools():
+    assert _select("her sabah 09:00'da haberleri özetle") == {"create_routine", "list_routines"}
+    assert _select("rutinlerimi listele") == {"list_routines"}
+    assert _select("sabah özeti rutinini sil") == {"delete_routine", "list_routines"}
+    # A recurring reminder is still a reminder, not a routine.
+    assert "create_routine" not in _select("her gün su içmemi hatırlat")

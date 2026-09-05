@@ -378,3 +378,15 @@ def test_reply_chips_show_real_timing_only() -> None:
     assert "metadata.elapsed_seconds" in chips and "metadata.tool_calls" in chips
     assert "Math.random" not in chips
     assert 'toLocaleString("tr-TR"' in JS_SOURCES["js/conversation.js"]
+
+
+def test_routines_panel_is_declared_and_driven_by_the_core() -> None:
+    for element_id in ("routines-panel", "routines-list", "routines-count", "routines-refresh"):
+        assert f'id="{element_id}"' in HTML, element_id
+    routines = section(JS, "const Routines = {", "\n};")
+    assert 'call("list_routines")' in routines
+    assert 'call("delete_routine", routineId, true)' in routines
+    assert "confirmDialog(" in routines
+    assert "Math.random" not in routines
+    assert "Tanımlı rutin yok." in routines
+    assert "Routines.load()" in JS_SOURCES["js/shell.js"]

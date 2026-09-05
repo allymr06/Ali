@@ -730,6 +730,26 @@ class ToolSchemaSelector:
                     {"create_reminder", "list_reminders"}
                 )
 
+        routine_domain = self._has_stem(
+            tokens,
+            ("rutin", "routine", "zamanla", "periyodik", "duzenli", "hergun"),
+        ) or (
+            "her" in tokens
+            and self._has_stem(
+                tokens, ("gun", "sabah", "aksam", "saat", "dakika", "hafta")
+            )
+        )
+
+        if routine_domain and not selected:
+            if self._has_stem(tokens, self._DELETE) or self._has_stem(
+                tokens, self._CANCEL
+            ):
+                selected.update({"delete_routine", "list_routines"})
+            elif self._has_stem(tokens, self._LIST):
+                selected.add("list_routines")
+            else:
+                selected.update({"create_routine", "list_routines"})
+
         screen_watch_domain = self._has_stem(
             tokens, ("ekran", "screen", "monitor")
         ) and self._has_stem(

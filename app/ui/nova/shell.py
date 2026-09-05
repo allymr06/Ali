@@ -51,6 +51,7 @@ from uuid import UUID, uuid4
 import webview
 
 from app.config.paths import default_state_directory
+from app.core.models import Context, Request, RequestSource
 from app.notifications import NotificationCenter, ReminderWatch
 from app.reminders.service import show_windows_toast
 from app.security.interactive import (
@@ -96,6 +97,11 @@ APPROVAL_MINIMUM_WAIT_SECONDS = 5.0
 CONNECTION_TEST_TIMEOUT_SECONDS = 30.0
 HEALTH_REPORT_TIMEOUT_SECONDS = 20.0
 NOTIFICATION_LIST_LIMIT = 100
+ROUTINE_POLL_SECONDS = 30.0
+# A due routine found while the desktop is paused or busy is tried again
+# after this long rather than skipped to its next slot.
+ROUTINE_DEFER_SECONDS = 90.0
+ROUTINE_UNAVAILABLE = "Rutinler bu ortamda kullanılamıyor."
 OS_NOTIFICATION_MAX_IN_FLIGHT = 4
 # User-visible titles of the notifications the bridge raises itself.
 NOTIFICATION_TITLES: Mapping[str, str] = {
@@ -425,6 +431,8 @@ class NovaBridge:
         self._os_lock = Lock()
         self._os_in_flight = 0
         self._reminder_watch: ReminderWatch | None = None
+        self._routine_watch: ReminderWatch | None = None
+        self._routine_future: Future[Any] | None = None
         controller.approval_callback = self._request_approval
         self._observe_application()
 
@@ -722,11 +730,185 @@ class NovaBridge:
         watch = ReminderWatch(reminders, self._deliver_reminder)
         self._reminder_watch = watch
         watch.start()
+        self._start_routine_watch()
 
     def _stop_reminder_watch(self) -> None:
         watch, self._reminder_watch = self._reminder_watch, None
         if watch is not None:
             watch.stop()
+        self._stop_routine_watch()
+
+    # ------------------------------------------------------------------
+    # Routines: prompts JARVIS runs on its own schedule
+    # ------------------------------------------------------------------
+    def _start_routine_watch(self) -> None:
+        self._stop_routine_watch()
+        routines = getattr(self.controller.application, "routines", None)
+        if routines is None or not callable(getattr(routines, "claim_due", None)):
+            return
+        watch = ReminderWatch(
+            routines, self._run_routine, interval_seconds=ROUTINE_POLL_SECONDS
+        )
+        self._routine_watch = watch
+        watch.start()
+
+    def _stop_routine_watch(self) -> None:
+        watch, self._routine_watch = self._routine_watch, None
+        if watch is not None:
+            watch.stop()
+
+    def _run_routine(self, routine: Mapping[str, Any]) -> None:
+        """Run one due routine through the core like a typed command.
+
+        The prompt goes through the same engine, permission engine and
+        approval overlay; an approval nobody answers fails closed. The
+        outcome lands in the notification centre (and reaches the OS when
+        the window is unattended). A paused or busy desktop defers the
+        routine instead of dropping it.
+        """
+        routines = getattr(self.controller.application, "routines", None)
+        routine_id = str(routine.get("routine_id", ""))
+        name = str(routine.get("name", "")).strip() or "Rutin"
+        prompt = str(routine.get("prompt", "")).strip()
+        if routines is None or not routine_id or not prompt:
+            return
+        with self._lock:
+            blocked = (
+                self._closing
+                or self.controller.paused
+                or _active(self._command_future)
+                or _active(self._routine_future)
+                or self.controller.state.busy
+            )
+            if blocked:
+                try:
+                    routines.defer(routine_id, ROUTINE_DEFER_SECONDS)
+                except Exception:
+                    pass
+                self._record_ui_event(
+                    "routine.deferred",
+                    "A due routine waits because the desktop is paused or busy.",
+                    routine_id=routine_id,
+                )
+                return
+            stored_conversation = routine.get("conversation_id")
+            try:
+                context = (
+                    Context(conversation_id=UUID(str(stored_conversation)))
+                    if stored_conversation
+                    else Context()
+                )
+            except ValueError:
+                context = Context()
+            request = Request(
+                prompt,
+                source=RequestSource.SYSTEM,
+                metadata={"routine_id": routine_id, "routine_name": name},
+            )
+            started = time.monotonic()
+
+            def done(future: Future[Any]) -> None:
+                with self._lock:
+                    if self._routine_future is future:
+                        self._routine_future = None
+                if future.cancelled():
+                    return
+                try:
+                    response = future.result()
+                except Exception as exc:
+                    outcome, text = "failed", (
+                        f"Rutin çalıştırılamadı ({type(exc).__name__})."
+                    )
+                    severity = "error"
+                else:
+                    outcome = str(
+                        _message_field(response, "metadata").get("outcome", "completed")
+                        if isinstance(_message_field(response, "metadata"), Mapping)
+                        else "completed"
+                    )
+                    text = str(_message_field(response, "text") or "").strip()
+                    severity = "info" if outcome == "completed" else "warning"
+                try:
+                    routines.record_run(
+                        routine_id,
+                        outcome=outcome,
+                        summary=text,
+                        conversation_id=str(context.conversation_id),
+                    )
+                except Exception:
+                    pass
+                self._record_ui_event(
+                    "routine.completed",
+                    "A routine finished.",
+                    routine_id=routine_id,
+                    outcome=outcome,
+                    seconds=round(time.monotonic() - started, 3),
+                )
+                self._publish(
+                    "task",
+                    f"Rutin · {name}",
+                    text or "Rutin tamamlandı.",
+                    severity=severity,
+                    target="chat",
+                    reference=routine_id,
+                    data={
+                        "routine_id": routine_id,
+                        "conversation_id": str(context.conversation_id),
+                        "outcome": outcome,
+                    },
+                    alert=True,
+                )
+                self._push_snapshot()
+
+            try:
+                self._routine_future = self.controller.submit_background(
+                    self.controller.application.engine.handle(
+                        request,
+                        context,
+                        approval_callback=self._request_approval,
+                    ),
+                    done,
+                )
+            except RuntimeError:
+                try:
+                    routines.defer(routine_id, ROUTINE_DEFER_SECONDS)
+                except Exception:
+                    pass
+        self._record_ui_event(
+            "routine.started", "A routine started.", routine_id=routine_id
+        )
+
+    def _routines_payload(self) -> dict[str, Any]:
+        routines = getattr(self.controller.application, "routines", None)
+        if routines is None:
+            return {"available": False, "routines": []}
+        try:
+            items = routines.list()
+        except Exception:
+            return {"available": False, "routines": []}
+        return {"available": True, "routines": _jsonable(items)}
+
+    def list_routines(self) -> dict[str, Any]:
+        payload = self._routines_payload()
+        if not payload["available"]:
+            return {"ok": False, "error": ROUTINE_UNAVAILABLE, **payload}
+        return {"ok": True, **payload}
+
+    def delete_routine(self, routine_id: str, confirmed: Any = False) -> dict[str, Any]:
+        if confirmed is not True:
+            return {"ok": False, "error": "Rutin silme onaylanmadı."}
+        routines = getattr(self.controller.application, "routines", None)
+        if routines is None:
+            return {"ok": False, "error": ROUTINE_UNAVAILABLE}
+        result = routines.delete(str(routine_id or ""))
+        if not result.succeeded:
+            return {"ok": False, "error": result.message or "Rutin silinemedi."}
+        self._record_ui_event(
+            "routine.deleted",
+            "A routine was deleted from the desktop.",
+            routine_id=str(routine_id),
+        )
+        return {"ok": True, **self._routines_payload()}
 
     def _deliver_reminder(self, reminder: Mapping[str, Any]) -> None:
         text = str(reminder.get("text", "")).strip()
@@ -833,6 +1015,7 @@ class NovaBridge:
             ),
             "fileRoots": self._file_roots_payload(),
             "notifications": self._notification_state(),
+            "routines": self._routines_payload(),
         }
         # Started after the payload is built so a reminder that is due
         # right now reaches the page as a push it merges after boot.
@@ -855,8 +1038,10 @@ class NovaBridge:
             self._approvals.clear()
             voice_future = self._voice_future
             command_future = self._command_future
+            routine_future = self._routine_future
             self._voice_future = None
             self._command_future = None
+            self._routine_future = None
         finally:
             if acquired:
                 self._lock.release()
@@ -864,7 +1049,7 @@ class NovaBridge:
         for decision in pending:
             if not decision.done():
                 decision.set_result(False)
-        for future in (voice_future, command_future):
+        for future in (voice_future, command_future, routine_future):
             if _active(future):
                 future.cancel()
 

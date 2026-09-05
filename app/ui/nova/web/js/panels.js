@@ -704,6 +704,58 @@ function renderShortcuts() {
     `<kbd>${esc(keys)}</kbd><span>${esc(label)}</span>`).join("");
 }
 
+/* Routines: prompts the core runs on its own schedule. Only what the
+   core returns is shown; deleting asks first and needs confirmed=true. */
+const Routines = {
+  async load() {
+    const result = await call("list_routines");
+    if (result.ok === false && result.available === undefined) { toast(result.error || "Rutinler okunamadı.", true); return; }
+    State.routines = { available: !!result.available, routines: result.routines || [] };
+    this.render();
+  },
+
+  render() {
+    const host = $("#routines-list");
+    if (!host) return;
+    const routines = State.routines?.routines || [];
+    $("#routines-count").textContent = State.routines?.available ? `${routines.length} rutin` : "kullanılamıyor";
+    if (!State.routines?.available) {
+      host.innerHTML = '<div class="ctx-empty">Rutinler bu ortamda kullanılamıyor.</div>';
+      return;
+    }
+    if (!routines.length) {
+      host.innerHTML = '<div class="ctx-empty">Tanımlı rutin yok. Sohbette "her sabah 09:00\'da ..." diyerek bir tane kurabilirsin.</div>';
+      return;
+    }
+    host.innerHTML = routines.map((item) => `
+      <div class="routine-row" data-id="${esc(item.routine_id)}">
+        <div>
+          <div class="routine-name">${esc(item.name)}</div>
+          <div class="routine-prompt">${esc(item.prompt)}</div>
+          <div class="routine-meta"><span class="chip">${esc(item.schedule)}</span>sıradaki ${esc(item.next_run_local || "—")}${item.last_run_local ? ` · son ${esc(item.last_run_local)} (${esc(tr(item.last_outcome || ""))})` : ""} · ${item.run_count} çalışma</div>
+        </div>
+        <button type="button" class="btn btn-ghost small" data-act="delete">Sil</button>
+      </div>`).join("");
+    $$("[data-act='delete']", host).forEach((btn) =>
+      btn.addEventListener("click", () => this.remove(btn.closest(".routine-row").dataset.id)));
+  },
+
+  async remove(routineId) {
+    const item = (State.routines?.routines || []).find((r) => r.routine_id === routineId);
+    const ok = await confirmDialog({
+      title: "Rutini sil",
+      body: `“${item ? item.name : routineId}” rutini silinecek ve bir daha çalışmayacak.`,
+      confirmLabel: "SİL", danger: true,
+    });
+    if (!ok) return;
+    const result = await call("delete_routine", routineId, true);
+    if (result.ok === false) { toast(result.error || "Rutin silinemedi.", true); return; }
+    State.routines = { available: !!result.available, routines: result.routines || [] };
+    this.render();
+    toast("Rutin silindi.", "ok");
+  },
+};
+
 function bindPanels() {
   buildQuickActions();
   $("#vision-form").addEventListener("submit", submitVision);
@@ -731,6 +783,8 @@ function bindPanels() {
   $("#diag-refresh").addEventListener("click", () => Diagnostics.refresh());
   $("#diag-level").addEventListener("change", (event) => { Diagnostics.levelFilter = event.target.value; Diagnostics.renderEvents(); });
   $("#file-root-add").addEventListener("click", () => Files.add());
+  $("#routines-refresh").innerHTML = icon("refresh");
+  $("#routines-refresh").addEventListener("click", () => Routines.load());
   $("#snapshot-refresh").innerHTML = icon("refresh");
   $("#snapshot-refresh").addEventListener("click", () => Files.load());
   $("#trust-refresh").innerHTML = `${icon("refresh")}<span>Yenile</span>`;

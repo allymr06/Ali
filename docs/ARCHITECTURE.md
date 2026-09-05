@@ -452,8 +452,9 @@ defers it while the desktop is paused or busy, and publishes the outcome to
 the notification centre.
 
 **Notification centre** (`app/notifications/`, 5 September 2026).
-`NotificationCenter` is a bounded, thread-safe, session-scoped attention
-list with kinds, severities, target screens and dedupe-by-key collapsing;
+`NotificationCenter` is a bounded, thread-safe attention list (persisted
+through `NotificationStore` below the state directory) with kinds,
+severities, target screens and dedupe-by-key collapsing;
 `ReminderWatch` polls the reminder store on a daemon thread and hands each
 due reminder out exactly once. The bridge owns one centre per window
 session, publishes into it from the core's observers (reminders, ledger

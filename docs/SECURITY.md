@@ -280,8 +280,8 @@ The Nova shell adds a JavaScript boundary with the same posture:
   answers fails closed, a paused desktop defers the run, and the routine
   store never executes anything itself. Creating or deleting a routine is
   a LOW-risk tool call or a confirmed action in the page.
-- The notification centre is a session-scoped list the page renders but
-  never authors: entries come only from the core (reminders, ledger
+- The notification centre is a bounded list (persisted below the state
+  directory) the page renders but never authors: entries come only from the core (reminders, ledger
   warnings, screen observations) or from the bridge's own completions on an
   unattended window. An approval notification carries the tool name and
   risk level only, never parameters; text is bounded before it is stored;

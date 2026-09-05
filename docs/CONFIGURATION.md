@@ -96,6 +96,7 @@ roots can never contain that directory.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `JARVIS_NOTIFICATIONS_DATABASE_PATH` | `<state>/jarvis_notifications.sqlite3` | Where the notification centre keeps its newest 200 entries across restarts; empty keeps the centre in memory only. |
 | `JARVIS_ROUTINES_DATABASE_PATH` | `<state>/jarvis_routines.sqlite3` | Where scheduled routines are stored. |
 | `JARVIS_VOICE_PROVISIONAL_SILENCE_SECONDS` | `0.6` | After this much silence the audio heard so far is transcribed speculatively while the trailing silence is still being confirmed; used only when shorter than `JARVIS_VOICE_TRAILING_SILENCE_SECONDS`, `0` disables it. |
 | `JARVIS_GEMINI_ACTION_MODEL` | (empty) | Optional heavier model for tool-bearing turns. Empty means the default model handles them; on the free tier `gemini-3.5-flash` measured 4-6 s per tool call where `gemini-3.5-flash-lite` took 0.6 s. A configured action model that reports a quota error is skipped for a doubling cooldown (60 s to 1 h). |

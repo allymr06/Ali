@@ -2087,3 +2087,38 @@ def test_routines_can_be_created_from_the_desktop_with_the_tool_rules(booted) ->
     assert len(events) == 2 and events[0].attributes["schedule"]
     booted.app.routines = None
     assert bridge.create_routine("x", "y", at="09:00")["ok"] is False
+
+
+def test_notifications_survive_a_bridge_restart(tmp_path, monkeypatch) -> None:
+    from dataclasses import replace
+
+    app = application()
+    app.settings = replace(app.settings, notifications_database_path=str(tmp_path / "n.sqlite3"))
+    controller = DesktopController(app)
+    bridge = shell.NovaBridge(controller, None)
+    bridge._attach(FakeWindow())
+    try:
+        bridge.boot()
+        assert bridge._notifications.persistent is True
+        bridge._deliver_reminder({"reminder_id": "r1", "text": "Su iç"})
+    finally:
+        bridge._shutdown()
+        controller.close()
+
+    app2 = application()
+    app2.settings = replace(app2.settings, notifications_database_path=str(tmp_path / "n.sqlite3"))
+    controller2 = DesktopController(app2)
+    bridge2 = shell.NovaBridge(controller2, None)
+    bridge2._attach(FakeWindow())
+    try:
+        boot = bridge2.boot()
+        assert boot["notifications"]["unread"] == 1
+        assert boot["notifications"]["items"][0]["body"] == "Su iç"
+    finally:
+        bridge2._shutdown()
+        controller2.close()
+
+    app3 = application()
+    app3.settings = replace(app3.settings, notifications_database_path="")
+    bridge3 = shell.NovaBridge(DesktopController(app3), None)
+    assert bridge3._notifications.persistent is False

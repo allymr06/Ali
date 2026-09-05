@@ -383,6 +383,14 @@ notifies and exits; first launch watches and releases; classic also holds
 the instance), and settings parsing. The real WinForms icon is exercised by
 an opt-in test (`JARVIS_TRAY_LIVE_TESTS=1`).
 
+## Notification persistence coverage (5 September 2026)
+
+`tests/test_notifications.py` covers the store round trip (publish,
+collapse, mark read, dismiss, clear, reload order), the bound on disk and
+storage failures that never break the centre; `tests/test_ui_nova.py`
+covers a bridge restart keeping an unread reminder and an empty path
+keeping the centre in memory; `tests/test_settings.py` covers the setting.
+
 ## Clock and asset-cache coverage (5 September 2026)
 
 `tests/test_core_engine.py` covers the Turkish clock line and its presence

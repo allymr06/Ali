@@ -228,6 +228,7 @@ class Settings:
     whatsapp_contacts_path: str | None = None
     reminders_database_path: str | None = None
     routines_database_path: str | None = None
+    notifications_database_path: str | None = None
 
     # Automatic long-term memory: after each turn a cheap model pass
     # extracts durable personal facts (identity, preferences,
@@ -723,6 +724,10 @@ class Settings:
             routines_database_path=os.getenv(
                 "JARVIS_ROUTINES_DATABASE_PATH",
                 default_state_path("jarvis_routines.sqlite3"),
+            ),
+            notifications_database_path=os.getenv(
+                "JARVIS_NOTIFICATIONS_DATABASE_PATH",
+                default_state_path("jarvis_notifications.sqlite3"),
             ),
             research_enabled=_get_bool("JARVIS_RESEARCH_ENABLED"),
             research_searxng_url=os.getenv("JARVIS_RESEARCH_SEARXNG_URL"),

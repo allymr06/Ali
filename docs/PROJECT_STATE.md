@@ -38,13 +38,25 @@ Last verified: 5 September 2026
 - Completed performance milestone: voice time to first audio (streamed
   Gemini speech played as it arrives, first sentence synthesized while the
   reply is still streaming), 5 September 2026
-- Next action: plugin process isolation, or persisting the notification
-  centre across restarts; code signing and a user-attended voice
-  qualification remain release blockers (`docs/FINAL_AUDIT.md`)
+- Next action: plugin process isolation; code signing and a user-attended
+  voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1425 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 1430 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Persistent notification centre (5 September 2026)
+
+Routines now run unattended, so what they reported must still be there
+after the desktop restarts. `NotificationCenter` takes an optional
+`NotificationStore` (SQLite below the state directory,
+`JARVIS_NOTIFICATIONS_DATABASE_PATH`, empty disables it): every publish,
+collapse, mark-read, dismiss and clear is written through, the newest 200
+entries are loaded when the bridge starts (ties in the timestamp broken by
+insertion order), and pruning keeps the file at the same bound. Storage
+errors are reported, never raised: a full disk must not stop a reminder
+from being shown. Sessions without a path (tests, demo) stay in memory;
+`NotificationCenter.persistent` says which.
 
 ## Clock in the prompt and fresh page assets (5 September 2026)
 
@@ -224,7 +236,8 @@ Before this milestone the Nova shell never delivered reminders: the
 delivery loop lived in the classic Tk window only, so a reminder created
 from Nova was stored and never shown. `app/notifications/` adds two small,
 UI-independent pieces. `NotificationCenter` is a bounded (200 entries),
-thread-safe, session-scoped list of things that deserve attention; every
+thread-safe list of things that deserve attention (persisted below the
+state directory since the evening of 5 September 2026); every
 entry has a kind (`reminder`, `approval`, `reply`, `task`, `diagnostic`,
 `observation`, `system`), a Turkish title, a body bounded to 600
 characters, a severity, an optional target screen and a small data map,
@@ -816,10 +829,8 @@ whichever source answers first.
   classified configuration error instead of answering.
 - Filesystem search covers names only (no content index); plans work within
   one root; the compact window assumes the primary monitor.
-- The notification centre is session-scoped (nothing is persisted across
-  restarts; the reminder store itself keeps its delivered flag). Native
-  notifications are best effort (tray balloon or a PowerShell WinRT toast)
-  and cannot deep-link back into the window; the tray's `Aç` does.
+- Native notifications are best effort (tray balloon or a PowerShell WinRT
+  toast) and cannot deep-link back into the window; the tray's `Aç` does.
 - Python cannot forcibly stop an already-running synchronous worker thread.
   Timeout results explicitly report when side effects may continue.
 - The tray menu offers `Sesli mod`, which opens the voice screen and starts

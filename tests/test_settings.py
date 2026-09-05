@@ -369,3 +369,8 @@ def test_action_model_escalation_is_opt_in(monkeypatch) -> None:
 def test_routines_database_path_reads_environment(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("JARVIS_ROUTINES_DATABASE_PATH", str(tmp_path / "r.sqlite3"))
     assert Settings.from_environment().routines_database_path == str(tmp_path / "r.sqlite3")
+
+
+def test_notifications_database_path_reads_environment(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("JARVIS_NOTIFICATIONS_DATABASE_PATH", str(tmp_path / "n.sqlite3"))
+    assert Settings.from_environment().notifications_database_path == str(tmp_path / "n.sqlite3")

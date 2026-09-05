@@ -18,11 +18,14 @@ restarts the watch.
 
 from __future__ import annotations
 
+import json
+import sqlite3
 import threading
 import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 NOTIFICATION_KINDS: frozenset[str] = frozenset(
@@ -106,6 +109,159 @@ class Notification:
         }
 
 
+_STORE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS notifications (
+    notification_id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    target TEXT,
+    reference TEXT,
+    data_json TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 1,
+    read INTEGER NOT NULL DEFAULT 0,
+    dedupe_key TEXT
+)
+"""
+
+
+class NotificationStore:
+    """SQLite persistence for the centre: write-through, newest kept.
+
+    Every method swallows storage errors after reporting False: a full
+    disk must never stop a reminder from being shown.
+    """
+
+    def __init__(self, database_path: str | Path) -> None:
+        self._path = Path(database_path)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as connection:
+            connection.execute(_STORE_SCHEMA)
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self._path)
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    def load(self, limit: int) -> list[Notification]:
+        try:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    # rowid breaks ties: Windows clocks can stamp several
+                    # entries with the same microsecond.
+                    "SELECT * FROM notifications ORDER BY created_at DESC, rowid DESC LIMIT ?",
+                    (int(limit),),
+                ).fetchall()
+        except (sqlite3.Error, OSError):
+            return []
+        loaded: list[Notification] = []
+        for row in rows:
+            try:
+                data = json.loads(row["data_json"] or "{}")
+                loaded.append(
+                    Notification(
+                        notification_id=row["notification_id"],
+                        kind=row["kind"],
+                        title=row["title"],
+                        body=row["body"],
+                        severity=row["severity"],
+                        created_at=datetime.fromisoformat(row["created_at"]),
+                        updated_at=datetime.fromisoformat(row["updated_at"]),
+                        target=row["target"],
+                        reference=row["reference"],
+                        data=data if isinstance(data, dict) else {},
+                        count=int(row["count"] or 1),
+                        read=bool(row["read"]),
+                        dedupe_key=row["dedupe_key"],
+                    )
+                )
+            except (KeyError, ValueError, TypeError):
+                continue
+        return loaded
+
+    def save(self, entry: Notification) -> bool:
+        try:
+            with self._connect() as connection:
+                # An upsert keeps the row's rowid, so a collapsed repeat
+                # stays where it was instead of jumping to the top on reload.
+                connection.execute(
+                    "INSERT INTO notifications (notification_id, kind, title, "
+                    "body, severity, created_at, updated_at, target, reference, data_json, "
+                    "count, read, dedupe_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(notification_id) DO UPDATE SET body = excluded.body, "
+                    "severity = excluded.severity, updated_at = excluded.updated_at, "
+                    "data_json = excluded.data_json, count = excluded.count, read = excluded.read",
+                    (
+                        entry.notification_id,
+                        entry.kind,
+                        entry.title,
+                        entry.body,
+                        entry.severity,
+                        entry.created_at.isoformat(),
+                        entry.updated_at.isoformat(),
+                        entry.target,
+                        entry.reference,
+                        json.dumps(entry.data, ensure_ascii=False, default=str),
+                        int(entry.count),
+                        int(entry.read),
+                        entry.dedupe_key,
+                    ),
+                )
+        except (sqlite3.Error, OSError, TypeError, ValueError):
+            return False
+        return True
+
+    def mark_read(self, notification_ids: list[str]) -> bool:
+        if not notification_ids:
+            return True
+        try:
+            with self._connect() as connection:
+                connection.executemany(
+                    "UPDATE notifications SET read = 1 WHERE notification_id = ?",
+                    [(item,) for item in notification_ids],
+                )
+        except (sqlite3.Error, OSError):
+            return False
+        return True
+
+    def delete(self, notification_id: str) -> bool:
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    "DELETE FROM notifications WHERE notification_id = ?", (notification_id,)
+                )
+        except (sqlite3.Error, OSError):
+            return False
+        return True
+
+    def clear(self) -> bool:
+        try:
+            with self._connect() as connection:
+                connection.execute("DELETE FROM notifications")
+        except (sqlite3.Error, OSError):
+            return False
+        return True
+
+    def prune(self, keep_ids: list[str]) -> bool:
+        """Drop rows the bounded centre no longer holds."""
+        try:
+            with self._connect() as connection:
+                if keep_ids:
+                    placeholders = ",".join("?" for _ in keep_ids)
+                    connection.execute(
+                        f"DELETE FROM notifications WHERE notification_id NOT IN ({placeholders})",
+                        list(keep_ids),
+                    )
+                else:
+                    connection.execute("DELETE FROM notifications")
+        except (sqlite3.Error, OSError):
+            return False
+        return True
+
+
 class NotificationCenter:
     """Bounded, thread-safe, session-scoped attention list.
 
@@ -121,6 +277,7 @@ class NotificationCenter:
         max_entries: int = DEFAULT_MAX_ENTRIES,
         dedupe_seconds: float = DEFAULT_DEDUPE_SECONDS,
         clock: Callable[[], datetime] | None = None,
+        store: NotificationStore | None = None,
     ) -> None:
         if int(max_entries) < 1:
             raise ValueError("max_entries must be at least 1.")
@@ -132,6 +289,14 @@ class NotificationCenter:
         self._items: list[Notification] = []  # newest first
         self._listeners: list[Listener] = []
         self._lock = threading.Lock()
+        self._store = store
+        if store is not None:
+            self._items = store.load(self._max_entries)
+            self._items.sort(key=lambda entry: entry.created_at, reverse=True)
+
+    @property
+    def persistent(self) -> bool:
+        return self._store is not None
 
     # ------------------------------------------------------------------
     # publishing
@@ -180,7 +345,12 @@ class NotificationCenter:
                     dedupe_key=_bounded(dedupe_key, 120) or None,
                 )
                 self._items.insert(0, entry)
+                dropped = self._items[self._max_entries :]
                 del self._items[self._max_entries :]
+                if dropped and self._store is not None:
+                    self._store.prune([item.notification_id for item in self._items])
+            if self._store is not None:
+                self._store.save(entry)
             unread = self._unread_locked()
             listeners = list(self._listeners)
         self._notify(listeners, entry, unread)
@@ -243,6 +413,7 @@ class NotificationCenter:
         """Mark the given entries read (all of them when ``None``)."""
         wanted = None if notification_ids is None else {str(i) for i in notification_ids}
         changed = 0
+        touched: list[str] = []
         with self._lock:
             for entry in self._items:
                 if entry.read:
@@ -250,6 +421,9 @@ class NotificationCenter:
                 if wanted is None or entry.notification_id in wanted:
                     entry.read = True
                     changed += 1
+                    touched.append(entry.notification_id)
+            if touched and self._store is not None:
+                self._store.mark_read(touched)
         return changed
 
     def dismiss(self, notification_id: str) -> bool:
@@ -258,6 +432,8 @@ class NotificationCenter:
             for index, entry in enumerate(self._items):
                 if entry.notification_id == wanted:
                     del self._items[index]
+                    if self._store is not None:
+                        self._store.delete(wanted)
                     return True
         return False
 
@@ -265,6 +441,8 @@ class NotificationCenter:
         with self._lock:
             count = len(self._items)
             self._items.clear()
+            if self._store is not None:
+                self._store.clear()
         return count
 
     # ------------------------------------------------------------------
@@ -364,5 +542,6 @@ __all__ = [
     "NOTIFICATION_SEVERITIES",
     "Notification",
     "NotificationCenter",
+    "NotificationStore",
     "ReminderWatch",
 ]

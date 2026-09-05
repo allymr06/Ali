@@ -54,7 +54,7 @@ import webview
 
 from app.config.paths import default_state_directory
 from app.core.models import Context, Request, RequestSource
-from app.notifications import NotificationCenter, ReminderWatch
+from app.notifications import NotificationCenter, NotificationStore, ReminderWatch
 from app.reminders.service import show_windows_toast
 from app.security.interactive import (
     InteractiveApprovalRequest,
@@ -473,7 +473,7 @@ class NovaBridge:
         # window is currently attended (visible and not minimized), the
         # native notifier launch_nova installs for unattended moments,
         # and the daemon watch that delivers due reminders.
-        self._notifications = NotificationCenter()
+        self._notifications = NotificationCenter(store=self._notification_store())
         self._notifications.subscribe(self._on_notification)
         self._attended = True
         self._os_notifier: Callable[[str, str], Any] | None = None
@@ -654,6 +654,20 @@ class NovaBridge:
             return
         if alert and not self._attended:
             self._notify_os(entry.title, entry.body)
+
+    def _notification_store(self) -> NotificationStore | None:
+        """The centre's store below the state directory; None when the
+        settings clear the path or the file cannot be opened."""
+        settings = getattr(self.controller.application, "settings", None)
+        path = getattr(settings, "notifications_database_path", None)
+        if path is None:
+            path = str(default_state_directory() / "jarvis_notifications.sqlite3")
+        if not str(path).strip():
+            return None
+        try:
+            return NotificationStore(path)
+        except Exception:
+            return None
 
     def _on_notification(self, entry: Any, unread: int) -> None:
         self._push(

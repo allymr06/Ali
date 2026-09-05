@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -234,3 +235,62 @@ def test_watch_thread_polls_immediately_then_periodically_and_stops() -> None:
     watch.start()
     assert watch.running is True
     watch.stop()
+
+
+# ---------------------------------------------------------------------------
+# persistence
+# ---------------------------------------------------------------------------
+
+
+def test_centre_persists_and_reloads_its_entries(tmp_path) -> None:
+    from app.notifications import NotificationStore
+
+    path = tmp_path / "notifications.sqlite3"
+    centre = NotificationCenter(store=NotificationStore(path))
+    assert centre.persistent is True
+    first = centre.publish("reminder", "Hatırlatıcı", "su iç", reference="r1", data={"n": 1})
+    second = centre.publish("diagnostic", "Uyarı", "one", dedupe_key="d", target="diagnostics")
+    centre.publish("diagnostic", "Uyarı", "two", dedupe_key="d")  # collapses into `second`
+    centre.mark_read([first.notification_id])
+
+    reloaded = NotificationCenter(store=NotificationStore(path))
+    entries = reloaded.list()
+    assert [e.notification_id for e in entries] == [second.notification_id, first.notification_id]
+    assert entries[0].count == 2 and entries[0].body == "two" and entries[0].target == "diagnostics"
+    assert entries[1].read is True and entries[1].data == {"n": 1} and entries[1].reference == "r1"
+    assert reloaded.summary() == {"total": 2, "unread": 1}
+
+    assert reloaded.dismiss(second.notification_id) is True
+    assert NotificationCenter(store=NotificationStore(path)).summary() == {"total": 1, "unread": 0}
+    assert reloaded.clear() == 1
+    assert NotificationCenter(store=NotificationStore(path)).summary() == {"total": 0, "unread": 0}
+
+
+def test_store_keeps_only_the_bounded_newest_entries(tmp_path) -> None:
+    from app.notifications import NotificationStore
+
+    path = tmp_path / "notifications.sqlite3"
+    centre = NotificationCenter(max_entries=3, store=NotificationStore(path))
+    for index in range(5):
+        centre.publish("system", f"n{index}")
+    reloaded = NotificationCenter(max_entries=3, store=NotificationStore(path))
+    assert [e.title for e in reloaded.list()] == ["n4", "n3", "n2"]
+
+
+def test_store_failures_never_break_the_centre(tmp_path) -> None:
+    from app.notifications import NotificationStore
+
+    class BrokenStore(NotificationStore):
+        def _connect(self):
+            raise sqlite3.OperationalError("disk full")
+
+    path = tmp_path / "notifications.sqlite3"
+    NotificationStore(path)  # creates the schema
+    broken = BrokenStore.__new__(BrokenStore)
+    broken._path = path
+    centre = NotificationCenter(store=broken)
+    entry = centre.publish("system", "still shown")
+    assert centre.mark_read([entry.notification_id]) == 1
+    assert centre.dismiss(entry.notification_id) is True
+    assert centre.clear() == 0
+    assert broken.load(10) == [] and broken.save(entry) is False

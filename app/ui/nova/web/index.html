@@ -184,6 +184,21 @@
         <div class="panel-title"><span class="kicker">Rutinler</span><span id="routines-count" class="faint"></span><button id="routines-refresh" class="icon-btn small" type="button" title="Yenile"></button></div>
         <p class="routine-hint">JARVIS'in kendi başına, zamanı gelince çalıştırdığı komutlar. Sohbette "her sabah 09:00'da haberleri özetle" gibi söyleyerek kurarsın; her çalışmanın sonucu bildirim merkezine düşer ve aynı onay kuralları geçerlidir.</p>
         <div id="routines-list" class="routine-list"></div>
+        <form id="routine-form" class="routine-form" autocomplete="off">
+          <div class="routine-form-row">
+            <input id="routine-name" type="text" maxlength="60" placeholder="Ad (örn. Sabah özeti)" aria-label="Rutin adı" required>
+            <select id="routine-kind" aria-label="Zamanlama türü">
+              <option value="daily">Her gün, saat</option>
+              <option value="interval">Her N dakikada</option>
+            </select>
+            <input id="routine-at" type="time" value="09:00" aria-label="Saat">
+            <input id="routine-minutes" type="number" min="5" max="10080" step="5" value="60" aria-label="Dakika" hidden>
+          </div>
+          <div class="routine-form-row">
+            <input id="routine-prompt" type="text" maxlength="500" placeholder="JARVIS'e verilecek komut (örn. bugünkü hatırlatıcılarımı özetle)" aria-label="Rutin komutu" required>
+            <button id="routine-add" class="btn btn-primary small" type="submit">Rutin ekle</button>
+          </div>
+        </form>
       </div>
     </section>
 

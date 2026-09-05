@@ -2067,3 +2067,23 @@ def test_webview_caches_are_cleared_only_when_the_assets_change(tmp_path) -> Non
     assert shell.refresh_webview_cache(storage, web_root) is True
     assert not cache.exists()
     assert shell.refresh_webview_cache(tmp_path / "nowhere", tmp_path / "missing-web") is False
+
+
+def test_routines_can_be_created_from_the_desktop_with_the_tool_rules(booted) -> None:
+    bridge = booted.bridge
+    assert bridge.create_routine("", "özetle", at="09:00") == {"ok": False, "error": "Rutin adı boş olamaz."}
+    assert bridge.create_routine("Sabah", "özetle", at="9 gibi")["ok"] is False
+    assert bridge.create_routine("Sabah", "özetle", every_minutes="abc")["ok"] is False
+
+    created = bridge.create_routine("Sabah özeti", "bugünkü hatırlatıcıları özetle", at="09:00")
+    assert created["ok"] is True and created["available"] is True
+    assert [r["name"] for r in created["routines"]] == ["Sabah özeti"]
+    assert created["routines"][0]["schedule"] == "her gün 09:00"
+    assert "Rutin kuruldu" in created["message"]
+
+    interval = bridge.create_routine("Kontrol", "sistem durumunu özetle", every_minutes="30")
+    assert interval["ok"] is True and len(interval["routines"]) == 2
+    events = [e for e in booted.app.diagnostics.ledger.list(component="ui", limit=20) if e.name == "routine.created"]
+    assert len(events) == 2 and events[0].attributes["schedule"]
+    booted.app.routines = None
+    assert bridge.create_routine("x", "y", at="09:00")["ok"] is False

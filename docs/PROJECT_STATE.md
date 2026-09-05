@@ -38,13 +38,12 @@ Last verified: 5 September 2026
 - Completed performance milestone: voice time to first audio (streamed
   Gemini speech played as it arrives, first sentence synthesized while the
   reply is still streaming), 5 September 2026
-- Next action: plugin process isolation, or a routines editor in the page
-  (today routines are created by speaking or typing); code signing and a
-  user-attended voice qualification remain release blockers
-  (`docs/FINAL_AUDIT.md`)
+- Next action: plugin process isolation, or persisting the notification
+  centre across restarts; code signing and a user-attended voice
+  qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1422 tests passing, 5 skipped (`scripts/verify.py`)
+- Automated verification: 1425 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
 
 ## Clock in the prompt and fresh page assets (5 September 2026)
@@ -89,8 +88,11 @@ the OS when the window is unattended, and opens the routine's conversation
 when clicked; failures are reported by exception class only. A paused or
 busy desktop defers a due routine by 90 s instead of dropping it. The
 Tasks screen lists routines (schedule, next run, last outcome, run count)
-with a confirmed delete; ledger events `routine.started`,
-`routine.completed`, `routine.deferred`, `routine.deleted`. Setting:
+with a confirmed delete and an editor (name, daily time or interval,
+command) that goes through the same bounded service call and validation
+messages as the `create_routine` tool; ledger events `routine.created`,
+`routine.started`, `routine.completed`, `routine.deferred`,
+`routine.deleted`. Setting:
 `JARVIS_ROUTINES_DATABASE_PATH`. Routines execute nothing themselves and
 never bypass a gate a typed command would face.
 
@@ -329,8 +331,8 @@ approval (content verified on disk), a second command that removed it
 after the `delete_path` approval (HIGH risk shown, file gone, one sealed
 snapshot in the store), the snapshot listed under Ayarlar › Dosyalar and
 restored from there with its confirmation (original bytes back on disk),
-and the grant removed again. The frozen build was not rebuilt for this
-milestone.
+and the grant removed again. The frozen build was rebuilt on 5 September 2026
+(evening) with every change through the clock and cache commit.
 
 ## Nova cinematic interface (5 September 2026)
 

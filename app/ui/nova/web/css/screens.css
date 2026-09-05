@@ -261,6 +261,11 @@ body.paused .core-frame canvas { opacity: 0.55; transition: opacity var(--motion
 .routine-row .routine-prompt { color: var(--ink-3); font-size: var(--text-sm); overflow-wrap: anywhere; }
 .routine-row .routine-meta { font-family: var(--font-mono); font-size: 0.66rem; color: var(--ink-4); margin-top: 0.15rem; }
 .routine-row .routine-meta .chip { margin-right: 0.35rem; }
+.routine-form { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.9rem; padding-top: 0.9rem; border-top: 1px solid var(--line-1); }
+.routine-form-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.routine-form-row input[type="text"] { flex: 1; min-width: 12rem; }
+.routine-form-row input, .routine-form-row select { height: 2.2rem; padding: 0 0.7rem; border-radius: var(--radius-2); border: 1px solid var(--line-2); background: var(--surface-2); color: var(--ink-1); font-size: var(--text-sm); }
+.routine-form-row input[hidden] { display: none; }
 .file-roots, .snapshot-list { display: flex; flex-direction: column; }
 .file-root, .snapshot-row {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.3rem 0.9rem; align-items: center;

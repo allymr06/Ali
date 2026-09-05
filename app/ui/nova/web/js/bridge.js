@@ -247,6 +247,7 @@ const DemoBridge = {
   async clear_notifications() { return { ok: true, cleared: 0, unread: 0 }; },
   async set_visible(visible) { return { ok: true, visible: visible === true }; },
   async list_routines() { return { ok: true, available: true, routines: DEMO_ROUTINES }; },
+  async create_routine() { return { ok: false, error: "Demo modu: rutin kurulmadı." }; },
   async delete_routine(routineId, confirmed) {
     if (confirmed !== true) return { ok: false, error: "Rutin silme onaylanmadı." };
     return { ok: false, error: "Demo modu: rutin silinmedi." };

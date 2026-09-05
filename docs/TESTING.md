@@ -401,7 +401,9 @@ covers the routine intents; `tests/test_ui_nova.py` covers the boot payload
 and watch, a due routine run through the core with the approval callback
 and its own persisted conversation, failure reporting without internals,
 deferral while paused, and confirmed deletion with ledger events;
-`tests/test_nova_web.py` covers the Tasks-screen panel.
+`tests/test_nova_web.py` covers the Tasks-screen panel and its editor;
+`tests/test_ui_nova.py` also covers creating routines from the desktop with
+the tool's validation messages and the `routine.created` ledger line.
 
 ## Provisional transcription coverage (5 September 2026)
 

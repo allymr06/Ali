@@ -390,3 +390,11 @@ def test_routines_panel_is_declared_and_driven_by_the_core() -> None:
     assert "Math.random" not in routines
     assert "Tanımlı rutin yok." in routines
     assert "Routines.load()" in JS_SOURCES["js/shell.js"]
+
+
+def test_routine_editor_is_declared_and_uses_the_bridge() -> None:
+    for element_id in ("routine-form", "routine-name", "routine-kind", "routine-at", "routine-minutes", "routine-prompt", "routine-add"):
+        assert f'id="{element_id}"' in HTML, element_id
+    routines = section(JS, "const Routines = {", "\n};")
+    assert 'call("create_routine", name, prompt' in routines
+    assert "Rutin adı ve komutu gerekli." in routines

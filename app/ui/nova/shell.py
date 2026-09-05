@@ -943,6 +943,35 @@ class NovaBridge:
             return {"ok": False, "error": ROUTINE_UNAVAILABLE, **payload}
         return {"ok": True, **payload}
 
+    def create_routine(
+        self,
+        name: str,
+        prompt: str,
+        at: Any = "",
+        every_minutes: Any = 0,
+    ) -> dict[str, Any]:
+        """The Tasks screen's editor: the same bounded service call the
+        create_routine tool makes, with the same validation messages."""
+        routines = getattr(self.controller.application, "routines", None)
+        if routines is None:
+            return {"ok": False, "error": ROUTINE_UNAVAILABLE}
+        try:
+            minutes = int(every_minutes or 0)
+        except (TypeError, ValueError):
+            minutes = 0
+        result = routines.create(
+            str(name or ""), str(prompt or ""), at=str(at or ""), every_minutes=minutes
+        )
+        if not result.succeeded:
+            return {"ok": False, "error": result.message or "Rutin kurulamadı."}
+        self._record_ui_event(
+            "routine.created",
+            "A routine was created from the desktop.",
+            routine_id=str((result.data or {}).get("routine_id", "")),
+            schedule=str((result.data or {}).get("schedule", "")),
+        )
+        return {"ok": True, "message": result.message, **self._routines_payload()}
+
     def delete_routine(self, routine_id: str, confirmed: Any = False) -> dict[str, Any]:
         if confirmed is not True:
             return {"ok": False, "error": "Rutin silme onaylanmadı."}

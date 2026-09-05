@@ -740,6 +740,31 @@ const Routines = {
       btn.addEventListener("click", () => this.remove(btn.closest(".routine-row").dataset.id)));
   },
 
+  syncForm() {
+    const daily = $("#routine-kind").value === "daily";
+    $("#routine-at").hidden = !daily;
+    $("#routine-minutes").hidden = daily;
+  },
+
+  async add(event) {
+    event.preventDefault();
+    if (!State.routines?.available) { toast("Rutinler bu ortamda kullanılamıyor.", true); return; }
+    const daily = $("#routine-kind").value === "daily";
+    const name = $("#routine-name").value.trim();
+    const prompt = $("#routine-prompt").value.trim();
+    if (!name || !prompt) { toast("Rutin adı ve komutu gerekli.", true); return; }
+    const button = $("#routine-add");
+    button.disabled = true;
+    const result = await call("create_routine", name, prompt, daily ? $("#routine-at").value : "", daily ? 0 : Number($("#routine-minutes").value) || 0);
+    button.disabled = false;
+    if (result.ok === false) { toast(result.error || "Rutin kurulamadı.", true); return; }
+    State.routines = { available: !!result.available, routines: result.routines || [] };
+    $("#routine-name").value = "";
+    $("#routine-prompt").value = "";
+    this.render();
+    toast(result.message || "Rutin kuruldu.", "ok");
+  },
+
   async remove(routineId) {
     const item = (State.routines?.routines || []).find((r) => r.routine_id === routineId);
     const ok = await confirmDialog({
@@ -785,6 +810,9 @@ function bindPanels() {
   $("#file-root-add").addEventListener("click", () => Files.add());
   $("#routines-refresh").innerHTML = icon("refresh");
   $("#routines-refresh").addEventListener("click", () => Routines.load());
+  $("#routine-kind").addEventListener("change", () => Routines.syncForm());
+  $("#routine-form").addEventListener("submit", (event) => Routines.add(event));
+  Routines.syncForm();
   $("#snapshot-refresh").innerHTML = icon("refresh");
   $("#snapshot-refresh").addEventListener("click", () => Files.load());
   $("#trust-refresh").innerHTML = `${icon("refresh")}<span>Yenile</span>`;

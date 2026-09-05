@@ -301,3 +301,30 @@ effect, the connection test, the cancelled delete-key dialog, preference
 persistence across a restart, and a clean Alt+F4 exit, from source and from
 the frozen executable. A spoken voice turn still requires a person at the
 microphone.
+
+## Plugin runtime regression coverage (5 September 2026)
+
+- manifest validation: closed field set, id/version/entry-point formats,
+  unsupported capabilities, tool and parameter limits, duplicate names,
+  `critical` rejected, risk floor and forced confirmation, file size and
+  link checks (`tests/test_plugin_manifest.py`);
+- discovery: valid and rejected plugins side by side, missing root, no code
+  import during discovery, junction and symlink refusal
+  (`tests/test_plugin_discovery.py`);
+- runtime: disabled by default, enable persists and registers namespaced
+  tools with `source="plugin:<id>"`, executor argument validation, disable
+  and stop unregister tools and unload modules, entry-point failures are
+  isolated with class-name-only errors, consecutive failures quarantine and
+  an explicit enable re-arms, honest timeouts, non-JSON and oversized output
+  rejected, medium-risk tools need a bound approval, rediscovery keeps
+  running plugins and drops removed ones, corrupt state fails closed
+  (`tests/test_plugin_runtime.py`);
+- security: no shadowing of registered tools with full rollback, link or
+  missing entry modules rejected, undeclared or missing implementations
+  rejected, risk floor and source on contracts, rejected plugins cannot be
+  enabled, the plugin context carries no secrets or services
+  (`tests/test_plugin_security.py`);
+- wiring: off by default, discovery without trust registers nothing, a
+  trusted plugin starts at bootstrap and stops on close, settings parsing
+  and validation, and plugin tools satisfy the global contract invariants
+  (`tests/test_plugin_bootstrap.py`).

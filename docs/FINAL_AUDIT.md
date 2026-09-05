@@ -105,4 +105,6 @@ from the deferred features below:
 These are not hidden release defects; they are unimplemented product features
 from the broader long-term vision: system tray, reminders/scheduling,
 notifications, proactive behavior, keyboard/mouse automation, general safe
-PowerShell execution, plugin runtime, and broader application integrations.
+PowerShell execution, plugin process isolation (the in-process plugin
+runtime v1 shipped on 5 September 2026), and broader application
+integrations.

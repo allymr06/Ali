@@ -219,6 +219,24 @@ local address rejection.
 | `JARVIS_RESEARCH_MAX_CONCURRENCY` | `3` | Maximum simultaneous source fetches; range `1` through `8`. |
 | `JARVIS_RESEARCH_USER_AGENT` | `JARVIS/0.1` | Non-secret HTTP user-agent identifier. |
 
+## Plugins
+
+Plugins are off unless `JARVIS_PLUGINS_ENABLED` is true, and each discovered
+plugin additionally stays disabled until it is enabled through
+`PluginRuntime.enable()` (the decision is stored in `state.json` inside the
+plugins directory).
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `JARVIS_PLUGINS_ENABLED` | `false` | Discover and run plugins from the plugins directory. |
+| `JARVIS_PLUGINS_DIRECTORY` | `%LOCALAPPDATA%\JARVIS\plugins` | Trusted root; only its immediate subdirectories are considered. |
+| `JARVIS_PLUGIN_TOOL_TIMEOUT_SECONDS` | `10` | Per-call deadline for a plugin tool (0 < value <= 120). |
+| `JARVIS_PLUGIN_MAX_CONSECUTIVE_FAILURES` | `3` | Consecutive failures after which a plugin is quarantined (1-10). |
+
+A plugin directory contains `plugin.json` and the entry module it names; see
+`docs/DEVELOPMENT.md` for the manifest format and `tests/fixtures/plugins/echo`
+for a complete safe example.
+
 ## Diagnostics
 
 Diagnostics are always available in memory and expose read-only health, event,

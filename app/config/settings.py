@@ -237,6 +237,14 @@ class Settings:
     research_cache_database_path: str | None = None
     research_cache_ttl_seconds: float = 86_400.0
 
+    # Manifest-based plugins: off by default, discovered only below the
+    # trusted plugins directory, and each plugin stays disabled until the
+    # user enables it. Plugin tools go through the normal tool executor.
+    plugins_enabled: bool = False
+    plugins_directory: str | None = None
+    plugin_tool_timeout_seconds: float = 10.0
+    plugin_max_consecutive_failures: int = 3
+
     diagnostics_event_capacity: int = 2_000
     diagnostics_metric_capacity: int = 200
     diagnostics_health_timeout_seconds: float = 2.0
@@ -414,6 +422,16 @@ class Settings:
             raise ValueError("research_max_concurrency must be between 1 and 8.")
         if not self.research_user_agent.strip():
             raise ValueError("research_user_agent cannot be empty.")
+        if self.plugins_directory is not None and not self.plugins_directory.strip():
+            raise ValueError("plugins_directory cannot be empty when set.")
+        if not 0 < self.plugin_tool_timeout_seconds <= 120:
+            raise ValueError(
+                "plugin_tool_timeout_seconds must be between 0 and 120."
+            )
+        if not 1 <= self.plugin_max_consecutive_failures <= 10:
+            raise ValueError(
+                "plugin_max_consecutive_failures must be between 1 and 10."
+            )
         if (
             self.research_cache_database_path is not None
             and not self.research_cache_database_path.strip()
@@ -698,6 +716,16 @@ class Settings:
             ),
             research_cache_ttl_seconds=_get_float(
                 "JARVIS_RESEARCH_CACHE_TTL_SECONDS", 86_400.0
+            ),
+            plugins_enabled=_get_bool("JARVIS_PLUGINS_ENABLED"),
+            plugins_directory=os.getenv(
+                "JARVIS_PLUGINS_DIRECTORY", default_state_path("plugins")
+            ),
+            plugin_tool_timeout_seconds=_get_float(
+                "JARVIS_PLUGIN_TOOL_TIMEOUT_SECONDS", 10.0
+            ),
+            plugin_max_consecutive_failures=_get_positive_int(
+                "JARVIS_PLUGIN_MAX_CONSECUTIVE_FAILURES", 3
             ),
             diagnostics_event_capacity=_get_positive_int(
                 "JARVIS_DIAGNOSTICS_EVENT_CAPACITY", 2_000

@@ -9,16 +9,44 @@ Last verified: 5 September 2026
 - Completed maintenance milestone: single-provider (Gemini) consolidation
 - Completed stabilization milestone: Nova desktop shell (pywebview/WebView2),
   5 September 2026
-- Next action: manifest-based plugin runtime, Windows system tray, and the
-  safe-filesystem extensions (snapshot/undo, dry-run, indexed search); code
-  signing and a user-attended voice qualification remain release blockers
-  (`docs/FINAL_AUDIT.md`)
+- Completed feature milestone: manifest-based plugin runtime v1 (in-process,
+  disabled by default), 5 September 2026
+- Next action: Windows system tray, then the safe-filesystem extensions
+  (snapshot/undo, dry-run, indexed search); code signing and a user-attended
+  voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1197 tests passing, 1 skipped (`scripts/verify.py`)
+- Automated verification: 1267 tests passing, 2 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
 
-## Nova desktop shell stabilization (5 September 2026)
+## Plugin runtime v1 (5 September 2026)
+
+`app/plugins/` adds manifest-based plugins that contribute tools through the
+existing `ToolExecutor` and `PermissionEngine`; nothing is bypassed and no
+core contract changed. Core touches are limited to four settings
+(`plugins_enabled`, `plugins_directory`, `plugin_tool_timeout_seconds`,
+`plugin_max_consecutive_failures`) and the bootstrap wiring
+(`JARVISApplication.plugins`, stopped on `close()`).
+
+- Discovery is confined to immediate subdirectories of the trusted plugins
+  root, never follows links or junctions, bounds manifest size, and imports
+  no code. Manifests are versioned, closed-schema, and fail closed.
+- Plugins are disabled by default; enabling is an explicit, persisted user
+  decision. Plugin tools are namespaced (`plugin_<id>_<tool>`), carry
+  `source="plugin:<id>"`, sit at or above the `LOW` risk floor, and require
+  approval when medium or high. Results are unverified by contract.
+- Isolation: per-call deadline on a bounded worker pool, JSON-only bounded
+  output, class-name-only error reporting, and quarantine after consecutive
+  failures with explicit re-enable. Plugin code receives only its id,
+  version, a private data directory, and a bounded ledger logger.
+- Honest limit: in-process Python cannot be sandboxed; a plugin is trusted
+  code the user installed and enabled. Process isolation, a settings UI,
+  and signing are later versions.
+- Tests: `tests/test_plugin_manifest.py`, `test_plugin_discovery.py`,
+  `test_plugin_runtime.py`, `test_plugin_security.py`,
+  `test_plugin_bootstrap.py` with the safe `tests/fixtures/plugins/echo`
+  sample.
+
 
 Nova (`app/ui/nova/`) is now the default desktop shell: a pywebview window
 hosting `web/index.html` in Microsoft Edge WebView2, with every animation on
@@ -377,7 +405,9 @@ whichever source answers first.
   bulk operations, and no indexed search tool.
 - Python cannot forcibly stop an already-running synchronous worker thread.
   Timeout results explicitly report when side effects may continue.
-- System tray and plugin runtime remain future extensions.
+- System tray remains a future extension. The plugin runtime is in-process
+  (no operating-system sandbox) and has no settings-screen UI yet; plugins
+  are enabled through `PluginRuntime.enable()`.
 - Publisher code signing is not configured.
 - Nova needs the Microsoft Edge WebView2 Runtime (shipped with Windows 11).
   When pywebview is missing or no runtime is detected, the classic shell opens

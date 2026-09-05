@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from app.config.provider_preferences import DEFAULT_GEMINI_MODEL
-from app.config.paths import migrate_default_directory, migrate_default_sqlite
+from app.config.paths import (
+    default_state_path,
+    migrate_default_directory,
+    migrate_default_sqlite,
+)
 from app.config.settings import Settings
 from app.conversation.engine import ConversationEngine
 from app.conversation.sqlite import SQLiteConversationStore
@@ -21,6 +25,7 @@ from app.memory.manager import MemoryManager
 from app.memory.service import MemoryService
 from app.memory.sqlite import SQLiteMemoryStore
 from app.platform.windows import WindowsIntegrationService
+from app.plugins.runtime import PluginRuntime
 from app.providers.gemini import GeminiProvider
 from app.providers.catalog import ModelCatalog
 from app.providers.gateway import ProviderGateway
@@ -73,6 +78,7 @@ class JARVISApplication:
     research: ResearchService | None = None
     reminders: object | None = None
     screen_watcher: object | None = None
+    plugins: PluginRuntime | None = None
 
     @property
     def agent_loop(self):
@@ -86,6 +92,8 @@ class JARVISApplication:
 
     def close(self) -> None:
         """Release durable stores owned by the application runtime."""
+        if self.plugins is not None:
+            self.plugins.stop_all()
         conversation_store = (
             self.conversation_engine.store
         )
@@ -663,6 +671,27 @@ def create_application(
         )
     )
     diagnostics.register_tools(tool_executor)
+
+    # Plugins register last so a plugin can never shadow a built-in
+    # tool, and only when explicitly enabled in settings. Each plugin
+    # additionally stays disabled until the user enables it.
+    plugins = None
+    if active_settings.plugins_enabled:
+        plugins = PluginRuntime(
+            directory=(
+                active_settings.plugins_directory
+                or default_state_path("plugins")
+            ),
+            tool_executor=tool_executor,
+            diagnostics=diagnostics,
+            tool_timeout_seconds=active_settings.plugin_tool_timeout_seconds,
+            max_consecutive_failures=(
+                active_settings.plugin_max_consecutive_failures
+            ),
+        )
+        plugins.discover()
+        plugins.start_enabled()
+
     diagnostics.record(
         "bootstrap",
         "application.ready",
@@ -673,6 +702,7 @@ def create_application(
             "vision_enabled": vision is not None,
             "research_enabled": research is not None,
             "windows_enabled": windows is not None,
+            "plugins_enabled": plugins is not None,
         },
     )
 
@@ -696,4 +726,5 @@ def create_application(
         research=research,
         reminders=reminders,
         screen_watcher=screen_watcher,
+        plugins=plugins,
     )

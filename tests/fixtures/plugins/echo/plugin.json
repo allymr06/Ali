@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "plugin_id": "echo",
+  "name": "Echo",
+  "version": "1.0.0",
+  "description": "Safe sample plugin: returns the text it is given.",
+  "entry_point": "plugin:create_plugin",
+  "capabilities": ["tools"],
+  "tools": [
+    {
+      "name": "echo",
+      "description": "Return the given text unchanged, optionally repeated.",
+      "risk_level": "read_only",
+      "parameters": [
+        {"name": "text", "type": "string", "description": "Text to echo back."},
+        {"name": "repeat", "type": "integer", "required": false, "description": "Repeat count (1-5)."}
+      ]
+    }
+  ]
+}

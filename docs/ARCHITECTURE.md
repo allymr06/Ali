@@ -163,6 +163,41 @@ being reduced to a boolean in the execution service. Approval requests are
 immutable and their in-memory store serializes state transitions, including
 concurrent approval, denial, and expiry.
 
+## Plugin runtime
+
+`app/plugins/` adds manifest-based plugins that contribute tools and nothing
+else. A plugin is a directory below the trusted plugins root
+(`%LOCALAPPDATA%\JARVIS\plugins\<id>` by default) holding `plugin.json` and
+the entry module it names. `manifest.py` validates the manifest strictly
+before any plugin code is imported: versioned schema, closed field set, id
+and version formats, an entry point confined to the plugin directory, at
+most 32 tools with at most 16 typed parameters each, and a risk floor of
+`LOW` that a plugin can raise but never lower (`critical` is rejected
+because policy denies it anyway). `discovery.py` scans only immediate
+subdirectories, refuses symlinks and junctions, and reports a broken
+manifest per plugin without affecting the others.
+
+`PluginRuntime` owns the lifecycle. Plugins are disabled by default and the
+user's `enable`/`disable` decision is persisted in `state.json` next to the
+plugins. Starting a plugin imports its entry module under the
+`jarvis_plugins.<id>` namespace, calls `create_plugin(context)`, and registers
+every declared tool on the shared `ToolExecutor` as `plugin_<id>_<tool>` with
+`source="plugin:<id>"`; undeclared or missing implementations fail the start.
+Because the registration is ordinary, the permission engine, approval
+binding, execution slots, and result contracts apply unchanged. The adapter
+runs each call on a bounded worker pool with its own deadline, requires
+JSON-serializable output within a size limit, reports outcomes as
+unverified, and counts consecutive failures: at the configured limit the
+plugin is quarantined (its tools disabled, its trust flag cleared) until the
+user enables it again. `PluginContext` exposes only the plugin id, version,
+a private data directory, and a bounded logger that writes to the
+diagnostics ledger.
+
+Honest limit: plugin code runs in-process, so Python cannot sandbox it. The
+runtime bounds what JARVIS grants, not what the interpreter allows; a plugin
+is trusted code the user installed and enabled on purpose. Process
+isolation is a later version.
+
 ## Windows integration layer
 
 Phase 7 introduces `WindowsIntegrationService` as the composition boundary for

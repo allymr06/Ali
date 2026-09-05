@@ -79,6 +79,52 @@ bytecode compilation of `app` and `tests`, and the complete suite under a fixed
 The frozen smoke test must report `ok=true`, `screens=11`, a Tcl version, and
 `nova_assets` listing all three page files. See `docs/PACKAGING.md`.
 
+## Writing a plugin
+
+A plugin is a directory `<plugins root>/<plugin-id>/` (default root
+`%LOCALAPPDATA%\JARVIS\plugins`, id pattern `^[a-z][a-z0-9-]{2,40}$`) with
+`plugin.json` and the module named by `entry_point`:
+
+```json
+{
+  "schema_version": 1,
+  "plugin_id": "echo",
+  "name": "Echo",
+  "version": "1.0.0",
+  "description": "Returns the text it is given.",
+  "entry_point": "plugin:create_plugin",
+  "capabilities": ["tools"],
+  "tools": [
+    {
+      "name": "echo",
+      "description": "Return the given text unchanged.",
+      "risk_level": "low",
+      "parameters": [
+        {"name": "text", "type": "string", "description": "Text to echo."},
+        {"name": "repeat", "type": "integer", "required": false}
+      ]
+    }
+  ]
+}
+```
+
+```python
+def create_plugin(context):
+    context.log("ready")            # bounded line in the diagnostics ledger
+    def echo(text, repeat=None):    # arguments arrive as keywords
+        return {"echo": text}       # return JSON-serializable data
+    return {"echo": echo}           # one callable per declared tool
+```
+
+Rules: parameter types are `string`, `integer`, `number`, or `boolean`;
+`risk_level` is `read_only`, `low`, `medium`, or `high` (effective risk is at
+least `low`, medium and high always require approval); the tool is exposed
+as `plugin_<id>_<tool>`; output must stay under 64 KB; a call that exceeds
+`JARVIS_PLUGIN_TOOL_TIMEOUT_SECONDS` is reported as a timeout; three
+consecutive failures quarantine the plugin. Enable a discovered plugin with
+`application.plugins.enable("echo")`; the choice persists in `state.json`.
+The complete example lives in `tests/fixtures/plugins/echo`.
+
 ## Conventions
 
 - User-facing text is Turkish; code, comments, and documentation are English.

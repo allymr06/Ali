@@ -190,6 +190,35 @@ available, final URL, IP evidence, content hash, freshness, prompt-injection
 indicators, citations, and uncertainties. A successful fetch verifies the
 retrieval and citation structure; it does not certify that a source is true.
 
+## Plugin boundary
+
+Plugins never bypass the tool and permission architecture:
+
+- Discovery reads only immediate subdirectories of the configured plugins
+  root, ignores names that are not valid plugin ids, refuses symlinks and
+  junctions, bounds the manifest size, and imports no code.
+- Manifests are validated fail-closed with a closed field set. The entry
+  point must name a module file inside the plugin directory; links and
+  paths that resolve elsewhere are rejected at start.
+- The effective risk of a plugin tool is at least `LOW`; `medium` and `high`
+  declarations force `requires_confirmation`, and `critical` is rejected.
+  Plugin tools are namespaced (`plugin_<id>_<tool>`) and cannot replace a
+  registered tool; a name collision fails the whole plugin start.
+- Every plugin tool is a normal `ToolExecutor` registration with
+  `source="plugin:<id>"`, so the permission engine, bound approvals,
+  execution slots, argument validation, and timeouts apply unchanged.
+  Results are reported as unverified.
+- Plugins are disabled by default. Enabling is an explicit user action
+  persisted in `state.json`; a corrupt state file leaves every plugin
+  disabled and records a warning.
+- Calls run on a bounded worker pool with a per-call deadline, output must
+  be JSON within a size limit, exceptions are reduced to their class name,
+  and consecutive failures quarantine the plugin until the user re-enables
+  it. Plugin code receives only its id, version, a private data directory,
+  and a bounded logger; never settings, credentials, or services.
+- Honest limit: plugin code executes in-process and is not sandboxed by the
+  operating system. Treat plugins as trusted code you chose to install.
+
 ## Desktop trust boundary
 
 The desktop shell is an adapter, not an authority boundary. Text enters Core as

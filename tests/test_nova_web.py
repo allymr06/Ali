@@ -371,3 +371,10 @@ def test_notification_centre_is_declared_and_fed_only_by_pushes() -> None:
     assert "Bridge.set_visible(!document.hidden)" in JS
     assert "notifications_os_enabled" in section(JS, "const SETTING_LABELS = {", "\n};")
     assert '["Ctrl + Shift + N", "Bildirimler"]' in JS
+
+
+def test_reply_chips_show_real_timing_only() -> None:
+    chips = section(JS, "function assuranceChips(", "function fmtSecondsTr(")
+    assert "metadata.elapsed_seconds" in chips and "metadata.tool_calls" in chips
+    assert "Math.random" not in chips
+    assert 'toLocaleString("tr-TR"' in JS_SOURCES["js/conversation.js"]

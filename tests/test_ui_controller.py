@@ -71,6 +71,8 @@ async def test_desktop_command_maps_final_assurance_metadata() -> None:
                     "reasoning_level": "high",
                     "assurance_level": "tool_verified",
                     "uncertainty_summary": "Sınırlı kapsam.",
+                    "elapsed_seconds": 1.234,
+                    "tool_calls": 2,
                     "provider_metadata": {"private": "not-for-ui"},
                 },
             )
@@ -84,6 +86,8 @@ async def test_desktop_command_maps_final_assurance_metadata() -> None:
         "reasoning_level": "high",
         "assurance_level": "tool_verified",
         "uncertainty_summary": "Sınırlı kapsam.",
+        "elapsed_seconds": 1.234,
+        "tool_calls": 2,
     }
     assert controller.state.messages[-1] == message
 

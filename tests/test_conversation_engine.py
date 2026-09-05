@@ -416,3 +416,27 @@ async def test_core_rejects_tool_call_without_identity_and_preserves_chain():
     assert executed is False
     assert response.metadata["invalid_tool_calls"] == 1
     assert response.metadata["tool_calls"] == 0
+
+
+def test_complete_response_keeps_timing_and_tool_count_when_present() -> None:
+    engine = ConversationEngine()
+    context = Context()
+    request = Request("Kaç saniye sürdü?")
+    response = Response(
+        "Bir saniye sürdü.",
+        request_id=request.request_id,
+        metadata={
+            "provider": "gemini",
+            "model": "gemini-test",
+            "outcome": "completed",
+            "elapsed_seconds": 1.05,
+            "tool_calls": 1,
+        },
+    )
+    engine.prepare_request(request, context)
+
+    turn = engine.complete_response(request, response, context)
+
+    assert turn is not None
+    assert turn.metadata["elapsed_seconds"] == 1.05
+    assert turn.metadata["tool_calls"] == 1

@@ -292,6 +292,13 @@ class ConversationEngine:
                     "uncertainty_summary": response.metadata.get(
                         "uncertainty_summary"
                     ),
+                    # Kept so a reopened conversation shows how long each
+                    # answer took and whether tools ran, like a live one.
+                    **{
+                        key: response.metadata[key]
+                        for key in ("elapsed_seconds", "tool_calls")
+                        if response.metadata.get(key) is not None
+                    },
                 },
             )
             conversation.add_turn(turn)

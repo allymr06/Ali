@@ -40,7 +40,7 @@ Last verified: 5 September 2026
   (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1398 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 1400 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
 
 ## Faster start-up (5 September 2026)
@@ -137,6 +137,12 @@ core engine, timed provider calls) found and fixed four things.
   streamed, tool count, task type, reasoning level, latency, first output)
   with `core.model.latency` and `core.model.first_output` timers, and
   fallbacks carry their reason (`rate_limited`, `cooldown`).
+
+Every assistant reply in Nova now carries the core's own numbers as chips:
+the turn's elapsed seconds (`1,1 sn`) and, when tools ran, their count
+(`araç · 1`); both come from the response metadata, are persisted with the
+turn so a reopened conversation shows them too, and are simply absent when
+the core did not report them.
 
 Measured on this host with the same seven requests before and after
 (streamed first output in parentheses): a plain question with all tools

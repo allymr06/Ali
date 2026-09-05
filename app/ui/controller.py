@@ -326,6 +326,8 @@ class DesktopController:
                         "reasoning_level",
                         "assurance_level",
                         "uncertainty_summary",
+                        "elapsed_seconds",
+                        "tool_calls",
                     )
                     if response.metadata.get(key) is not None
                 },

@@ -14,7 +14,18 @@ function assuranceChips(metadata) {
   if (metadata.assurance_level) chips.push(`<span class="chip">güvence · ${esc(tr(metadata.assurance_level))}</span>`);
   if (metadata.reasoning_level) chips.push(`<span class="chip violet">muhakeme · ${esc(tr(metadata.reasoning_level))}</span>`);
   if (metadata.uncertainty_summary) chips.push(`<span class="chip warn" title="${esc(metadata.uncertainty_summary)}">belirsizlik</span>`);
+  /* Real numbers from the core's own clock: how long the answer took and
+     how many tools ran. Absent metadata means no chip, never a guess. */
+  const seconds = Number(metadata.elapsed_seconds);
+  if (Number.isFinite(seconds) && seconds >= 0) chips.push(`<span class="chip mono" title="Çekirdek yanıt süresi">${esc(fmtSecondsTr(seconds))}</span>`);
+  const toolCalls = Number(metadata.tool_calls);
+  if (Number.isFinite(toolCalls) && toolCalls > 0) chips.push(`<span class="chip">araç · ${toolCalls}</span>`);
   return chips.length ? `<div class="assurance">${chips.join("")}</div>` : "";
+}
+
+function fmtSecondsTr(seconds) {
+  const digits = seconds >= 10 ? 0 : 1;
+  return `${seconds.toLocaleString("tr-TR", { minimumFractionDigits: digits, maximumFractionDigits: digits })} sn`;
 }
 
 function appendMessage(host, message, slim, { animate = true } = {}) {

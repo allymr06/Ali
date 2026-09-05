@@ -417,7 +417,10 @@ finalization), the non-streaming provider fallback, and the action-model
 quota path (single attempt, immediate fallback, cooldown, `request.model_call`
 events and timers). `tests/test_provider_gateway.py` covers the single-attempt
 flag and warm-up over configured providers; `tests/test_ui_nova.py` covers the
-boot warm-up and its ledger line.
+boot warm-up and its ledger line. `tests/test_ui_controller.py`,
+`tests/test_conversation_engine.py` and `tests/test_nova_web.py` cover the
+timing and tool-count reply chips (forwarded, persisted only when present,
+rendered from real numbers).
 
 ## Notification centre coverage (5 September 2026)
 

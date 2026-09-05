@@ -3,8 +3,28 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from datetime import datetime
+
 from app.core.identity import Identity
 from app.core.models import Request
+
+_TURKISH_DAYS = (
+    "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar",
+)
+_TURKISH_MONTHS = (
+    "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz",
+    "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
+)
+
+
+def clock_answer(now: datetime | None = None) -> str:
+    """The current local time and date, spoken the way JARVIS would."""
+    moment = (now or datetime.now()).astimezone()
+    return (
+        f"Şu an saat {moment:%H:%M}; bugün {moment.day} "
+        f"{_TURKISH_MONTHS[moment.month - 1]} {moment.year}, "
+        f"{_TURKISH_DAYS[moment.weekday()]}."
+    )
 
 
 @dataclass(
@@ -187,6 +207,38 @@ class InteractionPolicy:
             name=self._identity.display_name
         )
 
+    # A question about the clock is answered from the clock: a model
+    # with sixty tool schemas in front of it was seen inventing the time
+    # and the weekday even with the date in its system prompt.
+    _CLOCK_MARKERS = (
+        "saat kac",
+        "saat kaç",
+        "saati soyle",
+        "saati söyle",
+        "saat ne",
+        "bugun gunlerden ne",
+        "bugün günlerden ne",
+        "bugun ne gun",
+        "bugün ne gün",
+        "hangi gundeyiz",
+        "hangi gündeyiz",
+        "bugunun tarihi",
+        "bugünün tarihi",
+        "tarih ne",
+        "bugun ayin kaci",
+        "bugün ayın kaçı",
+        "what time is it",
+        "what day is it",
+        "what is the date",
+    )
+    _CLOCK_MAX_WORDS = 9
+
+    @classmethod
+    def is_clock_question(cls, normalized: str) -> bool:
+        if len(normalized.split()) > cls._CLOCK_MAX_WORDS:
+            return False
+        return any(marker in normalized for marker in cls._CLOCK_MARKERS)
+
     def evaluate(
         self,
         request: Request,
@@ -194,6 +246,14 @@ class InteractionPolicy:
         normalized = self._normalize(
             request.text
         )
+
+        if self.is_clock_question(normalized):
+            return InteractionDecision(
+                kind="clock",
+                expose_tools=False,
+                system_prompt=None,
+                direct_response=clock_answer(),
+            )
 
         if normalized in self._IDENTITY_REQUESTS:
             return InteractionDecision(

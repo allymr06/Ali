@@ -5,7 +5,7 @@ import contextlib
 import json
 import time
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from app.conversation.engine import ConversationEngine
@@ -67,6 +67,31 @@ from app.security.permissions import PermissionDecision
 # every tool turn; the pause doubles on repeat, up to an hour.
 ACTION_MODEL_COOLDOWN_SECONDS = 60.0
 ACTION_MODEL_COOLDOWN_MAX_SECONDS = 3600.0
+
+
+_TURKISH_DAYS = (
+    "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar",
+)
+_TURKISH_MONTHS = (
+    "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz",
+    "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
+)
+
+
+def clock_directive(now: datetime | None = None) -> str:
+    """One line telling the model the local date and time.
+
+    Without it the model invents a time when asked "saat kaç" and gets
+    the weekday wrong; with it, time questions are answered from the
+    machine's clock, in Turkish, without a tool round trip.
+    """
+    moment = (now or datetime.now()).astimezone()
+    return (
+        f"Şu an yerel tarih ve saat: {moment.day} "
+        f"{_TURKISH_MONTHS[moment.month - 1]} {moment.year} "
+        f"{_TURKISH_DAYS[moment.weekday()]}, {moment:%H:%M}. Saat, tarih veya "
+        "gün sorulursa bu bilgiyi kullan."
+    )
 
 
 class _ExecutionCancelled(Exception):
@@ -1101,6 +1126,12 @@ class CoreEngine:
         provider_model_override = None
         provider_system_prompt = (
             interaction_decision.system_prompt
+        )
+        clock = clock_directive()
+        provider_system_prompt = (
+            f"{provider_system_prompt}\n\n{clock}"
+            if provider_system_prompt
+            else clock
         )
 
         if request.source is RequestSource.VOICE:

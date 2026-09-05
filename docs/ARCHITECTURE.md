@@ -439,6 +439,10 @@ Web assets are resolved by `resolve_web_root()` from `sys._MEIPASS` in a
 frozen build or from the source tree otherwise, and the WebView2 profile lives
 in `%LOCALAPPDATA%\JARVIS\webview` so theme and motion preferences persist.
 
+**Clock and page cache** (5 September 2026). The engine appends the local
+date and time to every system prompt; `launch_nova` clears the WebView2
+profile's HTTP and code caches when the page assets' stamp changes.
+
 **Scheduled routines** (`app/routines/`, 5 September 2026). `RoutineService`
 is a bounded SQLite store of named prompts with a daily or interval
 schedule and an atomic due claim. The Nova bridge runs a due routine

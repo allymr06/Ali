@@ -30,10 +30,12 @@ from __future__ import annotations
 import asyncio
 import ctypes
 import getpass
+import hashlib
 import importlib.metadata
 import json
 import os
 import platform
+import shutil
 import sys
 import threading
 import time
@@ -189,6 +191,53 @@ def resolve_web_root() -> Path:
 def webview_storage_directory() -> Path:
     """Per-user WebView2 profile so theme/motion preferences persist."""
     return default_state_directory() / "webview"
+
+
+ASSET_STAMP_FILE = "assets.stamp"
+WEBVIEW_CACHE_DIRECTORIES = ("Cache", "Code Cache")
+
+
+def asset_stamp(web_root: Path) -> str:
+    """A digest of every page asset's path, size and mtime."""
+    digest = hashlib.sha256()
+    for path in sorted(p for p in web_root.rglob("*") if p.is_file()):
+        stat = path.stat()
+        digest.update(
+            f"{path.relative_to(web_root).as_posix()}|{stat.st_size}|{stat.st_mtime_ns}\n".encode()
+        )
+    return digest.hexdigest()[:24]
+
+
+def refresh_webview_cache(storage: Path, web_root: Path) -> bool:
+    """Drop the profile's HTTP and code caches when the assets changed.
+
+    WebView2 caches file:// scripts and styles inside the profile, so an
+    updated build could otherwise keep running the previous page. Runs
+    before the window exists (nothing holds the files); a stamp of the
+    asset tree decides, so an unchanged build keeps its warm cache.
+    Returns True when the caches were cleared.
+    """
+    if not web_root.is_dir():
+        return False
+    try:
+        current = asset_stamp(web_root)
+    except OSError:
+        return False
+    stamp_path = storage / ASSET_STAMP_FILE
+    try:
+        previous = stamp_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        previous = None
+    if previous == current:
+        return False
+    profile = storage / "EBWebView" / "Default"
+    for name in WEBVIEW_CACHE_DIRECTORIES:
+        shutil.rmtree(profile / name, ignore_errors=True)
+    try:
+        stamp_path.write_text(current, encoding="utf-8")
+    except OSError:
+        pass
+    return True
 
 
 def _webview2_loader_path() -> Path | None:
@@ -2248,6 +2297,17 @@ def launch_nova(
         pass
     else:
         start_options.update(private_mode=False, storage_path=str(storage))
+        if refresh_webview_cache(storage, web_root):
+            diagnostics = getattr(controller.application, "diagnostics", None)
+            if diagnostics is not None:
+                try:
+                    diagnostics.record(
+                        "ui",
+                        "webview.cache_cleared",
+                        "Page assets changed; the WebView2 caches were cleared.",
+                    )
+                except Exception:
+                    pass
 
     window = webview.create_window(
         WINDOW_TITLE,

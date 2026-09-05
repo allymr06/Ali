@@ -2036,3 +2036,34 @@ def test_deleting_a_routine_needs_confirmation_and_is_recorded(booted) -> None:
     booted.app.routines = None
     assert booted.bridge.list_routines()["ok"] is False
     assert booted.bridge.delete_routine("x", True)["ok"] is False
+
+
+def test_webview_caches_are_cleared_only_when_the_assets_change(tmp_path) -> None:
+    web_root = tmp_path / "web"
+    (web_root / "js").mkdir(parents=True)
+    (web_root / "index.html").write_text("<html>", encoding="utf-8")
+    (web_root / "js" / "app.js").write_text("1", encoding="utf-8")
+    storage = tmp_path / "webview"
+    cache = storage / "EBWebView" / "Default" / "Cache"
+    code_cache = storage / "EBWebView" / "Default" / "Code Cache"
+    keep = storage / "EBWebView" / "Default" / "Local Storage"
+    for folder in (cache, code_cache, keep):
+        folder.mkdir(parents=True)
+        (folder / "entry").write_bytes(b"x")
+
+    # First launch with these assets: caches go, other profile data stays.
+    assert shell.refresh_webview_cache(storage, web_root) is True
+    assert not cache.exists() and not code_cache.exists()
+    assert (keep / "entry").exists()
+    assert (storage / shell.ASSET_STAMP_FILE).read_text(encoding="utf-8") == shell.asset_stamp(web_root)
+
+    # Same assets: nothing happens.
+    cache.mkdir(parents=True)
+    assert shell.refresh_webview_cache(storage, web_root) is False
+    assert cache.exists()
+
+    # A changed script clears again.
+    (web_root / "js" / "app.js").write_text("22", encoding="utf-8")
+    assert shell.refresh_webview_cache(storage, web_root) is True
+    assert not cache.exists()
+    assert shell.refresh_webview_cache(tmp_path / "nowhere", tmp_path / "missing-web") is False

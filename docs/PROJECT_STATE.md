@@ -44,8 +44,28 @@ Last verified: 5 September 2026
   (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1419 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 1422 tests passing, 5 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Clock in the prompt and fresh page assets (5 September 2026)
+
+Two live findings. Asked "saat kaç" the model invented a time and asked
+"bugün günlerden ne" it named the wrong day: nothing told it the clock.
+Every system prompt now ends with the machine's local date and time in
+Turkish (`Şu an yerel tarih ve saat: 5 Eylül 2026 Cumartesi, 17:10.`).
+The lite model with sixty tool schemas in front of it still invented the
+time with that line present, so plain clock questions (`saat kaç`, `bugün
+günlerden ne`, `bugünün tarihi`, `what time is it`; at most nine words)
+are answered by the interaction policy directly from the machine's clock,
+without a model call at all: instant and never wrong. Longer requests that
+merely mention the time (`saat 9'da hatırlat`) go to the model as before.
+Second, the WebView2 profile keeps an HTTP cache for the page's own
+file:// scripts and styles, so an updated build could keep running the
+previous page; `launch_nova` now stamps the asset tree (paths, sizes,
+mtimes) and, when the stamp differs from the last launch, clears the
+profile's `Cache` and `Code Cache` before the window exists, recording
+`webview.cache_cleared` in the ledger. An unchanged build keeps its warm
+cache; theme and motion preferences are untouched.
 
 ## Scheduled routines (5 September 2026)
 

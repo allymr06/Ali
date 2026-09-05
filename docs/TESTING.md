@@ -383,6 +383,14 @@ notifies and exits; first launch watches and releases; classic also holds
 the instance), and settings parsing. The real WinForms icon is exercised by
 an opt-in test (`JARVIS_TRAY_LIVE_TESTS=1`).
 
+## Clock and asset-cache coverage (5 September 2026)
+
+`tests/test_core_engine.py` covers the Turkish clock line and its presence
+in every model-bound system prompt, and the direct clock answer (phrases,
+non-matches, no provider call); `tests/test_ui_nova.py` covers the WebView2 cache
+refresh (cleared on first launch and on changed assets, kept when unchanged,
+other profile data untouched, missing web root a no-op).
+
 ## Scheduled routines coverage (5 September 2026)
 
 `tests/test_routines.py` covers clock parsing and schedule descriptions, the

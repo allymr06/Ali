@@ -2059,3 +2059,66 @@ def test_action_model_rate_limit_falls_back_at_once_and_starts_a_cooldown() -> N
     calls.clear()
     asyncio.run(engine.handle(Request("Baku'de hava nasil?")))
     assert calls[0]["model"] == "action-model"
+
+
+def test_clock_directive_is_turkish_and_local() -> None:
+    from datetime import datetime, timezone
+
+    from app.core.engine import clock_directive
+
+    moment = datetime(2026, 9, 5, 14, 30, tzinfo=timezone.utc).astimezone()
+    line = clock_directive(moment)
+    assert line.startswith("Şu an yerel tarih ve saat: 5 Eylül 2026 Cumartesi, ")
+    assert f"{moment:%H:%M}" in line
+    assert "Saat, tarih veya gün sorulursa" in line
+    assert "Cumartesi" in clock_directive()  # today, 5 September 2026, is a Saturday
+
+
+def test_every_system_prompt_carries_the_clock() -> None:
+    registry = ProviderRegistry()
+    prompts: list[str | None] = []
+
+    class RecordingProvider(MockProvider):
+        async def generate(self, request, context, *, system_prompt=None, **kwargs):
+            prompts.append(system_prompt)
+            return await super().generate(request, context, **kwargs)
+
+    registry.register(RecordingProvider(), make_default=True)
+    engine = CoreEngine(registry, MemoryManager(InMemoryStore()), tool_executor=ToolExecutor())
+    asyncio.run(engine.handle(Request("Baku'de hava nasil?")))
+    asyncio.run(engine.handle(Request("merhaba")))
+    assert len(prompts) == 2
+    for prompt in prompts:
+        assert prompt is not None and "Şu an yerel tarih ve saat:" in prompt
+
+
+def test_clock_questions_are_answered_from_the_clock_without_a_model_call() -> None:
+    from datetime import datetime, timezone
+
+    from app.core.interaction_policy import InteractionPolicy, clock_answer
+
+    moment = datetime(2026, 9, 5, 14, 30, tzinfo=timezone.utc).astimezone()
+    spoken = clock_answer(moment)
+    assert spoken.startswith(f"Şu an saat {moment:%H:%M}; bugün 5 Eylül 2026, Cumartesi.")
+
+    policy = InteractionPolicy()
+    for text in ("saat kaç?", "Saat kac", "bugün günlerden ne", "bugunun tarihi ne", "what time is it"):
+        assert policy.is_clock_question(policy._normalize(text)), text
+    for text in ("saat 9'da toplantım olduğunu hatırlat", "yarın saat kaçta çıkalım, uzun bir plan yapalım mı sence bugün", "tarihte bugün ne oldu"):
+        assert not policy.is_clock_question(policy._normalize(text)), text
+
+    registry = ProviderRegistry()
+    calls: list[str] = []
+
+    class RecordingProvider(MockProvider):
+        async def generate(self, request, context, **kwargs):
+            calls.append(request.text)
+            return await super().generate(request, context, **kwargs)
+
+    registry.register(RecordingProvider(), make_default=True)
+    engine = CoreEngine(registry, MemoryManager(InMemoryStore()), tool_executor=ToolExecutor())
+    response = asyncio.run(engine.handle(Request("saat kaç?")))
+    assert response.text.startswith("Şu an saat ")
+    assert response.metadata["interaction_kind"] == "clock"
+    assert response.metadata["model"] == "jarvis-identity-composer"
+    assert calls == []

@@ -1912,3 +1912,150 @@ def test_core_engine_rejects_mismatched_task_and_plan():
                 plan,
             )
         )
+
+
+def test_streaming_route_accepts_tool_calls_and_streams_the_final_answer() -> None:
+    import json
+
+    from app.providers.base import ModelCapabilities, ModelStreamChunk
+
+    registry = ProviderRegistry()
+    memory_manager = MemoryManager(InMemoryStore())
+    tool_executor = ToolExecutor()
+    tool_executor.register(
+        ToolDefinition(name="get_weather", description="Get weather information."),
+        lambda city: f"{city}: sunny",
+    )
+    seen: list[dict] = []
+
+    class StreamingProvider(MockProvider):
+        @property
+        def capabilities(self):
+            return ModelCapabilities(
+                text=True, streaming=True, structured_output=True, tool_calling=True, vision=False
+            )
+
+        async def stream(self, request, context, *, model=None, system_prompt=None, tools=None):
+            seen.append(
+                {
+                    "tools": tools,
+                    "messages": json.loads(json.dumps(context.values.get("messages", []))),
+                    "task_type": request.metadata.get("task_type"),
+                    "reasoning": request.metadata.get("reasoning_task_type"),
+                }
+            )
+            if len(seen) == 1:
+                yield ModelStreamChunk(
+                    text="", model="mock-model", provider="mock",
+                    tool_calls=[{
+                        "index": 0, "id": "call_1", "type": "function",
+                        "function": {"name": "get_weather", "arguments": '{"city":'},
+                        "extra_content": {"google": {"thought_signature": "SIG"}},
+                    }],
+                )
+                yield ModelStreamChunk(
+                    text="", model="mock-model", provider="mock", finish_reason="tool_calls",
+                    tool_calls=[{"index": 0, "function": {"arguments": '"Baku"}'}}],
+                )
+            else:
+                yield ModelStreamChunk(text="Sunny ", model="mock-model", provider="mock")
+                yield ModelStreamChunk(
+                    text="in Baku.", model="mock-model", provider="mock", finish_reason="stop"
+                )
+
+    registry.register(StreamingProvider(), make_default=True)
+    engine = CoreEngine(registry, memory_manager, tool_executor=tool_executor)
+    streamed: list[str] = []
+
+    response = asyncio.run(
+        engine.handle(Request("Baku'de hava nasil?"), stream_callback=streamed.append)
+    )
+
+    assert response.text == "Sunny in Baku."
+    assert streamed == ["Sunny ", "Sunny in Baku."]
+    assert response.metadata["tool_calls"] == 1
+    assert response.metadata["model_iterations"] == 2
+    assert response.metadata["provider_metadata"]["streamed"] is True
+    assert seen[0]["tools"] and seen[0]["task_type"] == "agentic"
+    # The finalization call runs with the lighter task type.
+    assert seen[1]["task_type"] == "simple" and seen[1]["reasoning"] == "simple"
+    replayed = next(
+        m for m in seen[1]["messages"] if m["role"] == "assistant" and m.get("tool_calls")
+    )
+    assert replayed["tool_calls"] == [{
+        "id": "call_1", "type": "function",
+        "function": {"name": "get_weather", "arguments": '{"city":"Baku"}'},
+        "extra_content": {"google": {"thought_signature": "SIG"}},
+    }]
+
+
+def test_streaming_is_skipped_for_providers_that_cannot_stream() -> None:
+    registry = ProviderRegistry()
+    registry.register(MockProvider(), make_default=True)
+    engine = CoreEngine(registry, MemoryManager(InMemoryStore()), tool_executor=ToolExecutor())
+    streamed: list[str] = []
+
+    response = asyncio.run(engine.handle(Request("merhaba dunya"), stream_callback=streamed.append))
+
+    assert response.text.startswith("Mock yan")
+    assert streamed == []
+
+
+def test_action_model_rate_limit_falls_back_at_once_and_starts_a_cooldown() -> None:
+    from app.core import engine as engine_module
+    from app.diagnostics.service import DiagnosticsService
+    from app.providers.base import ModelResponse, ProviderRateLimitError
+
+    registry = ProviderRegistry()
+    tool_executor = ToolExecutor()
+    tool_executor.register(
+        ToolDefinition(name="get_weather", description="Get weather information."),
+        lambda city: f"{city}: sunny",
+    )
+    calls: list[dict] = []
+
+    class QuotaProvider(MockProvider):
+        @property
+        def name(self):
+            return "gemini"
+
+        async def generate(self, request, context, *, model=None, **kwargs):
+            calls.append({"model": model, "single": request.metadata.get("gateway_single_attempt")})
+            if model == "action-model":
+                raise ProviderRateLimitError("quota", provider="gemini", retry_after_seconds=90)
+            return ModelResponse(
+                text="Sunny.", model=model or "lite-model", provider="gemini", finish_reason="stop"
+            )
+
+    registry.register(QuotaProvider(), make_default=True)
+    diagnostics = DiagnosticsService()
+    engine = CoreEngine(
+        registry, MemoryManager(InMemoryStore()), tool_executor=tool_executor,
+        action_model="action-model", diagnostics=diagnostics,
+    )
+
+    first = asyncio.run(engine.handle(Request("Baku'de hava nasil?")))
+    assert first.text == "Sunny."
+    assert [c["model"] for c in calls] == ["action-model", None]
+    assert calls[0]["single"] is True and calls[1]["single"] is None
+    assert engine._action_model_cooldown_until > engine_module.time.monotonic() + 60
+    assert engine._action_model_cooldown_seconds == 2 * engine_module.ACTION_MODEL_COOLDOWN_SECONDS
+
+    calls.clear()
+    second = asyncio.run(engine.handle(Request("Baku'de hava nasil?")))
+    assert second.text == "Sunny."
+    # The cooling-down action model is not even attempted.
+    assert [c["model"] for c in calls] == [None]
+    names = [e.name for e in diagnostics.ledger.list(component="core", limit=50)]
+    assert names.count("request.model_fallback") == 2
+    fallbacks = [e for e in diagnostics.ledger.list(component="core", limit=50) if e.name == "request.model_fallback"]
+    assert {e.attributes["reason"] for e in fallbacks} == {"rate_limited", "cooldown"}
+    model_calls = [e for e in diagnostics.ledger.list(component="core", limit=50) if e.name == "request.model_call"]
+    assert model_calls and all("latency_seconds" in e.attributes for e in model_calls)
+    assert "core.model.latency" in diagnostics.metrics.snapshot()["timers"]
+
+    # Once the pause has passed the action model is offered again.
+    engine._action_model_cooldown_until = 0.0
+    calls.clear()
+    asyncio.run(engine.handle(Request("Baku'de hava nasil?")))
+    assert calls[0]["model"] == "action-model"

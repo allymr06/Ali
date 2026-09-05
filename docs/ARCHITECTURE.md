@@ -105,6 +105,21 @@ back before the first emitted chunk; after output is visible, an error is
 reported without restarting the stream and duplicating content. Unexpected
 provider exceptions are sanitized at the gateway boundary.
 
+**Gemini 3 function calls and streaming** (5 September 2026). Gemini 3
+models require every replayed function call to carry a thought signature.
+`OpenAIProvider` keeps the signature the API returns (`extra_content`) on
+the tool-call dictionaries that flow through the engine and the
+conversation store, and `GeminiProvider` signs any call that has none (a
+core-injected deterministic call, or an older stored one) with Google's
+skip marker on the wire copy only. The core's streaming collector folds
+tool-call deltas into whole calls, so tool-bearing turns stream their
+final answer; the finalization call after tool results asks the gateway
+for the `simple` task type. Escalation to a separate action model is
+opt-in; when configured and rate limited, the gateway honours a
+single-attempt request flag, the default model answers immediately and
+the action model enters a doubling cooldown. Each provider round trip is
+recorded as `request.model_call` with latency and first-output timers.
+
 ## Conversation engine
 
 Phase 4 introduces `ConversationEngine` as the owner of conversation lifecycle

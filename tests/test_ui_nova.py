@@ -386,8 +386,9 @@ def test_empty_command_is_rejected_before_reaching_the_core(booted) -> None:
         "error": "Komut boş olamaz.",
     }
     assert booted.bridge.submit_command(None)["ok"] is False
-    assert booted.controller._runner is None
-    assert booted.window.events() == []
+    assert booted.bridge._command_future is None
+    # Boot's own warm-up ledger line is the only thing the page may hear.
+    assert [kind for kind in booted.window.kinds() if kind != "diagnostic_event"] == []
 
 
 def test_second_command_is_rejected_while_the_first_runs(booted) -> None:
@@ -1609,7 +1610,7 @@ def test_boot_reports_the_centre_and_starts_reminder_delivery(booted) -> None:
     watch = booted.bridge._reminder_watch
     assert watch is not None and watch.running is True
     # Delivery runs on its own daemon thread, not on the async runner.
-    assert booted.controller._runner is None
+    assert not watch._thread or watch._thread.name == "jarvis-reminder-watch"
     booted.bridge._shutdown()
     assert booted.bridge._reminder_watch is None
     assert watch.running is False
@@ -1908,3 +1909,28 @@ def test_launch_nova_installs_an_os_notifier_and_window_visibility_hooks(monkeyp
         if event.name == "window.visibility"
     ]
     assert visibility == [True, False, True, False]
+
+
+def test_boot_warms_the_provider_connection_on_the_runner(booted) -> None:
+    warmed: list[str] = []
+
+    class Gateway:
+        async def warm_up(self):
+            warmed.append("gemini")
+            return {"gemini": True}
+
+    booted.app.provider_gateway = Gateway()  # type: ignore[assignment]
+    booted.bridge._warm_up_provider()
+    wait_until(lambda: warmed == ["gemini"])
+    wait_until(
+        lambda: any(
+            event.name == "provider.warm_up"
+            for event in booted.app.diagnostics.ledger.list(component="ui", limit=20)
+        )
+    )
+    event = next(
+        e for e in booted.app.diagnostics.ledger.list(component="ui", limit=20)
+        if e.name == "provider.warm_up"
+    )
+    assert event.attributes["results"] == {"gemini": True}
+    assert event.attributes["seconds"] >= 0

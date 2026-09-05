@@ -129,7 +129,11 @@ class Settings:
     # Requests that expose tools escalate to this model: the lite chat
     # model happily narrates actions it never took, while the stronger
     # model reliably emits the tool call instead.
-    gemini_action_model: str = "gemini-3.7-flash"
+    # Tool-bearing turns can escalate to a heavier model. Empty means the
+    # default model handles them: on the free tier a flash tool call was
+    # measured at 4-6 s where flash-lite takes 0.6 s and picks the same
+    # tool, so escalation is opt-in (JARVIS_GEMINI_ACTION_MODEL).
+    gemini_action_model: str = ""
 
     provider_timeout_seconds: float = 15.0
     provider_max_retries: int = 1
@@ -514,10 +518,9 @@ class Settings:
                 "JARVIS_GEMINI_REASONING_EFFORT",
                 "auto",
             ).strip().lower(),
-            gemini_action_model=(
-                os.getenv("JARVIS_GEMINI_ACTION_MODEL", "").strip()
-                or "gemini-3.7-flash"
-            ),
+            gemini_action_model=os.getenv(
+                "JARVIS_GEMINI_ACTION_MODEL", ""
+            ).strip(),
             provider_timeout_seconds=_get_float(
                 "JARVIS_PROVIDER_TIMEOUT",
                 15.0,

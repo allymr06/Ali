@@ -229,3 +229,56 @@ async def test_gemini_errors_keep_provider_identity() -> None:
 
     assert captured.value.provider == "gemini"
     assert "Gemini rate limit exceeded" in str(captured.value)
+
+
+@pytest.mark.asyncio
+async def test_gemini_replays_unsigned_tool_calls_with_the_skip_marker() -> None:
+    client = FakeClient(response())
+    provider = GeminiProvider(Settings(gemini_model="gemini-test"), client=client)
+    context = Context()
+    context.values["messages"] = [
+        {"role": "user", "content": "sistem bilgisi"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "deterministic-1",
+                    "type": "function",
+                    "function": {"name": "get_windows_system_info", "arguments": "{}"},
+                },
+                {
+                    "id": "call_2",
+                    "type": "function",
+                    "function": {"name": "other", "arguments": "{}"},
+                    "extra_content": {"google": {"thought_signature": "real"}},
+                },
+            ],
+        },
+        {"role": "tool", "tool_call_id": "deterministic-1", "content": "{}"},
+    ]
+
+    await provider.generate(Request("sistem bilgisi"), context)
+
+    sent = client.chat.completions.calls[0]["messages"]
+    assistant = next(m for m in sent if m["role"] == "assistant")
+    assert assistant["tool_calls"][0]["extra_content"] == {
+        "google": {"thought_signature": GeminiProvider.THOUGHT_SIGNATURE_SKIP}
+    }
+    assert assistant["tool_calls"][1]["extra_content"] == {
+        "google": {"thought_signature": "real"}
+    }
+    # The stored conversation is not rewritten; only the wire copy is signed.
+    assert "extra_content" not in context.values["messages"][1]["tool_calls"][0]
+
+
+def test_gemini_signature_helper_keeps_existing_extra_content() -> None:
+    signed = GeminiProvider._signed_tool_call(
+        {"id": "x", "type": "function", "function": {"name": "f", "arguments": "{}"},
+         "extra_content": {"vendor": 1, "google": {"other": True}}}
+    )
+    assert signed["extra_content"] == {
+        "vendor": 1,
+        "google": {"other": True, "thought_signature": GeminiProvider.THOUGHT_SIGNATURE_SKIP},
+    }
+    assert GeminiProvider._signed_tool_call("not a dict") == "not a dict"

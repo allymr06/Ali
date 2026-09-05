@@ -24,14 +24,69 @@ Last verified: 5 September 2026
   routing (reminders delivered in the Nova shell, unattended replies,
   approvals and results collected, ledger warnings and screen observations,
   native notification when the window is hidden), 5 September 2026
+- Completed performance milestone: Gemini 3 tool turns (signed replays,
+  streamed answers on tool turns, lighter finalization, no default
+  escalation, quota cooldown, connection warm-up, per-call latency
+  diagnostics), 5 September 2026
 - Next action: scheduled routines (a prompt that runs on a timer under the
   same approval gates) or plugin process isolation; code signing and a
   user-attended voice qualification remain release blockers
   (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1368 tests passing, 5 skipped (`scripts/verify.py`)
+- Automated verification: 1381 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Gemini 3 tool turns and latency (5 September 2026)
+
+A measured pass over a real turn (the desktop's own settings and key, the
+core engine, timed provider calls) found and fixed four things.
+
+- **Signed replays.** Gemini 3 models attach a thought signature to every
+  function call and reject a follow-up whose replayed function call has
+  none (HTTP 400). Model-made calls already kept the signature; calls the
+  core injects itself (deterministic routes such as `sistem bilgisi`) and
+  calls stored before signatures were kept did not, so those turns failed
+  outright. `GeminiProvider` now replays every unsigned function call with
+  Google's documented skip marker; the stored conversation is untouched.
+- **Streaming on tool turns.** The chat-only streaming route used to refuse
+  tool calls, so any turn that exposed tools waited for the complete
+  answer. The collector now folds streamed tool-call deltas into whole
+  calls (index- or id-keyed, argument fragments appended, signatures kept),
+  and the engine streams whenever the caller listens and the default
+  provider can stream. The final answer after a tool result appears as it
+  is generated, and that call asks the gateway for the `simple` task type
+  (minimal reasoning) explicitly, since the gateway classifies reasoning
+  itself and request metadata alone changed nothing.
+- **No default escalation.** Tool-bearing turns escalated to
+  `gemini-3.7-flash`, whose free-tier quota is 20 requests per day, and the
+  next candidate `gemini-3.5-flash` measured 3.7-5.9 s per tool call on this
+  tier where `gemini-3.5-flash-lite` took 0.6 s and chose the same tool.
+  `JARVIS_GEMINI_ACTION_MODEL` is now empty by default (escalation is
+  opt-in). When an action model is configured and reports a quota error,
+  the gateway makes a single attempt (no backoff, no retry), the default
+  model answers at once, and the action model rests for a cooldown that
+  starts at the reported wait or 60 s and doubles on repeat up to an hour;
+  the wait is read from the response body when no Retry-After header is
+  present.
+- **Warm-up and visibility.** The Nova bridge warms the provider connection
+  on the runner loop at boot (a model listing, no generation quota), so the
+  first command does not pay DNS, TLS and client set-up. Every provider
+  round trip is a `request.model_call` ledger event (iteration, model,
+  streamed, tool count, task type, reasoning level, latency, first output)
+  with `core.model.latency` and `core.model.first_output` timers, and
+  fallbacks carry their reason (`rate_limited`, `cooldown`).
+
+Measured on this host with the same seven requests before and after
+(streamed first output in parentheses): a plain question with all tools
+exposed 5.25 s to 0.88 s; `hatırlatıcılarımı listele` (one tool, two model
+calls) 12.24 s to 1.31 s; `bilgisayarımın sistem bilgisini göster`
+(deterministic route, previously a 400 error) 1.08 s; a general question
+11.94 s to 1.11 s; the voice-source greeting 0.95 s. The first turn of a
+process still carries about 0.8 s of connection set-up, which the boot
+warm-up moves off the user's first command. Tool selection quality on the
+lite model held for every probe; a heavier action model remains one
+environment variable away.
 
 ## Nova notification centre (5 September 2026)
 

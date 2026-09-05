@@ -356,3 +356,11 @@ def test_os_notifications_setting_reads_environment(monkeypatch) -> None:
     assert Settings().notifications_os_enabled is True
     monkeypatch.setenv("JARVIS_NOTIFICATIONS_OS_ENABLED", "false")
     assert Settings.from_environment().notifications_os_enabled is False
+
+
+def test_action_model_escalation_is_opt_in(monkeypatch) -> None:
+    monkeypatch.delenv("JARVIS_GEMINI_ACTION_MODEL", raising=False)
+    assert Settings().gemini_action_model == ""
+    assert Settings.from_environment().gemini_action_model == ""
+    monkeypatch.setenv("JARVIS_GEMINI_ACTION_MODEL", "  gemini-3.5-flash ")
+    assert Settings.from_environment().gemini_action_model == "gemini-3.5-flash"

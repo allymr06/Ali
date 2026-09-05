@@ -664,6 +664,37 @@ class NovaBridge:
             attended=attended,
         )
 
+    def _warm_up_provider(self) -> None:
+        """Pay the first connection's set-up now, not on the first command.
+
+        Runs on the controller's runner loop because the provider's pooled
+        connection belongs to the loop that will use it.
+        """
+        gateway = getattr(self.controller.application, "provider_gateway", None)
+        warm = getattr(gateway, "warm_up", None)
+        if not callable(warm):
+            return
+        started = time.monotonic()
+
+        def done(future: Future[Any]) -> None:
+            if future.cancelled():
+                return
+            try:
+                results = future.result()
+            except Exception as exc:
+                results = {"error": type(exc).__name__}
+            self._record_ui_event(
+                "provider.warm_up",
+                "Provider connection warm-up finished.",
+                seconds=round(time.monotonic() - started, 3),
+                results=dict(results) if isinstance(results, dict) else {},
+            )
+
+        try:
+            self.controller.submit_background(warm(), done)
+        except RuntimeError:
+            pass
+
     def _start_reminder_watch(self) -> None:
         """(Re)start delivery for the current application's reminders."""
         self._stop_reminder_watch()
@@ -788,6 +819,7 @@ class NovaBridge:
         # Started after the payload is built so a reminder that is due
         # right now reaches the page as a push it merges after boot.
         self._start_reminder_watch()
+        self._warm_up_provider()
         return payload
 
     def _shutdown(self) -> None:

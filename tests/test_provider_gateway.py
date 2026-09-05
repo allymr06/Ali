@@ -957,3 +957,60 @@ def test_gateway_rejects_negative_retry_delay_cap():
             registry_with(StaticProvider("primary")),
             max_retry_delay_seconds=-1,
         )
+
+
+@pytest.mark.asyncio
+async def test_gateway_makes_a_single_attempt_when_the_caller_asks():
+    from app.providers.gateway import SINGLE_ATTEMPT_METADATA_KEY
+
+    provider = StaticProvider(
+        "retryable",
+        errors=[ProviderUnavailableError("temporary")],
+    )
+    gateway = ProviderGateway(
+        registry_with(provider),
+        max_retries=1,
+        retry_backoff_seconds=0,
+    )
+
+    with pytest.raises(ProviderUnavailableError, match="temporary"):
+        await gateway.generate(
+            Request("hello", metadata={SINGLE_ATTEMPT_METADATA_KEY: True}),
+            Context(),
+        )
+    assert provider.calls == 1
+
+    # Without the flag the same gateway retries once as before.
+    provider.errors = [ProviderUnavailableError("again")]
+    response = await gateway.generate(Request("hello"), Context())
+    assert response.text.startswith("retryable:")
+    assert provider.calls == 3
+
+
+@pytest.mark.asyncio
+async def test_gateway_warm_up_covers_configured_providers_only():
+    class Warmable(StaticProvider):
+        def __init__(self, name, *, configured=True, result=True):
+            super().__init__(name)
+            self._configured = configured
+            self._result = result
+            self.warmed = 0
+
+        @property
+        def is_configured(self) -> bool:
+            return self._configured
+
+        async def warm_up(self) -> bool:
+            self.warmed += 1
+            if isinstance(self._result, Exception):
+                raise self._result
+            return self._result
+
+    ready = Warmable("ready")
+    cold = Warmable("cold", configured=False)
+    broken = Warmable("broken", result=RuntimeError("boom"))
+    plain = StaticProvider("plain")
+    gateway = ProviderGateway(registry_with(ready, cold, broken, plain), max_retries=0)
+
+    assert await gateway.warm_up() == {"ready": True, "broken": False}
+    assert ready.warmed == 1 and cold.warmed == 0

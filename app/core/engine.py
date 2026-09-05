@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import time
 from collections.abc import Callable
 from datetime import timedelta
 from uuid import uuid4
@@ -38,7 +39,10 @@ from app.reliability.admission import (
     AdmissionController,
     AdmissionRejectedError,
 )
-from app.providers.gateway import ProviderGateway
+from app.providers.gateway import (
+    SINGLE_ATTEMPT_METADATA_KEY,
+    ProviderGateway,
+)
 from app.tasks.manager import TaskManager
 from app.tasks.runtime import DurableTaskRuntime
 from app.tools.executor import ToolExecutor
@@ -56,6 +60,13 @@ from app.security.interactive import (
     safe_approval_parameters,
 )
 from app.security.permissions import PermissionDecision
+
+
+# When the escalated action model reports an exhausted quota, the core
+# stops offering it for a while instead of paying a failed attempt on
+# every tool turn; the pause doubles on repeat, up to an hour.
+ACTION_MODEL_COOLDOWN_SECONDS = 60.0
+ACTION_MODEL_COOLDOWN_MAX_SECONDS = 3600.0
 
 
 class _ExecutionCancelled(Exception):
@@ -136,6 +147,8 @@ class CoreEngine:
             action_model.strip() if action_model else None
         ) or None
         self._fast_action_router = fast_action_router
+        self._action_model_cooldown_until = 0.0
+        self._action_model_cooldown_seconds = ACTION_MODEL_COOLDOWN_SECONDS
         self._tool_schema_selector = tool_schema_selector
         self._conversation_engine = conversation_engine or ConversationEngine()
         self._diagnostics = diagnostics
@@ -551,15 +564,21 @@ class CoreEngine:
         system_prompt: str | None,
         callback: Callable[[str], None] | None,
         cancel_event=None,
+        tools: list[dict] | None = None,
+        task_type: str | None = None,
     ) -> ModelResponse:
         """
-        Collect one chat-only provider stream into the normal
-        ModelResponse contract while exposing cumulative text
-        to the caller as soon as chunks arrive.
+        Collect one provider stream into the normal ModelResponse
+        contract while exposing cumulative text to the caller as soon
+        as chunks arrive.
 
-        This path never accepts tool calls.
+        Tool-call deltas are accumulated by index (or id) into whole
+        tool calls, so a tool-bearing turn streams its final answer
+        instead of waiting for the complete response.
         """
         parts: list[str] = []
+        tool_calls: list[dict[str, object]] = []
+        positions: dict[object, int] = {}
         provider_name: str | None = None
         model_name: str | None = model
         finish_reason: str | None = None
@@ -571,13 +590,13 @@ class CoreEngine:
             context,
             model=model,
             system_prompt=system_prompt,
-            tools=None,
+            tools=tools,
+            task_type=task_type,
             cancel_event=cancel_event,
         ):
-            if chunk.tool_calls:
-                raise RuntimeError(
-                    "Tool calls are not allowed on the "
-                    "chat-only streaming route."
+            for delta in chunk.tool_calls or []:
+                self._merge_tool_call_delta(
+                    delta, tool_calls, positions
                 )
 
             provider_name = chunk.provider
@@ -632,10 +651,151 @@ class CoreEngine:
             model=model_name,
             provider=provider_name,
             finish_reason=finish_reason,
-            tool_calls=[],
+            tool_calls=tool_calls,
             usage=usage,
             metadata=metadata,
         )
+
+    @staticmethod
+    def _merge_tool_call_delta(
+        delta: object,
+        tool_calls: list[dict[str, object]],
+        positions: dict[object, int],
+    ) -> None:
+        """Fold one streamed tool-call delta into the accumulated list.
+
+        OpenAI-style streams split a call across deltas that share an
+        index and append argument fragments; Gemini's compatible
+        surface sends each call whole. Both end up as the same
+        ``{id, type, function, extra_content?}`` shape the non-streamed
+        path produces, so replay and signatures behave identically.
+        """
+        if not isinstance(delta, dict):
+            return
+        function = delta.get("function")
+        if not isinstance(function, dict):
+            function = {}
+        index = delta.get("index")
+        key: object = (
+            ("index", index)
+            if isinstance(index, int)
+            else ("id", delta.get("id") or len(tool_calls))
+        )
+        position = positions.get(key)
+        if position is None:
+            entry: dict[str, object] = {
+                "id": delta.get("id"),
+                "type": delta.get("type") or "function",
+                "function": {
+                    "name": function.get("name"),
+                    "arguments": function.get("arguments") or "",
+                },
+            }
+            if delta.get("extra_content") is not None:
+                entry["extra_content"] = delta["extra_content"]
+            positions[key] = len(tool_calls)
+            tool_calls.append(entry)
+            return
+        entry = tool_calls[position]
+        entry_function = entry["function"]
+        assert isinstance(entry_function, dict)
+        if not entry.get("id") and delta.get("id"):
+            entry["id"] = delta["id"]
+        if function.get("name") and not entry_function.get("name"):
+            entry_function["name"] = function["name"]
+        fragment = function.get("arguments")
+        if isinstance(fragment, str) and fragment:
+            entry_function["arguments"] = (
+                str(entry_function.get("arguments") or "") + fragment
+            )
+        if (
+            delta.get("extra_content") is not None
+            and "extra_content" not in entry
+        ):
+            entry["extra_content"] = delta["extra_content"]
+
+    def _action_model_available(self, request: Request) -> bool:
+        """The action model, unless its quota put it in a cooldown."""
+        if not self._action_model:
+            return False
+        if time.monotonic() < self._action_model_cooldown_until:
+            self._record_diagnostic(
+                "request.model_fallback",
+                "Action model is cooling down after a quota error; "
+                "the default model handles this turn.",
+                trace_id=str(request.request_id),
+                attributes={
+                    "reason": "cooldown",
+                    "remaining_seconds": round(
+                        self._action_model_cooldown_until - time.monotonic(), 1
+                    ),
+                },
+            )
+            return False
+        return True
+
+    def _start_action_model_cooldown(self, exc: Exception) -> float:
+        retry_after = getattr(exc, "retry_after_seconds", None)
+        pause = self._action_model_cooldown_seconds
+        if isinstance(retry_after, (int, float)) and retry_after > 0:
+            pause = max(pause, float(retry_after))
+        pause = min(pause, ACTION_MODEL_COOLDOWN_MAX_SECONDS)
+        self._action_model_cooldown_until = time.monotonic() + pause
+        self._action_model_cooldown_seconds = min(
+            self._action_model_cooldown_seconds * 2,
+            ACTION_MODEL_COOLDOWN_MAX_SECONDS,
+        )
+        return pause
+
+    def _record_model_call(
+        self,
+        request: Request,
+        model_response: ModelResponse,
+        *,
+        iteration: int,
+        streamed: bool,
+        tool_count: int,
+        started: float,
+        first_output: float | None,
+    ) -> None:
+        """One ledger line and two timers per provider round trip, so
+        the diagnostics screen shows where a turn's seconds went."""
+        latency = time.monotonic() - started
+        first_seconds = (
+            first_output - started if first_output is not None else None
+        )
+        self._record_diagnostic(
+            "request.model_call",
+            "Model call completed.",
+            trace_id=str(request.request_id),
+            attributes={
+                "iteration": iteration,
+                "model": model_response.model,
+                "streamed": streamed,
+                "tools": tool_count,
+                "tool_calls": len(model_response.tool_calls or []),
+                "reasoning_level": model_response.metadata.get(
+                    "reasoning_level"
+                ),
+                "task_type": model_response.metadata.get("task_type"),
+                "latency_seconds": round(latency, 3),
+                "first_output_seconds": (
+                    round(first_seconds, 3)
+                    if first_seconds is not None
+                    else None
+                ),
+            },
+        )
+        if self._diagnostics is None:
+            return
+        try:
+            self._diagnostics.metrics.observe("core.model.latency", latency)
+            if first_seconds is not None:
+                self._diagnostics.metrics.observe(
+                    "core.model.first_output", first_seconds
+                )
+        except Exception:
+            pass
 
     @property
     def admission(self) -> AdmissionController:
@@ -953,6 +1113,7 @@ class CoreEngine:
                 else voice_directive
             )
 
+        engine_owns_reasoning = False
         tool_schema_count_before = len(
             tool_schemas
         )
@@ -1023,13 +1184,16 @@ class CoreEngine:
             # Tool-bearing turns escalate to the action model: correct
             # tool selection beats the latency of the lite chat model.
             if (
-                self._action_model
-                and provider.name == "gemini"
+                provider.name == "gemini"
                 and request.metadata.get("model") is None
+                and self._action_model_available(request)
             ):
                 provider_model_override = self._action_model
             # Tool selection needs deliberate reasoning even when the
             # rate-limit fallback drops the turn to the lite model.
+            engine_owns_reasoning = (
+                "reasoning_task_type" not in request.metadata
+            )
             request.metadata.setdefault(
                 "reasoning_task_type", "complex"
             )
@@ -1163,10 +1327,43 @@ class CoreEngine:
 
                 provider_context = active_context
 
+                # The tools have run; phrasing their results does not
+                # need the deliberate effort tool selection did. The
+                # gateway classifies reasoning itself, so the lighter
+                # task type is passed explicitly.
+                call_task_type = (
+                    "simple"
+                    if tool_results and engine_owns_reasoning
+                    else None
+                )
+
+                if provider_model_override is not None:
+                    # A rate-limited action model falls back to the
+                    # default model right here; the gateway must not
+                    # spend a backoff and a retry first.
+                    request.metadata[SINGLE_ATTEMPT_METADATA_KEY] = True
+                else:
+                    request.metadata.pop(SINGLE_ATTEMPT_METADATA_KEY, None)
+
+                call_started = time.monotonic()
+                first_output: list[float] = []
+
+                def observe_stream(
+                    text: str,
+                    _sink: list[float] = first_output,
+                    _callback=stream_callback,
+                ) -> None:
+                    if not _sink:
+                        _sink.append(time.monotonic())
+                    if _callback is not None:
+                        _callback(text)
+
                 try:
                     stream_chat = (
                         stream_callback is not None
-                        and not tool_schemas
+                        and bool(
+                            getattr(provider.capabilities, "streaming", False)
+                        )
                     )
 
                     if stream_chat:
@@ -1176,8 +1373,10 @@ class CoreEngine:
                                 provider_context,
                                 model=provider_model_override,
                                 system_prompt=provider_system_prompt,
-                                callback=stream_callback,
+                                callback=observe_stream,
                                 cancel_event=cancel_event,
+                                tools=tool_schemas or None,
+                                task_type=call_task_type,
                             ),
                             cancel_event=cancel_event,
                             timeout=remaining,
@@ -1190,9 +1389,25 @@ class CoreEngine:
                                 model=provider_model_override,
                                 system_prompt=provider_system_prompt,
                                 tools=tool_schemas or None,
+                                task_type=call_task_type,
                             ),
                             cancel_event=cancel_event,
                             timeout=remaining,
+                        )
+                    self._record_model_call(
+                        request,
+                        model_response,
+                        iteration=usage.model_iterations,
+                        streamed=stream_chat,
+                        tool_count=len(tool_schemas),
+                        started=call_started,
+                        first_output=(
+                            first_output[0] if first_output else None
+                        ),
+                    )
+                    if provider_model_override is not None:
+                        self._action_model_cooldown_seconds = (
+                            ACTION_MODEL_COOLDOWN_SECONDS
                         )
                 except _ExecutionCancelled:
                     outcome = "cancelled"
@@ -1209,12 +1424,18 @@ class CoreEngine:
                     ):
                         # The escalated action model is rate limited;
                         # the default model answers instead of the
-                        # whole request failing.
+                        # whole request failing, and the action model
+                        # rests before the next turn tries it again.
+                        pause = self._start_action_model_cooldown(exc)
                         self._record_diagnostic(
                             "request.model_fallback",
                             "Action model rate limited; retrying "
                             "on the default model.",
                             trace_id=str(request.request_id),
+                            attributes={
+                                "reason": "rate_limited",
+                                "cooldown_seconds": round(pause, 1),
+                            },
                         )
                         provider_model_override = None
                         continue
@@ -1473,6 +1694,7 @@ class CoreEngine:
             outcome = "budget_exhausted"
             budget_reason = "model_iterations"
 
+        request.metadata.pop(SINGLE_ATTEMPT_METADATA_KEY, None)
         successful_tools = sum(result.succeeded for result in tool_results)
         verified_tools = sum(
             self._verification_engine.verify(result).passed

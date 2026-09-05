@@ -383,6 +383,20 @@ notifies and exits; first launch watches and releases; classic also holds
 the instance), and settings parsing. The real WinForms icon is exercised by
 an opt-in test (`JARVIS_TRAY_LIVE_TESTS=1`).
 
+## Latency and Gemini 3 tool-turn coverage (5 September 2026)
+
+`tests/test_provider_gemini.py` covers the signed replay (unsigned calls
+get the skip marker, signed ones are untouched, the stored conversation is
+not rewritten). `tests/test_provider_openai.py` covers the retry hint read
+from a quota error body and the connection warm-up. `tests/test_core_engine.py`
+covers streaming with tool calls (deltas folded, arguments appended,
+signature kept, final answer streamed, `simple` task type on
+finalization), the non-streaming provider fallback, and the action-model
+quota path (single attempt, immediate fallback, cooldown, `request.model_call`
+events and timers). `tests/test_provider_gateway.py` covers the single-attempt
+flag and warm-up over configured providers; `tests/test_ui_nova.py` covers the
+boot warm-up and its ledger line.
+
 ## Notification centre coverage (5 September 2026)
 
 `tests/test_notifications.py` covers the centre (bounded titles, bodies and

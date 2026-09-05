@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import re
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -21,6 +22,24 @@ from app.providers.base import (
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
+
+
+_RETRY_SECONDS_PATTERN = re.compile(
+    r"retry in\s+(\d+(?:\.\d+)?)\s*s", re.IGNORECASE
+)
+
+
+def _retry_seconds_from_text(text: str) -> float | None:
+    match = _RETRY_SECONDS_PATTERN.search(text or "")
+    if match is None:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
+WARM_UP_TIMEOUT_SECONDS = 5.0
 
 
 class OpenAIProvider(AIProvider):
@@ -66,6 +85,22 @@ class OpenAIProvider(AIProvider):
             tool_calling=True,
             vision=True,
         )
+
+    async def warm_up(self) -> bool:
+        """Open the connection before the first real request.
+
+        The first call of a process pays DNS, TLS and client set-up;
+        a model listing is cheap, counts against no generation quota,
+        and leaves a warm pooled connection behind. Failures are
+        reported, never raised.
+        """
+        if self._client is None:
+            return False
+        try:
+            await self._client.models.list(timeout=WARM_UP_TIMEOUT_SECONDS)
+        except Exception:
+            return False
+        return True
 
     def _require_client(self):
         if self._client is None:
@@ -180,6 +215,9 @@ class OpenAIProvider(AIProvider):
                     "arguments": getattr(function, "arguments", None),
                 },
             }
+            index = getattr(tool_call, "index", None)
+            if isinstance(index, int) and not isinstance(index, bool):
+                item["index"] = index
             extra_content = getattr(tool_call, "extra_content", None)
             if extra_content is None:
                 model_extra = getattr(tool_call, "model_extra", None)
@@ -228,6 +266,10 @@ class OpenAIProvider(AIProvider):
                 )
             except (TypeError, ValueError):
                 retry_after_seconds = None
+            if retry_after_seconds is None:
+                # Gemini reports the wait in the body ("Please retry in
+                # 30.8s") rather than in a Retry-After header.
+                retry_after_seconds = _retry_seconds_from_text(str(error))
             return ProviderRateLimitError(
                 f"{self.provider_label} rate limit exceeded.",
                 provider=self.name,

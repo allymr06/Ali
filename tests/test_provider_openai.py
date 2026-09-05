@@ -829,3 +829,63 @@ async def test_openai_provider_enforces_total_image_size_limit() -> None:
             ),
             Context(),
         )
+
+
+def test_rate_limit_retry_hint_is_read_from_the_error_body() -> None:
+    from app.providers.openai import _retry_seconds_from_text
+
+    assert _retry_seconds_from_text("Quota exceeded. Please retry in 30.826114528s.") == pytest.approx(30.826, abs=0.001)
+    assert _retry_seconds_from_text("Please retry in 7s") == 7.0
+    assert _retry_seconds_from_text("no hint here") is None
+    assert _retry_seconds_from_text("") is None
+
+
+def test_translate_error_uses_the_body_hint_without_a_retry_after_header() -> None:
+    from types import SimpleNamespace
+
+    from app.providers.base import ProviderRateLimitError
+    from app.providers.openai import OpenAIProvider
+
+    class QuotaError(Exception):
+        status_code = 429
+        response = SimpleNamespace(headers={})
+
+    provider = OpenAIProvider(Settings(api_key="k"))
+    translated = provider._translate_error(
+        QuotaError("Error code: 429 - quota exceeded. Please retry in 12.5s.")
+    )
+    assert isinstance(translated, ProviderRateLimitError)
+    assert translated.retry_after_seconds == 12.5
+
+    class HeaderError(Exception):
+        status_code = 429
+        response = SimpleNamespace(headers={"retry-after": "3"})
+
+    assert provider._translate_error(HeaderError("Please retry in 99s")).retry_after_seconds == 3.0
+
+
+@pytest.mark.asyncio
+async def test_warm_up_lists_models_and_never_raises() -> None:
+    from types import SimpleNamespace
+
+    from app.providers.openai import OpenAIProvider
+
+    listed: list[dict] = []
+
+    async def list_models(**kwargs):
+        listed.append(kwargs)
+        return SimpleNamespace(data=[])
+
+    client = SimpleNamespace(models=SimpleNamespace(list=list_models))
+    provider = OpenAIProvider(Settings(api_key="k"), client=client)
+    assert await provider.warm_up() is True
+    assert listed == [{"timeout": 5.0}]
+
+    async def failing(**kwargs):
+        raise RuntimeError("offline")
+
+    broken = OpenAIProvider(
+        Settings(api_key="k"), client=SimpleNamespace(models=SimpleNamespace(list=failing))
+    )
+    assert await broken.warm_up() is False
+    assert await OpenAIProvider(Settings(api_key=None)).warm_up() is False

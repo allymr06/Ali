@@ -23,6 +23,9 @@ from app.providers.router import ModelRouter
 from app.reliability.circuit import CircuitBreaker, CircuitState
 
 
+SINGLE_ATTEMPT_METADATA_KEY = "gateway_single_attempt"
+
+
 @dataclass(slots=True)
 class ProviderHealth:
     successes: int = 0
@@ -74,6 +77,20 @@ class ProviderGateway:
         self._circuit_failure_threshold = circuit_failure_threshold
         self._circuit_recovery_seconds = circuit_recovery_seconds
         self._breakers: dict[str, CircuitBreaker] = {}
+
+    async def warm_up(self) -> dict[str, bool]:
+        """Warm every configured provider that knows how; never raises."""
+        results: dict[str, bool] = {}
+        for name in self._registry.list_names():
+            provider = self._registry.get(name)
+            warm = getattr(provider, "warm_up", None)
+            if not callable(warm) or not provider.is_configured:
+                continue
+            try:
+                results[provider.name] = bool(await warm())
+            except Exception:
+                results[provider.name] = False
+        return results
 
     @property
     def router(self) -> ModelRouter:
@@ -385,6 +402,10 @@ class ProviderGateway:
         max_attempts = 1 + int(
             self._max_retries > 0 or self._fallback_enabled
         )
+        if request.metadata.get(SINGLE_ATTEMPT_METADATA_KEY) is True:
+            # The caller has its own, faster fallback (for example the
+            # core dropping from the action model to the default one).
+            max_attempts = 1
         total_attempts = 0
 
         for candidate_index, (provider_name, selected_model) in enumerate(
@@ -551,6 +572,10 @@ class ProviderGateway:
         max_attempts = 1 + int(
             self._max_retries > 0 or self._fallback_enabled
         )
+        if request.metadata.get(SINGLE_ATTEMPT_METADATA_KEY) is True:
+            # The caller has its own, faster fallback (for example the
+            # core dropping from the action model to the default one).
+            max_attempts = 1
         total_attempts = 0
 
         for candidate_index, (provider_name, selected_model) in enumerate(

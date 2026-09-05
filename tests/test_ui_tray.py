@@ -263,7 +263,10 @@ def test_bridge_refuses_new_work_while_paused() -> None:
         ):
             assert result["ok"] is False
             assert result["error"] == shell.PAUSED_MESSAGE
-        assert controller._runner is None  # nothing was submitted
+        # Nothing was submitted: no command or voice work is in flight (the
+        # boot warm-up is the only thing the runner has seen).
+        assert bridge._command_future is None
+        assert bridge._voice_future is None
 
         bridge._push_paused(True)
         assert ("paused", {"paused": True, "status": "PAUSED"}) in window.events()

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import re
 from collections.abc import AsyncIterator
 from typing import Any
-
-from openai import AsyncOpenAI
 
 from app.config.settings import Settings
 from app.core.models import Context, Request
@@ -41,6 +40,19 @@ def _retry_seconds_from_text(text: str) -> float | None:
 
 WARM_UP_TIMEOUT_SECONDS = 5.0
 
+# The SDK class, resolved on the first client build: importing openai
+# costs about a second, which used to be paid before the window opened.
+AsyncOpenAI: Any = None
+
+
+def _client_class():
+    global AsyncOpenAI
+    if AsyncOpenAI is None:
+        from openai import AsyncOpenAI as sdk_client
+
+        AsyncOpenAI = sdk_client
+    return AsyncOpenAI
+
 
 class OpenAIProvider(AIProvider):
     """Translate OpenAI SDK contracts into provider-neutral JARVIS models."""
@@ -53,16 +65,10 @@ class OpenAIProvider(AIProvider):
     ) -> None:
         self._settings = settings or Settings.from_environment()
         self._client = client
-        if self._client is None and self._settings.api_key:
-            self._client = AsyncOpenAI(
-                api_key=self._settings.api_key,
-                base_url=self._settings.api_base_url or None,
-                timeout=self._settings.provider_timeout_seconds,
-                # ProviderGateway is the single retry owner. Disabling SDK
-                # retries prevents one gateway attempt from multiplying into
-                # several hidden HTTP requests.
-                max_retries=0,
-            )
+        # Built on first use (or by warm_up) rather than here: importing
+        # the SDK's client and its trust store is start-up time the user
+        # waits for, and a desktop that never sends a request never needs it.
+        self._client_pending = self._client is None and bool(self._settings.api_key)
 
     @property
     def name(self) -> str:
@@ -74,7 +80,18 @@ class OpenAIProvider(AIProvider):
 
     @property
     def is_configured(self) -> bool:
-        return self._client is not None
+        return self._client is not None or self._client_pending
+
+    def _build_client(self):
+        if self._client is None and self._client_pending:
+            self._client = _client_class()(
+                api_key=self._settings.api_key,
+                base_url=self._settings.api_base_url or None,
+                timeout=self._settings.provider_timeout_seconds,
+                max_retries=0,
+            )
+            self._client_pending = False
+        return self._client
 
     @property
     def capabilities(self) -> ModelCapabilities:
@@ -94,15 +111,20 @@ class OpenAIProvider(AIProvider):
         and leaves a warm pooled connection behind. Failures are
         reported, never raised.
         """
-        if self._client is None:
+        try:
+            client = await asyncio.to_thread(self._build_client)
+        except Exception:
+            return False
+        if client is None:
             return False
         try:
-            await self._client.models.list(timeout=WARM_UP_TIMEOUT_SECONDS)
+            await client.models.list(timeout=WARM_UP_TIMEOUT_SECONDS)
         except Exception:
             return False
         return True
 
     def _require_client(self):
+        self._build_client()
         if self._client is None:
             raise ProviderConfigurationError(
                 f"{self.provider_label} client is not configured.",

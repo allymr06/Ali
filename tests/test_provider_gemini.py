@@ -211,9 +211,10 @@ def test_gemini_provider_creates_compatible_client_from_settings() -> None:
         )
     )
 
-    assert provider._client is not None
-    assert provider._client.api_key == "gemini-secret"
-    assert str(provider._client.base_url).rstrip("/") == (
+    assert provider._client is None and provider.is_configured is True
+    client = provider._require_client()
+    assert client.api_key == "gemini-secret"
+    assert str(client.base_url).rstrip("/") == (
         "https://gemini.example/v1beta/openai"
     )
 

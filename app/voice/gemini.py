@@ -4,6 +4,7 @@ import asyncio
 import base64
 import inspect
 import io
+import threading
 import wave
 from typing import Any
 
@@ -39,6 +40,30 @@ def _create_google_client(
     return genai.Client(
         api_key=api_key
     )
+
+
+_shared_clients: dict[str, Any] = {}
+_shared_clients_lock = threading.Lock()
+
+
+def _shared_google_client(api_key: str | None):
+    """One google-genai client per key, built on first use.
+
+    Building a client loads four SSL trust stores (about 0.9 s on this
+    host) and importing the SDK costs as much again, so the recognizer
+    and the synthesizer share one client and neither builds it while
+    the desktop is starting; the boot warm-up or the first voice turn
+    does, whichever comes first.
+    """
+    if not api_key:
+        return None
+    with _shared_clients_lock:
+        client = _shared_clients.get(api_key)
+        if client is None:
+            client = _create_google_client(api_key)
+            if client is not None:
+                _shared_clients[api_key] = client
+        return client
 
 
 def _provider_error(
@@ -100,13 +125,18 @@ def _pcm_from_wav(data: bytes) -> tuple[bytes, int]:
 WARM_UP_TIMEOUT_SECONDS = 5.0
 
 
-async def _warm_up_client(client, model: str) -> bool:
-    """Fetch the model's description on the async client.
+async def _warm_up_client(client_factory, model: str) -> bool:
+    """Build the client off the loop, then fetch the model's description.
 
-    That single GET opens the pooled connection the first real speech
-    request would otherwise pay for, and counts against no generation
-    quota. Clients without an async surface report False; nothing raises.
+    Building the client is the slow part (SDK import, trust stores) and
+    the GET opens the pooled connection the first real speech request
+    would otherwise pay for; it counts against no generation quota.
+    Clients without an async surface report False; nothing raises.
     """
+    try:
+        client = await asyncio.to_thread(client_factory)
+    except Exception:
+        return False
     aio = getattr(client, "aio", None)
     models = getattr(aio, "models", None)
     get = getattr(models, "get", None)
@@ -172,16 +202,14 @@ class GeminiSpeechRecognizer(
         self._model = (
             settings.voice_gemini_stt_model
         )
-
-        self._client = (
-            client
-            if client is not None
-            else _create_google_client(
-                settings.gemini_api_key
-            )
-        )
+        self._api_key = settings.gemini_api_key
+        # An injected client is used as is; otherwise the shared client
+        # is created on first use, never at construction.
+        self._client = client
 
     def _require_client(self):
+        if self._client is None:
+            self._client = _shared_google_client(self._api_key)
         if self._client is None:
             raise VoiceConfigurationError(
                 "Gemini speech recognition "
@@ -197,7 +225,13 @@ class GeminiSpeechRecognizer(
     )
 
     async def warm_up(self) -> bool:
-        return await _warm_up_client(self._client, self._model)
+        return await _warm_up_client(self._require_client_quietly, self._model)
+
+    def _require_client_quietly(self):
+        try:
+            return self._require_client()
+        except VoiceConfigurationError:
+            return None
 
     def _transcription_config(self) -> dict:
         config: dict = {
@@ -322,16 +356,12 @@ class GeminiSpeechSynthesizer(
         self._max_audio_bytes = (
             settings.voice_max_audio_bytes
         )
-
-        self._client = (
-            client
-            if client is not None
-            else _create_google_client(
-                settings.gemini_api_key
-            )
-        )
+        self._api_key = settings.gemini_api_key
+        self._client = client
 
     def _require_client(self):
+        if self._client is None:
+            self._client = _shared_google_client(self._api_key)
         if self._client is None:
             raise VoiceConfigurationError(
                 "Gemini speech synthesis "
@@ -364,7 +394,13 @@ class GeminiSpeechSynthesizer(
         return output.getvalue()
 
     async def warm_up(self) -> bool:
-        return await _warm_up_client(self._client, self._model)
+        return await _warm_up_client(self._require_client_quietly, self._model)
+
+    def _require_client_quietly(self):
+        try:
+            return self._require_client()
+        except VoiceConfigurationError:
+            return None
 
     def _speech_request(self, text: str) -> tuple[str, dict]:
         normalized = text.strip()

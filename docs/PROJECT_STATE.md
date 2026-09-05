@@ -28,6 +28,9 @@ Last verified: 5 September 2026
   streamed answers on tool turns, lighter finalization, no default
   escalation, quota cooldown, connection warm-up, per-call latency
   diagnostics), 5 September 2026
+- Completed performance milestone: desktop start-up (speech and model
+  clients built on first use or by the boot warm-up instead of before the
+  window opens; in-process start to boot 4.3 s to 0.8 s), 5 September 2026
 - Completed performance milestone: voice time to first audio (streamed
   Gemini speech played as it arrives, first sentence synthesized while the
   reply is still streaming), 5 September 2026
@@ -37,8 +40,23 @@ Last verified: 5 September 2026
   (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1395 tests passing, 5 skipped (`scripts/verify.py`)
+- Automated verification: 1398 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Faster start-up (5 September 2026)
+
+Profiled in-process from the first import to the bridge's `boot()`: 4.3 s,
+of which `create_application` spent 1.8 s building two google-genai speech
+clients (each loads four SSL trust stores and the SDK import costs as much
+again) and `import openai` cost 0.9 s before the window could open. Now the
+recognizer and synthesizer share one google-genai client per key that is
+built on first use, the OpenAI-compatible provider builds its client (and
+imports the SDK) on first use, and the boot warm-up builds all of them on
+the runner loop while the boot animation plays: the same measurement is
+0.78 s, neither SDK is imported when the page boots, and the warm-up ledger
+line reports `gemini`, `voice_stt` and `voice_tts` warm about three seconds
+later. Injected clients (tests, connection checks) behave as before, and
+`is_configured` still answers from the key, not from the client object.
 
 ## Voice time to first audio (5 September 2026)
 

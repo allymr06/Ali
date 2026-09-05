@@ -748,3 +748,40 @@ async def test_gemini_speech_adapters_warm_up_through_the_async_client() -> None
     assert await GeminiSpeechRecognizer(settings, client=broken).warm_up() is False
     # A client without an async surface simply reports that it did nothing.
     assert await GeminiSpeechSynthesizer(settings, client=SimpleNamespace()).warm_up() is False
+
+
+@pytest.mark.asyncio
+async def test_speech_adapters_share_one_lazily_built_client(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from app.config.settings import Settings
+    from app.voice import gemini as gemini_module
+    from app.voice.gemini import GeminiSpeechRecognizer, GeminiSpeechSynthesizer
+
+    built: list[str] = []
+
+    class Models:
+        async def get(self, *, model):
+            return SimpleNamespace(name=model)
+
+    def fake_create(api_key):
+        built.append(api_key)
+        return SimpleNamespace(aio=SimpleNamespace(models=Models()), key=api_key)
+
+    monkeypatch.setattr(gemini_module, "_create_google_client", fake_create)
+    monkeypatch.setattr(gemini_module, "_shared_clients", {})
+    settings = Settings(gemini_api_key="shared-key")
+    recognizer = GeminiSpeechRecognizer(settings)
+    synthesizer = GeminiSpeechSynthesizer(settings)
+    assert built == []  # nothing is built while the desktop starts
+
+    assert await recognizer.warm_up() is True
+    assert built == ["shared-key"]
+    assert synthesizer._require_client() is recognizer._require_client()
+    assert built == ["shared-key"]
+
+    # Without a key the adapters stay unconfigured and warm-up reports it.
+    cold = GeminiSpeechSynthesizer(Settings(gemini_api_key=None))
+    assert await cold.warm_up() is False
+    with pytest.raises(Exception):
+        cold._require_client()

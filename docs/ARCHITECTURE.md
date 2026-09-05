@@ -323,6 +323,13 @@ Session results contain transcript, response text, states, and provider/model
 provenance, but never synthesized or captured audio. Raw capture uses mutable
 memory so it can be overwritten and released immediately after transcription.
 
+**Lazy clients** (5 September 2026). Neither the OpenAI-compatible provider
+nor the Gemini speech adapters build their SDK client at construction: the
+provider builds it on first use, the speech adapters share one google-genai
+client per key built on first use, and the Nova boot warm-up builds and
+connects all of them off the UI path. Start-up therefore no longer imports
+either SDK before the window opens.
+
 **Streamed speech** (5 September 2026). The Gemini synthesizer can return
 a `SpeechStream` of PCM chunks primed on the first one; `AudioOutput.play_stream`
 plays it, through sounddevice on Windows or buffered to WAV elsewhere. The

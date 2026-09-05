@@ -4,8 +4,6 @@ import os
 from dataclasses import dataclass, replace
 from typing import Any, Callable
 
-from openai import AsyncOpenAI
-
 from app.config.provider_preferences import (
     DEFAULT_GEMINI_MODEL,
     ProviderPreferences,
@@ -41,7 +39,7 @@ class APISettingsService:
         credentials: CredentialStore | None = None,
         credential_stores: dict[str, CredentialStore] | None = None,
         preferences: ProviderPreferencesStore | None = None,
-        client_factory: Callable[..., Any] = AsyncOpenAI,
+        client_factory: Callable[..., Any] | None = None,
     ) -> None:
         if credential_stores is not None:
             self._credential_stores = dict(credential_stores)
@@ -247,7 +245,14 @@ class APISettingsService:
             "timeout": 15.0,
             "max_retries": 0,
         }
-        client = self._client_factory(
+        factory = self._client_factory
+        if factory is None:
+            # Imported here: the SDK costs about a second to import and
+            # only a connection test needs it in this module.
+            from openai import AsyncOpenAI
+
+            factory = AsyncOpenAI
+        client = factory(
             **client_arguments,
         )
         try:

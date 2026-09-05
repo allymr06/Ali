@@ -253,11 +253,13 @@ def test_openai_provider_creates_client_from_settings(monkeypatch) -> None:
         )
     )
 
-    assert provider._client is not None
-    assert provider._client.api_key == "test-secret"
-    assert str(provider._client.base_url).rstrip("/") == "https://example.test/v1"
-    assert provider._client.max_retries == 0
-    assert provider._client.timeout == 15.0
+    # The client is built on first use, not while the desktop starts.
+    assert provider._client is None and provider.is_configured is True
+    client = provider._require_client()
+    assert client.api_key == "test-secret"
+    assert str(client.base_url).rstrip("/") == "https://example.test/v1"
+    assert client.max_retries == 0
+    assert client.timeout == 15.0
 
 
 @pytest.mark.asyncio
@@ -889,3 +891,30 @@ async def test_warm_up_lists_models_and_never_raises() -> None:
     )
     assert await broken.warm_up() is False
     assert await OpenAIProvider(Settings(api_key=None)).warm_up() is False
+
+
+@pytest.mark.asyncio
+async def test_openai_client_is_built_on_first_use_not_at_construction(monkeypatch) -> None:
+    from app.providers import openai as openai_module
+    from app.providers.openai import OpenAIProvider
+
+    built: list[dict] = []
+
+    class FakeAsyncOpenAI:
+        def __init__(self, **kwargs):
+            built.append(kwargs)
+            self.models = None
+
+    monkeypatch.setattr(openai_module, "AsyncOpenAI", FakeAsyncOpenAI)
+    provider = OpenAIProvider(Settings(api_key="k", api_base_url="https://x.example/v1"))
+    assert provider.is_configured is True
+    assert built == []
+    client = provider._require_client()
+    assert isinstance(client, FakeAsyncOpenAI)
+    assert built[0]["api_key"] == "k" and built[0]["base_url"] == "https://x.example/v1"
+    assert provider._require_client() is client
+    assert built and len(built) == 1
+
+    unconfigured = OpenAIProvider(Settings(api_key=None))
+    assert unconfigured.is_configured is False
+    assert await unconfigured.warm_up() is False

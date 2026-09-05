@@ -97,6 +97,30 @@ def _pcm_from_wav(data: bytes) -> tuple[bytes, int]:
         return handle.readframes(handle.getnframes()), handle.getframerate()
 
 
+WARM_UP_TIMEOUT_SECONDS = 5.0
+
+
+async def _warm_up_client(client, model: str) -> bool:
+    """Fetch the model's description on the async client.
+
+    That single GET opens the pooled connection the first real speech
+    request would otherwise pay for, and counts against no generation
+    quota. Clients without an async surface report False; nothing raises.
+    """
+    aio = getattr(client, "aio", None)
+    models = getattr(aio, "models", None)
+    get = getattr(models, "get", None)
+    if client is None or get is None:
+        return False
+    try:
+        result = get(model=model)
+        if inspect.isawaitable(result):
+            await asyncio.wait_for(result, WARM_UP_TIMEOUT_SECONDS)
+    except Exception:
+        return False
+    return True
+
+
 def _decode_inline_audio(part) -> tuple[bytes, str] | None:
     """Extract (raw_bytes, mime_type) from a response part, if audio."""
     inline = getattr(part, "inline_data", None)
@@ -171,6 +195,9 @@ class GeminiSpeechRecognizer(
         "gemini-3.7",
         "gemini-2.5-pro",
     )
+
+    async def warm_up(self) -> bool:
+        return await _warm_up_client(self._client, self._model)
 
     def _transcription_config(self) -> dict:
         config: dict = {
@@ -335,6 +362,9 @@ class GeminiSpeechSynthesizer(
             wav.writeframes(data)
 
         return output.getvalue()
+
+    async def warm_up(self) -> bool:
+        return await _warm_up_client(self._client, self._model)
 
     def _speech_request(self, text: str) -> tuple[str, dict]:
         normalized = text.strip()

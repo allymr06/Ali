@@ -392,8 +392,10 @@ cloud stream falling back to the local voice, and the closed-sentence
 detector. `tests/test_voice_models.py` covers `SpeechStream` priming and
 replay; `tests/test_voice_audio.py` covers sounddevice streaming, interruption
 (device closed), device failures and the buffered fallback;
-`tests/test_voice_low_latency.py` covers the Gemini streaming synthesizer and
-its single-chunk fallback.
+`tests/test_voice_low_latency.py` covers the Gemini streaming synthesizer, its
+single-chunk fallback and the adapters' warm-up; the voice service's warm-up
+and the bridge's combined warm-up ledger line are covered in
+`tests/test_voice_session.py` and `tests/test_ui_nova.py`.
 
 ## Latency and Gemini 3 tool-turn coverage (5 September 2026)
 

@@ -670,11 +670,29 @@ class NovaBridge:
         Runs on the controller's runner loop because the provider's pooled
         connection belongs to the loop that will use it.
         """
-        gateway = getattr(self.controller.application, "provider_gateway", None)
-        warm = getattr(gateway, "warm_up", None)
-        if not callable(warm):
+        application = self.controller.application
+        warmers = [
+            warm
+            for warm in (
+                getattr(getattr(application, "provider_gateway", None), "warm_up", None),
+                getattr(getattr(application, "voice", None), "warm_up", None),
+            )
+            if callable(warm)
+        ]
+        if not warmers:
             return
         started = time.monotonic()
+
+        async def warm_all() -> dict[str, bool]:
+            results: dict[str, bool] = {}
+            for warm in warmers:
+                try:
+                    outcome = await warm()
+                except Exception:
+                    continue
+                if isinstance(outcome, dict):
+                    results.update(outcome)
+            return results
 
         def done(future: Future[Any]) -> None:
             if future.cancelled():
@@ -691,7 +709,7 @@ class NovaBridge:
             )
 
         try:
-            self.controller.submit_background(warm(), done)
+            self.controller.submit_background(warm_all(), done)
         except RuntimeError:
             pass
 

@@ -1919,9 +1919,15 @@ def test_boot_warms_the_provider_connection_on_the_runner(booted) -> None:
             warmed.append("gemini")
             return {"gemini": True}
 
+    class Voice:
+        async def warm_up(self):
+            warmed.append("voice")
+            return {"voice_stt": True, "voice_tts": False}
+
     booted.app.provider_gateway = Gateway()  # type: ignore[assignment]
+    booted.app.voice = Voice()  # type: ignore[assignment]
     booted.bridge._warm_up_provider()
-    wait_until(lambda: warmed == ["gemini"])
+    wait_until(lambda: warmed == ["gemini", "voice"])
     wait_until(
         lambda: any(
             event.name == "provider.warm_up"
@@ -1932,5 +1938,7 @@ def test_boot_warms_the_provider_connection_on_the_runner(booted) -> None:
         e for e in booted.app.diagnostics.ledger.list(component="ui", limit=20)
         if e.name == "provider.warm_up"
     )
-    assert event.attributes["results"] == {"gemini": True}
+    assert event.attributes["results"] == {
+        "gemini": True, "voice_stt": True, "voice_tts": False,
+    }
     assert event.attributes["seconds"] >= 0

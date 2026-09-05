@@ -748,3 +748,34 @@ def test_first_closed_sentence_waits_for_the_model_to_move_on() -> None:
     assert first_closed_sentence("Evet. Hemen bakıyorum") is None
     assert first_closed_sentence("Hemen bakıyorum! Bir saniye") == "Hemen bakıyorum!"
     assert first_closed_sentence("   ") is None
+
+
+@pytest.mark.asyncio
+async def test_voice_service_warms_the_adapters_it_was_created_with() -> None:
+    from app.voice.service import VoiceService
+
+    class WarmRecognizer(FakeRecognizer):
+        async def warm_up(self):
+            return True
+
+    class ColdSynthesizer(FakeSynthesizer):
+        async def warm_up(self):
+            raise RuntimeError("offline")
+
+    service = VoiceService.create(
+        engine=FakeEngine(),
+        audio_input=FakeInput(),
+        audio_output=FakeOutput(),
+        recognizer=WarmRecognizer(),
+        synthesizer=ColdSynthesizer(),
+    )
+    assert await service.warm_up() == {"voice_stt": True, "voice_tts": False}
+
+    plain = VoiceService.create(
+        engine=FakeEngine(),
+        audio_input=FakeInput(),
+        audio_output=FakeOutput(),
+        recognizer=FakeRecognizer(),
+        synthesizer=FakeSynthesizer(),
+    )
+    assert await plain.warm_up() == {}

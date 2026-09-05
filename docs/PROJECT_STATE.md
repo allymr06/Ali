@@ -37,7 +37,7 @@ Last verified: 5 September 2026
   (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1394 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 1395 tests passing, 5 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
 
 ## Voice time to first audio (5 September 2026)
@@ -71,6 +71,10 @@ first sound.
   is discarded and never heard. Engines that do not accept a stream
   callback keep the previous behaviour. New metadata:
   `first_sentence_early`, `first_audio_latency_seconds`.
+- The speech adapters warm their client at Nova boot together with the
+  model gateway (one model description fetch each, no generation quota);
+  the `provider.warm_up` ledger line reports `voice_stt` and `voice_tts`
+  next to `gemini`.
 
 Live on this host: a streamed sentence through the real Windows output
 started playing 1.30 s after the request where the whole-clip path waited

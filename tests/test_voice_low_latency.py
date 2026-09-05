@@ -718,3 +718,33 @@ async def test_gemini_tts_stream_falls_back_to_a_single_chunk_without_async_clie
     stream = await synthesizer.synthesize_stream("Merhaba.")
     assert await stream.prime() == b"\x03\x00" * 8
     assert stream.sample_rate == 16_000
+
+
+@pytest.mark.asyncio
+async def test_gemini_speech_adapters_warm_up_through_the_async_client() -> None:
+    from types import SimpleNamespace
+
+    from app.config.settings import Settings
+    from app.voice.gemini import GeminiSpeechRecognizer, GeminiSpeechSynthesizer
+
+    fetched: list[str] = []
+
+    class Models:
+        async def get(self, *, model):
+            fetched.append(model)
+            return SimpleNamespace(name=model)
+
+    client = SimpleNamespace(aio=SimpleNamespace(models=Models()))
+    settings = Settings(gemini_api_key="k")
+    assert await GeminiSpeechRecognizer(settings, client=client).warm_up() is True
+    assert await GeminiSpeechSynthesizer(settings, client=client).warm_up() is True
+    assert fetched == [settings.voice_gemini_stt_model, settings.voice_gemini_tts_model]
+
+    class Broken:
+        async def get(self, *, model):
+            raise RuntimeError("offline")
+
+    broken = SimpleNamespace(aio=SimpleNamespace(models=Broken()))
+    assert await GeminiSpeechRecognizer(settings, client=broken).warm_up() is False
+    # A client without an async surface simply reports that it did nothing.
+    assert await GeminiSpeechSynthesizer(settings, client=SimpleNamespace()).warm_up() is False

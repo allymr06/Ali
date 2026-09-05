@@ -27,10 +27,14 @@ class VoiceService:
         audio_output: AudioOutput,
         stt_provider: str | None = None,
         tts_provider: str | None = None,
+        recognizer: SpeechRecognizer | None = None,
+        synthesizer: SpeechSynthesizer | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._audio_input = audio_input
         self._audio_output = audio_output
+        self._recognizer = recognizer
+        self._synthesizer = synthesizer
         # Optional live state observer, forwarded to every session.
         self.state_callback = None
         self._stt_provider = (
@@ -100,7 +104,25 @@ class VoiceService:
             audio_output=audio_output,
             stt_provider=stt_provider,
             tts_provider=tts_provider,
+            recognizer=recognizer,
+            synthesizer=synthesizer,
         )
+
+    async def warm_up(self) -> dict[str, bool]:
+        """Warm the speech adapters that know how; never raises."""
+        results: dict[str, bool] = {}
+        for name, adapter in (
+            ("voice_stt", self._recognizer),
+            ("voice_tts", self._synthesizer),
+        ):
+            warm = getattr(adapter, "warm_up", None)
+            if not callable(warm):
+                continue
+            try:
+                results[name] = bool(await warm())
+            except Exception:
+                results[name] = False
+        return results
 
     @property
     def stt_provider(self) -> str | None:

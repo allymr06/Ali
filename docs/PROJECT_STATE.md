@@ -347,7 +347,7 @@ snapshot in the store), the snapshot listed under Ayarlar › Dosyalar and
 restored from there with its confirmation (original bytes back on disk),
 and the grant removed again. The frozen build was rebuilt on 5 September 2026
 (evening, release qualified) with every change merged that day, through
-the notification persistence commit.
+the last code change (the voice silence settings on the settings screen).
 
 ## Nova cinematic interface (5 September 2026)
 

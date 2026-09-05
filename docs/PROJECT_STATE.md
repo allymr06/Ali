@@ -345,7 +345,8 @@ after the `delete_path` approval (HIGH risk shown, file gone, one sealed
 snapshot in the store), the snapshot listed under Ayarlar › Dosyalar and
 restored from there with its confirmation (original bytes back on disk),
 and the grant removed again. The frozen build was rebuilt on 5 September 2026
-(evening) with every change through the clock and cache commit.
+(evening, release qualified) with every change merged that day, through
+the notification persistence commit.
 
 ## Nova cinematic interface (5 September 2026)
 

@@ -55,6 +55,9 @@ class RecordingActions:
     def open(self) -> None:
         self.calls.append(("open",))
 
+    def start_voice(self) -> None:
+        self.calls.append(("start_voice",))
+
     def set_paused(self, paused: bool) -> None:
         self.calls.append(("set_paused", paused))
 
@@ -91,11 +94,14 @@ class FakeBackend:
 
 def test_menu_labels_follow_state() -> None:
     labels = [entry.label for entry in build_menu(TrayState())]
-    assert labels == ["Öne getir", "Duraklat", "Tanılama", "Ayarlar", "Çıkış"]
+    assert labels == ["Öne getir", "Sesli mod", "Duraklat", "Tanılama", "Ayarlar", "Çıkış"]
+    assert build_menu(TrayState())[1].enabled is True
 
     hidden_paused = TrayState(paused=True, window_visible=False)
     labels = [entry.label for entry in build_menu(hidden_paused)]
-    assert labels == ["Aç", "Devam", "Tanılama", "Ayarlar", "Çıkış"]
+    assert labels == ["Aç", "Sesli mod", "Devam", "Tanılama", "Ayarlar", "Çıkış"]
+    # Voice cannot start while paused, so the entry is greyed out.
+    assert build_menu(hidden_paused)[1].enabled is False
     assert [entry.item for entry in build_menu(hidden_paused)] == list(TrayItem)
     assert build_menu(TrayState())[-1].separator_before is True
     assert tooltip_for(TrayState()) == "JARVIS — çevrimiçi"
@@ -337,6 +343,13 @@ def test_launch_nova_wires_the_tray_pause_navigation_and_exit(monkeypatch, tmp_p
         tray.select(TrayItem.DIAGNOSTICS)
         assert calls[-1] == "show"
         assert any('"screen": "diagnostics"' in script for script in scripts)
+        # 4b. "Sesli mod" opens the voice screen; without a voice service
+        # the failure is reported through the tray, never swallowed.
+        tray.select(TrayItem.VOICE)
+        assert calls[-1] == "show"
+        assert any('"screen": "voice"' in script for script in scripts)
+        assert any(event.startswith("notify:") for event in backend.events[1:])
+        assert tray.state.window_visible is True
         # 5. "Çıkış" destroys the window and lets the close proceed.
         tray.select(TrayItem.EXIT)
         assert calls[-1] == "destroy"

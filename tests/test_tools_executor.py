@@ -94,3 +94,52 @@ async def test_executor_handles_unknown_tool() -> None:
     assert result.status is ToolExecutionStatus.FAILED
     assert result.tool_name == "does_not_exist"
     assert "not registered" in result.error
+
+
+# ---------------------------------------------------------------------------
+# execution observers (read-only; used by the Nova shell)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_executor_notifies_observers_on_the_async_path() -> None:
+    executor = create_executor()
+    events = []
+    unsubscribe = executor.subscribe(events.append)
+
+    result = await executor.execute("async_add", 2, 3)
+
+    assert [event.phase for event in events] == ["started", "finished"]
+    assert events[0].tool_name == "async_add" and events[0].result is None
+    assert events[0].execution_id == events[1].execution_id
+    assert events[1].result is result
+    assert events[1].result.status is ToolExecutionStatus.SUCCESS
+    unsubscribe()
+    await executor.execute("async_add", 1, 1)
+    assert len(events) == 2
+
+
+def test_executor_notifies_observers_on_the_sync_path_and_survives_them() -> None:
+    executor = create_executor()
+    events = []
+
+    def broken(event) -> None:
+        raise RuntimeError("observer failure")
+
+    executor.subscribe(broken)
+    executor.subscribe(events.append)
+
+    result = executor.execute("add", 2, 3)
+    failed = executor.execute("does_not_exist")
+
+    assert result.status is ToolExecutionStatus.SUCCESS
+    assert failed.status is ToolExecutionStatus.FAILED
+    assert [(event.phase, event.tool_name) for event in events] == [
+        ("started", "add"),
+        ("finished", "add"),
+        ("started", "does_not_exist"),
+        ("finished", "does_not_exist"),
+    ]
+    assert events[-1].result is failed
+    with pytest.raises(TypeError):
+        executor.subscribe(None)

@@ -2,7 +2,8 @@
 
 Audit date: 21 August 2026
 Revised: 22 August 2026 (single-provider consolidation and re-verification)
-Revised: 5 September 2026 (Nova desktop shell stabilization and rebuild)
+Revised: 5 September 2026 (Nova desktop shell stabilization and rebuild;
+cinematic interface redesign verified from source)
 
 ## Decision
 
@@ -46,7 +47,7 @@ install lifecycle test.
 | # | Requirement | Status | Evidence or remaining work |
 |---:|---|---|---|
 | 1 | Application starts reliably | Pass | Source and frozen builds start on a normal Windows 11 account; the frozen smoke test reports healthy (Tcl/Tk 8.6.15). |
-| 2 | UI loads | Pass | All eleven screens render in the Nova (WebView2) shell from source and from the frozen build, and in the classic Tk shell; re-verified 5 September 2026. |
+| 2 | UI loads | Pass | All eleven screens render in the Nova (WebView2) shell from source and from the frozen build, and in the classic Tk shell; re-verified 5 September 2026. The redesigned interface (same eleven screens plus palette, drawer, compact window and voice stage) was verified from source the same day, and the frozen build was rebuilt with the redesigned page (`nova_assets` lists every file). |
 | 3 | AI provider connects | Conditional | Mock provider is verified; the Gemini adapter is tested without a live credential or network call. |
 | 4 | Conversation works | Pass | Core/conversation integration and context lifecycle tests pass. |
 | 5 | Tool calling works | Pass | Provider tool calls, contracts, discovery, and execution are covered. |

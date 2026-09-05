@@ -47,6 +47,18 @@ class VoiceService:
         self._active_session: VoiceSession | None = None
         self._last_session: VoiceSession | None = None
 
+    @property
+    def level_callback(self) -> Callable[[float], None] | None:
+        """Live microphone level observer, when the input can report one."""
+        return getattr(self._audio_input, "level_callback", None)
+
+    @level_callback.setter
+    def level_callback(
+        self, callback: Callable[[float], None] | None
+    ) -> None:
+        if hasattr(self._audio_input, "level_callback"):
+            self._audio_input.level_callback = callback
+
     @classmethod
     def create(
         cls,

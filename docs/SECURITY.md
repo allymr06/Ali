@@ -253,6 +253,20 @@ The Nova shell adds a JavaScript boundary with the same posture:
   `confirmed=True` argument; a bare call is a no-op.
 - The page is self-contained (`default-src 'self'`, no remote scripts or
   styles) and loads from the application's own files.
+- The permission overlay offers exactly two decisions, `Bir kez izin ver`
+  and `Reddet`; there is no "always allow", so an approval can never be
+  generalised from the interface.
+- Runtime configuration shown in the settings screen is exported through
+  the explicit `RUNTIME_SETTING_FIELDS` allow-list; API keys and base URLs
+  are named in `SECRET_SETTING_FIELDS` and never leave the process.
+- Live activity comes from read-only observers (`ToolExecutor.subscribe`,
+  `DiagnosticsService.subscribe`, `VoiceService.level_callback`); an
+  observer cannot alter, delay or block a tool result, and a failing
+  observer is ignored. Tool payloads carry status, verification and
+  duration, never tool data or error text.
+- Permanently deleting a memory requires an in-app confirmation and a
+  `confirmed=True` argument, like deleting the credential; "unut" only
+  deactivates. Compact mode changes window geometry and nothing else.
 - The system tray is an adapter over the same shell actions. `Duraklat`
   only gates new user-initiated work at the controller and page; it grants
   nothing and is not a substitute for permissions or approvals. `Çıkış`

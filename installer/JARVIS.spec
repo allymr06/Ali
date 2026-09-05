@@ -1,11 +1,21 @@
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 root = Path(SPEC).resolve().parent.parent
 entrypoint = root / "installer" / "entrypoint.py"
-# Nova (pywebview/WebView2) shell assets. They land below
-# _internal/app/ui/nova/web so app.ui.nova.shell.resolve_web_root()
-# finds them through sys._MEIPASS exactly as in a source checkout.
+# Nova (pywebview/WebView2) shell assets: index.html plus the css/ and js/
+# directories. Every file below the web root is collected, keeping its
+# relative directory, so it lands below _internal/app/ui/nova/web and
+# app.ui.nova.shell.resolve_web_root() finds it through sys._MEIPASS
+# exactly as in a source checkout.
 nova_web = root / "app" / "ui" / "nova" / "web"
+nova_datas = [
+    (
+        str(path),
+        str(PurePosixPath("app/ui/nova/web") / path.relative_to(nova_web).parent.as_posix()),
+    )
+    for path in sorted(nova_web.rglob("*"))
+    if path.is_file()
+]
 
 a = Analysis(
     [str(entrypoint)],
@@ -17,9 +27,7 @@ a = Analysis(
         (str(root / "docs" / "CONFIGURATION.md"), "docs"),
         (str(root / "docs" / "ACCEPTANCE.md"), "docs"),
         (str(root / "assets" / "branding" / "jarvis.ico"), "assets"),
-        (str(nova_web / "index.html"), "app/ui/nova/web"),
-        (str(nova_web / "nova.css"), "app/ui/nova/web"),
-        (str(nova_web / "nova.js"), "app/ui/nova/web"),
+        *nova_datas,
     ],
     hiddenimports=[
         "app.ui.nova",

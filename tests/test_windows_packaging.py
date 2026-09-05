@@ -27,7 +27,7 @@ def test_verify_smoke_report_accepts_complete_frozen_result(tmp_path: Path) -> N
         "frozen": True,
         "health": "healthy",
         "screens": 11,
-        "nova_assets": ["index.html", "nova.css", "nova.js"],
+        "nova_assets": sorted(nova_shell.WEB_ASSETS),
         "tcl": "8.6.14",
     }
     path.write_text(json.dumps(expected), encoding="utf-8")
@@ -58,7 +58,7 @@ def test_verify_smoke_report_rejects_incomplete_result(
         "frozen": True,
         "health": "healthy",
         "screens": 11,
-        "nova_assets": ["index.html", "nova.css", "nova.js"],
+        "nova_assets": sorted(nova_shell.WEB_ASSETS),
         "tcl": "8.6.14",
     }
     report[field] = value
@@ -170,8 +170,30 @@ def test_spec_bundles_nova_web_assets_where_the_shell_looks() -> None:
         encoding="utf-8"
     )
     assert 'nova_web = root / "app" / "ui" / "nova" / "web"' in spec
-    for name in build_windows.NOVA_WEB_ASSETS:
-        assert f'(str(nova_web / "{name}"), "app/ui/nova/web")' in spec, name
+    # The spec collects every file below the web root, keeping its
+    # relative directory below app/ui/nova/web.
+    assert 'for path in sorted(nova_web.rglob("*"))' in spec
+    assert 'PurePosixPath("app/ui/nova/web") / path.relative_to(nova_web).parent.as_posix()' in spec
+    assert "*nova_datas," in spec
     for hidden in ('"app.ui.nova"', '"app.ui.nova.shell"', '"webview"'):
         assert hidden in spec, hidden
     assert str(nova_shell.WEB_RELATIVE_PATH).replace("\\", "/") == "app/ui/nova/web"
+
+
+def test_spec_collection_covers_every_shell_asset() -> None:
+    # Recompute the spec's data mapping and check each asset the shell
+    # requires lands where resolve_web_root() will look for it.
+    from pathlib import PurePosixPath
+
+    nova_web = nova_shell.SOURCE_WEB_ROOT
+    collected = {
+        path.relative_to(nova_web).as_posix(): str(
+            PurePosixPath("app/ui/nova/web")
+            / path.relative_to(nova_web).parent.as_posix()
+        )
+        for path in sorted(nova_web.rglob("*"))
+        if path.is_file()
+    }
+    for name in nova_shell.WEB_ASSETS:
+        expected = str(PurePosixPath("app/ui/nova/web") / PurePosixPath(name).parent)
+        assert collected.get(name) == expected, (name, collected.get(name))

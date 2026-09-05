@@ -23,13 +23,31 @@ but never installed.
 ```
 
 Nova lives in `app/ui/nova/`: `shell.py` hosts the window and exposes
-`NovaBridge` to the page; `web/index.html`, `web/nova.css`, and `web/nova.js`
-are the page. Python is the source of truth. Everything the page shows arrives
-through `boot()` or a `window.NOVA.push({kind, payload})` event, and every user
-action is a bridge call that returns `{ok, error?}`. Keep both sides in step:
-`tests/test_nova_web.py` fails when a JavaScript call has no matching Python
-method, when the demo bridge drifts from the real API, or when a push kind has
-no handler.
+`NovaBridge` to the page; `web/index.html` plus `web/css/` and `web/js/` are
+the page. The stylesheets are a token system (`tokens.css` holds every
+colour, surface, radius, glow, type, motion and z-index value; nothing else
+defines one), then `base`, `shell`, `components` and `screens`. The scripts
+are classic scripts sharing one global scope in load order — ES modules do
+not load from `file://` — and each owns one concern: `foundation` (helpers,
+Turkish vocabulary, `State`, `Motion` primitives, toasts, confirmation),
+`bridge` (the API, the demo bridge, the push handlers), `presence` (the
+state machine, `JarvisCore`, the ambient backdrop, the animation engine),
+`shell` (rail, screens, topbar, context drawer, palette, compact mode, pause,
+boot, keyboard), `conversation` (chat, stored conversations, voice stage),
+`activity` (execution timeline, approval overlay, trust screen), `panels`
+(home, tasks, memory, automation, vision, research, diagnostics, settings)
+and `main`. Add a file by listing it in `shell.WEB_ASSETS` and `index.html`;
+the tests refuse anything else. Python is the source of truth. Everything
+the page shows arrives through `boot()` or a `window.NOVA.push({kind,
+payload})` event, and every user action is a bridge call that returns
+`{ok, error?}`. Keep both sides in step: `tests/test_nova_web.py` fails when
+a JavaScript call has no matching Python method, when the demo bridge drifts
+from the real API, or when a push kind has no handler.
+
+Two rules that are easy to break: never invent a figure (label it
+"kullanılamıyor" instead), and never touch the pywebview window from a
+bridge worker thread — go through `_run_on_ui_thread`, otherwise the
+WinForms loop freezes.
 
 Rules that the tests enforce and reviews should keep:
 
@@ -82,7 +100,8 @@ bytecode compilation of `app` and `tests`, and the complete suite under a fixed
 ```
 
 The frozen smoke test must report `ok=true`, `screens=11`, a Tcl version, and
-`nova_assets` listing all three page files. See `docs/PACKAGING.md`.
+`nova_assets` listing every file in `shell.WEB_ASSETS`. See
+`docs/PACKAGING.md`.
 
 ## Writing a plugin
 

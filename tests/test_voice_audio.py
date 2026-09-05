@@ -135,3 +135,65 @@ async def test_windows_output_rejects_non_wav_audio() -> None:
 
     with pytest.raises(VoiceConfigurationError, match="requires WAV"):
         await output.play(speech)
+
+
+@pytest.mark.asyncio
+async def test_sounddevice_input_reports_levels_without_affecting_capture() -> None:
+    module = FakeSoundDevice()
+    adapter = SoundDeviceAudioInput(
+        sample_rate=8_000,
+        channels=1,
+        device_id="1",
+        chunk_milliseconds=50,
+        vad_enabled=False,
+        module=module,
+    )
+    levels = []
+    adapter.level_callback = levels.append
+
+    capture = await adapter.capture(max_duration_seconds=0.05)
+
+    assert len(capture.data) == 800
+    assert levels and all(0.0 <= level <= 1.0 for level in levels)
+
+    def broken(level: float) -> None:
+        raise RuntimeError("observer failure")
+
+    adapter.level_callback = broken
+    capture = await adapter.capture(max_duration_seconds=0.05)
+    assert len(capture.data) == 800
+
+
+def test_voice_service_forwards_the_level_observer_to_the_input() -> None:
+    from app.voice.service import VoiceService
+
+    class Input:
+        def __init__(self) -> None:
+            self.level_callback = None
+
+        def list_devices(self):
+            return ()
+
+        async def capture(self, **_kwargs):
+            raise AssertionError("not captured in this test")
+
+    audio_input = Input()
+    service = VoiceService(
+        session_factory=lambda: None,
+        audio_input=audio_input,
+        audio_output=SimpleNamespace(),
+    )
+    observer = lambda level: None  # noqa: E731
+    service.level_callback = observer
+    assert audio_input.level_callback is observer
+    assert service.level_callback is observer
+    service.level_callback = None
+    assert audio_input.level_callback is None
+
+    plain = VoiceService(
+        session_factory=lambda: None,
+        audio_input=SimpleNamespace(list_devices=lambda: ()),
+        audio_output=SimpleNamespace(),
+    )
+    plain.level_callback = observer  # no attribute on the input: a no-op
+    assert plain.level_callback is None

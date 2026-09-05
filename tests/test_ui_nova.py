@@ -13,6 +13,7 @@ import json
 import sys
 import threading
 import time
+from concurrent.futures import Future
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -28,6 +29,7 @@ from app.config.provider_preferences import (
     ProviderPreferencesStore,
 )
 from app.config.settings import Settings
+from app.conversation.models import ConversationTurn, MessageRole
 from app.core.models import Response, RiskLevel
 from app.core.time import utc_now
 from app.security.interactive import InteractiveApprovalRequest
@@ -714,6 +716,7 @@ def test_frozen_bundle_web_root_is_preferred(monkeypatch, tmp_path) -> None:
     target = bundle / "app" / "ui" / "nova" / "web"
     target.mkdir(parents=True)
     for name in shell.WEB_ASSETS:
+        (target / name).parent.mkdir(parents=True, exist_ok=True)
         (target / name).write_text("bundled", encoding="utf-8")
     monkeypatch.setattr(sys, "_MEIPASS", str(bundle), raising=False)
 
@@ -727,7 +730,7 @@ def test_missing_assets_are_reported_explicitly(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path / "bundle"), raising=False)
     monkeypatch.setattr(shell, "SOURCE_WEB_ROOT", tmp_path / "nowhere")
 
-    with pytest.raises(FileNotFoundError, match="nova.css"):
+    with pytest.raises(FileNotFoundError, match="css/tokens.css"):
         shell.resolve_web_root()
 
 
@@ -1046,3 +1049,390 @@ def test_voice_callback_firing_synchronously_does_not_deadlock(
     assert booted.bridge._voice_future is not None
     assert booted.bridge._voice_future.done()
     assert _run_with_deadline(lambda: booted.bridge.start_voice()) == {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# cinematic shell: runtime facts, observation, conversations, memory, status
+# ---------------------------------------------------------------------------
+
+
+def test_boot_carries_runtime_facts_without_secrets(tmp_path) -> None:
+    app = create_application(
+        Settings(
+            default_provider="mock",
+            default_model="mock-model",
+            windows_integrations_enabled=False,
+            memory_database_path=None,
+            task_database_path=None,
+            task_runtime_directory=None,
+            gemini_api_key="sk-runtime-secret-9876543210",
+        )
+    )
+    controller = DesktopController(app)
+    bridge = shell.NovaBridge(controller, None)
+    bridge._attach(FakeWindow())
+    try:
+        boot = bridge.boot()
+    finally:
+        bridge._shutdown()
+        controller.close()
+
+    runtime = boot["runtime"]
+    assert set(runtime["configuration"]) <= set(shell.RUNTIME_SETTING_FIELDS)
+    assert runtime["configuration"]["voice_wake_word"] == "jarvis"
+    assert runtime["python"] and runtime["platform"]
+    assert runtime["conversation_id"] == str(controller.context.conversation_id)
+    assert runtime["applications"] == []
+    serialized = json.dumps(boot)
+    assert "sk-runtime-secret" not in serialized
+    for field in shell.SECRET_SETTING_FIELDS:
+        assert field not in serialized, field
+    assert boot["paused"] is False and boot["compact"] is False
+    assert boot["conversations"] == []
+
+
+def test_tool_executions_are_pushed_as_activity(booted) -> None:
+    result = booted.app.tool_executor.execute("list_memories")
+
+    assert result.status.value == "success"
+    payloads = booted.window.payloads("tool_activity")
+    assert [item["phase"] for item in payloads] == ["started", "finished"]
+    assert payloads[0]["tool"] == "list_memories"
+    assert payloads[0]["execution_id"] == payloads[1]["execution_id"]
+    assert payloads[1]["status"] == "success"
+    assert payloads[1]["verified"] is True
+    assert payloads[1]["failed"] is False
+    assert isinstance(payloads[1]["duration_ms"], int)
+    assert "data" not in payloads[1]
+
+
+def test_diagnostic_events_are_pushed_live(booted) -> None:
+    booted.app.diagnostics.record(
+        "ui", "unit.event", "merhaba", attributes={"api_key": "sk-very-secret"}
+    )
+
+    payloads = booted.window.payloads("diagnostic_event")
+    assert payloads[-1]["name"] == "unit.event"
+    assert payloads[-1]["component"] == "ui"
+    assert payloads[-1]["level"] == "info"
+    assert payloads[-1]["message"] == "merhaba"
+    assert "sk-very-secret" not in json.dumps(payloads)
+
+
+def test_observers_follow_a_runtime_rebuild(booted, monkeypatch) -> None:
+    replacement = application()
+    monkeypatch.setattr(
+        "app.bootstrap.create_application", lambda settings=None: replacement
+    )
+    previous = booted.app
+
+    assert booted.bridge.save_settings("gemini", DEFAULT_GEMINI_MODEL, "")["ok"] is True
+    assert booted.controller.application is replacement
+
+    before = len(booted.window.payloads("tool_activity"))
+    replacement.tool_executor.execute("list_memories")
+    assert len(booted.window.payloads("tool_activity")) == before + 2
+    previous.tool_executor.execute("list_memories")
+    assert len(booted.window.payloads("tool_activity")) == before + 2
+
+
+def test_conversation_lifecycle_through_the_bridge(booted) -> None:
+    engine = booted.app.conversation_engine
+    stored = engine.create()
+    first = stored.conversation_id
+    stored.turns.append(ConversationTurn(first, MessageRole.USER, "merhaba  dünya"))
+    stored.turns.append(ConversationTurn(first, MessageRole.ASSISTANT, "Merhaba."))
+    stored.turns.append(ConversationTurn(first, MessageRole.SYSTEM, "sistem notu"))
+    engine.store.save(stored)
+
+    opened = booted.bridge.open_conversation(str(first))
+    assert opened["ok"] is True and opened["conversation_id"] == str(first)
+    assert [item["role"] for item in opened["messages"]] == ["user", "assistant"]
+    assert booted.controller.context.conversation_id == first
+
+    listing = booted.bridge.list_conversations()
+    assert listing["ok"] is True and listing["active"] == str(first)
+    assert listing["conversations"][0]["title"] == "merhaba dünya"
+    assert listing["conversations"][0]["turn_count"] == 2
+    assert listing["conversations"][0]["active"] is True
+
+    fresh = booted.bridge.new_conversation()
+    assert fresh["ok"] is True and fresh["messages"] == []
+    assert fresh["conversation_id"] != str(first)
+    assert booted.controller.state.messages == []
+    assert booted.bridge.list_conversations()["active"] == fresh["conversation_id"]
+    assert all(
+        not item["active"] for item in booted.bridge.list_conversations()["conversations"]
+    )
+
+    assert booted.bridge.open_conversation(str(first))["ok"] is True
+    assert booted.controller.context.conversation_id == first
+
+    assert booted.bridge.open_conversation("not-a-uuid") == {
+        "ok": False,
+        "error": "Konuşma kimliği geçersiz.",
+    }
+    assert booted.bridge.open_conversation(str(uuid4())) == {
+        "ok": False,
+        "error": "Konuşma bulunamadı.",
+    }
+
+    archived = booted.bridge.archive_conversation(str(first))
+    assert archived["ok"] is True and archived["current_archived"] is True
+    assert booted.controller.context.conversation_id != first
+    assert booted.controller.state.messages == []
+    assert booted.bridge.list_conversations()["conversations"][0]["status"] == "archived"
+
+
+def test_conversation_switches_are_refused_while_busy(booted) -> None:
+    pending: Future = Future()
+    booted.bridge._command_future = pending
+    try:
+        assert booted.bridge.new_conversation() == {
+            "ok": False,
+            "error": "Yanıt tamamlanmadan konuşma değiştirilemez.",
+        }
+        assert booted.bridge.open_conversation(str(uuid4()))["ok"] is False
+    finally:
+        booted.bridge._command_future = None
+
+
+def test_memory_actions_require_confirmation_and_report(booted) -> None:
+    entry = booted.app.memory_manager.remember("Ali kısa raporları tercih ediyor.")
+    memory_id = str(entry.memory_id)
+
+    listed = booted.bridge.list_memories()
+    assert listed["ok"] is True and len(listed["memories"]) == 1
+    assert booted.bridge.search_memories("kısa")["memories"][0]["memory_id"] == memory_id
+    assert booted.bridge.search_memories("")["ok"] is True
+
+    assert booted.bridge.update_memory(memory_id, "  ") == {
+        "ok": False,
+        "error": "Anı içeriği boş olamaz.",
+    }
+    assert booted.bridge.update_memory(memory_id, "Ali uzun raporları tercih ediyor.")["ok"] is True
+    assert "uzun" in booted.bridge.list_memories()["memories"][0]["content"]
+
+    assert booted.bridge.delete_memory(memory_id) == {
+        "ok": False,
+        "error": "Silme işlemi onaylanmadı.",
+    }
+    assert booted.bridge.forget_memory("not-a-uuid") == {
+        "ok": False,
+        "error": "Anı kimliği geçersiz.",
+    }
+    assert booted.bridge.forget_memory(str(uuid4())) == {
+        "ok": False,
+        "error": "Anı bulunamadı.",
+    }
+    assert booted.bridge.forget_memory(memory_id)["ok"] is True
+    assert booted.bridge.list_memories()["memories"] == []
+    assert booted.bridge.delete_memory(memory_id, True)["ok"] is True
+    assert booted.bridge.delete_memory(memory_id, True)["ok"] is False
+    assert "snapshot" in booted.window.kinds()
+
+
+def test_system_status_reports_measured_values(booted) -> None:
+    status = booted.bridge.system_status()
+
+    assert status["ok"] is True
+    assert status["health"]["status"] in {"healthy", "degraded"}
+    assert {check["name"] for check in status["health"]["checks"]} >= {"core", "event_ledger"}
+    assert status["health_error"] is None
+    assert "counters" in status["metrics"] and "timers" in status["metrics"]
+    assert status["integrity"] is True
+    assert status["event_count"] >= 1
+    assert status["provider"]["name"] == "mock"
+    assert status["provider"]["circuit"] == "closed"
+    assert set(status["admission"]) == {
+        "active", "waiting", "accepted", "rejected", "max_concurrent", "max_queue",
+    }
+    assert status["process"]["threads"] >= 1
+    assert status["process"]["uptime_seconds"] >= 0
+    time.sleep(0.05)  # a second sample on a later clock tick yields a CPU figure
+    again = booted.bridge.system_status()
+    assert isinstance(again["process"]["cpu_percent"], float)
+    assert 0.0 <= again["process"]["cpu_percent"] <= 100.0
+    assert again["process"]["memory_bytes"] is None or again["process"]["memory_bytes"] > 0
+
+
+def test_diagnostic_events_are_bounded_and_filterable(booted) -> None:
+    result = booted.bridge.diagnostic_events(limit=5)
+
+    assert result["ok"] is True and result["integrity_valid"] is True
+    assert 1 <= len(result["events"]) <= 5
+    assert {"sequence", "component", "name", "level", "message"} <= set(result["events"][0])
+    assert booted.bridge.diagnostic_events(level="nope") == {
+        "ok": False,
+        "error": "Tanılama süzgeci geçersiz.",
+    }
+    assert len(booted.bridge.diagnostic_events(limit=10_000)["events"]) <= shell.MAX_DIAGNOSTIC_EVENTS
+
+
+def test_permission_audit_lists_engine_decisions(booted) -> None:
+    booted.app.tool_executor.execute("list_memories")
+
+    audit = booted.bridge.permission_audit(5)
+    assert audit["ok"] is True and audit["entries"]
+    entry = audit["entries"][0]
+    assert entry["tool"] == "list_memories"
+    assert entry["decision"] in {"allow", "confirm", "deny"}
+    assert entry["risk"] and entry["evaluated_at"]
+
+
+def test_set_paused_from_the_page(booted) -> None:
+    assert booted.bridge.set_paused(True) == {"ok": True, "paused": True}
+    assert booted.controller.paused is True
+    assert booted.window.payloads("paused")[-1] == {"paused": True, "status": "PAUSED"}
+    assert booted.bridge.submit_command("x")["ok"] is False
+
+    assert booted.bridge.set_paused(False) == {"ok": True, "paused": False}
+    assert booted.controller.paused is False
+
+    handled: list[bool] = []
+    booted.bridge._pause_handler = handled.append
+    assert booted.bridge.set_paused("yes") == {"ok": True, "paused": False}
+    assert handled == [False]
+
+
+def test_set_compact_resizes_and_pins_the_window(booted, monkeypatch) -> None:
+    calls: list[tuple] = []
+
+    class FakeNativeWindow(FakeWindow):
+        on_top = False
+
+        def restore(self) -> None:
+            calls.append(("restore",))
+
+        def resize(self, width, height) -> None:
+            calls.append(("resize", width, height))
+
+        def move(self, x, y) -> None:
+            calls.append(("move", x, y))
+
+        def maximize(self) -> None:
+            calls.append(("maximize",))
+
+    window = FakeNativeWindow()
+    booted.bridge._attach(window)
+    monkeypatch.setattr(shell, "_logical_screen_bounds", lambda: (0, 0, 1920, 1080))
+
+    assert booted.bridge.set_compact(True) == {"ok": True, "compact": True}
+    width, height = shell.COMPACT_WINDOW_SIZE
+    assert calls == [
+        ("restore",),
+        ("resize", width, height),
+        ("move", 1920 - width - shell.COMPACT_WINDOW_MARGIN,
+         1080 - height - shell.COMPACT_TASKBAR_ALLOWANCE),
+    ]
+    assert window.on_top is True
+    assert booted.bridge.boot()["compact"] is True
+
+    assert booted.bridge.set_compact(False) == {"ok": True, "compact": False}
+    assert calls[-1] == ("maximize",) and window.on_top is False
+
+    def explode(width, height) -> None:
+        raise RuntimeError("no window")
+
+    window.resize = explode
+    assert booted.bridge.set_compact(True) == {
+        "ok": False,
+        "error": "Pencere düzeni değiştirilemedi (RuntimeError).",
+    }
+    assert booted.bridge.boot()["compact"] is False
+
+
+def test_voice_levels_are_pushed_while_listening(booted) -> None:
+    class LevelVoice(FakeVoice):
+        def __init__(self) -> None:
+            super().__init__()
+            self.level_callback = None
+
+        async def run_continuous(self, **kwargs):
+            if self.level_callback is not None:
+                self.level_callback(0.4)
+                self.level_callback(0.9)  # inside the throttle window: dropped
+            return await super().run_continuous(**kwargs)
+
+    voice = LevelVoice()
+    booted.app.voice = voice
+
+    assert booted.bridge.start_voice() == {"ok": True}
+    wait_until(lambda: booted.window.payloads("voice_level") != [])
+    assert booted.window.payloads("voice_level")[0] == {"level": 0.4}
+    assert voice.level_callback is not None
+    assert booted.bridge.stop_voice() == {"ok": True}
+    wait_until(lambda: {"active": False, "error": None} in booted.window.payloads("voice_state"))
+    assert voice.level_callback is None
+
+
+def test_approval_payload_carries_source_and_tool_description(booted) -> None:
+    request = InteractiveApprovalRequest(
+        operation_id=uuid4(),
+        request_id=uuid4(),
+        conversation_id=uuid4(),
+        request_source="voice",
+        tool_name="list_memories",
+        operation="list_memories",
+        risk_level=RiskLevel.LOW,
+        reason="Hafıza listelenecek.",
+        parameters={},
+        expires_at=utc_now() + timedelta(seconds=30),
+    )
+    future = booted.controller.submit_background(
+        booted.bridge._request_approval(request), lambda f: None
+    )
+    wait_until(lambda: booted.window.payloads("approval") != [])
+    payload = booted.window.payloads("approval")[0]
+
+    assert payload["source"] == "voice"
+    assert payload["description"]
+    assert payload["parameters"] == {}
+    assert booted.bridge.resolve_approval(payload["token"], False) == {"ok": True}
+    assert future.result(timeout=5) is False
+
+
+def test_tray_voice_action_starts_the_session_and_reports_failures() -> None:
+    app = application()
+    controller = DesktopController(app)
+    bridge = shell.NovaBridge(controller, None)
+    window = FakeWindow()
+    bridge._attach(window)
+    bridge.boot()
+    notices: list[str] = []
+    try:
+        actions = shell.NovaTrayActions(
+            SimpleNamespace(show=lambda: None, hide=lambda: None, destroy=lambda: None, native=None),
+            bridge,
+            controller,
+        )
+        actions.service = SimpleNamespace(
+            set_window_visible=lambda visible: None,
+            notify=lambda title, text: notices.append(text),
+            set_paused=lambda paused: None,
+        )
+        actions.start_voice()
+        assert notices == ["Sesli iletişim ayarlanmamış."]
+        assert {"screen": "voice"} in window.payloads("navigate")
+
+        app.voice = FakeVoice()
+        actions.start_voice()
+        assert {"active": True, "error": None} in window.payloads("voice_state")
+        assert bridge.stop_voice() == {"ok": True}
+        wait_until(lambda: {"active": False, "error": None} in window.payloads("voice_state"))
+    finally:
+        bridge._shutdown()
+        controller.close()
+
+
+def test_logical_screen_bounds_fall_back_to_pywebview_screens(monkeypatch) -> None:
+    monkeypatch.setattr(shell.sys, "platform", "linux")
+    monkeypatch.setattr(
+        shell.webview,
+        "screens",
+        [SimpleNamespace(x=10, y=20, width=1536, height=864)],
+        raising=False,
+    )
+    assert shell._logical_screen_bounds() == (10, 20, 1536, 864)
+    monkeypatch.setattr(shell.webview, "screens", [], raising=False)
+    assert shell._logical_screen_bounds() is None

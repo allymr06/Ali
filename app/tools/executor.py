@@ -4,11 +4,13 @@ import asyncio
 import contextlib
 import inspect
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from dataclasses import dataclass
 from datetime import datetime
 from threading import RLock
 from typing import Any, get_type_hints
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.core.models import (
     RiskLevel,
@@ -30,6 +32,25 @@ from app.security.permissions import (
 from app.tools.base import RegisteredTool, ToolCallable
 from app.tools.contracts import ToolContract
 from app.tools.registry import ToolRegistry
+
+
+@dataclass(frozen=True, slots=True)
+class ToolExecutionEvent:
+    """One observation of a tool execution.
+
+    ``phase`` is ``"started"`` before permission evaluation and
+    ``"finished"`` with the final :class:`ToolResult`. Observers only
+    watch: they receive a copy of the outcome and cannot change it.
+    """
+
+    phase: str
+    execution_id: UUID
+    tool_name: str
+    operation: str | None
+    result: ToolResult | None = None
+
+
+ToolExecutionListener = Callable[[ToolExecutionEvent], None]
 
 
 class _AwaitableToolResult(ToolResult):
@@ -79,6 +100,38 @@ class ToolExecutor:
         self._execution_count_lock = RLock()
         self._consumed_approval_ids: dict[UUID, datetime | None] = {}
         self._approval_lock = RLock()
+        self._execution_listeners: list[ToolExecutionListener] = []
+        self._listener_lock = RLock()
+
+    def subscribe(self, listener: ToolExecutionListener) -> Callable[[], None]:
+        """Observe executions; returns a callable that unsubscribes.
+
+        Listeners run synchronously on the executing thread, so they
+        must be quick. A failing listener is ignored: observation can
+        never change or block a tool's outcome.
+        """
+        if not callable(listener):
+            raise TypeError("Execution listener must be callable.")
+        with self._listener_lock:
+            self._execution_listeners.append(listener)
+
+        def unsubscribe() -> None:
+            with self._listener_lock:
+                try:
+                    self._execution_listeners.remove(listener)
+                except ValueError:
+                    pass
+
+        return unsubscribe
+
+    def _notify(self, event: ToolExecutionEvent) -> None:
+        with self._listener_lock:
+            listeners = tuple(self._execution_listeners)
+        for listener in listeners:
+            try:
+                listener(event)
+            except Exception:
+                pass
 
     def register(
         self,
@@ -641,6 +694,40 @@ class ToolExecutor:
         permission_scope: PermissionScope | None,
         cancel_event: Any | None,
     ) -> ToolResult:
+        execution_id = uuid4()
+        self._notify(
+            ToolExecutionEvent("started", execution_id, name.strip(), operation)
+        )
+        result = self._execute_sync_guarded(
+            name,
+            *args,
+            operation=operation,
+            parameters=parameters,
+            confirmation_granted=confirmation_granted,
+            approval_grant=approval_grant,
+            approval_context=approval_context,
+            permission_scope=permission_scope,
+            cancel_event=cancel_event,
+        )
+        self._notify(
+            ToolExecutionEvent(
+                "finished", execution_id, result.tool_name, operation, result
+            )
+        )
+        return result
+
+    def _execute_sync_guarded(
+        self,
+        name: str,
+        *args: Any,
+        operation: str | None,
+        parameters: dict[str, Any] | None,
+        confirmation_granted: bool,
+        approval_grant: ApprovalGrant | None,
+        approval_context: ApprovalExecutionContext | None,
+        permission_scope: PermissionScope | None,
+        cancel_event: Any | None,
+    ) -> ToolResult:
         normalized_name = name.strip()
 
         try:
@@ -801,6 +888,40 @@ class ToolExecutor:
             self._release_execution_slot(definition)
 
     async def _execute_async(
+        self,
+        name: str,
+        *args: Any,
+        operation: str | None,
+        parameters: dict[str, Any] | None,
+        confirmation_granted: bool,
+        approval_grant: ApprovalGrant | None,
+        approval_context: ApprovalExecutionContext | None,
+        permission_scope: PermissionScope | None,
+        cancel_event: Any | None,
+    ) -> ToolResult:
+        execution_id = uuid4()
+        self._notify(
+            ToolExecutionEvent("started", execution_id, name.strip(), operation)
+        )
+        result = await self._execute_async_guarded(
+            name,
+            *args,
+            operation=operation,
+            parameters=parameters,
+            confirmation_granted=confirmation_granted,
+            approval_grant=approval_grant,
+            approval_context=approval_context,
+            permission_scope=permission_scope,
+            cancel_event=cancel_event,
+        )
+        self._notify(
+            ToolExecutionEvent(
+                "finished", execution_id, result.tool_name, operation, result
+            )
+        )
+        return result
+
+    async def _execute_async_guarded(
         self,
         name: str,
         *args: Any,

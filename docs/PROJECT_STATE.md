@@ -13,14 +13,92 @@ Last verified: 5 September 2026
   disabled by default), 5 September 2026
 - Completed feature milestone: Windows system tray with single-instance
   behaviour, 5 September 2026
+- Completed interface milestone: Nova cinematic interface redesign (design
+  system, presence-driven core, live execution timeline, command palette,
+  compact window, voice stage), 5 September 2026
 - Next action: the safe-filesystem extensions (atomic snapshot/undo,
   dry-run and bound approval for bulk targets, indexed search); code signing
   and a user-attended voice qualification remain release blockers
   (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1267 tests passing, 2 skipped (`scripts/verify.py`)
+- Automated verification: 1316 tests passing, 3 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Nova cinematic interface (5 September 2026)
+
+The Nova page was rebuilt as a design system rather than a single file:
+`web/css/tokens.css` (colour, surface, radius, glow, type, motion and z-index
+tokens), `base.css`, `shell.css`, `components.css`, `screens.css`, and eight
+scripts under `web/js/` (`foundation`, `bridge`, `presence`, `shell`,
+`conversation`, `activity`, `panels`, `main`). `shell.WEB_ASSETS` names every
+file, the PyInstaller spec collects the `web/` directory recursively, and the
+build script imports the list from the shell so the smoke report cannot drift.
+
+- **Presence.** One state machine (`presence.js`) decides what JARVIS is
+  doing — offline, idle, listening, understanding, thinking, tool, waiting for
+  permission, speaking, interrupted, paused, error — from the bridge status,
+  voice phases, live tool activity and open approvals. The topbar readout, the
+  captions, the tray-paused state and the core visualization all read it.
+- **JarvisCore.** An original canvas visualization: index ring, segmented arcs
+  with travelling highlights, inclined orbits with satellites, radial data
+  spokes that carry light while computing (biased toward the context panel
+  while a tool runs), an interference field driven by the real microphone
+  level while listening, and a breathing nucleus with a speech halo. It runs
+  at the monitor refresh rate, drops to 30 fps when calm, pauses when hidden,
+  and draws one frame under "Hareketi azalt".
+- **Real data only.** Tool activity is observed through
+  `ToolExecutor.subscribe` (started/finished with status, verification and
+  duration), live events through `DiagnosticsService.subscribe`, the
+  microphone level through `VoiceService.level_callback`. The diagnostics
+  screen shows real health checks, the metric registry, admission and provider
+  circuit figures, process memory/threads/uptime (CPU after the second
+  sample), runtime versions and the ledger tail; anything unmeasured is shown
+  as "kullanılamıyor". Boot lines report the actual subsystem state.
+- **Screens.** Command centre (greeting, core, quick command, quick actions,
+  recent activity, system rows), conversation (integrated JARVIS messages,
+  streaming, inline activity strip, assurance chips, stored-conversation list
+  with open/new/archive), tasks (step timelines), memory (grouped by type,
+  search, edit, forget, permanent delete with confirmation, privacy note),
+  voice (inline core, level bar, transcript; full-screen stage with phase
+  readout and captions), vision, research, automation (tools grouped by
+  source), trust (risk distribution, session approvals, the permission
+  engine's own audit trail), diagnostics, settings (connection, appearance,
+  read-only runtime configuration per subsystem, shortcuts).
+- **Interaction.** Command palette (Ctrl+K: screens, actions, real approved
+  applications, "JARVIS'e sor"), contextual drawer that opens itself during
+  execution and settles afterwards, collapsible rail, compact always-on-top
+  window (`set_compact`, geometry applied on the WinForms UI thread), in-page
+  pause/resume through the same path as the tray, tray "Sesli mod" entry.
+- **Honesty and safety.** The approval overlay offers only "Bir kez izin
+  ver" and "Reddet" — no blanket permission exists; it shows the tool in
+  Turkish, the raw tool name, the operation, the permission engine's reason,
+  the request source, the expected effect and the masked parameters. Secrets
+  never cross the bridge; runtime configuration is exported through an
+  explicit allow-list. Memory deletion needs `confirmed=True`. Observers are
+  read-only and cannot change a tool's outcome.
+
+Verified live on this host (source, Windows 11, 1920×1080 at 125 %): boot
+with real subsystem lines, every screen, palette navigation and application
+launch entries, a real Gemini command that requested permission for
+`launch_windows_application` (overlay shown with Turkish labels), the denial
+producing the reply plus the inline "Reddedildi" pill and the drawer timeline
+(İstek alındı → Anlaşılıyor → İzin istendi → Yanıt yazılıyor → Tamamlandı),
+compact mode entering at the bottom-right and expanding back, the
+diagnostics, memory and settings screens with live data, the tray menu
+showing `Sesli mod`, and `Çıkış` ending the process cleanly. Ctrl+M opened
+the voice stage with the real pipeline: the stage moved through
+`DİNLİYOR` and `KONUŞUYOR` as the microphone picked up ambient speech and
+JARVIS answered aloud, and Escape ended the session; a deliberate spoken
+exchange still needs a person at the microphone. The demo page (`?demo=1`)
+was used for task timelines, memory cards and the approval overlay in a
+browser. The frozen build was rebuilt after the redesign and its smoke
+report lists every page file as `nova_assets`.
+
+Known limitations: tool descriptions and a few permission reasons that the
+core registers in English are shown as-is when no Turkish mapping exists; the
+compact window assumes the primary monitor; "always allow" is intentionally
+absent.
 
 ## System tray and single instance (5 September 2026)
 
@@ -431,6 +509,8 @@ whichever source answers first.
   bulk operations, and no indexed search tool.
 - Python cannot forcibly stop an already-running synchronous worker thread.
   Timeout results explicitly report when side effects may continue.
+- The tray menu offers `Sesli mod`, which opens the voice screen and starts
+  the same session as the page's microphone button.
 - The tray icon exists for the Nova shell only; the classic Tk shell keeps
   the single-instance guard but has no icon. `Duraklat` does not stop
   reminders or the screen watcher.

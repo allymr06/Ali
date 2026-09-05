@@ -270,19 +270,47 @@ The Phase 17 regression coverage includes:
 - frozen and source asset resolution, explicit missing-asset errors, the
   per-user WebView2 profile location, exactly-once resource release on window
   close, and the `--classic` / import-fallback paths of `launch_desktop` and
-  the packaged entry point.
+  the packaged entry point;
+- (cinematic interface, 5 September 2026) runtime facts in `boot()` through
+  an allow-list with no secret field, tool executions pushed as activity,
+  diagnostic events pushed live with redaction intact, observers following a
+  runtime rebuild, the stored-conversation lifecycle (open, new, archive,
+  refusal while busy), memory search/update/forget/delete with the
+  confirmation flag, `system_status()` with measured health, metrics,
+  provider, admission and process figures, bounded and filterable
+  diagnostic events, the permission audit trail, in-page pause through the
+  tray path, compact-mode geometry (restore, resize, move, on-top,
+  maximize, failure reporting), throttled microphone levels, approval
+  payloads carrying the request source and tool description, and the tray
+  `Sesli mod` action reporting failures through the tray.
+
+`tests/test_tools_executor.py`, `tests/test_diagnostics_service.py` and
+`tests/test_voice_audio.py` cover the observation hooks the page relies on:
+executor observers on both execution paths (a failing observer never changes
+a result), diagnostics subscribers called after sealing, and the microphone
+level callback that never affects capture.
 
 `tests/test_nova_web.py` keeps the page honest without a browser harness: it
-parses `nova.js` with QuickJS (a syntax error fails the gate), checks that
-every `Bridge.*` call in JavaScript exists on `NovaBridge` with a compatible
-arity, that the demo bridge mirrors the Python API exactly, that lifecycle
-hooks are not exposed, that every Python push kind has a page handler, that
-demo mode is opt-in (`?demo=1`, never inside pywebview) and never a fallback,
-that the failure and confirmation UI exist, that deleting the key asks first,
-and that the stylesheet ignores the OS reduced-motion setting.
+parses every script under `web/js/` with QuickJS (a syntax error fails the
+gate), checks that the asset list matches the directory and the order in
+`index.html`, that every element id the scripts reference exists, that every
+`Bridge.*` and `call("…")` invocation exists on `NovaBridge` with a
+compatible arity, that the demo bridge mirrors the Python API exactly, that
+lifecycle hooks are not exposed, that every Python push kind has a page
+handler, that demo mode is opt-in (`?demo=1`, never inside pywebview) and
+never a fallback, that boot lines come from the real snapshot and unavailable
+metrics are labelled rather than invented, that the failure, confirmation,
+palette, voice-stage, compact and drawer UI exist, that deleting the key and
+deleting a memory ask first, that the approval overlay offers no blanket
+permission, that the palette and compact mode are wired, that design tokens
+live only in `tokens.css` and the motion vocabulary is shared, that the
+visible text is Turkish, and that the stylesheet ignores the OS reduced-motion
+setting.
 
-The packaging tests require the spec to bundle the three page files at
-`app/ui/nova/web` and the frozen smoke report to list them as `nova_assets`.
+The packaging tests require the spec to collect the `web/` directory
+recursively below `app/ui/nova/web` (recomputing the mapping for every asset
+in `shell.WEB_ASSETS`) and the frozen smoke report to list the sorted asset
+list as `nova_assets`.
 
 Run the focused set with:
 
@@ -301,6 +329,14 @@ effect, the connection test, the cancelled delete-key dialog, preference
 persistence across a restart, and a clean Alt+F4 exit, from source and from
 the frozen executable. A spoken voice turn still requires a person at the
 microphone.
+
+The cinematic interface was verified the same day from source: real boot
+lines, every screen, the command palette, a Gemini command whose
+`launch_windows_application` request produced the Turkish permission
+overlay, its denial rendered as an inline pill and a drawer timeline, compact
+mode in and out, and live diagnostics. Visual checks of the voice stage, task
+timelines, memory cards and the approval overlay used the labelled `?demo=1`
+page in a browser (`python -m http.server --directory app/ui/nova/web`).
 
 ## Plugin runtime regression coverage (5 September 2026)
 

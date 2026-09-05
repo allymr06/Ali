@@ -31,10 +31,14 @@ Implemented:
 - opt-in bounded web research with SearXNG-compatible search
 - SSRF-resistant IP-pinned retrieval, redirect revalidation, and download limits
 - source timestamps, content hashes, freshness, citation checks, and uncertainties
-- Nova desktop shell (pywebview/WebView2) with eleven live views, a
-  compositor-animated core, honest bridge-failure handling, conditional chat
-  auto-scroll, and documented keyboard shortcuts; the classic Tk shell stays
-  available behind `--classic`
+- Nova desktop shell (pywebview/WebView2): a cinematic command centre with a
+  state-driven intelligence core, an execution timeline and tool activity
+  observed live from the tool executor, a single-action permission overlay,
+  stored conversations, editable memory, live diagnostics (health checks,
+  bounded metrics, the event ledger), a command palette (Ctrl+K), a compact
+  always-on-top window, and an immersive voice stage; honest bridge-failure
+  handling and no simulated data; the classic Tk shell stays available
+  behind `--classic`
 - in-app Gemini model setup with connection testing and the API secret stored
   in Windows Credential Manager
 - sanitized structured diagnostics, tamper-evident events, bounded metrics, and
@@ -45,8 +49,9 @@ Implemented:
 
 - root-allowlisted filesystem tools with traversal and reparse-point defenses
 - Windows clipboard and window-listing controls under the permission engine
-- Windows system tray for the Nova shell (open, pause/resume, diagnostics,
-  settings, exit; close-to-tray) and one instance per user session
+- Windows system tray for the Nova shell (open, voice mode, pause/resume,
+  diagnostics, settings, exit; close-to-tray) and one instance per user
+  session
 - manifest-based plugin runtime (disabled by default; plugin tools go through
   the same executor, permission engine, and approvals; in-process, not
   sandboxed)

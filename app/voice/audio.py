@@ -6,6 +6,7 @@ import math
 import os
 import sys
 from array import array
+from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
@@ -24,6 +25,11 @@ from app.voice.models import (
     AudioEncoding,
     SynthesizedSpeech,
 )
+
+
+# RMS of 16-bit PCM that maps to a full-scale level indicator; ordinary
+# speech near a microphone sits between roughly 1000 and 8000.
+LEVEL_FULL_SCALE_RMS = 6000
 
 
 def pcm16_rms(data: bytes) -> int:
@@ -153,8 +159,23 @@ class SoundDeviceAudioInput(AudioInput):
         self.start_timeout_seconds = (
             start_timeout_seconds
         )
+        # Optional observer for the live input level (0.0-1.0), called
+        # once per captured chunk. Purely informational: it never
+        # influences voice activity detection.
+        self.level_callback: Callable[[float], None] | None = None
 
         self._module = module
+
+    def _report_level(self, energy: int) -> None:
+        callback = self.level_callback
+        if callback is None:
+            return
+        # Square root spreads quiet speech over the visible range.
+        level = min(1.0, energy / LEVEL_FULL_SCALE_RMS) ** 0.5
+        try:
+            callback(level)
+        except Exception:
+            pass
 
     def _sounddevice(self):
         if self._module is not None:
@@ -348,12 +369,20 @@ class SoundDeviceAudioInput(AudioInput):
 
                 frames_read += frames
 
-                if not self.vad_enabled:
+                if (
+                    not self.vad_enabled
+                    and self.level_callback is None
+                ):
                     continue
 
                 energy = pcm16_rms(
                     chunk
                 )
+
+                self._report_level(energy)
+
+                if not self.vad_enabled:
+                    continue
 
                 if (
                     energy

@@ -6,6 +6,7 @@ from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from threading import Thread
 from typing import Any
+from uuid import UUID
 
 from app.conversation.models import ConversationStatus, MessageRole
 from app.core.models import Context, Request, RequestSource
@@ -108,30 +109,91 @@ class DesktopController:
             ),
         )
 
-        self.context = Context(
-            conversation_id=(
-                conversation.conversation_id
-            )
-        )
+        self._load_conversation(conversation)
 
-        self.state.messages = [
+        return True
+
+    @staticmethod
+    def _visible_turns(conversation: Any) -> list[ChatMessage]:
+        return [
             ChatMessage(
                 turn.role.value,
                 turn.content,
                 metadata=dict(turn.metadata),
             )
-            for turn
-            in conversation.turns
-            if turn.role
-            in {
-                MessageRole.USER,
-                MessageRole.ASSISTANT,
-            }
+            for turn in conversation.turns
+            if turn.role in {MessageRole.USER, MessageRole.ASSISTANT}
             and turn.content
             and turn.content.strip()
         ]
 
-        return True
+    def _load_conversation(self, conversation: Any) -> None:
+        self.context = Context(
+            conversation_id=conversation.conversation_id
+        )
+        self.state.messages = self._visible_turns(conversation)
+        self.state.voice_messages = []
+
+    @staticmethod
+    def conversation_title(conversation: Any, limit: int = 80) -> str:
+        """The first thing the user said, or a neutral placeholder."""
+        for turn in conversation.turns:
+            if (
+                turn.role is MessageRole.USER
+                and turn.content
+                and turn.content.strip()
+            ):
+                text = " ".join(turn.content.split())
+                return text if len(text) <= limit else text[: limit - 1] + "…"
+        return "Yeni konuşma"
+
+    def list_conversations(self, limit: int = 50) -> list[dict[str, object]]:
+        """Stored conversations, newest first, with display metadata."""
+        conversations = sorted(
+            self.application.conversation_engine.list(),
+            key=lambda item: (item.updated_at, item.created_at),
+            reverse=True,
+        )
+        return [
+            {
+                "conversation_id": str(conversation.conversation_id),
+                "title": self.conversation_title(conversation),
+                "status": conversation.status.value,
+                "turn_count": len(self._visible_turns(conversation)),
+                "created_at": conversation.created_at.isoformat(),
+                "updated_at": conversation.updated_at.isoformat(),
+                "active": (
+                    conversation.conversation_id == self.context.conversation_id
+                ),
+            }
+            for conversation in conversations[: max(1, limit)]
+        ]
+
+    def open_conversation(self, conversation_id: str) -> list[ChatMessage]:
+        """Switch the shared context to a stored conversation."""
+        engine = self.application.conversation_engine
+        identifier = UUID(str(conversation_id))
+        conversation = engine.get(identifier)
+        if conversation.status is not ConversationStatus.ACTIVE:
+            conversation = engine.activate(identifier)
+        self._load_conversation(conversation)
+        return list(self.state.messages)
+
+    def start_new_conversation(self) -> str:
+        """Begin an empty conversation; it is stored on the first turn."""
+        self.context = Context()
+        self.state.messages = []
+        self.state.voice_messages = []
+        return str(self.context.conversation_id)
+
+    def archive_conversation(self, conversation_id: str) -> bool:
+        """Archive a conversation; returns whether it was the open one."""
+        identifier = UUID(str(conversation_id))
+        self.application.conversation_engine.archive(identifier)
+        if identifier == self.context.conversation_id:
+            self.start_new_conversation()
+            return True
+        return False
 
     def snapshot(self) -> RuntimeSnapshot:
         settings = self.application.settings

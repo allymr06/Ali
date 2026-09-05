@@ -123,3 +123,25 @@ async def test_core_records_sanitized_provider_failure(monkeypatch) -> None:
     assert failure.level is DiagnosticLevel.ERROR
     assert "sensitive" not in failure.message
     assert failure.attributes == {"error_type": "RuntimeError"}
+
+
+def test_diagnostics_service_notifies_subscribers_after_sealing_events() -> None:
+    service = DiagnosticsService()
+    seen = []
+
+    def broken(event) -> None:
+        raise RuntimeError("listener failure")
+
+    service.subscribe(broken)
+    unsubscribe = service.subscribe(seen.append)
+
+    event = service.record("ui", "test.event", "merhaba", attributes={"api_key": "x"})
+
+    assert seen == [event]
+    assert event.event_hash and event.attributes.get("api_key") != "x"
+    assert service.ledger.verify_integrity()
+    unsubscribe()
+    service.record("ui", "test.event", "again")
+    assert len(seen) == 1
+    with pytest.raises(TypeError):
+        service.subscribe(None)

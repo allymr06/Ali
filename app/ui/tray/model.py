@@ -1,11 +1,12 @@
 """Tray menu model and controller, independent of any GUI toolkit.
 
 The tray is an adapter, not an authority: every entry maps to an action the
-shell already offers. ``Duraklat`` is a user-interface gate (new commands,
-voice, vision, and research requests are refused and an active voice
-session is stopped); it is not a security control and does not touch the
-permission engine. ``Çıkış`` performs the same clean shutdown as closing
-the window normally.
+shell already offers. ``Sesli mod`` opens the window and starts the same
+voice session the page's microphone button starts. ``Duraklat`` is a
+user-interface gate (new commands, voice, vision, and research requests are
+refused and an active voice session is stopped); it is not a security
+control and does not touch the permission engine. ``Çıkış`` performs the
+same clean shutdown as closing the window normally.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ TOOLTIP_MAX_CHARACTERS = 63  # Shell_NotifyIcon limit
 
 class TrayItem(StrEnum):
     OPEN = "open"
+    VOICE = "voice"
     PAUSE = "pause"
     DIAGNOSTICS = "diagnostics"
     SETTINGS = "settings"
@@ -49,6 +51,8 @@ class TrayActions(Protocol):
 
     def open(self) -> None: ...
 
+    def start_voice(self) -> None: ...
+
     def set_paused(self, paused: bool) -> None: ...
 
     def show_screen(self, screen: str) -> None: ...
@@ -60,6 +64,7 @@ def build_menu(state: TrayState) -> tuple[TrayMenuEntry, ...]:
     """Turkish menu whose labels follow the current state."""
     return (
         TrayMenuEntry(TrayItem.OPEN, "Aç" if not state.window_visible else "Öne getir"),
+        TrayMenuEntry(TrayItem.VOICE, "Sesli mod", enabled=not state.paused),
         TrayMenuEntry(TrayItem.PAUSE, "Devam" if state.paused else "Duraklat"),
         TrayMenuEntry(TrayItem.DIAGNOSTICS, "Tanılama", separator_before=True),
         TrayMenuEntry(TrayItem.SETTINGS, "Ayarlar"),
@@ -128,6 +133,9 @@ class TrayController:
         try:
             if selected is TrayItem.OPEN:
                 self._actions.open()
+                self.state.window_visible = True
+            elif selected is TrayItem.VOICE:
+                self._actions.start_voice()
                 self.state.window_visible = True
             elif selected is TrayItem.PAUSE:
                 self.state.paused = not self.state.paused

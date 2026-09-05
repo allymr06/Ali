@@ -6,36 +6,35 @@
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;">
 <title>JARVIS</title>
-<link rel="stylesheet" href="nova.css">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/shell.css">
+<link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/screens.css">
 </head>
 <body>
 
-<canvas id="bg-canvas" aria-hidden="true"></canvas>
+<canvas id="ambient" aria-hidden="true"></canvas>
 <div id="vignette" aria-hidden="true"></div>
 
-<!-- ══════════════════ BOOT SEQUENCE ══════════════════ -->
+<!-- ══════════════════ BOOT ══════════════════ -->
 <div id="boot" role="status" aria-label="JARVIS başlatılıyor">
   <div class="boot-stack">
-    <svg class="boot-ring" viewBox="0 0 200 200" aria-hidden="true">
-      <circle class="ring-track" cx="100" cy="100" r="88"/>
-      <circle class="ring-draw"  cx="100" cy="100" r="88"/>
-      <circle class="ring-inner" cx="100" cy="100" r="62"/>
-      <circle class="ring-dot"   cx="100" cy="12"  r="3.5"/>
-    </svg>
+    <div class="boot-core-frame"><canvas id="boot-core" aria-hidden="true"></canvas></div>
     <div class="boot-title">J&thinsp;A&thinsp;R&thinsp;V&thinsp;I&thinsp;S</div>
-    <div class="boot-sub">NOVA KABUĞU</div>
+    <div class="boot-sub">Just A Rather Very Intelligent System</div>
     <div id="boot-log" aria-hidden="true"></div>
     <!-- Honest failure state: shown when the Python bridge never arrives.
          The shell behind it stays hidden; nothing is simulated. -->
     <div id="boot-error" hidden>
-      <div class="boot-error-title">ÇEKİRDEK KÖPRÜSÜ KURULAMADI</div>
+      <div class="boot-error-title">Çekirdek köprüsü kurulamadı</div>
       <p id="boot-error-text" class="boot-error-text"></p>
-      <button id="boot-retry" type="button" class="ghost-btn">YENİDEN DENE</button>
+      <button id="boot-retry" type="button" class="btn btn-ghost">Yeniden dene</button>
     </div>
   </div>
 </div>
 
-<!-- ══════════════════ APP SHELL ══════════════════ -->
+<!-- ══════════════════ APP ══════════════════ -->
 <div id="app" class="pre-boot">
 
   <header id="topbar">
@@ -46,25 +45,25 @@
         <circle cx="22" cy="22" r="4.5" class="bm-core"/>
         <line x1="22" y1="1.5" x2="22" y2="8" class="bm-tick"/>
       </svg>
-      <div class="brand-text">
-        <span class="brand-name">JARVIS</span>
-        <span class="brand-tag">NOVA&nbsp;KABUĞU</span>
-      </div>
+      <span class="brand-name">JARVIS</span>
     </div>
 
-    <div class="statusline">
-      <span id="status-orb" class="status-orb" data-mode="ready"></span>
-      <span id="status-text">YEREL ÇEKİRDEK HAZIR</span>
-      <span id="status-stream" class="status-stream" aria-hidden="true"></span>
+    <div class="presence" role="status" aria-live="polite">
+      <span id="presence-orb" class="presence-orb" data-state="offline"></span>
+      <span id="presence-label" class="presence-label">ÇEVRİMDIŞI</span>
+      <span id="presence-detail" class="presence-detail"></span>
     </div>
 
-    <div class="telemetry">
+    <div class="topbar-right">
       <!-- Only visible when the page was opened with ?demo=1 outside pywebview. -->
       <span id="demo-badge" class="demo-badge" hidden
-            title="Örnek veriler; çekirdek bağlı değil, hiçbir eylem gerçek değil">DEMO · ÇEKİRDEK YOK</span>
-      <div class="leds" id="capability-leds" title="Yetenek durumu"></div>
-      <div class="model-chip" id="model-chip">—</div>
-      <div class="clock">
+            title="Örnek veriler; çekirdek bağlı değil, hiçbir eylem gerçek değil">Demo · çekirdek yok</span>
+      <div id="system-chips" class="system-chips"></div>
+      <button id="pause-btn" class="top-btn" type="button" title="JARVIS'i duraklat"></button>
+      <button id="palette-btn" class="top-btn" type="button" title="Komut paleti (Ctrl+K)"></button>
+      <button id="context-btn" class="top-btn" type="button" title="Bağlam paneli (Ctrl+Shift+C)"></button>
+      <button id="compact-btn" class="top-btn" type="button" title="Kompakt mod"></button>
+      <div class="clock" aria-hidden="true">
         <span id="clock-time">--:--</span>
         <span id="clock-date">—</span>
       </div>
@@ -73,313 +72,429 @@
 
   <nav id="rail" aria-label="Ana gezinme">
     <div id="rail-indicator" aria-hidden="true"></div>
-    <!-- nav butonları nova.js tarafından kurulur -->
+    <div id="rail-items"></div>
+    <button id="rail-toggle" class="rail-toggle" type="button"></button>
   </nav>
 
   <main id="stage">
 
-    <!-- ── KOMUTA MERKEZİ ────────────────────────────── -->
+    <!-- ── KOMUTA MERKEZİ ──────────────────────────── -->
     <section class="screen" data-screen="home">
-      <div class="home-grid">
-        <div class="home-side stagger">
-          <div class="panel stat-card" data-stat="tasks">
-            <div class="stat-kicker">GÖREVLER</div>
-            <div class="stat-value" id="stat-tasks">0</div>
-            <div class="stat-note" id="stat-tasks-note">aktif kayıt yok</div>
+      <div class="home">
+        <div class="home-greeting">
+          <div id="home-greeting" class="greeting">İyi günler.</div>
+          <div id="home-subline" class="greeting-sub"></div>
+        </div>
+        <div class="home-side left">
+          <div class="home-block">
+            <div class="ctx-title"><span>Son etkinlik</span></div>
+            <div id="home-activity"></div>
           </div>
-          <div class="panel stat-card" data-stat="memory">
-            <div class="stat-kicker">HAFIZA</div>
-            <div class="stat-value" id="stat-memory">0</div>
-            <div class="stat-note">canlı anı düğümü</div>
-          </div>
-          <div class="panel stat-card" data-stat="tools">
-            <div class="stat-kicker">YETENEKLER</div>
-            <div class="stat-value" id="stat-tools">0<span class="stat-dim" id="stat-tools-total"></span></div>
-            <div class="stat-note">etkin araç sözleşmesi</div>
+          <div class="home-block">
+            <div class="ctx-title"><span>Oturum</span></div>
+            <div id="home-session"></div>
           </div>
         </div>
-
-        <div class="home-center">
-          <div class="core-frame">
-            <span class="corner tl"></span><span class="corner tr"></span>
-            <span class="corner bl"></span><span class="corner br"></span>
-            <canvas id="core-canvas"></canvas>
+        <div class="home-centre">
+          <div class="core-frame" id="home-core-frame" title="Sesli modu aç/kapat">
+            <canvas id="home-core"></canvas>
             <div class="core-caption">
-              <div id="core-state" class="core-state">ÇEVRİMİÇİ</div>
-              <div id="core-sub" class="core-sub">Gemini çekirdeği dinlemede</div>
+              <div id="core-state" class="core-state">ÇEVRİMDIŞI</div>
+              <div id="core-sub" class="core-sub"></div>
             </div>
           </div>
           <form id="quick-form" class="quick-command" autocomplete="off">
-            <span class="quick-glyph" aria-hidden="true">&#10095;</span>
+            <span class="quick-glyph" aria-hidden="true">›</span>
             <input id="quick-input" type="text" spellcheck="false"
                    placeholder="JARVIS'e bir komut ver…" aria-label="Hızlı komut">
-            <button type="submit" class="quick-send" aria-label="Gönder">
-              <svg viewBox="0 0 24 24"><path d="M3 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
+            <button type="submit" id="quick-send" class="send-btn" aria-label="Gönder"></button>
           </form>
+          <div id="quick-actions" class="quick-actions"></div>
         </div>
-
-        <div class="home-side stagger">
-          <div class="panel stat-card" data-stat="diag">
-            <div class="stat-kicker">TANILAMA</div>
-            <div class="stat-value" id="stat-diag">0</div>
-            <div class="stat-note" id="stat-diag-note">olay kaydı · bütünlük doğrulanıyor</div>
-          </div>
-          <div class="panel stat-card" data-stat="caps">
-            <div class="stat-kicker">DUYULAR</div>
-            <div class="cap-rows" id="cap-rows"></div>
-          </div>
-          <div class="panel stat-card" data-stat="session">
-            <div class="stat-kicker">OTURUM</div>
-            <div class="stat-value stat-small" id="stat-session">—</div>
-            <div class="stat-note">son konuşma sürdürülüyor</div>
+        <div class="home-side right">
+          <div class="home-block">
+            <div class="ctx-title"><span>Sistem</span></div>
+            <div id="home-system"></div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ── SOHBET ────────────────────────────────────── -->
+    <!-- ── SOHBET ──────────────────────────────────── -->
     <section class="screen" data-screen="chat">
       <div class="chat-layout">
-        <div id="chat-scroll" class="chat-scroll">
-          <div id="chat-list" class="chat-list"></div>
-        </div>
-        <!-- Appears only when new content arrived while the reader was
-             scrolled up; the view never jumps on its own in that case. -->
-        <button id="chat-jump" class="chat-jump" type="button" hidden>
-          &#9662; yeni mesaj
-        </button>
-        <form id="chat-form" class="composer" autocomplete="off">
-          <div class="composer-inner panel">
-            <textarea id="chat-input" rows="1" spellcheck="false"
-                      placeholder="Mesajını yaz…  (Enter gönderir, Shift+Enter satır ekler)"
-                      aria-label="Mesaj"></textarea>
-            <div class="composer-actions">
-              <button type="button" id="composer-voice" class="icon-btn" title="Sesli moda geç">
-                <svg viewBox="0 0 24 24"><path d="M12 3.5a3 3 0 0 1 3 3V12a3 3 0 0 1-6 0V6.5a3 3 0 0 1 3-3Z M5.5 11.5a6.5 6.5 0 0 0 13 0 M12 18v2.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-              </button>
-              <button type="submit" id="composer-send" class="send-btn" title="Gönder">
-                <svg viewBox="0 0 24 24"><path d="M4 12 20 4l-4.5 8L20 20 4 12Zm0 0h9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-            </div>
+        <aside id="conv-list" class="conv-list panel raised" hidden>
+          <div class="conv-head"><span class="kicker">Konuşmalar</span><button id="conv-new" class="btn btn-text" type="button">+ Yeni</button></div>
+          <div id="conv-items" class="conv-items"></div>
+          <div class="settings-note">Sağ tık: arşivle</div>
+        </aside>
+        <div class="chat-main">
+          <div class="chat-toolbar">
+            <button id="conv-toggle" class="btn btn-text" type="button">Konuşmalar</button>
+            <span id="chat-title" class="chat-title">Yeni konuşma</span>
+            <button id="chat-new" class="btn btn-text" type="button" title="Yeni konuşma (Ctrl+N)">+ Yeni</button>
           </div>
-        </form>
+          <div id="chat-scroll" class="chat-scroll">
+            <div id="chat-empty" class="chat-empty">
+              <div class="empty"><span class="empty-glyph"></span><span class="empty-title">Sistemler hazır</span><span>Bir şey yaz ya da mikrofona dokun. Yaptığım her adım burada, aramızda görünür.</span></div>
+            </div>
+            <div id="chat-list" class="chat-list"></div>
+          </div>
+          <!-- Appears only when new content arrived while the reader was
+               scrolled up; the view never jumps on its own in that case. -->
+          <button id="chat-jump" class="chat-jump" type="button" hidden>▾ yeni mesaj</button>
+          <form id="chat-form" class="composer" autocomplete="off">
+            <div class="composer-inner panel">
+              <textarea id="chat-input" rows="1" spellcheck="false"
+                        placeholder="Mesajını yaz…  (Enter gönderir, Shift+Enter satır ekler)"
+                        aria-label="Mesaj"></textarea>
+              <div class="composer-actions">
+                <button type="button" id="composer-voice" class="icon-btn" title="Sesli mod (Ctrl+M)"></button>
+                <button type="submit" id="composer-send" class="send-btn" title="Gönder"></button>
+              </div>
+            </div>
+          </form>
+        </div>
       </div>
     </section>
 
-    <!-- ── GÖREVLER ──────────────────────────────────── -->
+    <!-- ── GÖREVLER ────────────────────────────────── -->
     <section class="screen" data-screen="tasks">
       <div class="screen-head">
-        <div class="kicker">YÜRÜTME KATMANI</div>
+        <span class="kicker">Yürütme katmanı</span>
         <h1>Görevler</h1>
-        <p>Dayanıklı planlar, adımlar ve ilerleme. Kayıtlar çekirdekten canlı okunur.</p>
+        <p>Dayanıklı planlar ve adımları. Her kayıt çekirdekten canlı okunur; adım durumları gerçek yürütmeyi yansıtır.</p>
       </div>
-      <div id="tasks-list" class="card-grid stagger"></div>
+      <div id="tasks-list" class="task-list"></div>
     </section>
 
-    <!-- ── HAFIZA ────────────────────────────────────── -->
+    <!-- ── HAFIZA ──────────────────────────────────── -->
     <section class="screen" data-screen="memory">
       <div class="screen-head">
-        <div class="kicker">UZUN DÖNEM BELLEK</div>
-        <h1>Hafıza Ağı</h1>
-        <p>Kaynağı ve tazeliğiyle birlikte saklanan anı düğümleri.</p>
+        <span class="kicker">Uzun dönem bellek</span>
+        <h1>Hafıza</h1>
+        <p>JARVIS'in senin hakkında hatırladıkları: kaynağı, tazeliği ve güveniyle. İncele, düzelt, unuttur.</p>
       </div>
-      <div id="memory-list" class="card-grid stagger"></div>
+      <div class="memory-toolbar">
+        <label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l6 6"/></svg><input id="memory-search" type="text" placeholder="Hafızada ara…" spellcheck="false"></label>
+        <span id="memory-count" class="sys-label"></span>
+        <button id="memory-refresh" class="icon-btn small" type="button" title="Yenile"></button>
+      </div>
+      <div id="memory-groups" class="memory-groups"></div>
+      <div class="panel quiet memory-privacy">
+        <span class="kicker">Gizlilik</span>
+        <p id="memory-privacy-text"></p>
+      </div>
     </section>
 
-    <!-- ── SES ───────────────────────────────────────── -->
+    <!-- ── SES ─────────────────────────────────────── -->
     <section class="screen" data-screen="voice">
       <div class="voice-layout">
-        <div class="voice-stage">
-          <div class="core-frame voice-frame">
-            <span class="corner tl"></span><span class="corner tr"></span>
-            <span class="corner bl"></span><span class="corner br"></span>
-            <canvas id="voice-canvas"></canvas>
+        <div class="voice-stage-inline">
+          <div class="core-frame voice-frame" title="Sesli modu aç/kapat">
+            <canvas id="voice-screen-core"></canvas>
             <div class="core-caption">
-              <div id="voice-state" class="core-state">SESSİZ</div>
-              <div class="core-sub">Uyandırma sözcüğü: “Jarvis”</div>
+              <div id="voice-screen-state" class="core-state">SESSİZ</div>
+              <div id="voice-screen-sub" class="core-sub"></div>
             </div>
           </div>
-          <button id="voice-toggle" class="voice-btn" type="button">
-            <span class="voice-btn-label">SESLİ OTURUMU BAŞLAT</span>
-          </button>
+          <div id="voice-level" class="voice-level" aria-hidden="true"><i></i></div>
+          <button id="voice-toggle" class="btn btn-ghost" type="button"></button>
+          <div class="settings-note">Uyandırma sözcüğü: “Jarvis” · Konuşurken sözünü kesmek için çekirdeğe tıkla</div>
         </div>
         <div class="voice-transcript panel">
-          <div class="panel-title">CANLI DÖKÜM</div>
+          <div class="panel-title"><span class="kicker">Canlı döküm</span></div>
           <div id="voice-list" class="chat-list slim"></div>
         </div>
       </div>
     </section>
 
-    <!-- ── GÖRÜŞ ─────────────────────────────────────── -->
+    <!-- ── GÖRÜŞ ───────────────────────────────────── -->
     <section class="screen" data-screen="vision">
       <div class="screen-head">
-        <div class="kicker">EKRAN ALGISI</div>
+        <span class="kicker">Ekran algısı</span>
         <h1>Görüş</h1>
         <p>Onaya bağlı ekran yakalama; hassas bölgeler modele ulaşmadan maskelenir.</p>
       </div>
       <form id="vision-form" class="tool-form panel" autocomplete="off">
         <input id="vision-input" type="text" spellcheck="false"
                placeholder="Amaç — ör. “Bu penceredeki hatayı özetle”">
-        <button type="submit" class="action-btn">ANALİZ ET</button>
+        <button type="submit" id="vision-submit" class="btn btn-primary">Analiz et</button>
       </form>
       <div id="vision-result" class="result-panel panel" hidden></div>
     </section>
 
-    <!-- ── ARAŞTIRMA ─────────────────────────────────── -->
+    <!-- ── ARAŞTIRMA ───────────────────────────────── -->
     <section class="screen" data-screen="research">
       <div class="screen-head">
-        <div class="kicker">SINIRLI WEB ERİŞİMİ</div>
+        <span class="kicker">Sınırlı web erişimi</span>
         <h1>Araştırma</h1>
         <p>Kaynak damgalı, tazelik denetimli ve alıntı doğrulamalı raporlar.</p>
       </div>
       <form id="research-form" class="tool-form panel" autocomplete="off">
-        <input id="research-input" type="text" spellcheck="false"
-               placeholder="Araştırma sorgusu…">
+        <input id="research-input" type="text" spellcheck="false" placeholder="Araştırma sorgusu…">
         <select id="research-sources" aria-label="Kaynak sayısı">
           <option value="3">3 kaynak</option>
           <option value="5" selected>5 kaynak</option>
           <option value="8">8 kaynak</option>
         </select>
-        <button type="submit" class="action-btn">ARAŞTIR</button>
+        <button type="submit" id="research-submit" class="btn btn-primary">Araştır</button>
       </form>
       <div id="research-result" class="result-panel panel" hidden></div>
     </section>
 
-    <!-- ── YETENEKLER ────────────────────────────────── -->
+    <!-- ── OTOMASYON ───────────────────────────────── -->
     <section class="screen" data-screen="tools">
       <div class="screen-head">
-        <div class="kicker">ARAÇ SÖZLEŞMELERİ</div>
-        <h1>Yetenekler</h1>
-        <p>Sürümlü sözleşmeler, risk seviyeleri ve etkinlik durumu.</p>
+        <span class="kicker">Araç sözleşmeleri</span>
+        <h1>Otomasyon</h1>
+        <p>JARVIS'in kullanabildiği her yetenek: kaynağı, risk seviyesi ve etkinlik durumu. Yüksek riskli olanlar her seferinde iznini ister.</p>
       </div>
-      <div id="tools-list" class="card-grid stagger"></div>
+      <div id="tools-summary" class="tools-summary"></div>
+      <div id="tools-groups" class="tool-groups"></div>
     </section>
 
-    <!-- ── GÜVEN VE ERİŞİM ───────────────────────────── -->
+    <!-- ── GÜVEN ───────────────────────────────────── -->
     <section class="screen" data-screen="integrations">
       <div class="screen-head">
-        <div class="kicker">İZİN MOTORU</div>
-        <h1>Güven ve Erişim</h1>
-        <p>Kapsamlı, denetlenebilir izinler; eyleme bağlı ve değiştirilemez onaylar.</p>
+        <div class="head-row">
+          <h1>Güven ve erişim</h1>
+          <button id="trust-refresh" class="btn btn-ghost small" type="button"></button>
+        </div>
+        <p>İzin motorunun kararları: risk dağılımı, bu oturumdaki onayların ve motorun kendi denetim kaydı.</p>
       </div>
-      <div class="trust-grid stagger">
+      <div class="trust-grid">
         <div class="panel trust-card">
-          <div class="panel-title">RİSK DAĞILIMI</div>
+          <div class="panel-title"><span class="kicker">Risk dağılımı</span></div>
           <div id="risk-bars"></div>
         </div>
         <div class="panel trust-card">
-          <div class="panel-title">OTURUM ONAYLARI</div>
-          <div id="approval-log" class="approval-log">
-            <div class="empty-note">Bu oturumda onay istenmedi.</div>
-          </div>
+          <div class="panel-title"><span class="kicker">Oturum onayları</span></div>
+          <div id="approval-log"></div>
         </div>
         <div class="panel trust-card">
-          <div class="panel-title">İLKELER</div>
+          <div class="panel-title"><span class="kicker">İlkeler</span></div>
           <ul class="policy-list">
             <li>Her yüksek riskli eylem, tam parametreleriyle onayına sunulur.</li>
-            <li>Onaylar tek eyleme bağlıdır; genellenmez, süresi dolunca düşer.</li>
-            <li>Kimlik bilgileri yalnızca Windows Kimlik Yöneticisi'nde durur.</li>
+            <li>Onaylar tek eyleme bağlıdır; genellenmez, süresi dolunca reddedilmiş sayılır.</li>
+            <li>Kimlik bilgileri yalnızca Windows Kimlik Yöneticisi'nde durur; arayüzden geçmez.</li>
             <li>Ekran görüntülerinde hassas bölgeler geri döndürülemez şekilde silinir.</li>
           </ul>
         </div>
+        <div class="panel trust-card" style="grid-column: 1 / -1">
+          <div class="panel-title"><span class="kicker">İzin denetim kaydı</span></div>
+          <div id="audit-list" class="audit-list"></div>
+        </div>
       </div>
     </section>
 
-    <!-- ── TANILAMA ──────────────────────────────────── -->
+    <!-- ── TANILAMA ────────────────────────────────── -->
     <section class="screen" data-screen="diagnostics">
       <div class="screen-head">
-        <div class="kicker">SİSTEM SAĞLIĞI</div>
-        <h1>Tanılama</h1>
-        <p>Kurcalamaya karşı korumalı olay defteri ve bileşen sağlığı.</p>
+        <div class="head-row">
+          <h1>Tanılama</h1>
+          <span id="diag-head-note" class="sys-label"></span>
+          <button id="diag-refresh" class="btn btn-ghost small" type="button"></button>
+        </div>
+        <p>Canlı sağlık denetimleri, sınırlı ölçümler ve kurcalamaya karşı korumalı olay defteri. Ölçülemeyen değer “kullanılamıyor” olarak işaretlenir.</p>
       </div>
-      <div id="diag-grid" class="card-grid stagger"></div>
+      <div class="diag-toolbar"><span id="diag-observed" class="observed"></span></div>
+      <div class="diag-grid">
+        <div id="diag-health" class="panel diag-card span-6"></div>
+        <div id="diag-core" class="panel diag-card span-6"></div>
+        <div id="diag-process" class="panel diag-card span-6"></div>
+        <div id="diag-runtime" class="panel diag-card span-6"></div>
+        <div class="panel diag-card span-12">
+          <div class="panel-title">
+            <span class="kicker">Olay defteri · canlı</span>
+            <span class="diag-toolbar">
+              <span id="diag-events-count" class="sys-label"></span>
+              <select id="diag-level" class="input" style="padding:.3rem .6rem;font-size:var(--text-xs)" aria-label="Seviye süzgeci">
+                <option value="">tüm seviyeler</option>
+                <option value="info">bilgi</option>
+                <option value="warning">uyarı</option>
+                <option value="error">hata</option>
+                <option value="critical">kritik</option>
+                <option value="debug">ayrıntı</option>
+              </select>
+            </span>
+          </div>
+          <div id="diag-events" class="event-list"></div>
+        </div>
+      </div>
     </section>
 
-    <!-- ── AYARLAR ───────────────────────────────────── -->
+    <!-- ── AYARLAR ─────────────────────────────────── -->
     <section class="screen" data-screen="settings">
       <div class="screen-head">
-        <div class="kicker">YAPILANDIRMA</div>
+        <span class="kicker">Yapılandırma</span>
         <h1>Ayarlar</h1>
-        <p>Model bağlantısı ve arayüz davranışı.</p>
+        <p>Model bağlantısı ve arayüz davranışı burada değişir; alt sistem yapılandırması ortam değişkenlerinden okunur ve olduğu gibi gösterilir.</p>
       </div>
-      <div class="settings-grid stagger">
-        <form id="settings-form" class="panel settings-card" autocomplete="off">
-          <div class="panel-title">GEMINI BAĞLANTISI</div>
-          <label class="field">
-            <span>Model</span>
-            <input id="settings-model" type="text" spellcheck="false" placeholder="gemini-2.5-pro">
-          </label>
-          <label class="field">
-            <span>API Anahtarı</span>
-            <input id="settings-key" type="password"
-                   placeholder="Kayıtlıysa boş bırakabilirsin">
-          </label>
-          <div id="settings-status" class="settings-status" role="status"></div>
-          <div class="btn-row">
-            <button type="button" id="settings-test" class="ghost-btn">BAĞLANTIYI SINA</button>
-            <button type="submit" class="action-btn">KAYDET</button>
+      <div class="settings-layout">
+        <nav id="settings-nav" class="settings-nav" aria-label="Ayar bölümleri">
+          <button class="tab active" type="button" data-target="connection">Bağlantı</button>
+          <button class="tab" type="button" data-target="appearance">Görünüm</button>
+          <button class="tab" type="button" data-target="voice">Ses</button>
+          <button class="tab" type="button" data-target="vision">Görüş ve web</button>
+          <button class="tab" type="button" data-target="memory">Hafıza</button>
+          <button class="tab" type="button" data-target="models">Modeller</button>
+          <button class="tab" type="button" data-target="system">Sistem</button>
+          <button class="tab" type="button" data-target="shortcuts">Kısayollar</button>
+        </nav>
+        <div class="settings-panels">
+          <div id="settings-connection" class="panel settings-card">
+            <form id="settings-form" autocomplete="off" style="display:flex;flex-direction:column;gap:.9rem">
+              <div class="panel-title"><span class="kicker">Gemini bağlantısı</span><span id="settings-key-state"></span></div>
+              <label class="field">
+                <span>Model</span>
+                <input id="settings-model" class="mono" type="text" spellcheck="false" placeholder="gemini-2.5-pro">
+              </label>
+              <label class="field">
+                <span>API anahtarı</span>
+                <input id="settings-key" class="mono" type="password" placeholder="Kayıtlıysa boş bırakabilirsin">
+              </label>
+              <div id="settings-status" class="settings-status" role="status"></div>
+              <div class="btn-row">
+                <button type="button" id="settings-test" class="btn btn-ghost">Bağlantıyı sına</button>
+                <button type="submit" class="btn btn-primary">Kaydet</button>
+              </div>
+              <button type="button" id="settings-delete" class="danger-link">API anahtarını sil ve deneme moduna dön</button>
+            </form>
           </div>
-          <button type="button" id="settings-delete" class="danger-link">
-            API anahtarını sil ve deneme moduna dön
-          </button>
-        </form>
-        <div class="panel settings-card">
-          <div class="panel-title">ARAYÜZ</div>
-          <label class="switch-row">
-            <span>Hareketi azalt<small>Animasyonları ve çekirdek sahnesini sadeleştirir</small></span>
-            <input type="checkbox" id="settings-motion" class="switch">
-          </label>
-          <div class="shortcut-table" id="shortcut-table"></div>
+          <div id="settings-appearance" class="panel settings-card">
+            <div class="panel-title"><span class="kicker">Görünüm</span></div>
+            <label class="switch-row"><span>Hareketi azalt<small>Animasyonları durdurur; çekirdek tek karede kalır. İşletim sistemi ayarından bağımsızdır.</small></span><input type="checkbox" id="settings-motion" class="switch"></label>
+            <label class="switch-row"><span>Ortam parçacıkları<small>Arka plandaki sakin toz katmanı. Kapatınca yalnızca ışık geçişleri kalır.</small></span><input type="checkbox" id="settings-ambient" class="switch"></label>
+            <label class="switch-row"><span>Açık tema<small>Gündüz için aynı sistem. Koyu tema birincil tasarımdır.</small></span><input type="checkbox" id="settings-theme" class="switch"></label>
+          </div>
+          <div id="settings-voice" class="panel settings-card">
+            <div class="panel-title"><span class="kicker">Ses</span><span class="chip">salt okunur</span></div>
+            <div id="config-voice"></div>
+            <div class="settings-note">Bu değerler ortam değişkenlerinden okunur; değiştirmek için ilgili değişkeni ayarlayıp JARVIS'i yeniden başlat.</div>
+          </div>
+          <div id="settings-vision" class="panel settings-card">
+            <div class="panel-title"><span class="kicker">Görüş ve web</span><span class="chip">salt okunur</span></div>
+            <div id="config-vision"></div>
+          </div>
+          <div id="settings-memory" class="panel settings-card">
+            <div class="panel-title"><span class="kicker">Hafıza</span><span class="chip">salt okunur</span></div>
+            <div id="config-memory"></div>
+          </div>
+          <div id="settings-models" class="panel settings-card">
+            <div class="panel-title"><span class="kicker">Modeller</span><span class="chip">salt okunur</span></div>
+            <div id="config-models"></div>
+          </div>
+          <div id="settings-system" class="panel settings-card">
+            <div class="panel-title"><span class="kicker">Sistem</span><span class="chip">salt okunur</span></div>
+            <div id="config-system"></div>
+          </div>
+          <div id="settings-shortcuts" class="panel settings-card">
+            <div class="panel-title"><span class="kicker">Kısayollar</span></div>
+            <div class="shortcut-table" id="shortcut-table"></div>
+          </div>
         </div>
       </div>
     </section>
 
   </main>
+
+  <aside id="context" class="context" aria-label="Bağlam paneli">
+    <div class="context-head"><span class="kicker">Bağlam</span><button id="context-close" class="icon-btn small" type="button" title="Kapat"></button></div>
+    <div id="context-body" class="context-body">
+      <section id="ctx-activity" class="ctx-section"><div class="ctx-title"><span>Yürütme</span></div><div id="ctx-timeline"></div></section>
+      <section id="ctx-task" class="ctx-section" hidden><div class="ctx-title"><span>Aktif görev</span></div><div id="ctx-task-body"></div></section>
+      <section id="ctx-system" class="ctx-section"><div class="ctx-title"><span>Sistem</span></div><div id="ctx-system-body"></div></section>
+      <section id="ctx-memory" class="ctx-section"><div class="ctx-title"><span>Hafıza bağlamı</span></div><div id="ctx-memory-body"></div></section>
+    </div>
+  </aside>
 </div>
 
-<!-- ══════════════════ SESLİ BAĞLANTI HUD ══════════════════ -->
-<div id="voice-hud" hidden>
-  <canvas id="voice-hud-stars" aria-hidden="true"></canvas>
-  <div class="hud-core-frame"><canvas id="voice-hud-core"></canvas></div>
+<!-- ══════════════════ KOMPAKT (mini JARVIS) ══════════════════ -->
+<div id="mini" hidden>
+  <div class="mini-core"><canvas id="mini-canvas"></canvas></div>
+  <div class="mini-body">
+    <div class="mini-state"><span id="mini-orb" class="presence-orb" data-state="idle"></span><span id="mini-label">HAZIR</span></div>
+    <div id="mini-line" class="mini-line"></div>
+    <form id="mini-form" class="mini-form" autocomplete="off"><input id="mini-input" type="text" placeholder="Komut…" aria-label="Komut" spellcheck="false"></form>
+  </div>
+  <div class="mini-actions">
+    <button id="mini-mic" class="icon-btn" type="button" title="Sesli mod"></button>
+    <button id="mini-expand" class="icon-btn" type="button" title="Tam görünüm (Esc)"></button>
+  </div>
 </div>
 
-<!-- ══════════════════ ONAY MODALI (araç onayı — izin motoru) ══════════════════ -->
-<div id="approval" class="modal-veil" hidden>
-  <div class="modal panel" role="alertdialog" aria-modal="true" aria-labelledby="approval-title">
+<!-- ══════════════════ SESLİ MOD ══════════════════ -->
+<div id="voice-stage" hidden>
+  <canvas id="voice-ambient" aria-hidden="true"></canvas>
+  <div class="voice-core-frame"><canvas id="voice-core"></canvas></div>
+  <div class="voice-readout"><div id="voice-phase" class="voice-phase">DİNLİYOR</div><div id="voice-hint" class="voice-hint"></div></div>
+  <div id="voice-captions" class="voice-captions" aria-live="polite"></div>
+  <button id="voice-close" class="voice-close" type="button" title="Sesli modu bitir (Esc)">×</button>
+</div>
+
+<!-- ══════════════════ ONAY (izin motoru — tek eylem, tek jeton) ══════════════════ -->
+<div id="approval" class="veil" hidden>
+  <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="approval-title">
     <div class="modal-head">
-      <span id="approval-risk" class="risk-chip">YÜKSEK</span>
-      <span id="approval-title">Eylem onayı gerekiyor</span>
+      <span id="approval-risk" class="chip risk-chip high">RİSK · YÜKSEK</span>
+      <span id="approval-title" class="modal-title">JARVIS bir eylem için izin istiyor</span>
     </div>
     <div class="modal-body">
-      <div class="approval-op"><span id="approval-tool">araç</span> · <span id="approval-operation">işlem</span></div>
-      <p id="approval-reason" class="approval-reason"></p>
-      <div id="approval-params" class="approval-params"></div>
+      <div class="approval-tool"><span id="approval-tool-label" class="tool-label">araç</span><span id="approval-tool-raw" class="tool-raw"></span></div>
+      <dl class="approval-grid">
+        <div class="pair"><dt>İşlem</dt><dd id="approval-operation"></dd></div>
+        <div class="pair"><dt>Neden</dt><dd id="approval-reason"></dd></div>
+        <div class="pair"><dt>Kaynak</dt><dd id="approval-source"></dd></div>
+        <div class="pair"><dt>Etki</dt><dd id="approval-effect"></dd></div>
+      </dl>
+      <details id="approval-details" class="disclosure">
+        <summary>Tam parametreler</summary>
+        <div id="approval-params" class="approval-params disclosure-body"></div>
+      </details>
+      <div class="modal-note">İzin yalnızca bu eylem için geçerlidir; genellenmez. Süre dolarsa istek reddedilmiş sayılır.</div>
     </div>
     <div class="modal-timer"><div id="approval-timer-bar"></div></div>
     <div class="modal-actions">
-      <button id="approval-deny" class="ghost-btn" type="button">REDDET</button>
-      <button id="approval-allow" class="action-btn" type="button">ONAYLA</button>
+      <button id="approval-deny" class="btn btn-ghost" type="button">Reddet</button>
+      <button id="approval-allow" class="btn btn-primary" type="button">Bir kez izin ver</button>
     </div>
   </div>
 </div>
 
-<!-- ══════════════════ DOĞRULAMA PENCERESİ (arayüz içi; araç onayından bağımsız) ══════════════════ -->
-<div id="confirm" class="modal-veil" hidden>
-  <div class="modal panel confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
-    <div class="modal-head"><span id="confirm-title">Emin misin?</span></div>
-    <div class="modal-body">
-      <p id="confirm-text" class="approval-reason"></p>
-    </div>
+<!-- ══════════════════ DOĞRULAMA (arayüz içi; araç onayından bağımsız) ══════════════════ -->
+<div id="confirm" class="veil" hidden>
+  <div class="modal confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+    <div class="modal-head"><span id="confirm-title" class="modal-title">Emin misin?</span></div>
+    <div class="modal-body"><p id="confirm-text" class="approval-reason"></p></div>
     <div class="modal-actions">
-      <button id="confirm-cancel" class="ghost-btn" type="button">VAZGEÇ</button>
-      <button id="confirm-ok" class="action-btn" type="button">ONAYLA</button>
+      <button id="confirm-cancel" class="btn btn-ghost" type="button">Vazgeç</button>
+      <button id="confirm-ok" class="btn btn-primary" type="button">Onayla</button>
     </div>
+  </div>
+</div>
+
+<!-- ══════════════════ KOMUT PALETİ ══════════════════ -->
+<div id="palette" class="veil palette-veil" hidden>
+  <div class="palette" role="dialog" aria-label="Komut paleti">
+    <div class="palette-input">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l6 6"/></svg>
+      <input id="palette-input" type="text" placeholder="Komut ara ya da JARVIS'e sor…" aria-label="Komut" spellcheck="false" autocomplete="off">
+    </div>
+    <div id="palette-list" class="palette-list" role="listbox"></div>
+    <div class="palette-foot"><span>↑ ↓ gez</span><span>Enter çalıştır</span><span>Esc kapat</span></div>
   </div>
 </div>
 
 <div id="toasts" aria-live="polite"></div>
 
-<script src="nova.js"></script>
+<script src="js/foundation.js"></script>
+<script src="js/bridge.js"></script>
+<script src="js/presence.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/conversation.js"></script>
+<script src="js/activity.js"></script>
+<script src="js/panels.js"></script>
+<script src="js/main.js"></script>
 </body>
 </html>

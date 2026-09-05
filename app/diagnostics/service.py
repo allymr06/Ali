@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from threading import RLock
 
 from app.core.models import ToolDefinition, ToolExecutionStatus, ToolResult
 from app.diagnostics.health import HealthCheck, HealthRegistry
@@ -15,6 +17,33 @@ class DiagnosticsService:
     ledger: DiagnosticLedger = field(default_factory=DiagnosticLedger)
     metrics: MetricRegistry = field(default_factory=MetricRegistry)
     health: HealthRegistry = field(default_factory=HealthRegistry)
+    _listeners: list[Callable[[DiagnosticEvent], None]] = field(
+        default_factory=list, repr=False
+    )
+    _listener_lock: RLock = field(default_factory=RLock, repr=False)
+
+    def subscribe(
+        self, listener: Callable[[DiagnosticEvent], None]
+    ) -> Callable[[], None]:
+        """Receive every recorded event; returns an unsubscribe callable.
+
+        Listeners are called after the event is sealed in the ledger,
+        on the recording thread, and a failing listener is ignored so
+        observation can never break the component that is reporting.
+        """
+        if not callable(listener):
+            raise TypeError("Diagnostic listener must be callable.")
+        with self._listener_lock:
+            self._listeners.append(listener)
+
+        def unsubscribe() -> None:
+            with self._listener_lock:
+                try:
+                    self._listeners.remove(listener)
+                except ValueError:
+                    pass
+
+        return unsubscribe
 
     def record(
         self,
@@ -35,6 +64,13 @@ class DiagnosticsService:
             trace_id=trace_id,
         )
         self.metrics.increment(f"events.{level.value}")
+        with self._listener_lock:
+            listeners = tuple(self._listeners)
+        for listener in listeners:
+            try:
+                listener(event)
+            except Exception:
+                pass
         return event
 
     def register_health_check(

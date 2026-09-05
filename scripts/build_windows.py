@@ -14,10 +14,13 @@ from typing import Iterable, Sequence
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 VERSION = "0.1.0"
 PRODUCT = "JARVIS"
-# The Nova shell page; the frozen smoke test must find every file.
-NOVA_WEB_ASSETS = ("index.html", "nova.css", "nova.js")
+# The Nova shell page; the frozen smoke test must find every file. The
+# list lives with the shell so the two can never drift apart.
+from app.ui.nova.shell import WEB_ASSETS as NOVA_WEB_ASSETS  # noqa: E402
 
 
 def _inside_project(path: Path) -> Path:
@@ -102,7 +105,7 @@ def verify_smoke_report(
         "frozen": True,
         "health": "healthy",
         "screens": 11,
-        "nova_assets": list(NOVA_WEB_ASSETS),
+        "nova_assets": sorted(NOVA_WEB_ASSETS),
     }
     mismatches = {
         key: (report.get(key), expected)

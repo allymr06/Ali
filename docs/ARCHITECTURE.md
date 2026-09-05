@@ -143,6 +143,12 @@ filters fail closed and expose no tools. Tool-specific retries can only be
 declared for idempotent tools, and the shared execution service continues to
 count every attempt against the execution budget.
 
+`ToolExecutor.subscribe` registers read-only execution observers: each call
+emits a `started` event before permission evaluation and a `finished` event
+carrying the final `ToolResult`. Observers run synchronously, cannot change
+the outcome, and a failing observer is ignored. The Nova shell uses this to
+show live tool activity.
+
 ## Permission and approval engine
 
 Phase 6 centralizes permission decisions in `PermissionEngine`. A validated
@@ -364,10 +370,22 @@ returns a small `{ok, error?}` dictionary immediately, and long-running work is
 submitted to the controller's runner. Results flow back through
 `window.evaluate_js("window.NOVA.push({kind, payload})")` after `_jsonable`
 serialization, so the page only ever renders data the core produced: snapshot,
-reply, stream, busy, voice_message, voice_phase, voice_state, vision_result,
-research_result, approval, and approval_closed. All motion (starfield, arc
-core, HUD) runs on the browser compositor at the monitor refresh rate and the
-canvases scale with `devicePixelRatio`.
+reply, stream, busy, voice_message, voice_phase, voice_state, voice_level,
+vision_result, research_result, approval, approval_closed, tool_activity,
+diagnostic_event, navigate, and paused. The bridge subscribes, read-only, to
+the tool executor (every execution start and outcome), to the diagnostics
+ledger (every sealed event) and to the microphone level, and re-subscribes
+when a settings save replaces the runtime. Since the 5 September 2026
+redesign the page is a small design system — `web/css/` tokens, base, shell,
+components and screens; `web/js/` foundation (vocabulary, state, motion
+primitives), bridge (API and push channel), presence (the state machine and
+the `JarvisCore` visualization), shell (rail, drawer, palette, compact mode,
+boot), conversation, activity (execution timeline and the approval overlay),
+panels and main. All motion runs on the browser compositor at the monitor
+refresh rate, throttles when calm and pauses when hidden; canvases scale
+with `devicePixelRatio`. Window geometry changes for the compact mode are
+marshalled onto the WinForms UI thread because pywebview applies them on
+the calling thread.
 
 Nova's honesty rules: the page waits for the real bridge and shows an explicit
 failure screen if it never arrives; the demo bridge is reachable only with
@@ -379,8 +397,8 @@ frozen build or from the source tree otherwise, and the WebView2 profile lives
 in `%LOCALAPPDATA%\JARVIS\webview` so theme and motion preferences persist.
 
 **System tray** (`app/ui/tray/`, 5 September 2026). A toolkit-independent
-menu model and controller (`Aç`/`Öne getir`, `Duraklat`/`Devam`, `Tanılama`,
-`Ayarlar`, `Çıkış`) drive a WinForms `NotifyIcon` that lives on its own STA
+menu model and controller (`Aç`/`Öne getir`, `Sesli mod`, `Duraklat`/`Devam`,
+`Tanılama`, `Ayarlar`, `Çıkış`) drive a WinForms `NotifyIcon` that lives on its own STA
 thread with its own message loop; pythonnet is already loaded by pywebview,
 so no dependency was added. With the tray enabled, closing the Nova window
 hides it to the notification area (a one-time balloon says so) and `Çıkış`
@@ -421,7 +439,9 @@ counters, gauges, and duration summaries. `HealthRegistry` runs synchronous and
 asynchronous checks concurrently under individual timeouts, converts exceptions
 to stable failure messages, and reports one observed timestamp and latency per
 component. Three read-only tools expose live health, sanitized events, and
-metrics without granting mutation authority.
+metrics without granting mutation authority. `DiagnosticsService.subscribe`
+delivers every sealed event to read-only listeners after it is in the
+ledger, so the desktop can show the tail live without polling.
 
 ## Performance and reliability
 
@@ -458,8 +478,9 @@ installer when ISCC is available, and records hashes and signing status. An
 explicit environment-limited switch records a failed native-render result; it
 cannot convert that evidence into a production qualification.
 
-Since 5 September 2026 the spec also bundles Nova's `index.html`, `nova.css`,
-and `nova.js` below `_internal/app/ui/nova/web`, and the frozen smoke test
-imports `app.ui.nova.shell` and lists the files it finds as `nova_assets`; the
-build fails unless all three are present. `JARVIS.exe --classic` opens the Tk
+Since 5 September 2026 the spec also bundles every file below Nova's `web/`
+directory (`index.html`, `css/`, `js/`) below `_internal/app/ui/nova/web`,
+and the frozen smoke test imports `app.ui.nova.shell` and lists the files it
+finds as `nova_assets`; the build fails unless every file in
+`shell.WEB_ASSETS` is present. `JARVIS.exe --classic` opens the Tk
 shell from the same package.

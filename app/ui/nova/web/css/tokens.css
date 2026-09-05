@@ -1,0 +1,141 @@
+/* ════════════════════════════════════════════════════════════════════
+   JARVIS · NOVA — design tokens
+   Every colour, surface, radius, shadow, glow, type and motion value the
+   interface uses. Components never hardcode these.
+   ════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── ground: carbon with a cold blue cast, never flat black ── */
+  --bg:            #05080f;
+  --bg-2:          #080d17;
+  --bg-3:          #0b1220;
+
+  /* ── layered translucent surfaces (importance rises with the number) ── */
+  --surface-1:     rgba(12, 19, 32, 0.50);
+  --surface-2:     rgba(14, 22, 38, 0.70);
+  --surface-3:     rgba(18, 28, 46, 0.86);
+  --surface-solid: #0c1424;
+
+  /* ── hairlines ── */
+  --line-1:        rgba(150, 205, 235, 0.09);
+  --line-2:        rgba(150, 205, 235, 0.18);
+  --line-3:        rgba(150, 205, 235, 0.34);
+
+  /* ── ink ── */
+  --ink-1:         #e9f2f8;
+  --ink-2:         #a9bccb;
+  --ink-3:         #6f8597;
+  --ink-4:         #43566a;
+
+  /* ── the one intelligence colour, plus restrained semantics ── */
+  --accent:        #8ee0ff;
+  --accent-2:      #4cc3ea;
+  --accent-3:      #1b7ba0;
+  --accent-rgb:    142, 224, 255;
+  --ok:            #7fe0b2;
+  --ok-rgb:        127, 224, 178;
+  --warn:          #f0c68a;
+  --warn-rgb:      240, 198, 138;
+  --bad:           #ff9e9e;
+  --bad-rgb:       255, 158, 158;
+  --violet:        #b8a8ff;
+  --violet-rgb:    184, 168, 255;
+  --on-accent:     #03131c;
+
+  /* ── depth ── */
+  --glow-1:        0 0 12px rgba(var(--accent-rgb), 0.22);
+  --glow-2:        0 0 28px rgba(var(--accent-rgb), 0.20);
+  --shadow-1:      0 6px 20px rgba(0, 0, 0, 0.32);
+  --shadow-2:      0 18px 48px rgba(0, 0, 0, 0.46);
+  --inset-light:   inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  /* ── shape ── */
+  --radius-1:      6px;
+  --radius-2:      10px;
+  --radius-3:      16px;
+  --radius-pill:   999px;
+
+  /* ── rhythm ── */
+  --space-1:       0.25rem;
+  --space-2:       0.5rem;
+  --space-3:       0.75rem;
+  --space-4:       1rem;
+  --space-5:       1.5rem;
+  --space-6:       2rem;
+  --space-7:       2.5rem;
+  --space-8:       3.5rem;
+
+  /* ── type ── */
+  --font-ui:       "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-display:  "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --font-system:   "Bahnschrift", "Segoe UI Variable Small", "Segoe UI", sans-serif;
+  --font-mono:     "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+  --text-xs:       0.66rem;
+  --text-sm:       0.78rem;
+  --text-md:       0.9rem;
+  --text-lg:       1.05rem;
+  --text-xl:       1.55rem;
+  --text-2xl:      2.1rem;
+  --track-wide:    0.32em;
+  --track-mid:     0.16em;
+  --track-tight:   0.04em;
+
+  /* ── motion: one physical vocabulary for the whole interface ── */
+  --motion-fast:      120ms;
+  --motion-normal:    200ms;
+  --motion-panel:     300ms;
+  --motion-cinematic: 620ms;
+  --ease-standard:    cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter:       cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit:        cubic-bezier(0.4, 0, 1, 1);
+
+  /* ── stacking ── */
+  --z-ambient:     0;
+  --z-app:         2;
+  --z-context:     5;
+  --z-mini:        30;
+  --z-voice:       40;
+  --z-veil:        50;
+  --z-boot:        60;
+  --z-toast:       70;
+
+  /* ── layout ── */
+  --rail-w:            14.5rem;
+  --rail-w-collapsed:  4.25rem;
+  --top-h:             3.6rem;
+  --context-w:         21rem;
+  --stage-pad:         2rem;
+}
+
+/* Light theme: the same system under daylight. Kept restrained; the
+   dark theme is the primary design. */
+body.light {
+  --bg:            #e6edf3;
+  --bg-2:          #eef3f7;
+  --bg-3:          #f6f9fb;
+  --surface-1:     rgba(255, 255, 255, 0.55);
+  --surface-2:     rgba(255, 255, 255, 0.78);
+  --surface-3:     rgba(255, 255, 255, 0.92);
+  --surface-solid: #ffffff;
+  --line-1:        rgba(10, 80, 110, 0.10);
+  --line-2:        rgba(10, 80, 110, 0.20);
+  --line-3:        rgba(10, 80, 110, 0.36);
+  --ink-1:         #0b1720;
+  --ink-2:         #3d5262;
+  --ink-3:         #65798a;
+  --ink-4:         #93a5b3;
+  --accent:        #0b6e8f;
+  --accent-2:      #1288ad;
+  --accent-3:      #6cc7e6;
+  --accent-rgb:    11, 110, 143;
+  --ok:            #1d7d55;
+  --warn:          #8f5d16;
+  --bad:           #b33d3d;
+  --violet:        #5f4bb5;
+  --on-accent:     #ffffff;
+  --glow-1:        0 0 12px rgba(11, 110, 143, 0.16);
+  --glow-2:        0 0 28px rgba(11, 110, 143, 0.14);
+  --shadow-1:      0 6px 20px rgba(30, 50, 65, 0.14);
+  --shadow-2:      0 18px 48px rgba(30, 50, 65, 0.18);
+  --inset-light:   inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}

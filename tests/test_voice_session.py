@@ -779,3 +779,80 @@ async def test_voice_service_warms_the_adapters_it_was_created_with() -> None:
         synthesizer=FakeSynthesizer(),
     )
     assert await plain.warm_up() == {}
+
+
+# ---------------------------------------------------------------------------
+# speculative transcription during the trailing silence
+# ---------------------------------------------------------------------------
+
+
+class ProvisionalInput(FakeInput):
+    """Offers the audio so far, then returns a capture that adds more."""
+
+    def __init__(self, early: bytes, final: bytes, *, trailing: float = 0.2):
+        super().__init__(capture=AudioCapture(bytearray(final), sample_rate=8000))
+        self.early = early
+        self.trailing_silence_seconds = trailing
+
+    async def capture(self, *, max_duration_seconds, cancel_event=None, provisional_callback=None):
+        self.calls += 1
+        if provisional_callback is not None:
+            provisional_callback(AudioCapture(bytearray(self.early), sample_rate=8000))
+            await asyncio.sleep(0)
+        return self.capture_value
+
+
+class CountingRecognizer(FakeRecognizer):
+    def __init__(self):
+        super().__init__(text="Jarvis, status")
+        self.captures: list[int] = []
+
+    async def transcribe(self, capture, *, language=None):
+        self.captures.append(len(capture.data))
+        await asyncio.sleep(0)
+        return TranscriptionResult(self.text, "fake-stt", "stt-1", language)
+
+
+@pytest.mark.asyncio
+async def test_provisional_transcript_is_used_when_only_silence_followed() -> None:
+    early = b"\x10\x00" * 800            # 0.1 s of speech at 8 kHz
+    final = early + b"\x00\x00" * 1600    # + 0.2 s of trailing silence
+    recognizer = CountingRecognizer()
+    session, parts = make_session(
+        audio_input=ProvisionalInput(early, final, trailing=0.2),
+        recognizer=recognizer,
+        cloud_grace_seconds=0,
+    )
+
+    result = await session.run_once(Context())
+
+    assert result.state is VoiceSessionState.COMPLETED
+    assert result.metadata["transcription_provisional"] is True
+    # Only the early audio was transcribed; the final capture never was.
+    assert recognizer.captures == [len(early)]
+
+
+@pytest.mark.asyncio
+async def test_provisional_transcript_is_discarded_when_speech_continued() -> None:
+    early = b"\x10\x00" * 800
+    final = early + b"\x10\x00" * 8000 + b"\x00\x00" * 1600  # a second later
+    recognizer = CountingRecognizer()
+    session, parts = make_session(
+        audio_input=ProvisionalInput(early, final, trailing=0.2),
+        recognizer=recognizer,
+        cloud_grace_seconds=0,
+    )
+
+    result = await session.run_once(Context())
+
+    assert result.state is VoiceSessionState.COMPLETED
+    assert result.metadata["transcription_provisional"] is False
+    assert recognizer.captures[-1] == len(final)
+
+
+@pytest.mark.asyncio
+async def test_inputs_without_provisional_support_are_unchanged() -> None:
+    session, parts = make_session(cloud_grace_seconds=0)
+    result = await session.run_once(Context())
+    assert result.state is VoiceSessionState.COMPLETED
+    assert "transcription_provisional" not in result.metadata

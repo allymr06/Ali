@@ -383,6 +383,14 @@ notifies and exits; first launch watches and releases; classic also holds
 the instance), and settings parsing. The real WinForms icon is exercised by
 an opt-in test (`JARVIS_TRAY_LIVE_TESTS=1`).
 
+## Provisional transcription coverage (5 September 2026)
+
+`tests/test_voice_low_latency.py` covers the microphone's provisional offer
+(after the shorter silence, stale once speech resumes, a prefix of the final
+capture, invalid durations refused) and the setting; `tests/test_voice_session.py`
+covers the provisional transcript used when only silence followed, discarded
+when speech continued, and inputs without the callback.
+
 ## Start-up coverage (5 September 2026)
 
 `tests/test_provider_openai.py` covers the client built on first use (none at

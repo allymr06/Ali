@@ -40,7 +40,7 @@ Last verified: 5 September 2026
   (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1400 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 1405 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
 
 ## Faster start-up (5 September 2026)
@@ -89,6 +89,16 @@ first sound.
   is discarded and never heard. Engines that do not accept a stream
   callback keep the previous behaviour. New metadata:
   `first_sentence_early`, `first_audio_latency_seconds`.
+- Transcription starts during the trailing silence. The microphone offers
+  the audio heard so far as a provisional capture once
+  `JARVIS_VOICE_PROVISIONAL_SILENCE_SECONDS` (0.6 s) of silence has passed,
+  the session transcribes it at once, and when the capture then ends
+  without new speech (the final audio adds no more than the trailing
+  silence to the provisional prefix) that transcript is the turn's; speech
+  that resumes discards it and a fresh offer follows. With the user-tuned
+  1.5 s trailing silence this hides most of the ~1 s transcription. Inputs
+  without the callback behave as before; metadata
+  `transcription_provisional` says which path a turn took.
 - The speech adapters warm their client at Nova boot together with the
   model gateway (one model description fetch each, no generation quota);
   the `provider.warm_up` ledger line reports `voice_stt` and `voice_tts`

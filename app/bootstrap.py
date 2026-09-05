@@ -378,6 +378,15 @@ def create_application(
             start_timeout_seconds=(
                 active_settings.voice_start_timeout_seconds
             ),
+            # Speculative transcription needs a silence shorter than the
+            # trailing one; any other value simply disables it.
+            provisional_silence_seconds=(
+                active_settings.voice_provisional_silence_seconds
+                if 0
+                < active_settings.voice_provisional_silence_seconds
+                < active_settings.voice_trailing_silence_seconds
+                else None
+            ),
         )
 
         audio_output = WindowsWaveAudioOutput()

@@ -785,3 +785,54 @@ async def test_speech_adapters_share_one_lazily_built_client(monkeypatch) -> Non
     assert await cold.warm_up() is False
     with pytest.raises(Exception):
         cold._require_client()
+
+
+@pytest.mark.asyncio
+async def test_vad_offers_a_provisional_capture_before_the_trailing_silence() -> None:
+    frames = 400  # 50 ms at 8 kHz
+    stream = ScriptedStream(
+        [
+            pcm(2000, frames),  # speech
+            pcm(0, frames),     # 50 ms silence
+            pcm(0, frames),     # 100 ms: provisional offer
+            pcm(2000, frames),  # speech resumes: the offer is stale
+            pcm(0, frames),
+            pcm(0, frames),     # 100 ms: a new provisional offer
+            pcm(0, frames),
+            pcm(0, frames),     # 200 ms: trailing silence, capture ends
+        ]
+    )
+    adapter = SoundDeviceAudioInput(
+        sample_rate=8000,
+        channels=1,
+        chunk_milliseconds=50,
+        silence_threshold_rms=500,
+        min_speech_seconds=0.05,
+        trailing_silence_seconds=0.20,
+        provisional_silence_seconds=0.10,
+        start_timeout_seconds=1.0,
+        module=FakeSoundDevice(stream),
+    )
+    offers = []
+
+    capture = await adapter.capture(
+        max_duration_seconds=5.0, provisional_callback=offers.append
+    )
+
+    assert [round(offer.duration_seconds, 2) for offer in offers] == [0.15, 0.30]
+    assert capture.duration_seconds == pytest.approx(0.40)
+    # The provisional audio is a prefix of the final capture.
+    assert bytes(capture.data[: len(offers[-1].data)]) == bytes(offers[-1].data)
+    with pytest.raises(ValueError):
+        SoundDeviceAudioInput(
+            trailing_silence_seconds=0.5, provisional_silence_seconds=0.5, module=object()
+        )
+
+
+def test_provisional_silence_setting_reads_environment(monkeypatch) -> None:
+    from app.config.settings import Settings
+
+    monkeypatch.setenv("JARVIS_VOICE_PROVISIONAL_SILENCE_SECONDS", "0.4")
+    assert Settings.from_environment().voice_provisional_silence_seconds == 0.4
+    with pytest.raises(ValueError):
+        Settings(voice_provisional_silence_seconds=-1)

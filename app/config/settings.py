@@ -193,6 +193,10 @@ class Settings:
     # finished. Tuned by the user on 23 August 2026: 0.9s cut them off
     # mid-thought, 1.5s feels natural.
     voice_trailing_silence_seconds: float = 1.5
+    # After this much silence the audio so far is transcribed
+    # speculatively while the trailing silence is still being
+    # confirmed; must stay below voice_trailing_silence_seconds.
+    voice_provisional_silence_seconds: float = 0.6
     voice_start_timeout_seconds: float = 8.0
 
     # The lite model transcribes in ~1.3s where the thinking model
@@ -388,6 +392,10 @@ class Settings:
             and not self.voice_tts_instructions.strip()
         ):
             raise ValueError("voice_tts_instructions cannot be empty when set.")
+        if self.voice_provisional_silence_seconds < 0:
+            raise ValueError(
+                "voice_provisional_silence_seconds cannot be negative."
+            )
         if self.voice_cloud_grace_seconds < 0:
             raise ValueError(
                 "voice_cloud_grace_seconds cannot be negative."
@@ -614,6 +622,9 @@ class Settings:
             voice_tts_instructions=(
                 (os.getenv("JARVIS_VOICE_TTS_INSTRUCTIONS") or "").strip()
                 or _DEFAULT_TTS_INSTRUCTIONS
+            ),
+            voice_provisional_silence_seconds=_get_float(
+                "JARVIS_VOICE_PROVISIONAL_SILENCE_SECONDS", 0.6
             ),
             voice_cloud_grace_seconds=_get_float(
                 "JARVIS_VOICE_CLOUD_GRACE_SECONDS",

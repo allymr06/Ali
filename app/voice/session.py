@@ -206,12 +206,38 @@ class VoiceSession:
         try:
             self._record(VoiceSessionState.LISTENING)
             stage_started = time.monotonic()
-            capture = await self._await_interruptible(
-                self._audio_input.capture(
-                    max_duration_seconds=self._max_recording_seconds,
-                    cancel_event=self._interrupt_event,
+            # While the microphone confirms the trailing silence, the
+            # audio heard so far is already being transcribed; if the
+            # user says nothing more, that transcript is the turn's.
+            provisional: dict[str, object] = {}
+
+            def on_provisional(early_capture: AudioCapture) -> None:
+                task = provisional.get("task")
+                if isinstance(task, asyncio.Task) and not task.done():
+                    task.cancel()
+                provisional["capture"] = early_capture
+                provisional["task"] = asyncio.create_task(
+                    self._transcribe_with_retry(early_capture)
                 )
+
+            capture_options = (
+                {"provisional_callback": on_provisional}
+                if self._accepts_parameter(
+                    self._audio_input.capture, "provisional_callback"
+                )
+                else {}
             )
+            try:
+                capture = await self._await_interruptible(
+                    self._audio_input.capture(
+                        max_duration_seconds=self._max_recording_seconds,
+                        cancel_event=self._interrupt_event,
+                        **capture_options,
+                    )
+                )
+            except BaseException:
+                await self._discard_early(provisional)
+                raise
             metadata["capture_latency_seconds"] = (
                 time.monotonic() - stage_started
             )
@@ -219,9 +245,29 @@ class VoiceSession:
 
             self._record(VoiceSessionState.TRANSCRIBING)
             stage_started = time.monotonic()
-            transcription = await self._await_interruptible(
-                self._transcribe_with_retry(capture)
-            )
+            transcription = None
+            early_task = provisional.get("task")
+            early_capture = provisional.get("capture")
+            if isinstance(early_task, asyncio.Task) and isinstance(
+                early_capture, AudioCapture
+            ):
+                if self._only_silence_followed(early_capture, capture):
+                    metadata["transcription_provisional"] = True
+                    try:
+                        transcription = await self._await_interruptible(
+                            _await_task(early_task)
+                        )
+                    except VoiceInterrupted:
+                        raise
+                    except Exception:
+                        transcription = None
+                else:
+                    metadata["transcription_provisional"] = False
+                    await self._discard_early(provisional)
+            if transcription is None:
+                transcription = await self._await_interruptible(
+                    self._transcribe_with_retry(capture)
+                )
             metadata["transcription_latency_seconds"] = (
                 time.monotonic() - stage_started
             )
@@ -530,6 +576,35 @@ class VoiceSession:
             return await self._recognizer.transcribe(
                 capture, language=self._language
             )
+
+    def _only_silence_followed(
+        self, early: AudioCapture, final: AudioCapture
+    ) -> bool:
+        """True when the full capture adds no more than the trailing
+        silence to the provisional one, i.e. the user said nothing else."""
+        if len(final.data) < len(early.data):
+            return False
+        if bytes(final.data[: len(early.data)]) != bytes(early.data):
+            return False
+        trailing = getattr(self._audio_input, "trailing_silence_seconds", None)
+        if not isinstance(trailing, (int, float)):
+            return True
+        bytes_per_second = final.sample_rate * final.channels * final.sample_width
+        allowance = (float(trailing) + 0.35) * bytes_per_second
+        return len(final.data) - len(early.data) <= allowance
+
+    @staticmethod
+    def _accepts_parameter(function, parameter: str) -> bool:
+        try:
+            signature = inspect.signature(function)
+        except (TypeError, ValueError):
+            return False
+        if parameter in signature.parameters:
+            return True
+        return any(
+            item.kind is inspect.Parameter.VAR_KEYWORD
+            for item in signature.parameters.values()
+        )
 
     def _engine_accepts(self, parameter: str) -> bool:
         try:

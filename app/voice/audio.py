@@ -90,6 +90,7 @@ class SoundDeviceAudioInput(AudioInput):
         min_speech_seconds: float = 0.15,
         trailing_silence_seconds: float = 0.65,
         start_timeout_seconds: float = 5.0,
+        provisional_silence_seconds: float | None = None,
         module: Any | None = None,
     ) -> None:
         if (
@@ -136,6 +137,14 @@ class SoundDeviceAudioInput(AudioInput):
                 "Voice start timeout must be positive."
             )
 
+        if provisional_silence_seconds is not None and not (
+            0 < provisional_silence_seconds < trailing_silence_seconds
+        ):
+            raise ValueError(
+                "Provisional silence must be positive and shorter "
+                "than the trailing silence."
+            )
+
         self.sample_rate = sample_rate
         self.channels = channels
         self.device_id = device_id
@@ -160,6 +169,10 @@ class SoundDeviceAudioInput(AudioInput):
         self.start_timeout_seconds = (
             start_timeout_seconds
         )
+        # After this much silence the audio so far is offered to the
+        # caller as a provisional turn (transcription can start while
+        # the full trailing silence is still being confirmed).
+        self.provisional_silence_seconds = provisional_silence_seconds
         # Optional observer for the live input level (0.0-1.0), called
         # once per captured chunk. Purely informational: it never
         # influences voice activity detection.
@@ -257,6 +270,7 @@ class SoundDeviceAudioInput(AudioInput):
         *,
         max_duration_seconds: float,
         cancel_event=None,
+        provisional_callback: Callable[[AudioCapture], None] | None = None,
     ) -> AudioCapture:
         if (
             max_duration_seconds <= 0
@@ -301,6 +315,13 @@ class SoundDeviceAudioInput(AudioInput):
             ),
         )
 
+        provisional_frames = (
+            max(1, int(self.sample_rate * self.provisional_silence_seconds))
+            if self.provisional_silence_seconds is not None
+            and provisional_callback is not None
+            else None
+        )
+
         captured = bytearray()
         started_at = utc_now()
         stream = None
@@ -309,6 +330,7 @@ class SoundDeviceAudioInput(AudioInput):
         voiced_frames = 0
         silence_frames = 0
         frames_read = 0
+        provisional_offered = False
 
         try:
             stream = (
@@ -392,6 +414,9 @@ class SoundDeviceAudioInput(AudioInput):
                     speech_started = True
                     voiced_frames += frames
                     silence_frames = 0
+                    # Speech resumed: the last provisional offer, if
+                    # any, is stale and a new one may follow.
+                    provisional_offered = False
 
                 elif speech_started:
                     silence_frames += frames
@@ -405,6 +430,29 @@ class SoundDeviceAudioInput(AudioInput):
                         "before the listening "
                         "timeout."
                     )
+
+                if (
+                    provisional_frames is not None
+                    and not provisional_offered
+                    and speech_started
+                    and voiced_frames >= minimum_speech_frames
+                    and silence_frames >= provisional_frames
+                ):
+                    provisional_offered = True
+                    try:
+                        provisional_callback(
+                            AudioCapture(
+                                data=bytearray(captured),
+                                sample_rate=self.sample_rate,
+                                channels=self.channels,
+                                encoding=AudioEncoding.PCM16,
+                                device_id=self.device_id,
+                                started_at=started_at,
+                                finished_at=utc_now(),
+                            )
+                        )
+                    except Exception:
+                        pass
 
                 if (
                     speech_started

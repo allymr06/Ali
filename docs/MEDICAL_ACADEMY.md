@@ -285,8 +285,13 @@ An entry without a licence and a source is refused. Without an asset the lab
 says so and draws the schematic relationship map instead — which is labelled
 schematic, not anatomy.
 
-When a mesh is present the page renders it in WebGL with neutral anatomical
-materials and a cold rim light, matching the shell rather than a game.
+When a mesh is present the page renders it in WebGL on a black stage, in
+matte tissue colours that follow the atlas convention — bone ivory, cartilage
+cyan, muscle red-brown, arteries red, veins blue, nerves yellow — with every
+pair held apart in RGB by a page test. The shading has no specular term and
+no rim light, so nothing glares; detail comes from a low ambient floor and a
+grazing-angle darkening, so the grooves between muscle bellies and the lip
+of a fossa draw themselves as light against dark.
 
 ### Where the meshes come from
 
@@ -329,16 +334,73 @@ one body frame the dataset uses, coloured by kind, with a layer chip per kind
 (kemik, kas, arter, ven) to hide and show. Clicking a mesh selects that
 structure — the picking pass draws each mesh in a flat identifier colour and
 reads the pixel under the cursor — and the structure list follows. Dragging
-rotates; the right button or Shift+drag pans; the wheel zooms; the arrow keys
-pan, Shift+arrow rotates, `+`/`−` zoom and `R` resets; the pad in the corner
-does the same for those who do not know the gestures. Pan scales with the
-distance so a step moves the picture by the same amount at any zoom.
+turns the model about the viewer's own axes: a pull to the right spins the
+near face to the right, a pull down tips it down, from whatever orientation
+it already has, with no clamp, so a bone can be looked at from below or
+upside down like one held in the hand (the rotation is accumulated as a
+matrix and re-orthonormalised after every step). The right button or
+Shift+drag pans along the screen's axes; the wheel zooms; the arrow keys pan,
+Shift+arrow turns, `+`/`−` zoom and `R` resets; the pad in the corner does the
+same for those who do not know the gestures. Pan scales with the distance so
+a step moves the picture by the same amount at any zoom.
+
+One defect is worth recording because it hid for a whole day: the schematic
+relationship map is an SVG, and an SVG element has no `hidden` property, so
+`schematic.hidden = true` created an expando and hid nothing. The transparent
+map lay over the canvas and swallowed every drag, click and wheel — the model
+never turned under the mouse, and only the pad and the keys worked. The lab
+now hides it through the attribute (`setHidden`), which is what the CSS rule
+reads, and a page test forbids the property form.
+
+A scene may carry a **palette**, a colour per structure, for a region whose
+kinds would not tell its parts apart: the skull is all bone. Such a scene is
+drawn and hidden structure by structure — one chip per bone in its own
+colour, so the vault can be taken off to see the base — and opens on its
+**card** (the region's explanation) rather than on a mesh.
 
 **Detailed mode** (Detaylı) draws every pin of the selected structure with its
 Latin name on the model. Clicking a pin opens a card with the landmark's
 curated description and the pages of the student's own library that mention
 it, each opening in the reader. The card searches the library; it does not
 write what a landmark is from memory.
+
+### Neurocranium
+
+The braincase is the region first-year students find hardest, so it has a
+card of its own, `neurocranium`, written as a study guide rather than a
+list: what the calvaria and the base are, the sutures and craniometric points
+(bregma, lambda, pterion, asterion), the articulations, the high-yield
+clinical anatomy (pterion and the middle meningeal artery, the fracture
+signs of each fossa, the herniation at the foramen magnum), and *how to
+study it*. Two curated tables carry the part that has to be memorised: the
+three cranial fossae with their bones, boundaries, contents and foramina, and
+a foramen-by-foramen table of what passes through (the cranial nerves by
+number, the vessels, the emissary veins). Six bone cards — os frontale, os
+parietale, os temporale, os occipitale, os sphenoidale, os ethmoidale — carry
+the documented bone fields plus eight to fifteen landmarks each, a landmark's
+note naming the fossa it belongs to. Paired bones are one card each; the
+facts are written once. Everything is curated from the standard texts (the
+data file names them); nothing on these cards is generated.
+
+Tables live in a structure's facts as `{"title", "columns", "rows"}` and
+reach the page in exactly that shape (`AnatomyLab.tables` drops a table
+without columns or rows, and pads or trims a row to the column count). The
+curriculum gained the topic `anatomy.musculoskeletal.skull` with
+`neurocranium` and `viscerocranium` beneath it, so the card's breadcrumb,
+the tutor's topic resolution and the mastery record all have a real node.
+
+The importer's second scene, `neurocranium`, maps the eight bones (the
+paired ones merged from both sides' element files) to their BodyParts3D
+files, colours them by the atlas convention, opens on the region card, and
+derives approximate pins from the shape where a rule can place one — the
+foramen magnum's pin is the centroid of the lowest rim, the crista galli's
+the top of the midline, the mastoid process the lowest posterior point of
+the right side. A foramen or a meatus is a hole with no surface of its own:
+no rule, no pin.
+
+```
+python scripts/import_bodyparts3d.py isa_BP3D_4.0_obj_99.zip --scene neurocranium
+```
 
 ### Bell-ringer (zilli sınav)
 
@@ -398,6 +460,10 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
 - Peripheral nerves have no mesh in BodyParts3D 4.0, so nerve cards keep the
   schematic map, and pins derived from the shape stay marked approximate until
   someone who knows confirms them by hand.
+- The viscerocranium topic exists in the curriculum but has no cards yet; the
+  head and neck have no cranial-nerve, vessel or joint cards; the trunk has no
+  abdominal-wall muscles and the lower limb no vessels. The coverage audit in
+  `docs/PROJECT_STATE.md` lists the gaps in priority order.
 - Image-based question *generation* needs an image whose provenance is known;
   imported image questions keep their picture reference but new items are
   written as text.

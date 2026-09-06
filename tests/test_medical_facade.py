@@ -237,9 +237,14 @@ def test_an_unknown_term_returns_no_entries_instead_of_a_guess(build) -> None:
 
 
 def test_a_partial_turkish_word_still_finds_the_latin_terms_it_could_mean(build) -> None:
-    found = {entry["canonical"] for entry in build(None).term("kemiği")["entries"]}
+    entries = build(None).term("kemiği")["entries"]
+    found = {entry["canonical"] for entry in entries}
 
-    assert "Humerus" in found and "Scapula" in found
+    # The card shows eight entries in alphabetical order; with the skull bones
+    # there are more "…kemiği" cards than that, so what is checked is that the
+    # partial word finds bones and only bones, not which eight make the cut.
+    assert "Humerus" in found and len(entries) == 8
+    assert all("kemiği" in (entry.get("turkish") or "") for entry in entries), entries
 
 
 # ---------------------------------------------------------------------------

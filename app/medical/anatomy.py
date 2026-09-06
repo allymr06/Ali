@@ -54,7 +54,10 @@ FACT_ORDER: dict[str, list[tuple[str, str]]] = {
     "nerve": [("origin", "Köken"), ("course", "Seyir"), ("motor", "Motor"), ("sensory", "Duyu"), ("high_yield", "Yüksek verim")],
     "artery": [("origin", "Köken"), ("course", "Seyir"), ("branches", "Dallar"), ("supply", "Beslediği alan"), ("relations", "Komşuluklar"), ("high_yield", "Yüksek verim")],
     "vein": [("origin", "Başlangıç"), ("course", "Seyir"), ("tributaries", "Katılan venler"), ("drains_into", "Döküldüğü yer"), ("relations", "Komşuluklar"), ("high_yield", "Yüksek verim")],
-    "region": [("location", "Tanım"), ("parts", "Bölümler"), ("articulations", "Eklemler"), ("high_yield", "Yüksek verim")],
+    "region": [
+        ("location", "Tanım"), ("parts", "Bölümler"), ("sutures", "Sütürler ve kraniyometrik noktalar"),
+        ("articulations", "Eklemler"), ("high_yield", "Yüksek verim"), ("study_notes", "Nasıl çalışılır"),
+    ],
 }
 MOVEMENT_PATTERNS = (
     ("Fleksiyon", "Ekstansiyon", "transvers eksen", "sagittal düzlem"),
@@ -139,6 +142,18 @@ class AnatomyAssetRegistry:
             if not scene_id or not wanted:
                 self._problems.append("scene_id veya kayıtlı yapısı olmayan bir sahne atlandı")
                 continue
+            # A colour per structure for a scene whose kinds would not tell
+            # them apart (a skull is all bone); anything that is not three
+            # numbers, or names a structure outside the scene, is dropped.
+            palette: dict[str, list[float]] = {}
+            raw_palette = item.get("palette")
+            for key, value in (raw_palette.items() if isinstance(raw_palette, dict) else []):
+                if str(key) not in wanted or not isinstance(value, (list, tuple)) or len(value) != 3:
+                    continue
+                try:
+                    palette[str(key)] = [min(1.0, max(0.0, float(channel))) for channel in value]
+                except (TypeError, ValueError):
+                    continue
             self._scenes.append(
                 {
                     "scene_id": scene_id,
@@ -146,6 +161,11 @@ class AnatomyAssetRegistry:
                     "region": str(item.get("region") or ""),
                     "structure_ids": wanted,
                     "available": [structure_id for structure_id in wanted if self._entries[structure_id].get("available")],
+                    # The card the scene opens on (a region's explanation rather
+                    # than one mesh) and the note the layer strip shows.
+                    "card": str(item.get("card") or ""),
+                    "palette": palette,
+                    "note": str(item.get("note") or ""),
                 }
             )
 
@@ -462,10 +482,35 @@ class AnatomyLab:
                 "model": self._assets.describe(structure.structure_id),
                 "movements": self.movements(structure) if structure.kind == "joint" else [],
                 "landmark_map": self.landmark_map(structure),
+                "tables": self.tables(structure),
                 "source": structure.source or self._source_note,
             }
         )
         return payload
+
+    @staticmethod
+    def tables(structure: AnatomyStructure) -> list[dict[str, Any]]:
+        """Curated tables (a region's fossae, its foramina and what passes
+        through them) in one fixed shape: a title, its columns, and rows of
+        exactly that many cells. A table without columns or rows, or a row
+        that is not a list, is dropped rather than rendered askew."""
+        result: list[dict[str, Any]] = []
+        for raw in structure.facts.get("tables") or []:
+            if not isinstance(raw, dict):
+                continue
+            columns = [str(column) for column in raw.get("columns") or [] if str(column).strip()]
+            if not columns:
+                continue
+            rows: list[list[str]] = []
+            for row in raw.get("rows") or []:
+                if not isinstance(row, (list, tuple)):
+                    continue
+                cells = [str(cell) for cell in row][: len(columns)]
+                cells.extend([""] * (len(columns) - len(cells)))
+                rows.append(cells)
+            if rows:
+                result.append({"title": str(raw.get("title") or ""), "columns": columns, "rows": rows})
+        return result
 
     def movements(self, structure: AnatomyStructure) -> list[dict[str, Any]]:
         raw = structure.facts.get("movements") or []

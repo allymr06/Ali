@@ -319,7 +319,9 @@ body.reduced-motion .med-progress-track i { animation: none; transform: scaleX(0
     linear-gradient(180deg, var(--bg-3), var(--bg));
   overflow: hidden;
 }
-#lab-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+/* The model stands on black in both themes: tissue colours read best
+   against nothing, and the labels are already built for a dark ground. */
+#lab-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; background: #000; }
 #lab-canvas.dragging { cursor: grabbing; }
 #lab-canvas[hidden] { display: none; }
 #lab-schematic { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -447,3 +449,12 @@ body.light .lab-label { background: rgba(255, 255, 255, 0.86); }
 .lab-bell-row { display: grid; grid-template-columns: 24px 1fr; gap: 8px; padding: 6px 8px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface-2); font-size: var(--text-sm); }
 .lab-bell-row.ok { border-color: color-mix(in srgb, var(--ok, #3fa76a) 60%, transparent); }
 .lab-bell-row.bad { border-color: color-mix(in srgb, var(--danger, #e06060) 60%, transparent); }
+
+/* Curated tables on a card (a region's fossae and foramina): the first cell
+   of a row is its name; a wide table scrolls inside the card, not the page. */
+.lab-table-wrap { overflow-x: auto; max-width: 100%; }
+.lab-table { border-collapse: collapse; width: 100%; font-size: var(--text-xs); line-height: 1.45; }
+.lab-table th, .lab-table td { padding: 5px 7px; border: 1px solid var(--line-1); vertical-align: top; text-align: left; min-width: 7rem; }
+.lab-table thead th { color: var(--ink-3); font-weight: 600; letter-spacing: 0.02em; background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
+.lab-table tbody th { color: var(--ink-1); font-weight: 600; white-space: nowrap; }
+.lab-table td { color: var(--ink-2); }

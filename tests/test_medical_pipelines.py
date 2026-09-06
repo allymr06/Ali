@@ -720,19 +720,61 @@ def test_reference_payloads_are_numbered_from_one_and_keep_the_chunk_id() -> Non
     assert payload[0]["title"] == "Kemik Sistemi"
 
 
-def test_the_index_is_rebuilt_only_after_the_store_changes() -> None:
+def build_counter(monkeypatch) -> list[int]:
+    """Count rebuilds of the search index.
+
+    ``build`` fills the same SearchIndex instance in place, so the identity of
+    ``retriever.index`` is the same object whether or not a rebuild happened;
+    only a counter can tell a warm cache from a cold one.
+    """
+    calls = [0]
+    original = SearchIndex.build
+
+    def counted(self, documents) -> None:
+        calls[0] += 1
+        original(self, documents)
+
+    monkeypatch.setattr(SearchIndex, "build", counted)
+    return calls
+
+
+def test_the_index_is_rebuilt_only_after_the_store_changes(monkeypatch) -> None:
     store = seeded_store(chunk("c1", 3, "Humerus anlatimi."))
     retriever = Retriever(store)
+    builds = build_counter(monkeypatch)
     retriever.refresh()
-    built = retriever.index
+    assert builds[0] == 1
 
     retriever.refresh()
-    assert retriever.index is built
+    assert builds[0] == 1
 
     store.replace_chunks("d1", [chunk("c1", 3, "Humerus anlatimi."), chunk("c2", 4, "Scapula anlatimi.")])
     retriever.refresh()
 
-    assert len(retriever.index) == 2
+    assert builds[0] == 2 and len(retriever.index) == 2
+
+
+def test_a_study_session_write_leaves_the_index_warm(monkeypatch) -> None:
+    """The tutor saves the study session on every medical turn. While that
+    counted as an index change, the whole library was re-read and re-tokenised
+    before every single question the student asked."""
+    from app.medical.models import StudyNote, StudySession
+
+    store = seeded_store(chunk("c1", 3, "Humerus govdesinin anatomisi."))
+    retriever = Retriever(store)
+    retriever.refresh()
+    builds = build_counter(monkeypatch)
+
+    for _ in range(3):
+        store.save_session(StudySession(subject="anatomy"))
+        assert [block.reference.chunk_id for block in retriever.retrieve("humerus")] == ["c1"]
+    assert builds[0] == 0  # three turns, not one rebuild
+
+    # Content the index is built from still reaches it on the very next query.
+    store.save_note(StudyNote(note_id="n1", title="Humerus", content="Humerus ozet notum.", subject="anatomy"))
+
+    assert [hit.document.doc_id for hit in retriever.search("ozet")] == ["n1"]
+    assert builds[0] == 1
 
 
 def test_a_deleted_document_disappears_from_retrieval_after_a_refresh() -> None:

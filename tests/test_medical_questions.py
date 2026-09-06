@@ -8,7 +8,7 @@ from app.medical.concepts import ConceptGraph
 from app.medical.learning import RECENT_WINDOW, LearningEngine, level_for, next_review_for, reason_for
 from app.medical.models import (
     Concept, ConceptMastery, Exam, ExamAttempt, ExamConfig, MasteryLevel,
-    Question, QuestionAttempt, QuestionOption, QuestionType, SourceReference,
+    Question, QuestionAttempt, QuestionOption, QuestionOrigin, QuestionType, SourceReference,
 )
 from app.medical.questions import (
     SIMILARITY_THRESHOLD, analyse_attempt, build_question, grade, is_too_similar,
@@ -113,6 +113,35 @@ def test_validation_names_every_documented_defect_and_passes_a_clean_item() -> N
         "Olecranon ulna proksimalindeki genis ve belirgin cikintidir",
         "Acromion scapula spinasinin lateral uzantisini olusturur",
     ]) == []
+
+
+def test_the_catch_all_and_letter_referencing_forms_a_turkish_model_actually_writes() -> None:
+    def last_option(text: str, **overrides) -> list[str]:
+        return validate_question(make_question(texts=OPTIONS[:3] + [text], **overrides), expected_options=4)
+
+    # "all/none of the above" in the spellings the prompt's own wording invites.
+    for text in ("Yukarıdakilerin tümü", "Yukarıdakilerin tamamı", "Hiçbir şık doğru değildir",
+                 "Hiçbir seçenek doğru değildir", "Her ikisi de doğrudur", "Aşağıdakilerin hiçbiri"):
+        assert last_option(text) == ["all_or_none_option"], text
+
+    # An option that names other options by letter: shuffle_options re-letters the paper
+    # around it, so its stated answer becomes a sentence about the wrong options.
+    for text in ("B ve C", "A ve C", "A ve B doğrudur", "Yalnız A ve B", "A, B ve C"):
+        assert last_option(text) == ["option_references_another_option"], text
+    # It is broken by construction, so the all-of-the-above relaxation does not reach it.
+    letter_pair = make_question(texts=OPTIONS[:3] + ["B ve C"])
+    assert validate_question(letter_pair, allow_all_of_the_above=True) == ["option_references_another_option"]
+
+    # A professor's own imported question keeps its letters and is never re-lettered.
+    imported = make_question(texts=OPTIONS[:3] + ["B ve C"], origin=QuestionOrigin.IMPORTED_EXAM)
+    assert validate_question(imported, expected_options=4) == []
+
+    # The other direction: real answers that merely contain a letter stay valid.
+    for texts in (["Vitamin A ve B12 eksikliği", "Demir eksikliği", "Folat eksikliği", "Çinko eksikliği"],
+                  ["A ve D vitaminleri", "Demir", "Folat", "Çinko"],
+                  ["Hepsidin", "Ferritin", "Transferrin", "Seruloplazmin"],
+                  ["Hiçbir kas buraya tutunmaz", "M. deltoideus", "M. biceps brachii", "M. triceps brachii"]):
+        assert validate_question(make_question(texts=texts), expected_options=4) == [], texts
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +249,53 @@ def test_build_question_keeps_a_page_reference_only_when_it_was_supplied() -> No
     assert refs_of(source_page=12, references=[]) == []
 
 
+def test_a_page_two_documents_share_is_cited_by_its_excerpt_index_or_not_at_all() -> None:
+    """Page 12 of the slides and page 12 of the lecture note are different material."""
+    raw = {"stem": STEM, "options": [{"key": "A", "text": "M. deltoideus"}, {"key": "B", "text": "M. biceps brachii"}],
+           "correct_key": "A", "explanation": EXPLANATION}
+    lecture = SourceReference("d1", 12, chunk_id="d1-c1", quote="capitulum humeri", title="Ders Notu")
+    slides = SourceReference("d2", 12, chunk_id="d2-c1", quote="tuberositas deltoidea", title="Hoca Slaytlari")
+
+    def cited(**extra) -> list[tuple[str, int, str | None]]:
+        built = build(
+            {**raw, **extra}, references=[lecture, slides], origin=QuestionOrigin.LECTURE_DERIVED, document_title="Ders Notu",
+        )
+        return [(ref.document_id, ref.page_number, ref.chunk_id) for ref in built.references]
+
+    # The question came from the slides; only the [Kaynak N] index can say so.
+    assert cited(source_index=2, source_page=12) == [("d2", 12, "d2-c1")]
+    assert cited(source_index=1, source_page=12) == [("d1", 12, "d1-c1")]
+    # Index and page are two independent claims about the same excerpt, and the
+    # prompt asks for both. One of them alone is one unverified claim, so it cites
+    # nothing: the student loses a chip rather than following a wrong one.
+    assert cited(source_index=2) == []
+
+    # A page alone cannot choose between two documents, so nothing is cited at all:
+    # a missing citation is honest where a chip opening the wrong page is not.
+    assert cited(source_page=12) == []
+    assert cited(source_index=2, source_page=7) == []  # the model contradicted itself
+    assert cited(source_index=9, source_page=12) == []  # an excerpt that was never sent
+
+
+def test_a_lecture_badge_is_dropped_together_with_the_page_it_could_not_be_verified_against() -> None:
+    raw = {"stem": STEM, "options": [{"key": "A", "text": "Capitulum"}, {"key": "B", "text": "Trochlea"}],
+           "correct_key": "A", "explanation": EXPLANATION}
+    references = [SourceReference("d1", 12, chunk_id="c12", quote="onikinci sayfa")]
+
+    def origin_of(**extra) -> tuple[str, int]:
+        built = build({**raw, **extra}, references=references, origin=QuestionOrigin.LECTURE_DERIVED)
+        return built.origin, len(built.references)
+
+    assert origin_of(source_page=12) == (QuestionOrigin.LECTURE_DERIVED, 1)
+    # An invented page leaves nothing to check, so the item may not keep the badge that
+    # tells the student it came from their own lecture notes.
+    assert origin_of(source_page=777) == (QuestionOrigin.GENERATED, 0)
+    assert origin_of() == (QuestionOrigin.GENERATED, 0)
+    # An imported professor question has no page of ours and must keep its own origin.
+    imported = build(raw, references=references, origin=QuestionOrigin.IMPORTED_EXAM)
+    assert imported.origin == QuestionOrigin.IMPORTED_EXAM and imported.references == []
+
+
 # ---------------------------------------------------------------------------
 # shuffling, grading and similarity
 # ---------------------------------------------------------------------------
@@ -266,6 +342,26 @@ def test_a_reworded_copy_is_flagged_while_a_new_item_is_cleared() -> None:
     assert most_similar(fresh, [original, reworded]) == (0.0, None)
     assert most_similar(original, [original]) == (0.0, None)  # an item is never its own duplicate
     assert most_similar(original, []) == (0.0, None)
+
+
+def test_a_copy_that_differs_only_by_turkish_inflection_is_still_a_copy() -> None:
+    """Agglutination changes every word form, so raw tokens barely overlap."""
+    proximal = ["Tuberculum majus", "Capitulum humeri", "Olecranon", "Condylus medialis"]
+    stored = make_question("s1", stem="Humerus proksimal ucunda hangi yapi bulunur?", texts=proximal)
+    reinflected = make_question("s2", stem="Humerusun proksimal ucunda hangi yapilar bulunmaktadir?", texts=proximal)
+
+    flagged, score, other_id = is_too_similar(reinflected, [stored])
+
+    assert flagged is True and other_id == "s1" and score >= SIMILARITY_THRESHOLD
+
+    # Stemming is only allowed to speak for items that already share an answer text; with a
+    # different answer the item is judged on the unchanged general similarity instead.
+    different_answer = make_question("s3", stem=reinflected.stem, texts=proximal, correct_key="C")
+    assert most_similar(different_answer, [stored])[0] < SIMILARITY_THRESHOLD <= score
+    # And two questions on unrelated facts stay far apart however they are inflected.
+    unrelated = make_question("s5", stem="Karacigerin safra uretimini hangi hucreler yapmaktadir?",
+                              texts=["Hepatosit", "Kupffer hucresi", "Ito hucresi", "Kolanjiyosit"])
+    assert is_too_similar(unrelated, [stored])[0] is False
 
 
 # ---------------------------------------------------------------------------

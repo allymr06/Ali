@@ -17,8 +17,8 @@ from typing import Any
 
 from app.medical.catalog import Curriculum
 from app.medical.concepts import ConceptGraph
-from app.medical.models import DepthLevel, StudySession
-from app.medical.terminology import TerminologyIndex, TermMatch
+from app.medical.models import Concept, DepthLevel, StudySession
+from app.medical.terminology import TURKISH_SUFFIXES, TerminologyIndex, TermMatch
 from app.medical.text import fold, has_stem, parse_page_range, tokens
 
 
@@ -81,10 +81,21 @@ INTENT_LABELS_TR: dict[str, str] = {
 # Vocabulary. Every tuple is matched as a token prefix on folded text, so
 # Turkish suffixes do not matter ("hazirla", "hazirlar misin", ...).
 _GENERATE = ("hazirla", "olustur", "uret", "yaz", "cikar", "generate", "create", "make", "prepare", "build", "yap", "kur", "ver", "give", "want", "need", "istiyorum", "isterim", "lazim", "gerek")
-_QUESTION_WORDS = ("soru", "sinav", "test", "exam", "question", "quiz", "mcq")
+# Matched as whole words: as a prefix "exam" swallows example / examples /
+# examine, so every English sentence carrying one of those used to read as
+# an exam request. The Turkish half keeps its suffixes ("sınavdan",
+# "soruları") through the closed suffix list instead.
+_QUESTION_WORDS = frozenset({"soru", "sinav", "test"})
+_QUESTION_TOKENS = frozenset({"exam", "exams", "question", "questions", "quiz", "quizzes", "mcq", "mcqs"})
+# The subset that may claim a turn by itself. "question" is ordinary English —
+# "I have a question about this code" is not an exam request — so it classifies
+# a turn that is medical already but never makes one medical.
+_EXAM_TOKENS = frozenset({"exam", "exams", "quiz", "quizzes", "mcq", "mcqs"})
 _EXPLAIN = ("anlat", "acikla", "explain", "ogret", "teach", "nedir", "nasil", "neden", "niye", "what", "how", "why", "which", "hangi", "describe", "tanimla", "tell")
 _QUIZ_TOKENS = frozenset({"sina", "sinar", "sinasana", "sinayabilir", "sinat", "sinamani", "sinayalim"})
-_STUDY_SHAPED = ("soru", "sinav", "exam", "quiz", "question", "test", "cevap", "answer", "sik", "secenek", "option", "pdf", "slayt", "slide", "ders", "lecture", "hoca", "profesor", "professor", "konu", "topic", "sayfa", "page", "not", "notes", "zorluk", "difficulty", "tekrar", "review", "calis", "study")
+# The English question words live in _QUESTION_TOKENS instead, so
+# "example" cannot make an English sentence study-shaped.
+_STUDY_SHAPED = ("soru", "sinav", "test", "cevap", "answer", "sik", "secenek", "option", "pdf", "slayt", "slide", "ders", "lecture", "hoca", "profesor", "professor", "konu", "topic", "sayfa", "page", "not", "notes", "zorluk", "difficulty", "tekrar", "review", "calis", "study")
 _SIMPLIFY = ("basit", "basitce", "simple", "simply", "kolayca", "anlasilir", "simplify", "plain", "cocuga", "sadelestir")
 # Matched as whole words: "sadece" (only) starts with the prefix "sade"
 # and would otherwise force every "sadece ..." request to be simplified.
@@ -98,7 +109,14 @@ _PAGE_WORDS = ("sayfa", "page", "pp.", "pp ")
 _PDF = ("pdf", "slayt", "slide", "belge", "dosya", "ders notu", "ders notlari", "dokuman", "document", "materyal", "material", "sunum", "lecture", "kitap", "chapter", "bolum")
 _ANALYZE = ("analiz", "incele", "calis", "oku", "tara", "cikar", "islet", "process", "analy", "index", "dizinle")
 _COMPARE_KNOWLEDGE = ("kendi bilgi", "standart bilgi", "tip bilgisi", "kitap bilgisi", "guncel bilgi", "medical knowledge", "eksik", "yanlis yer", "hatali", "tutarsiz", "celisk", "misleading", "incorrect")
-_PROFESSOR = ("hoca", "profesor", "professor", "ogretim uyesi", "prof")
+_PROFESSOR = ("hoca", "profesor", "professor", "ogretim uyesi")
+# "prof" only as a whole word ("Prof. Ahmet"): as a prefix it matches
+# profil, profile, profesyonel and profiling — a profile photo, a browser
+# profile and an English profiling request are not the student's lecturer.
+_PROFESSOR_WORDS = frozenset({"prof"})
+# Asking the Academy to *learn* the professor's style, as opposed to
+# generating a paper in it.
+_PROFESSOR_ANALYSIS = ("analiz", "analy", "ogren", "learn", "incele")
 _STYLE = ("tarz", "stil", "style", "benzet", "benzer", "gibi", "kalip", "pattern", "profil", "profile", "nasil sor", "soru tipi")
 _WEAK = ("zayif", "weak", "yanlis yaptigim", "yanlis cevapladigim", "yanlis bildigim", "eksik oldugum", "zorlandigim", "got wrong", "wrong ones", "bilemedigim")
 _ORAL = ("sozlu", "oral")
@@ -124,33 +142,79 @@ _HARDER = ("daha zor", "harder", "zorlastir")
 _EASIER = ("daha kolay", "easier", "kolaylastir")
 _TIMED = ("sureli", "zamanli", "timed", "kronometre", "sure tut")
 _IMMEDIATE = ("hemen goster", "aninda", "immediate", "her sorudan sonra")
+# Domain words no everyday request contains by accident, so a prefix
+# match is safe here and one of them is enough to make a turn medical.
+# Anything that is also the opening of an ordinary word belongs below.
 _MEDICAL_STEMS = (
-    "kemik", "kemig", "eklem", "sinir", "damar", "arter", "hucre", "doku", "enzim",
+    "kemik", "kemig", "damar", "arter", "hucre", "enzim",
     "protein", "bakteri", "virus", "mantar", "metabol", "hormon", "reseptor", "membran",
     "potansiyel", "difuzyon", "osmoz", "mitoz", "mayoz", "kromozom", "epitel", "kikirdak",
     "organel", "mitokondri", "glikoliz", "krebs", "anatomi", "fizyoloj", "histoloj",
     "biyokimya", "biyofizik", "mikrobiyoloj", "biyoloj", "tendon", "ligament", "fasya",
     "innervasyon", "origo", "insertio", "kasilma", "nefron", "alveol", "hemoglobin",
     "antikor", "antijen", "patojen", "enfeksiyon", "tibbi", "medikal", "medical",
-    "muscle", "bone", "joint", "nerve", "cell", "tissue", "enzyme", "bacteria", "virus",
+    "muscle", "bone", "joint", "nerve", "tissue", "enzyme", "bacteria",
     "cartilage", "vertebra", "omurga", "kalp", "akciger", "bobrek", "karaciger", "beyin",
-    "omuz", "dirsek", "kalca", "diz", "bilek", "uyluk", "kol", "bacak", "boyun", "gogus",
-    "karin", "pelvis", "kafatas", "kranyum", "sindirim", "solunum", "dolasim", "bosaltim",
-    "endokrin", "lenf", "immun", "bagisiklik", "genetik", "dna", "rna", "gen", "nukleotid",
+    "omuz", "dirsek", "kalca", "bilek", "uyluk", "bacak", "gogus",
+    "pelvis", "kafatas", "kranyum", "sindirim", "solunum", "dolasim", "bosaltim",
+    "endokrin", "lenf", "immun", "bagisiklik", "genetik", "dna", "rna", "nukleotid",
     "amino", "lipid", "karbonhidrat", "vitamin", "glukoz", "insulin", "atp", "iyon",
-    "sodyum", "potasyum", "kalsiyum", "gram", "spor", "kapsul", "flagel", "plazmid",
+    "sodyum", "potasyum", "kalsiyum", "flagel", "plazmid",
 )
-_MEDICAL_EXACT = frozenset({"kas", "kaslar", "kasi", "kasin", "kasini", "kaslari", "kaslarin", "kan", "hasta"})
+# Medical words that are also ordinary Turkish or English words, or the
+# opening of one: "gen" begins genel/genç/geniş/generate, "diz" begins
+# dizin/dizi/dizüstü, "doku" begins doküman/dokunmatik, "kol" begins
+# kolay/kolonya, "sinir" is also sınır, "eklem" is also ekleme, and spor /
+# gram / lens / zarf / pili mean sport, gram, lens, envelope and battery in
+# every sentence that is not about medicine. Two rules keep them honest:
+# they match as whole words through the closed Turkish suffix list, and one
+# of them alone never claims a turn — see _medical_evidence.
+_EVERYDAY_MEDICAL_WORDS = frozenset({
+    "gen", "diz", "kol", "doku", "sinir", "boyun", "eklem", "karin", "kas", "kan",
+    "hasta", "gram", "spor", "kapsul", "bag", "bas", "kanal", "zarf", "maya", "kuf",
+    "lens", "mercek", "pili", "aclik", "tokluk", "nam", "koch", "cell", "cells",
+    "head", "base", "line", "angle", "silent", "gray", "lever", "mold", "yeast",
+})
+# The subset whose bare token is weak evidence that the turn is medical. The rest
+# of the set above only demotes a term or concept match that rests on it: "the
+# base line of the chart" carries two of those words and is not about medicine,
+# while "diz eklemi" carries two body words and is.
+_WEAK_MEDICAL_WORDS = frozenset({
+    "gen", "diz", "kol", "doku", "sinir", "boyun", "eklem", "karin", "kas", "kan",
+    "hasta", "gram", "spor", "kapsul", "mercek", "aclik", "tokluk", "koch",
+    "cell", "cells",
+})
 _SUBJECT_NAMES = ("anatomi", "anatomy", "histoloj", "histolog", "mikrobiyoloj", "microbiolog", "biyokimya", "biochem", "biyofizik", "biophys", "fizyoloj", "physiolog", "biyoloj", "biolog")
 _ANSWER_PATTERN = re.compile(r"^(?:cevap(?:im)?|yanit(?:im)?|answer|sik|secenek|option)?\s*[:\-]?\s*\(?([a-e])\)?\s*(?:sikki|secenegi|olsun)?[.!]?$")
-_COUNT_PATTERN = re.compile(r"(\d{1,3})\s*(?:tane\s*|adet\s*)?(?:soru|question|mcq|sorudan|sorulu|soruluk)")
-_OPTION_PATTERN = re.compile(r"(\d)\s*(?:sik|secenek|option|choice|sikli|secenekli)")
+# The unit needs a right-hand boundary: without it "3 sorun" (3 problems)
+# and "3 sıkıntı" (3 issues) — an ordinary bug report — were read as a
+# question count and an option count and hijacked the turn.
+_COUNT_PATTERN = re.compile(r"(\d{1,3})\s*(?:tane\s*|adet\s*)?(?:sorudan|soruluk|sorulu|soru(?!n)|questions?|mcqs?)")
+_OPTION_PATTERN = re.compile(r"(\d)\s*(?:sikli|sik|secenekli|secenek|options?|choices?)(?![a-z])")
+# "şık" only ever means a multiple-choice option, so it can claim a turn on
+# its own; "seçenek" / "option" / "choice" is generic assistant vocabulary
+# ("bana 2 seçenek sun") and only counts once the turn is medical already.
+_MCQ_OPTION_PATTERN = re.compile(r"(\d)\s*(?:sikli|sik)(?![a-z])")
 _DIFFICULTY_PATTERNS = (
     re.compile(r"zorluk(?:\s*seviyesi|\s*derecesi)?\s*[:=]?\s*(\d)"),
     re.compile(r"difficulty\s*(?:level)?\s*[:=]?\s*(\d)"),
     re.compile(r"\b(\d)\s*/\s*5\b"),
     re.compile(r"seviye\s*(\d)"),
 )
+# Only the ones that name difficulty may claim a turn: a bare "4/5" is a
+# film rating, a date or a signal strength, and "seviye 3" is a volume.
+_STATED_DIFFICULTY_PATTERNS = _DIFFICULTY_PATTERNS[:2]
+# Windows-automation phrasing. Core marks these turns as actions and
+# exposes its own tools for them (InteractionPolicy._ACTION_MARKERS); a
+# sentence that names a file, a folder, the desktop or an application — or
+# asks for one to be printed, deleted or downloaded — is an automation
+# request even when it also names a medical thing, and claiming it would
+# strip the very tools that could carry it out.
+_SYSTEM_OBJECTS = ("klasor", "dosya", "masaustu", "uygulama", "program", "tarayici", "ayar", "pencere", "surucu", "folder", "file", "desktop", "application", "browser", "settings")
+# "sil " keeps its trailing space so it stays the verb "delete" and does
+# not swallow "silindir" (cylinder) or "silik". Copying is left to the
+# object words above: "kopyalama" is the study instruction "do not copy".
+_SYSTEM_ACTIONS = ("yazdir", "indir", "calistir", "kaydet", "sil ", "print", "download", "install", "uninstall", "delete")
 _LECTURE_PATTERN = re.compile(r"(?:lecture|ders|kurs|hafta|week|bolum|chapter|konu)\s*(\d{1,3})|(\d{1,3})\s*\.\s*(?:ders|hafta|bolum)")
 
 
@@ -227,6 +291,105 @@ class StudyCommand:
 def _contains(folded: str, phrases: tuple[str, ...]) -> bool:
     padded = f" {folded} "
     return any(f" {phrase}" in padded for phrase in phrases)
+
+
+# The terminology index's suffix list is written for Latin term
+# recognition and stops short of the longer possessive chains an ordinary
+# Turkish sentence puts on a noun ("sorularına", "kaslarında", "dizinde").
+# A study word carries them just as often, so they are added here rather
+# than loosened into an open ``[a-z]*`` that would undo the whole point.
+_EXTRA_SUFFIXES = frozenset({
+    "ina", "ine", "una", "une", "inda", "inde", "unda", "unde",
+    "indan", "inden", "undan", "unden", "inin", "unun", "ini", "unu",
+    "larina", "lerine", "larinda", "lerinde", "larindan", "lerinden",
+    "larim", "lerim", "larimiz", "lerimiz", "imiz", "umuz", "iniz", "unuz",
+})
+_WORD_SUFFIXES = TURKISH_SUFFIXES | _EXTRA_SUFFIXES
+_LONGEST_SUFFIX = max(len(suffix) for suffix in _WORD_SUFFIXES)
+
+
+def _word_form(token: str, words: frozenset[str]) -> str | None:
+    """Which word in ``words`` this token is an inflected form of, if any.
+
+    A prefix test cannot tell "gen" (gene) from "genel" (general), "diz"
+    (knee) from "dizin" (directory) or "doku" (tissue) from "doküman", so a
+    word that is short enough to open an everyday word is only recognised
+    whole, followed by a real Turkish suffix from the closed list the
+    terminology index already uses. Returns the base word so the caller can
+    count *distinct* hits rather than tokens.
+    """
+    if token in words:
+        return token
+    for cut in range(1, min(_LONGEST_SUFFIX, len(token) - 1) + 1):
+        if token[-cut:] in _WORD_SUFFIXES and token[:-cut] in words:
+            return token[:-cut]
+    return None
+
+
+def _found_words(token_list: list[str], words: frozenset[str]) -> set[str]:
+    """The base words of ``words`` this sentence actually uses."""
+    found = {_word_form(token, words) for token in token_list}
+    found.discard(None)
+    return found  # type: ignore[return-value]
+
+
+def _has_word(token_list: list[str], words: frozenset[str]) -> bool:
+    return any(_word_form(token, words) is not None for token in token_list)
+
+
+def _mentions_professor(folded: str, token_list: list[str]) -> bool:
+    # "prof" matches the bare token only. It is an abbreviation, not a
+    # Turkish noun, so it takes no suffix — and letting it take one would
+    # read "profile" as "prof" plus the suffix "ile".
+    return _contains(folded, _PROFESSOR) or bool(set(token_list) & _PROFESSOR_WORDS)
+
+
+# "Sınav" places a revision in time as often as it asks for one ("yarın sınavım
+# var, hızlı tekrar yap"); only "soru" and its English pair actually ask for
+# items to answer, so that is what a revision phrase is measured against.
+_ITEM_WORDS = frozenset({"soru"})
+_ITEM_TOKENS = frozenset({"question", "questions", "mcq", "mcqs"})
+
+
+def _asks_for_items(token_list: list[str]) -> bool:
+    return _has_word(token_list, _ITEM_WORDS) or bool(set(token_list) & _ITEM_TOKENS)
+
+
+def _without_phrases(folded: str, phrases: tuple[str, ...]) -> str:
+    """``folded`` with every matched phrase removed, to ask what is left."""
+    remainder = folded
+    for phrase in phrases:
+        if phrase in remainder:
+            remainder = remainder.replace(phrase, " ")
+    return remainder
+
+
+def _mentions_questions(token_list: list[str]) -> bool:
+    """Does the sentence talk about questions, exams or tests?"""
+    return _has_word(token_list, _QUESTION_WORDS) or bool(set(token_list) & _QUESTION_TOKENS)
+
+
+def _everyday_alias(match: TermMatch) -> bool:
+    """Did this term match rest entirely on an everyday word?
+
+    ``spor`` is an alias of *endospor* and ``pili`` of *pilus*, so "spor
+    haberlerini aç" and "dizüstünün pilini kontrol et" produce a real term
+    match with no medical content behind it.
+    """
+    alias_tokens = set(tokens(match.alias))
+    return bool(alias_tokens) and alias_tokens <= _EVERYDAY_MEDICAL_WORDS
+
+
+def _everyday_concept(concept: Concept, sentence_tokens: list[str]) -> bool:
+    """Is an everyday word the only thing tying this concept to the text?"""
+    vocabulary = {token for alias in [concept.name, *concept.aliases] for token in tokens(alias)}
+    # Suffix-aware, so "pilini" still counts as the alias "pili".
+    shared = {word for word in vocabulary if _has_word(sentence_tokens, {word})}
+    return bool(shared) and shared <= _EVERYDAY_MEDICAL_WORDS
+
+
+def _looks_like_automation(folded: str) -> bool:
+    return _contains(folded, _SYSTEM_OBJECTS) or _contains(folded, _SYSTEM_ACTIONS)
 
 
 def _wants_open(token_list: list[str]) -> bool:
@@ -357,9 +520,9 @@ class MedicalIntentParser:
             command.topic_id = session.topic_id
 
         # ---- medical or not
-        medical_stems = has_stem(token_list, _MEDICAL_STEMS) or bool(set(token_list) & _MEDICAL_EXACT)
         subject_named = has_stem(token_list, _SUBJECT_NAMES)
-        strong_terms = [match for match in matches if match.entry.kind != "term"]
+        medical_stems = has_stem(token_list, _MEDICAL_STEMS)
+        strong_terms, strong_concepts, everyday_words = self._medical_evidence(command, matches, token_list)
         # Study-shaped follow-ups ("20 soru hazırla", "cevapları sonda
         # ver", "hocanın tarzında") belong to the Academy even without a
         # medical word; plain system commands never do.
@@ -369,17 +532,27 @@ class MedicalIntentParser:
         # and taking those would break the rest of JARVIS. Inside an active
         # study context the bare form is still read as a scope below.
         page_range = parse_page_range(raw)
+        # "5 şıklı olsun" claims a turn on its own; the generic spellings
+        # ("4 seçenekli olsun", "seviye 3 olsun") are assistant vocabulary on a
+        # cold turn and the documented follow-up shorthand inside a session, so
+        # they need the same recent-activity corroboration a bare range needs.
+        follow_up_shorthand = contextual and (
+            _OPTION_PATTERN.search(folded) is not None
+            or any(pattern.search(folded) for pattern in _DIFFICULTY_PATTERNS)
+        )
         strong_study_marker = (
             _COUNT_PATTERN.search(folded) is not None
-            or _OPTION_PATTERN.search(folded) is not None
-            or any(pattern.search(folded) for pattern in _DIFFICULTY_PATTERNS)
+            or _MCQ_OPTION_PATTERN.search(folded) is not None
+            or follow_up_shorthand
+            or any(pattern.search(folded) for pattern in _STATED_DIFFICULTY_PATTERNS)
             or (page_range is not None and _contains(folded, _PAGE_WORDS))
-            or has_stem(token_list, ("sinav", "exam", "quiz", "mcq"))
-            or _contains(folded, _PROFESSOR)
+            or has_stem(token_list, ("sinav",))
+            or bool(set(token_list) & _EXAM_TOKENS)
+            or _mentions_professor(folded, token_list)
             or bool(set(token_list) & _QUIZ_TOKENS)
         )
         study_shaped = strong_study_marker or (
-            has_stem(token_list, _STUDY_SHAPED)
+            (has_stem(token_list, _STUDY_SHAPED) or _mentions_questions(token_list))
             and (
                 has_stem(token_list, _GENERATE + _ANALYZE + _HIGHLIGHT)
                 or _contains(folded, _QUIZ + _ORAL + _ANSWERS_AT_END + _ONE_AT_A_TIME + _WEAK + _NO_COPY + _HARDER + _EASIER + _HIGH_YIELD + _RAPID + _COMPARE_KNOWLEDGE)
@@ -388,19 +561,40 @@ class MedicalIntentParser:
             contextual
             and _contains(folded, _COMPARE_KNOWLEDGE + _ANSWERS_AT_END + _ONE_AT_A_TIME + _NO_COPY + _HARDER + _EASIER + _NEXT)
         )
-        intrinsically_medical = bool(
-            forced or explicit_subject or strong_terms or command.concept_ids or subject_named or medical_stems
+        strong_medical = bool(explicit_subject or strong_terms or strong_concepts or subject_named or medical_stems)
+        # One everyday word ("spor", "gram", "diz") is not a medical
+        # request. It becomes one only when a second, independent signal
+        # agrees: another such word, a real medical word, a named subject
+        # or a study marker — the same corroboration the bare page range
+        # above already asks for. Recent study activity is deliberately not
+        # on that list: ``contextual`` exists for study-shaped follow-ups,
+        # and "dizini listele" is a plain system command whichever screen
+        # the student was on a minute ago.
+        # A question about one of those words is the exception: "what is a spore",
+        # "explain gram staining" name nothing else, and English medical vocabulary
+        # is too thin in the stem list to carry them. An automation sentence is
+        # excluded below, so this cannot claim "explain this file".
+        asks_about_it = _contains(folded, _EXPLAIN) and not _looks_like_automation(folded)
+        corroborated = bool(everyday_words) and (
+            strong_medical or len(everyday_words) >= 2 or strong_study_marker or asks_about_it
         )
-        command.medical = intrinsically_medical or (study_shaped and (contextual or strong_study_marker))
-        if forced or explicit_subject or subject_named or (strong_terms and medical_stems):
-            command.confidence = "high"
-        elif strong_terms or command.concept_ids or medical_stems or (study_shaped and (contextual or strong_study_marker)):
-            command.confidence = "medium"
-        else:
-            command.confidence = "low"
+        intrinsically_medical = bool(forced or strong_medical or corroborated)
+        # An automation request stays Core's: the Academy may narrow the
+        # exposed tools, never remove the ones the turn needs. Only a
+        # strong study marker ("bu klasördeki pdf'ten 20 soru çıkar") or a
+        # request typed inside the Academy overrides that.
+        automation = _looks_like_automation(folded) and not (forced or strong_study_marker)
+        command.medical = not automation and (
+            intrinsically_medical or (study_shaped and (contextual or strong_study_marker))
+        )
         if not command.medical:
             command.intent = MedicalIntent.NONE
+            command.confidence = "low"
             return command
+        if forced or explicit_subject or subject_named or (strong_terms and medical_stems):
+            command.confidence = "high"
+        else:
+            command.confidence = "medium"
 
         # ---- constraints
         count = _COUNT_PATTERN.search(folded)
@@ -423,18 +617,18 @@ class MedicalIntentParser:
                 command.harder = True
             elif _contains(folded, _EASIER):
                 command.easier = True
-            elif has_stem(token_list, ("zor",)) and _contains(folded, _QUESTION_WORDS):
+            elif has_stem(token_list, ("zor",)) and _mentions_questions(token_list):
                 command.difficulty = 4
-            elif has_stem(token_list, ("kolay",)) and _contains(folded, _QUESTION_WORDS):
+            elif has_stem(token_list, ("kolay",)) and _mentions_questions(token_list):
                 command.difficulty = 2
         command.page_range = page_range
         command.answers_at_end = _contains(folded, _ANSWERS_AT_END) and ("cevap" in folded or "answer" in folded or "yanit" in folded)
         command.one_at_a_time = _contains(folded, _ONE_AT_A_TIME)
-        command.wrong_only = _contains(folded, _WEAK) and (_contains(folded, _QUESTION_WORDS) or _contains(folded, ("konu", "alan", "tekrar", "topic")))
+        command.wrong_only = _contains(folded, _WEAK) and (_mentions_questions(token_list) or _contains(folded, ("konu", "alan", "tekrar", "topic")))
         command.no_copy = _contains(folded, _NO_COPY)
         command.timed = _contains(folded, _TIMED)
         command.immediate_feedback = _contains(folded, _IMMEDIATE)
-        command.professor_style = _contains(folded, _PROFESSOR) and (_contains(folded, _STYLE) or _contains(folded, ("sorular", "sorusu", "sorulari", "questions", "eski")))
+        command.professor_style = _mentions_professor(folded, token_list) and (_contains(folded, _STYLE) or _contains(folded, ("sorular", "sorusu", "sorulari", "questions", "eski")))
         command.current_document = _contains(
             folded,
             ("bu pdf", "bu slayt", "bu belge", "bu dosya", "bu ders", "bu materyal", "bu sunum", "bu notlar",
@@ -462,6 +656,47 @@ class MedicalIntentParser:
 
     # ------------------------------------------------------------------
 
+    def _medical_evidence(
+        self,
+        command: StudyCommand,
+        matches: list[TermMatch],
+        token_list: list[str],
+    ) -> tuple[list[TermMatch], bool, set[str]]:
+        """Split what the sentence offers into signals that stand alone and
+        signals carried by a word that is also an everyday word.
+
+        Returns the strong term matches, whether any concept is backed by
+        something other than an everyday word, and the everyday medical
+        words the sentence actually used (distinct, so "kol kasları" counts
+        as two and "kolları" as one).
+        """
+        strong_terms = [
+            match
+            for match in matches
+            if match.entry.kind != "term" and not _everyday_alias(match)
+        ]
+        everyday_words = _found_words(token_list, _WEAK_MEDICAL_WORDS)
+        everyday_words.update(
+            token
+            for match in matches
+            if _everyday_alias(match)
+            for token in tokens(match.alias)
+            if token in _WEAK_MEDICAL_WORDS
+        )
+        from_strong_term = {match.entry.concept_id for match in strong_terms if match.entry.concept_id}
+        strong_concepts = False
+        for concept_id in command.concept_ids:
+            if concept_id in from_strong_term:
+                strong_concepts = True
+                break
+            concept = self._concepts.get(concept_id) if self._concepts is not None else None
+            # Without the graph a concept id is worth no more than the term
+            # match that produced it, and that alias was judged above.
+            if concept is not None and not _everyday_concept(concept, token_list):
+                strong_concepts = True
+                break
+        return strong_terms, strong_concepts, everyday_words
+
     def _fill_session(self, command: StudyCommand, session: StudySession | None) -> None:
         if session is None:
             return
@@ -479,9 +714,22 @@ class MedicalIntentParser:
         active_quiz: bool,
     ) -> str:
         has_structure = bool(command.structure_ids)
-        question_words = _contains(folded, _QUESTION_WORDS) or command.question_count is not None
+        question_words = _mentions_questions(token_list) or command.question_count is not None
         generate = has_stem(token_list, _GENERATE)
         pdf_words = _contains(folded, _PDF) or command.current_document or command.page_range is not None
+        # "sınavdan önce hızlı tekrar yap" / "sınavda çıkacak noktaları
+        # ver" name the exam only to place the revision in time. The exam
+        # branch below sees that word and the verb and would swallow every
+        # phrasing the rapid-review and high-yield vocabularies were written
+        # for. What separates them is where the question word sits: inside the
+        # revision phrase it is part of the phrase, and outside it the student
+        # asked for questions ("kritik noktalardan anatomi sorusu hazırla").
+        review_request = _contains(folded, _RAPID) or _contains(folded, _HIGH_YIELD)
+        asks_for_questions = question_words and (
+            command.question_count is not None
+            or not review_request
+            or _asks_for_items(tokens(_without_phrases(folded, _RAPID + _HIGH_YIELD)))
+        )
 
         # Anatomy Lab actions
         lab = _contains(folded, _ANATOMY_LAB)
@@ -499,13 +747,21 @@ class MedicalIntentParser:
             command.reasons.append("anatomy_highlight")
             return MedicalIntent.ANATOMY_HIGHLIGHT
 
-        # Professor style
-        professor = _contains(folded, _PROFESSOR)
-        if professor and (question_words or generate) and (command.professor_style or _contains(folded, _STYLE)):
+        # Professor style. "Hocanın soru tarzını analiz et" asks for the
+        # profile, not for a paper, so the analysis verbs are read before
+        # the generation branch — otherwise the word "soru" in the sentence
+        # sends every profiling request to exam generation.
+        professor = _mentions_professor(folded, token_list)
+        style = _contains(folded, _STYLE)
+        analyse = _contains(folded, _PROFESSOR_ANALYSIS)
+        if professor and analyse and (style or command.professor_style) and command.question_count is None:
+            command.reasons.append("professor_profile")
+            return MedicalIntent.PROFESSOR_PROFILE
+        if professor and (question_words or generate) and (command.professor_style or style):
             command.professor_style = True
             command.reasons.append("professor_style_generation")
             return MedicalIntent.PROFESSOR_STYLE_EXAM
-        if professor and (_contains(folded, _STYLE) or _contains(folded, ("analiz", "analy", "ogren", "learn", "incele"))):
+        if professor and (style or analyse):
             command.reasons.append("professor_profile")
             return MedicalIntent.PROFESSOR_PROFILE
 
@@ -537,7 +793,11 @@ class MedicalIntentParser:
         ):
             command.reasons.append("quiz")
             return MedicalIntent.QUIZ
-        if question_words and (generate or command.question_count is not None or command.option_count is not None):
+        if (
+            question_words
+            and (generate or command.question_count is not None or command.option_count is not None)
+            and asks_for_questions
+        ):
             if command.one_at_a_time and (command.question_count or 0) <= 10 and not command.answers_at_end:
                 command.reasons.append("interactive_questions")
                 return MedicalIntent.QUIZ

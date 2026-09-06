@@ -9,6 +9,7 @@ async runner exactly as it does in production.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import sys
 import threading
@@ -2122,3 +2123,147 @@ def test_notifications_survive_a_bridge_restart(tmp_path, monkeypatch) -> None:
     app3.settings = replace(app3.settings, notifications_database_path="")
     bridge3 = shell.NovaBridge(DesktopController(app3), None)
     assert bridge3._notifications.persistent is False
+
+
+# ---------------------------------------------------------------------------
+# medical academy: the pause gate and the import's own report
+# ---------------------------------------------------------------------------
+
+
+IMPORT_QUESTIONS_TEXT = """1. Sternum'un parçaları aşağıdakilerden hangisidir?
+A) Manubrium, corpus, processus xiphoideus
+B) Caput, collum, corpus
+
+2. Scapula'nın lateral açısında hangi yapı bulunur?
+A) Cavitas glenoidalis
+B) Spina scapulae
+"""
+
+
+def test_importing_a_document_honours_the_pause_gate(booted, tmp_path) -> None:
+    assert booted.app.medical is not None
+    lecture = tmp_path / "ders.txt"
+    lecture.write_text("Scapula: spina scapulae ve acromion.\n" * 20, encoding="utf-8")
+    started: list[str] = []
+
+    def spy(operation, *, report: str = "") -> bool:
+        # The pipeline itself is not the subject here: only whether the
+        # shell submits it at all.
+        started.append(operation.__qualname__)
+        operation.close()
+        return True
+
+    booted.bridge._medical_start = spy
+    booted.controller.set_paused(True)
+
+    # The same job under its own name is refused, so the import must not
+    # smuggle it past the gate.
+    assert booted.bridge.medical_call("process_document", {"document_id": "x"}) == {
+        "ok": False,
+        "error": shell.PAUSED_MESSAGE,
+    }
+    result = booted.bridge.medical_call("import_document", {"path": str(lecture)})
+    assert result["ok"] is True and result["created"] is True
+    assert result["started"] is False
+    assert started == []
+    assert result["document"]["status"] == "pending"
+    assert shell.PAUSED_MESSAGE in result["message"]
+    assert "işleniyor" not in result["message"]
+
+    # Resumed, the very same action starts the pipeline it files.
+    booted.controller.set_paused(False)
+    second = tmp_path / "ders2.txt"
+    second.write_text("Femur: trochanter major ve collum femoris.\n" * 20, encoding="utf-8")
+    resumed = booted.bridge.medical_call("import_document", {"path": str(second)})
+    assert resumed["started"] is True
+    assert resumed["message"] == "Belge içe aktarıldı, işleniyor."
+    assert started == ["MedicalAcademy.process_document"]
+
+
+def test_a_question_import_reports_what_it_dropped_to_the_page(booted) -> None:
+    created = booted.bridge.medical_call("create_professor", {"name": "Dr. Aras", "subject": "anatomy"})
+    profile_id = created["professor"]["profile_id"]
+
+    def report() -> list[dict]:
+        return [
+            payload
+            for payload in booted.window.payloads("medical")
+            if payload.get("kind") == "job_report"
+        ]
+
+    first = booted.bridge.medical_call(
+        "import_questions", {"profile_id": profile_id, "text": IMPORT_QUESTIONS_TEXT}
+    )
+    assert first == {"ok": True, "started": True, "message": "Sorular içe aktarılıyor."}
+    wait_until(lambda: report() != [])
+    entry = report()[-1]
+    assert entry["job"] == "import" and entry["profile_id"] == profile_id
+    assert entry["added"] == 2 and entry["skipped"] == 0 and entry["without_key"] == 2
+    # The paper stated no key, and the report says so instead of leaving
+    # the student with two questions that look answered.
+    assert any("cevap anahtarı" in note for note in entry["notes"])
+
+    # The same paper again: nothing is added and the skip is reported.
+    booted.bridge.medical_call(
+        "import_questions", {"profile_id": profile_id, "text": IMPORT_QUESTIONS_TEXT}
+    )
+    wait_until(lambda: len(report()) == 2)
+    again = report()[-1]
+    assert again["added"] == 0 and again["skipped"] == 2
+    assert any("atlandı" in note for note in again["notes"])
+
+
+def test_every_medical_event_that_promises_a_notification_gets_one(booted) -> None:
+    """The tutor tells the student "hazır olunca bildiririm" for work it moves to
+    the background, so each of those events must reach the notification centre.
+    An event with no entry in the map is a promise nothing keeps."""
+    promised = {
+        "document_ready",
+        "document_analyzed",
+        "comparison_ready",
+        "exam_ready",
+        "exam_finished",
+        "note_ready",
+        "quiz_ready",
+        "job_failed",
+    }
+    source = inspect.getsource(shell.NovaBridge._on_medical_event)
+
+    for kind in promised:
+        assert f'"{kind}"' in source, kind
+
+
+def test_a_background_quiz_puts_its_first_question_in_the_notification_centre(booted) -> None:
+    before = booted.bridge.list_notifications()["total"]
+
+    booted.bridge._on_medical_event(
+        {
+            "kind": "quiz_ready",
+            "exam_id": "e1",
+            "title": "Kol · 5 soru",
+            "count": 5,
+            "question": "**Soru 1**\nHumerus distal ucunda radius ile eklem yapan yapı hangisidir?",
+        }
+    )
+
+    listing = booted.bridge.list_notifications()
+    assert listing["total"] == before + 1
+    latest = listing["items"][0]
+    assert "Quiz hazır" in latest["title"]
+    # The body is the question itself: a title alone would leave the student
+    # answering a question they were never shown.
+    assert "Humerus distal ucunda" in latest["body"]
+    assert any(payload.get("kind") == "quiz_ready" for payload in booted.window.payloads("medical"))
+
+
+def test_a_failed_background_job_reaches_the_notification_centre(booted) -> None:
+    before = booted.bridge.list_notifications()["total"]
+
+    booted.bridge._on_medical_event(
+        {"kind": "job_failed", "job": "analyze:d1", "error": "MedicalModelError", "message": "Model beklenen biçimde yanıt vermedi; tekrar dene."}
+    )
+
+    listing = booted.bridge.list_notifications()
+    assert listing["total"] == before + 1
+    assert "tamamlanamadı" in listing["items"][0]["title"]
+    assert "Model beklenen biçimde" in listing["items"][0]["body"]

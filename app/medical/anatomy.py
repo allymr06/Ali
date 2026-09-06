@@ -233,18 +233,49 @@ def _movement_pattern(text: str) -> tuple[str, str, str, str] | None:
     return None
 
 
+def _words(text: str) -> set[str]:
+    """The distinct words of a statement, folded for comparison."""
+    return set(tokens(text))
+
+
+def _states_the_same(answer_words: set[str], candidate_words: set[str]) -> bool:
+    """Does one of the two statements say everything the other says?
+
+    Peer facts are curated, so a distractor is normally a different nerve,
+    origin or landmark. But several peers state the *same* fact at different
+    lengths — "N. musculocutaneus (C5, C6)." next to "N. musculocutaneus
+    (C5, C6); lateral küçük parça n. radialis'ten dal alır." — and the shorter
+    one is then a complete, correct answer to the question the longer one
+    keys: the student is marked wrong for being right, and record_anatomy_answer
+    writes that into the mastery model. The mirror (a peer that only adds a
+    clause to the answer) is refused too — the two options then differ by a
+    detail belonging to another structure, which is a trap rather than a
+    discrimination, and the shipped data loses no question by refusing it.
+
+    Containment is measured over words, not characters: "Condylus medialis"
+    and "Epicondylus medialis" are two different landmarks of the same femur
+    and have to stay tellable apart.
+    """
+    if not answer_words or not candidate_words:
+        return False
+    return answer_words <= candidate_words or candidate_words <= answer_words
+
+
 def _distinct_distractors(answer: str, candidates: Iterable[str]) -> list[str]:
     """Peer facts that differ from the answer and from one another.
 
     Structures often share a fact — two muscles run off the same nerve — and
     offering both would put the same option in the list twice, exactly what
-    ``validate_question`` refuses to show a student.
+    ``validate_question`` refuses to show a student. A peer that only states
+    the answer's fact more (or less) fully is refused for a heavier reason: it
+    is itself a correct answer to the question being asked.
     """
     seen = {normalize(answer)}
+    answer_words = _words(answer)
     distinct: list[str] = []
     for candidate in candidates:
         key = normalize(candidate)
-        if not key or key in seen:
+        if not key or key in seen or _states_the_same(answer_words, _words(candidate)):
             continue
         seen.add(key)
         distinct.append(candidate)
@@ -494,9 +525,17 @@ class AnatomyLab:
         if len(landmarks) >= 3:
             order = list(landmarks)
             rng.shuffle(order)
+            names = {landmark.latin: _words(landmark.latin) for landmark in landmarks}
             for landmark in order[: max(1, count)]:
                 distractors = [item for item in landmarks if item is not landmark]
                 rng.shuffle(distractors)
+                # A sibling landmark whose Latin name says the same thing as the
+                # answer's would be a second correct option, so it is dropped —
+                # and a landmark left without two tellable peers is not asked.
+                answer_words = names[landmark.latin]
+                distractors = [item for item in distractors if not _states_the_same(answer_words, names[item.latin])]
+                if len(distractors) < 2:
+                    continue
                 choices = [landmark, *distractors[: max(1, option_count - 1)]]
                 rng.shuffle(choices)
                 keys = "ABCDEF"

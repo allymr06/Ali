@@ -47,7 +47,7 @@ Last verified: 6 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1968 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 2188 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
 
 ## Medical Academy (6 September 2026)
@@ -156,6 +156,45 @@ The frozen smoke report gained `medical` and `medical_data` fields in the
 previous session but the packaging test still described a complete report
 without them, so the build gate was asserting against a shape it would have
 rejected.
+
+**The pre-merge review.** Before the branch was merged the whole layer went
+through a twelve-lens adversarial review — fabricated sources, fabricated keys
+and style, anatomy honesty, the engine seam, intent false positives, store
+durability, the document pipeline, question quality, the learning model, the Nova
+bridge, async and events, and the quality of the tests themselves. Forty-seven
+candidate defects were raised; each was put to two independent attempts at
+refutation (does it actually happen, and does it actually matter), and 28
+survived. All 28 are fixed, each with a regression test, and each fix was audited
+by an agent that had not written it.
+
+The one that decided whether the feature worked at all: `CoreEngine` gives the
+augmenter a two-second slice of the turn, and both the chat quiz and chat exam
+generation awaited the provider inside it. With a provider answering in 1.5 s the
+turn was already cancelled, and the shipped model answers in four to six — so
+"beni sına" and "20 soru hazırla" silently did nothing in production: no quiz, no
+exam, no error. Both now answer from the question bank when it can fill the
+request and otherwise reply immediately and generate in the background, the way
+document analysis already did, with the first question arriving in the
+notification centre.
+
+The rest, by promise. *Never fabricate*: a question cited the wrong document
+whenever two documents shared a page number (citations are now resolved by the
+excerpt index the prompt prints, and dropped when index and page disagree); a
+second answer table overwrote the first paper's keys, a headerless key table
+deleted the last question, and "Cevap D değildir" was stored as the key D; an
+anatomy quiz offered a distractor that was itself a true answer; landmark labels
+were projected in the asset's raw coordinates while the mesh was re-centred, so
+each label pointed at the wrong part of the bone. *Do not break the rest of
+JARVIS*: prefix matching claimed everyday Turkish words (genel, dizin, doküman,
+kolay), "prof" matched profil, "exam" matched example, and an automation request
+that merely named a medical thing lost every automation tool. *Latency*: saving
+the study session bumped one global revision counter, so every study turn
+rebuilt the whole BM25 index; invalidation now tracks only the writes the index
+is built from.
+
+Nineteen candidates did not survive refutation and were left alone, including a
+duplicate of the index-rebuild finding and an unbounded page-image cache that
+turned out to be bounded by the pipeline above it.
 
 ## Persistent notification centre (5 September 2026)
 

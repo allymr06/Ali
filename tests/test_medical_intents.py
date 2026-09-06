@@ -22,6 +22,155 @@ from app.medical.terminology import TerminologyIndex, load_anatomy_data
 NON_MEDICAL = ("hava bugün nasıl", "spotify'da müzik aç", "dosyaları listele", "hafızamda ara: toplantı")
 ARM = "anatomy.musculoskeletal.upper_limb.arm"
 
+# The everyday half of the boundary, held as one table so the next word
+# that collides with the medical vocabulary is caught by a list rather
+# than by the user. Every entry is a request JARVIS itself must answer:
+# Windows automation, files, timers, volume, music, reminders, coding and
+# ordinary chat, in Turkish and in English.
+EVERYDAY_REQUESTS = (
+    # Turkish words the medical vocabulary starts inside
+    "genel ayarları aç",
+    "genellikle saat kaçta uyanırım",
+    "geniş ekranda aç",
+    "genç bir ses seç",
+    "dizini listele",
+    "indirilenler dizinini aç",
+    "yeni bir dizi öner",
+    "dizi izlemek için Netflix aç",
+    "dizüstü bilgisayarı kapat",
+    "dizüstünün pilini kontrol et",
+    "dokümanı kaydet",
+    "bu dokümanı yazdır",
+    "dokunmatik yüzeyi devre dışı bırak",
+    "kolay bir yol öner",
+    "kolonya siparişi ver",
+    "kol saatimi bul",
+    "sınırlı yetki ver",
+    "gün boyunca sessiz kal",
+    "gramer hatalarını düzelt",
+    "500 gram şeker ekle",
+    "spor haberlerini aç",
+    "spor müziği çal",
+    "takvime ekleme yap",
+    "listeye bir madde ekle",
+    # "prof" inside an ordinary word
+    "profil fotoğrafımı değiştir",
+    "Chrome profilini aç",
+    "profilimi güncelle",
+    "kullanıcı profilini göster",
+    "profesyonel bir e-posta yaz",
+    # numbers that are not question, option or difficulty counts
+    "kodda 3 sorun var, düzelt",
+    "1 sorunum var",
+    "testlerde 3 sorun çıktı, logları incele",
+    "bana 2 seçenek sun",
+    "bu filme 4/5 verdim",
+    "4/5/2026 tarihli toplantıyı hatırlat",
+    "wifi 3/5 sinyal gösteriyor",
+    "sesi 20-40 arası ayarla",
+    "ekran parlaklığını 30-60 arası yap",
+    # Windows automation that happens to name a medical thing
+    "masaüstündeki anatomi klasörünü aç",
+    "kalp.pdf dosyasını aç",
+    "histoloji sunumunu yazdır",
+    "anatomi klasörünü sil",
+    "anatomi notlarımı masaüstüne kaydet",
+    "hücre adlı klasörü oluştur",
+    "epitel.docx dosyasını masaüstünde bul",
+    # plain assistant work
+    "masaüstündeki proje klasörünü aç",
+    "dosyaları listele",
+    "hava bugün nasıl",
+    "spotify'da müzik aç",
+    "hafızamda ara: toplantı",
+    "saat kaç",
+    "yarın sabah 8'de alarm kur",
+    "bilgisayarı yeniden başlat",
+    "ses seviyesini yükselt",
+    "not defterini aç",
+    "toplantı için hatırlatıcı kur",
+    "python'da bir liste nasıl sıralanır",
+    "bu fonksiyonu refactor et",
+    "git commit mesajı yaz",
+    "klasördeki dosyaları say",
+    "müzik çal",
+    "sesi kapat",
+    "e-postalarımı kontrol et",
+    # English, where "exam" and "profile" live inside ordinary words
+    "give me an example of a python decorator",
+    "can you examine this log file",
+    "show me examples of async code",
+    "examine the diff",
+    "for example, what does this function return",
+    "create an example dockerfile",
+    "make an example config file",
+    "profile this script for me",
+    "my profile picture",
+    "give me 2 options for the deployment",
+    "open the downloads folder",
+    "set a timer for 10 minutes",
+    "what is the weather today",
+    "turn up the volume",
+    "write a unit test for this function",
+    "list the files in this directory",
+)
+
+# The study half: the requests the Academy documents, plus the phrasings
+# the reported misroutes were about. ``None`` means only that the turn
+# must be claimed; the intent is asserted wherever it is documented.
+STUDY_REQUESTS = (
+    ("Scapulayı bana basit anlat", MedicalIntent.SIMPLIFY),
+    ("Scapula hakkında kısa not çıkar", MedicalIntent.SHORT_NOTES),
+    ("Bu PDF'nin 20-40. sayfalarını çalış", MedicalIntent.PDF_ANALYZE),
+    ("Bu konudan 20 soru hazırla", MedicalIntent.EXAM_GENERATE),
+    ("Bu konudan 20 soru hazırla, 5 şıklı, cevapları en sonda ver", MedicalIntent.EXAM_GENERATE),
+    ("Hocanın attığım eski sorularına benzet", MedicalIntent.PROFESSOR_STYLE_EXAM),
+    ("Anatomy Lab'de humerusu aç", MedicalIntent.ANATOMY_OPEN),
+    ("Anatomy Lab'de scapulanın spina scapulae'sini işaretle", MedicalIntent.ANATOMY_HIGHLIGHT),
+    ("Kasların origo insertio innervatio ve fonksiyonlarını göster", MedicalIntent.MUSCLE_TABLE),
+    ("hiyalin kıkırdak ile fibrokartilajı karşılaştır", MedicalIntent.COMPARE),
+    ("mitoz ve mayoz arasındaki farkı anlat", MedicalIntent.COMPARE),
+    ("Explain competitive inhibition.", MedicalIntent.EXPLAIN),
+    ("Which structures form the articulatio cubiti?", None),
+    ("Scapulayı açıkla", MedicalIntent.EXPLAIN),
+    ("Humerusu aç", MedicalIntent.ANATOMY_OPEN),
+    ("Scapulayı göster", MedicalIntent.ANATOMY_OPEN),
+    ("Scapula nedir", MedicalIntent.EXPLAIN),
+    ("Scapulayı sade bir dille anlat", MedicalIntent.SIMPLIFY),
+    ("sayfa 20-40 arası çalış", None),
+    ("anatomi 20-40 sayfaları özetle", None),
+    ("20-40 arası 5 soru hazırla", None),
+    ("40-20 sayfaları arasını anlat", None),
+    ("200 soru hazırla", MedicalIntent.EXAM_GENERATE),
+    ("9 şıklı olsun", None),
+    ("zorluk 4 olsun", None),
+    ("beni sına", MedicalIntent.QUIZ),
+    ("beni anatomiden sına", MedicalIntent.QUIZ),
+    ("mikrobiyolojiden quiz yap", MedicalIntent.QUIZ),
+    ("sözlü sınav yap", MedicalIntent.ORAL_EXAM),
+    ("anatomiden 20 soru hazırla", MedicalIntent.EXAM_GENERATE),
+    ("histoloji sınavına hazırlan", None),
+    ("sınavdan önce hızlı tekrar yap", MedicalIntent.RAPID_REVIEW),
+    ("yarın sınavım var, hızlı tekrar yap", MedicalIntent.RAPID_REVIEW),
+    ("sınavdan önce yüksek verimli noktaları ver", MedicalIntent.HIGH_YIELD),
+    ("scapula için sınavda çıkacak noktaları ver", MedicalIntent.HIGH_YIELD),
+    ("hocanın soru tarzını analiz et", MedicalIntent.PROFESSOR_PROFILE),
+    ("hocanın eski sorularını incele", MedicalIntent.PROFESSOR_PROFILE),
+    ("glikoliz basamaklarını özetle", MedicalIntent.SUMMARIZE),
+    ("biyokimya konularını özetle", MedicalIntent.SUMMARIZE),
+    ("epitel dokusunu anlat", MedicalIntent.EXPLAIN),
+    ("nefron yapısını açıkla", MedicalIntent.EXPLAIN),
+    ("kalp nasıl çalışır", MedicalIntent.EXPLAIN),
+    ("hücre zarından difüzyon nasıl olur", MedicalIntent.EXPLAIN),
+    ("sinir hücresi nasıl çalışır", MedicalIntent.EXPLAIN),
+    ("diz ligamentlerini anlat", MedicalIntent.EXPLAIN),
+    ("kol kaslarını anlat", MedicalIntent.EXPLAIN),
+    ("boyun anatomisini göster", None),
+    ("gram boyama nedir", None),
+    ("hemoglobin nedir", None),
+    ("kromozom sayısı kaçtır", None),
+)
+
 
 @pytest.fixture(scope="module")
 def curriculum() -> Curriculum:
@@ -181,6 +330,34 @@ def test_everyday_commands_are_never_medical(parser, sessions) -> None:
             assert command.answer_key is None and command.label == "Tıp dışı", text
     assert parser.is_medical("hava bugün nasıl") is False
     assert parser.is_medical("Scapula nedir") is True
+
+
+@pytest.mark.parametrize("text", EVERYDAY_REQUESTS)
+def test_an_everyday_request_never_reaches_the_academy(parser, text: str) -> None:
+    """The whole boundary in one table.
+
+    A claimed turn loses the assistant's own tools, so a false positive
+    here breaks Windows automation, files and ordinary chat. The table is
+    the guard: prefix matching used to hand 52 of these 79 requests to the
+    Academy — "genel" through "gen", "dizin" through "diz", "doküman"
+    through "doku", "profil" through "prof", "example" through "exam".
+    """
+    command = parser.parse(text)
+
+    assert command.medical is False, f"{text} → {command.intent} ({command.reasons})"
+    assert command.intent == MedicalIntent.NONE
+    assert command.confidence == "low"
+
+
+@pytest.mark.parametrize(("text", "intent"), STUDY_REQUESTS)
+def test_a_documented_study_request_still_reaches_the_academy(parser, text: str, intent) -> None:
+    """The other half of the same boundary: tightening the vocabulary must
+    not cost the Academy the requests it is for."""
+    command = parser.parse(text)
+
+    assert command.medical is True, text
+    if intent is not None:
+        assert command.intent == intent, f"{text} → {command.intent}"
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +599,133 @@ def test_a_bare_number_pair_alone_is_not_a_study_scope(parser, text: str) -> Non
     assert command.page_range is None
 
 
+def test_a_medical_word_that_is_also_an_everyday_word_needs_corroboration(parser) -> None:
+    """"spor", "gram", "diz" and "kol" are medical words and ordinary
+    words at once. One of them alone is not a study request; a second
+    signal in the same sentence is what makes it one."""
+    for text in ("spor haberlerini aç", "500 gram şeker ekle", "kol saatimi bul", "dizüstünün pilini kontrol et"):
+        assert parser.parse(text).medical is False, text
+
+    # Corroborated by a second everyday medical word, by a real medical
+    # word, and by a named subject.
+    assert parser.parse("kol kaslarını anlat").medical is True
+    assert parser.parse("sinir hücresi nasıl çalışır").medical is True
+    assert parser.parse("boyun anatomisini göster").medical is True
+    # Inside the Academy the same sentence needs nothing else.
+    assert parser.parse("spor nedir", forced=True).medical is True
+
+
+def test_recent_study_activity_does_not_corroborate_an_everyday_word(parser, sessions) -> None:
+    """``contextual`` is for study-shaped follow-ups. "dizini listele" is a
+    plain system command whichever screen the student was on a minute ago,
+    and it must keep its filesystem tool during a study session."""
+    sessions.start_chat_quiz(["q1"], mode="quiz")
+    quiz_session = sessions.get()
+    everyday = (
+        "dizini listele", "yeni bir dizi öner", "kol saatimi bul", "gün boyunca sessiz kal",
+        "500 gram şeker ekle", "spor haberlerini aç", "takvime ekleme yap",
+        "dizüstünün pilini kontrol et", "profil fotoğrafımı değiştir",
+    )
+    for text in everyday:
+        for command in (parser.parse(text, contextual=True), parser.parse(text, session=quiz_session)):
+            assert command.medical is False, text
+            assert command.intent == MedicalIntent.NONE, text
+
+
+def test_a_medical_word_is_matched_whole_and_not_as_a_prefix(parser) -> None:
+    """"gen" opens genel/genç/geniş/generate and "doku" opens doküman;
+    only a real Turkish suffix may follow the word itself."""
+    for text in ("genel ayarları aç", "geniş ekranda aç", "dokümanı kaydet", "kolay bir yol öner", "sınırlı yetki ver"):
+        command = parser.parse(text)
+        assert command.medical is False, text
+
+    # The words themselves, inflected, are still found — with a second
+    # signal to corroborate them.
+    assert parser.parse("genleri ve kromozomları anlat").medical is True
+    assert parser.parse("epitel dokusunu anlat").medical is True
+
+
+def test_prof_is_read_as_a_title_not_as_the_start_of_profil(parser) -> None:
+    """"prof" used to match profil / profile / profesyonel, and a profile
+    photo request was answered with the Academy's professor-profile line
+    instead of being sent to the model at all."""
+    for text in ("profil fotoğrafımı değiştir", "Chrome profilini aç", "profile this script for me", "profesyonel bir e-posta yaz"):
+        command = parser.parse(text)
+        assert command.medical is False, text
+        assert command.intent != MedicalIntent.PROFESSOR_PROFILE, text
+
+    # The title still counts, with or without its dot.
+    assert parser.parse("Prof. Ahmet'in tarzını öğren").intent == MedicalIntent.PROFESSOR_PROFILE
+    assert parser.parse("hocanın tarzını analiz et").intent == MedicalIntent.PROFESSOR_PROFILE
+
+
+def test_exam_is_read_as_a_word_not_as_the_start_of_example(parser) -> None:
+    """An English coding request carrying "example" or "examine" used to
+    be claimed as an exam request and answered without a model call."""
+    for text in ("give me an example of a python decorator", "can you examine this log file", "show me examples of async code"):
+        command = parser.parse(text)
+        assert command.medical is False, text
+
+    assert parser.parse("give me 20 exam questions about the scapula").medical is True
+    assert parser.parse("quiz me on the scapula").medical is True
+
+
+def test_naming_a_medical_thing_does_not_take_a_windows_command(parser) -> None:
+    """A file, a folder or the desktop makes the turn Core's: the Academy
+    may narrow the exposed tools, never remove the ones the request needs.
+    Opening the anatomy folder is opening a folder."""
+    for text in ("masaüstündeki anatomi klasörünü aç", "kalp.pdf dosyasını aç", "anatomi klasörünü sil", "histoloji sunumunu yazdır"):
+        command = parser.parse(text)
+        assert command.medical is False, text
+
+    # A stated study scope is still the Academy's, folder or no folder.
+    assert parser.parse("anatomi klasöründeki pdf'ten 20 soru hazırla").medical is True
+    # And so is anything typed inside the Academy itself.
+    assert parser.parse("anatomi klasörünü aç", forced=True).medical is True
+
+
+def test_a_number_only_counts_when_it_carries_a_study_unit(parser) -> None:
+    """"3 sorun" is three problems, not three questions; "2 seçenek" is a
+    pair of choices; "4/5" is a rating, a date or a signal strength."""
+    for text in ("kodda 3 sorun var, düzelt", "1 sorunum var", "bana 2 seçenek sun", "bu filme 4/5 verdim", "wifi 3/5 sinyal gösteriyor"):
+        command = parser.parse(text)
+        assert command.medical is False, text
+        assert command.question_count is None and command.option_count is None, text
+        assert command.difficulty is None, text
+
+    # The study units themselves are unchanged.
+    counted = parser.parse("20 soru hazırla, 5 şıklı, zorluk 4")
+    assert (counted.question_count, counted.option_count, counted.difficulty) == (20, 5, 4)
+    assert parser.parse("30 sorudan oluşsun").question_count == 30
+    # "seçenek" still states the option count once the turn is medical.
+    assert parser.parse("scapula sorularında 4 seçenek olsun").option_count == 4
+
+
+def test_the_word_sinav_does_not_swallow_rapid_review_and_high_yield(parser) -> None:
+    """"sınavdan önce" and "sınavda çıkacak" are the rapid-review and
+    high-yield vocabularies' own phrasings: the exam branch used to claim
+    them because the sentence also said "sınav" and carried a verb."""
+    assert parser.parse("sınavdan önce hızlı tekrar yap").intent == MedicalIntent.RAPID_REVIEW
+    assert parser.parse("yarın sınavım var, hızlı tekrar yap").intent == MedicalIntent.RAPID_REVIEW
+    assert parser.parse("sınavdan önce yüksek verimli noktaları ver").intent == MedicalIntent.HIGH_YIELD
+    assert parser.parse("scapula için sınavda çıkacak noktaları ver").intent == MedicalIntent.HIGH_YIELD
+
+    # A stated count still asks for a paper, not a revision sheet.
+    exam = parser.parse("sınavdan önce 20 soru hazırla")
+    assert exam.intent == MedicalIntent.EXAM_GENERATE and exam.question_count == 20
+
+
+def test_analysing_the_professors_questions_builds_a_profile(parser) -> None:
+    """Analysing the professor's questions is how the profile is built;
+    the word "soru" in the sentence used to route it to exam generation."""
+    for text in ("hocanın soru tarzını analiz et", "hocanın eski sorularını incele", "hocanın soru kalıplarını öğren"):
+        assert parser.parse(text).intent == MedicalIntent.PROFESSOR_PROFILE, text
+
+    # Asking for a paper in that style still generates one.
+    assert parser.parse("Hocanın attığım eski sorularına benzet").intent == MedicalIntent.PROFESSOR_STYLE_EXAM
+    assert parser.parse("hocanın tarzında 20 soru hazırla").intent == MedicalIntent.PROFESSOR_STYLE_EXAM
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
@@ -436,3 +740,88 @@ def test_a_page_range_is_kept_when_the_sentence_means_pages(parser, text: str, e
 
     assert command.medical is True
     assert command.page_range == expected
+
+
+# ---------------------------------------------------------------------------
+# the second round: what a pre-merge audit measured as newly claimed or newly lost
+# ---------------------------------------------------------------------------
+
+AUDITED_EVERYDAY = (
+    # "question" is ordinary English and never opens a study turn by itself
+    "I have a question about this code",
+    "quick question: how do I restart the service",
+    "answer my questions",
+    "skip this question",
+    # words that only demote a term match; their bare tokens are not evidence
+    "the base line of the chart",
+    "set the angle and the base",
+    "align the head and the base of the column",
+    "what is the base url for this line of code",
+    # the generic option and difficulty spellings are assistant vocabulary
+    "bana 2 seçenek sun",
+    "seviye 3 olsun",
+    # the right-hand boundary that separates a count from a problem report
+    "3 sorun var",
+    "1 sorunum var",
+)
+
+AUDITED_STUDY = (
+    ("hocanın sorularını analiz edip 20 soru hazırla", MedicalIntent.PROFESSOR_STYLE_EXAM),
+    ("anatomiden en önemli konulardan soru hazırla", MedicalIntent.EXAM_GENERATE),
+    ("sınavda çıkacak anatomi sorularını hazırla", MedicalIntent.EXAM_GENERATE),
+    ("kritik noktalardan anatomi sorusu hazırla", MedicalIntent.EXAM_GENERATE),
+    ("sınavdan önce hızlı tekrar yap", MedicalIntent.RAPID_REVIEW),
+    ("yarın sınavım var, hızlı tekrar yap", MedicalIntent.RAPID_REVIEW),
+    ("sınavda çıkacak noktaları ver", MedicalIntent.HIGH_YIELD),
+)
+
+AUDITED_COUNTS = (
+    ("20 soruyu hazırla", 20),
+    ("ilk 5 soruyu göster", 5),
+    ("20 soruya cevap ver", 20),
+    ("5 sorumu kontrol et", 5),
+    ("10 soruluk sınav hazırla", 10),
+    ("3 sorun var", None),
+    ("1 sorunum var", None),
+)
+
+
+@pytest.mark.parametrize("text", AUDITED_EVERYDAY)
+def test_the_second_round_of_false_positives_stays_closed(parser, text: str) -> None:
+    assert parser.parse(text).medical is False
+
+
+@pytest.mark.parametrize(("text", "intent"), AUDITED_STUDY)
+def test_a_revision_request_and_a_question_request_stay_apart(parser, text: str, intent: str) -> None:
+    """"Sınav" can place a revision in time; only "soru" asks for items."""
+    command = parser.parse(text)
+
+    assert command.medical is True
+    assert command.intent == intent
+
+
+@pytest.mark.parametrize(("text", "count"), AUDITED_COUNTS)
+def test_a_stated_count_survives_its_turkish_case_ending(parser, text: str, count) -> None:
+    assert parser.parse(text, contextual=True).question_count == count
+
+
+@pytest.mark.parametrize("text", ("4 seçenekli olsun", "5 seçenek olsun", "seviye 3 olsun"))
+def test_the_generic_follow_up_shorthand_needs_a_session_behind_it(parser, text: str) -> None:
+    """Cold it is assistant vocabulary; mid-session it is the documented shorthand."""
+    assert parser.parse(text).medical is False
+    assert parser.parse(text, contextual=True).medical is True
+
+
+@pytest.mark.parametrize("text", ("5 şıklı olsun", "zorluk 4 olsun"))
+def test_a_stated_option_count_or_difficulty_still_claims_a_cold_turn(parser, text: str) -> None:
+    assert parser.parse(text).medical is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    ("what is a spore", "explain gram staining", "how do cells divide", "what are epithelial cells"),
+)
+def test_an_english_question_about_a_medical_word_still_reaches_the_academy(parser, text: str) -> None:
+    """English medical vocabulary is thin in the stem list, so a question about
+    one of the everyday-shaped words is what corroborates it."""
+    assert parser.parse(text).medical is True

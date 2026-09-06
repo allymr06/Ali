@@ -261,8 +261,10 @@ class DocumentPipeline:
         professor_id: str | None = None,
         tags: list[str] | None = None,
     ) -> tuple[StudyDocument, bool]:
-        """Register a file; returns ``(document, created)``. A file whose
-        bytes were imported before is returned as-is, never duplicated."""
+        """Register a file; returns ``(document, needs_processing)``. A file
+        whose bytes were imported before is returned as-is, never duplicated —
+        unless its stored copy went missing, in which case the copy is put back
+        and the flag is True so the caller processes the document again."""
         source = Path(path)
         if not source.is_file():
             raise DocumentError("Dosya bulunamadı.")
@@ -276,7 +278,7 @@ class DocumentPipeline:
         digest = sha256_of(data)
         existing = self._store.find_document_by_sha(digest)
         if existing is not None:
-            return existing, False
+            return existing, self._repair_missing_copy(existing, data, suffix)
         document_id = new_id("doc")
         kind = "pdf" if suffix == ".pdf" else "text"
         stored_path: str | None = None
@@ -321,7 +323,7 @@ class DocumentPipeline:
         digest = sha256_of(data)
         existing = self._store.find_document_by_sha(digest)
         if existing is not None:
-            return existing, False
+            return existing, self._repair_missing_copy(existing, data, ".txt")
         document_id = new_id("doc")
         stored_path: str | None = None
         if self._directory is not None:
@@ -347,6 +349,49 @@ class DocumentPipeline:
         )
         self._store.save_document(document)
         return document, True
+
+    def _repair_missing_copy(self, document: StudyDocument, data: bytes, suffix: str) -> bool:
+        """Put a lost copy of an already-registered document back.
+
+        A copy under the academy directory can disappear without the store
+        knowing: an antivirus quarantine, a cleanup tool, a state folder
+        restored without its documents. ``_bytes`` then fails the document
+        with "yeniden içe aktar", so re-importing the same file has to really
+        repair it — otherwise the app is telling the student to do something
+        that dedupes to a no-op. Returns True when the caller should process
+        the document again, i.e. the copy was restored and the document is not
+        already usable as it stands.
+        """
+        if not self._copy_is_missing(document):
+            return False
+        if self._directory is not None:
+            # Re-derive the target instead of trusting the recorded path: it is
+            # an absolute string, so a moved state folder would otherwise write
+            # the copy back outside the current academy directory.
+            target = self._directory / "documents" / f"{document.document_id}{suffix}"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            document.stored_path = str(target)
+        else:
+            # No academy directory to write to, so the bytes live in memory and
+            # the recorded path — already unreachable — must stop shadowing them.
+            self._memory_files[document.document_id] = data
+            document.stored_path = None
+        if document.status == DocumentStatus.READY:
+            # Pages, chunks and any vision summaries survived the lost copy;
+            # only page rendering was broken, and that is fixed now. Keep the
+            # study material instead of re-extracting over it.
+            self._store.save_document(document)
+            return False
+        document.error = None
+        self._set_status(document, DocumentStatus.PENDING)
+        return True
+
+    def _copy_is_missing(self, document: StudyDocument) -> bool:
+        """Whether ``_bytes`` would fail for this document right now."""
+        if document.stored_path:
+            return not Path(document.stored_path).is_file()
+        return document.document_id not in self._memory_files
 
     # ------------------------------------------------------------------
     # bytes access

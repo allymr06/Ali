@@ -42,7 +42,9 @@ ARM = "anatomy.musculoskeletal.upper_limb.arm"
 BASE = datetime(2026, 4, 1, 8, 0, tzinfo=timezone.utc)
 STEM = "Humerus distal ucunda radius basi ile eklem yapan yapi hangisidir?"
 OTHER_STEM = "Scapula uzerinde m. deltoideus'un baslangic yeri neresidir?"
+SLIDE_STEM = "Tuberositas deltoidea'ya tutunan kas hangisidir?"
 OPTIONS = ["Capitulum humeri", "Trochlea humeri", "Olecranon", "Acromion"]
+SLIDE_OPTIONS = ["M. deltoideus", "M. biceps brachii", "M. triceps brachii", "M. brachialis"]
 
 
 class Clock:
@@ -147,6 +149,30 @@ def seed_lecture(store: MedicalStore, *, document_id: str = "d1", page: int = 12
                 text=(
                     "Humerus distal ucunda capitulum humeri radius basi ile, trochlea humeri "
                     "ise ulna ile eklemlesir. Olecranon fossa arka yuzde bulunur."
+                ),
+            )
+        ],
+    )
+    return document
+
+
+def seed_slides(store: MedicalStore, *, page: int = 12) -> StudyDocument:
+    """A second document whose page number collides with the lecture note's."""
+    document = StudyDocument(
+        document_id="d2", title="Hoca Slaytlari", file_name="slayt.pdf", sha256="sha-d2", page_count=30,
+    )
+    store.save_document(document)
+    store.replace_chunks(
+        "d2",
+        [
+            DocumentChunk(
+                chunk_id="d2-c1",
+                document_id="d2",
+                page_number=page,
+                index_in_page=0,
+                text=(
+                    "Tuberositas deltoidea humerus govdesinin lateral yuzundedir ve "
+                    "musculus deltoideus buraya tutunur."
                 ),
             )
         ],
@@ -270,6 +296,17 @@ def test_a_short_batch_is_reported_rather_than_padded_to_the_requested_count() -
     assert len(gateway.prompts) == 3
 
 
+def test_an_option_that_names_other_options_by_letter_never_reaches_the_paper() -> None:
+    """shuffle_options re-letters the paper, so "B ve C" would end up pointing elsewhere."""
+    letters = draft(STEM, ["Caput humeri", "Tuberculum majus", "Tuberculum minus", "B ve C"], correct="D")
+    generator = make_generator(MedicalStore(), Gateway(batch(letters, draft(OTHER_STEM))))
+
+    questions, notes = generate(generator, config())
+
+    assert [question.stem for question in questions] == [OTHER_STEM]
+    assert any("option_references_another_option" in note for note in notes)
+
+
 def test_options_are_shuffled_so_the_drafted_letter_is_not_always_the_key() -> None:
     stems = [
         "Humerus distal ucunda radius basi ile eklem yapan yapi hangisidir?",
@@ -326,6 +363,45 @@ def test_an_item_without_a_source_page_stays_marked_as_generated() -> None:
     questions, _notes = generate(generator, config(document_ids=["d1"]))
 
     assert questions[0].origin == QuestionOrigin.GENERATED
+
+
+def test_an_item_is_cited_to_the_document_whose_excerpt_it_names() -> None:
+    """Two documents with a page 12: the page alone cannot say which one it was."""
+    store = MedicalStore()
+    seed_lecture(store)
+    seed_slides(store)
+    gateway = Gateway(batch(draft(SLIDE_STEM, SLIDE_OPTIONS, source_index=2, source_page=12)))
+    generator = make_generator(store, gateway)
+
+    questions, _notes = generate(generator, config(document_ids=["d1", "d2"]))
+
+    assert "[Kaynak 2] Hoca Slaytlari, s. 12" in gateway.prompts[0]
+    assert [(ref.document_id, ref.page_number) for ref in questions[0].references] == [("d2", 12)]
+    assert questions[0].origin == QuestionOrigin.LECTURE_DERIVED
+
+
+def test_a_page_two_documents_share_is_left_uncited_rather_than_attributed_to_one() -> None:
+    store = MedicalStore()
+    seed_lecture(store)
+    seed_slides(store)
+    generator = make_generator(store, Gateway(batch(draft(SLIDE_STEM, SLIDE_OPTIONS, source_page=12))))
+
+    questions, notes = generate(generator, config(document_ids=["d1", "d2"]))
+
+    assert questions[0].references == []  # a wrong chip is worse than no chip
+    assert questions[0].origin == QuestionOrigin.GENERATED  # and the badge follows the citation
+    assert any("eşleşmedi" in note for note in notes)
+
+
+def test_a_source_page_that_no_excerpt_carries_leaves_the_item_marked_generated() -> None:
+    store = MedicalStore()
+    seed_lecture(store)
+    generator = make_generator(store, Gateway(batch(draft(STEM, source_page=777))))
+
+    questions, notes = generate(generator, config(document_ids=["d1"]))
+
+    assert questions[0].origin == QuestionOrigin.GENERATED and questions[0].references == []
+    assert any("eşleşmedi" in note for note in notes)
 
 
 def test_standard_first_without_documents_sends_no_lecture_evidence() -> None:

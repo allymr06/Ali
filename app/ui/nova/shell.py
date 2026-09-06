@@ -1058,13 +1058,18 @@ class NovaBridge:
             "exam_ready": ("Sınav hazır", "{title}: {count} soru."),
             "exam_finished": ("Sınav bitti", "{title}: %{percent}."),
             "note_ready": ("Not hazır", "{title}"),
+            # The tutor answers a chat quiz with "hazır olunca ilk soruyu bildirim
+            # merkezine bırakırım", so the first question is the body -- a title
+            # alone would leave the quiz waiting for an answer to an unseen question.
+            "quiz_ready": ("Quiz hazır", "{question}"),
+            "job_failed": ("İş tamamlanamadı", "{message}"),
         }
         entry = titles.get(kind)
         if entry is None:
             return
         title, template = entry
         try:
-            body = template.format(**{key: payload.get(key, "") for key in ("title", "findings", "count", "percent")})
+            body = template.format(**{key: payload.get(key, "") for key in ("title", "findings", "count", "percent", "question", "message")})
         except (KeyError, IndexError):
             body = str(payload.get("title", ""))
         self._publish(
@@ -1073,7 +1078,7 @@ class NovaBridge:
             body,
             target="medical",
             data={key: value for key, value in payload.items() if isinstance(value, (str, int, float, bool))},
-            dedupe_key=f"medical:{kind}:{payload.get('document_id') or payload.get('exam_id') or ''}",
+            dedupe_key=f"medical:{kind}:{payload.get('document_id') or payload.get('exam_id') or payload.get('job') or ''}",
             alert=True,
         )
 
@@ -1198,14 +1203,37 @@ class NovaBridge:
                 title=text("title") or None,
                 subject=text("subject") or None,
             )
-            if created:
-                self._medical_start(academy.process_document(document.document_id))
+            # Filing the document is local work and stays available while
+            # the desktop is paused, but processing it is the very pipeline
+            # "process_document" refuses in that state: the pause gate
+            # cannot depend on which button started the job. The document
+            # is left pending and the message says so instead of claiming
+            # work that is not happening.
+            paused = self.controller.paused
+            started = False
+            if created and not paused:
+                started = self._medical_start(academy.process_document(document.document_id))
+            if not created:
+                message = "Bu belge zaten kayıtlı."
+            elif started:
+                message = "Belge içe aktarıldı, işleniyor."
+            elif paused:
+                message = (
+                    f"Belge içe aktarıldı ama işlenmedi. {PAUSED_MESSAGE} "
+                    "Sonra Kütüphane'den “Yeniden işle” ile başlatabilirsin."
+                )
+            else:
+                message = (
+                    "Belge içe aktarıldı ama işlem başlatılamadı; "
+                    "Kütüphane'den “Yeniden işle” ile dene."
+                )
             return {
                 "ok": True,
                 "created": created,
+                "started": started,
                 "document": _jsonable(academy.pipeline.payload(document)),
                 "documents": _jsonable(academy.documents()),
-                "message": "Belge içe aktarıldı, işleniyor." if created else "Bu belge zaten kayıtlı.",
+                "message": message,
             }
         if name == "delete_document":
             removed = academy.delete_document(text("document_id"))
@@ -1296,14 +1324,21 @@ class NovaBridge:
             return {"ok": True, **_jsonable(academy.record_anatomy_answer(text("structure_id"), text("landmark_id") or None, payload.get("correct") is True))}
         raise KeyError(name)
 
-    def _medical_start(self, operation: Any) -> bool:
-        """Run one academy coroutine on the controller's async runner."""
+    def _medical_start(self, operation: Any, *, report: str = "") -> bool:
+        """Run one academy coroutine on the controller's async runner.
+
+        ``report`` names a block of the job's result the page has to see.
+        An import counts what it could not parse, what it skipped as a
+        duplicate and how many questions arrived without an answer key;
+        that account has no other surface, so it travels with the
+        completion push instead of dying with the discarded result.
+        """
 
         def done(future: Future[Any]) -> None:
             if future.cancelled():
                 return
             try:
-                future.result()
+                outcome = future.result()
             except Exception as exc:
                 self._push("medical", {"kind": "job_failed", "error": f"{type(exc).__name__}", "message": str(exc)[:300]})
                 self._record_ui_event(
@@ -1311,6 +1346,18 @@ class NovaBridge:
                     "A Medical Academy background job failed.",
                     error_type=type(exc).__name__,
                 )
+            else:
+                block = outcome.get(report) if report and isinstance(outcome, Mapping) else None
+                if isinstance(block, Mapping):
+                    self._push(
+                        "medical",
+                        {
+                            **_jsonable(dict(block)),
+                            "kind": "job_report",
+                            "job": report,
+                            "profile_id": str(outcome.get("profile_id") or ""),
+                        },
+                    )
             self._push("medical", {"kind": "refresh"})
 
         try:
@@ -1331,6 +1378,7 @@ class NovaBridge:
         if self.controller.paused:
             return {"ok": False, "error": PAUSED_MESSAGE}
         operation: Any
+        report = ""
         if name == "process_document":
             if academy.store.get_document(text("document_id")) is None:
                 return {"ok": False, "error": "Belge bulunamadı."}
@@ -1366,9 +1414,10 @@ class NovaBridge:
                 image_path=text("image_path") or None,
             )
             message = "Sorular içe aktarılıyor."
+            report = "import"
         else:  # pragma: no cover - guarded by MEDICAL_BACKGROUND_ACTIONS
             return {"ok": False, "error": f"Bilinmeyen işlem: {name}"}
-        if not self._medical_start(operation):
+        if not self._medical_start(operation, report=report):
             return {"ok": False, "error": "İşlem başlatılamadı."}
         self._record_ui_event("medical.started", "A Medical Academy job started.", action=name)
         return {"ok": True, "started": True, "message": message}

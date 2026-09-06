@@ -69,6 +69,7 @@ const Medical = {
   bank: null,
   professors: [],
   professor: null,
+  importReport: null,   // the last question import's own account of itself
   progressData: null,
   loaded: {},           // which views have been fetched at least once
   expanded: {},         // curriculum tree open state
@@ -508,7 +509,10 @@ const Medical = {
     if (result.ok === false) { toast(result.error || "Belge eklenemedi.", true); return; }
     this.documents = result.documents || this.documents;
     this.renderDocuments();
-    toast(result.message || "Belge eklendi.", "ok");
+    // A document filed but not processed (the core is paused) is not a
+    // success toast: the message says what did not happen, so it must not
+    // look like everything went through.
+    toast(result.message || "Belge eklendi.", result.created && !result.started ? true : "ok");
     if (result.document) this.openDocument(result.document.document_id);
   },
 
@@ -838,7 +842,11 @@ const Medical = {
     const answered = questions.filter((item) => item.answer).length;
     const immediate = exam.config.immediate_feedback;
     const revealed = immediate && !!question.answer;
+    // What the quality filter rejected is part of the paper's honesty, so it is
+    // shown with the paper rather than left in a payload nothing renders.
+    const notes = (exam.notes || []).filter(Boolean);
     host.innerHTML = `
+      ${notes.length ? `<div class="med-note-strip">${notes.map((note) => `<span class="med-row-sub">${esc(note)}</span>`).join("")}</div>` : ""}
       <div class="med-runner-head">
         <span class="med-runner-title">${esc(exam.title)}</span>
         <span class="chip">${index + 1} / ${questions.length}</span>
@@ -1159,6 +1167,7 @@ const Medical = {
     }
     const features = (profile.features || []).filter((feature) => feature.observed > 0);
     const distribution = profile.answer_distribution || {};
+    const report = this.importReport && this.importReport.profile_id === profile.profile_id ? this.importReport : null;
     host.innerHTML = `
       <div class="panel med-card">
         <div class="panel-title"><span class="kicker">${esc(profile.subject_label)}</span><span class="chip ${profile.confidence === "high" ? "ok" : profile.confidence === "none" ? "" : "warn"}">${esc(profile.confidence_label)}</span></div>
@@ -1178,6 +1187,17 @@ const Medical = {
           <button type="button" class="btn btn-ghost small" data-prof-act="delete">Sil</button>
         </div>
       </div>
+      ${report ? `<div class="panel med-card">
+        <div class="panel-title"><span class="kicker">Son içe aktarma</span><span class="faint">bu oturumda</span></div>
+        <div class="med-chips">
+          <span class="chip ok">${report.added} soru eklendi</span>
+          ${report.skipped ? `<span class="chip warn">${report.skipped} yinelenen atlandı</span>` : ""}
+          ${report.without_key ? `<span class="chip warn">${report.without_key} soru anahtarsız</span>` : ""}
+        </div>
+        ${report.notes.length
+          ? report.notes.map((note) => `<div class="med-row"><span class="med-row-sub">${esc(note)}</span></div>`).join("")
+          : '<p class="settings-note">Ayrıştırma not bırakmadı.</p>'}
+      </div>` : ""}
       <div class="panel med-card">
         <div class="panel-title"><span class="kicker">Gözlemlenen özellikler</span><span class="faint">oran = gözlem / örneklem</span></div>
         ${features.length ? features.map((feature) => `<div class="med-feature">
@@ -1334,14 +1354,40 @@ const Medical = {
       if (State.screen === "medical" && this.view === "professor") this.loadProfessors();
       return;
     }
+    if (kind === "job_report") { this.onJobReport(payload); return; }
     if (kind === "anatomy_open") {
       showScreen("medical");
       this.show("anatomy");
       Lab.select(payload.structure_id, { highlight: payload.highlight || [], quiz: !!payload.quiz });
       return;
     }
+    if (kind === "quiz_ready") { toast(`Quiz hazır: ${payload.title}`, "ok"); return; }
     if (kind === "quiz_started" || kind === "quiz_progress" || kind === "quiz_finished") return;
     if (kind === "refresh") { if (State.screen === "medical") this.loadView(this.view); return; }
+  },
+
+  /* An import's own account of itself — questions whose options could not
+     be parsed, duplicates it skipped, keys the paper never stated, and
+     whether the model had to read the structure — is computed by the core
+     and has nowhere else to appear. A five-second toast is not a record,
+     so it is kept with the profile it belongs to and rendered there. */
+  onJobReport(payload) {
+    if (String(payload.job) !== "import") return;
+    const notes = Array.isArray(payload.notes) ? payload.notes.map((note) => String(note)) : [];
+    const report = {
+      profile_id: String(payload.profile_id || ""),
+      added: Number(payload.added) || 0,
+      skipped: Number(payload.skipped) || 0,
+      without_key: Number(payload.without_key) || 0,
+      notes,
+    };
+    this.importReport = report;
+    const parts = [`${report.added} soru eklendi`];
+    if (report.skipped) parts.push(`${report.skipped} yinelenen atlandı`);
+    if (report.without_key) parts.push(`${report.without_key} soru anahtarsız`);
+    toast(`İçe aktarma bitti: ${parts.join(", ")}.${notes.length ? " Notlar “Hoca tarzı” ekranında." : ""}`,
+      notes.length ? "" : "ok");
+    if (this.professor && this.professor.profile_id === report.profile_id) this.renderProfessor();
   },
 };
 
@@ -1493,11 +1539,15 @@ const Lab = {
     this.highlight = highlight;
     this.quiz = null;
     this.mesh = null;
+    this.meshNotice = "";
     this.renderList($("#lab-search") ? $("#lab-search").value : "");
     this.renderInfo();
     if (this.structure.model && this.structure.model.available) {
       const mesh = await Medical.request("mesh", { structure_id: structureId });
       if (mesh.ok !== false && mesh.mesh && mesh.mesh.positions) this.mesh = mesh.mesh;
+      // A registered model that cannot be read is a different fact from no model
+      // at all, and only this reply knows which one happened.
+      else this.meshNotice = (mesh && (mesh.reason || mesh.error)) || "";
     }
     this.resetCamera();
     this.draw();
@@ -1560,7 +1610,8 @@ const Lab = {
     schematic.hidden = false;
     this.drawSchematic();
     notice.hidden = false;
-    notice.textContent = (model && model.reason)
+    notice.textContent = this.meshNotice
+      || (model && model.reason)
       || "Bu yapı için lisanslı 3B model kayıtlı değil; ilişki haritası gösteriliyor. Anatomik doğruluk gösterişten önce gelir.";
     const overlay = $("#lab-overlay");
     if (overlay) overlay.innerHTML = "";
@@ -1678,16 +1729,10 @@ const Lab = {
     const normalIndices = mesh.normal_indices || [];
     const outPositions = new Float32Array(indices.length * 3);
     const outNormals = new Float32Array(indices.length * 3);
-    const bounds = mesh.bounds || { min: [-1, -1, -1], max: [1, 1, 1] };
-    const centre = [0, 1, 2].map((axis) => (bounds.min[axis] + bounds.max[axis]) / 2);
-    const extent = Math.max(...[0, 1, 2].map((axis) => bounds.max[axis] - bounds.min[axis])) || 1;
+    const space = meshSpace(mesh);
     for (let triangle = 0; triangle < indices.length; triangle += 3) {
       const corners = [indices[triangle], indices[triangle + 1], indices[triangle + 2]];
-      const points = corners.map((index) => [
-        (positions[index * 3] - centre[0]) / extent,
-        (positions[index * 3 + 1] - centre[1]) / extent,
-        (positions[index * 3 + 2] - centre[2]) / extent,
-      ]);
+      const points = corners.map((index) => space.place(positions, index));
       const edge1 = [0, 1, 2].map((axis) => points[1][axis] - points[0][axis]);
       const edge2 = [0, 1, 2].map((axis) => points[2][axis] - points[0][axis]);
       const face = [
@@ -1773,11 +1818,20 @@ const Lab = {
     const rect = canvas.getBoundingClientRect();
     const projection = perspective(0.9, rect.width / Math.max(1, rect.height), 0.05, 40);
     const view = lookAtView(this.camera);
+    // The anchor is written in the asset's own coordinates, exactly like
+    // the vertices, so it has to travel through the same normalization as
+    // the geometry (meshSpace) before it is projected. Projecting it raw
+    // puts a Latin name over a part of the bone the mesh never claimed.
+    const space = meshSpace(this.mesh);
     const parts = [];
     (this.structure.landmarks || []).forEach((landmark) => {
       const anchor = anchors[landmark.landmark_id];
       if (!anchor) return;
-      const projected = project(anchor, view, projection, rect.width, rect.height);
+      const point = space.place(anchor);
+      // A point the mesh's own bounds cannot contain is not a point on
+      // this bone: draw nothing rather than a label we cannot justify.
+      if (point.some((value) => Math.abs(value) > LAB_ANCHOR_LIMIT)) return;
+      const projected = project(point, view, projection, rect.width, rect.height);
       if (!projected) return;
       parts.push(`<span class="lab-label ${this.highlight.includes(landmark.landmark_id) ? "active" : ""}" data-label="${esc(landmark.landmark_id)}"
         style="left:${projected.x.toFixed(1)}px; top:${projected.y.toFixed(1)}px">${esc(landmark.latin)}</span>`);
@@ -1884,6 +1938,39 @@ const Lab = {
 };
 
 /* ── tiny matrix helpers (no dependencies, column-major like WebGL) ── */
+
+/* The one transform between an asset's own coordinates and what the
+   viewer draws: the mesh is centred on its bounds and scaled so its
+   longest axis is 1, and the shader runs with uModel = identity. Both
+   the geometry (buildBuffers) and the landmark labels (drawLabels) go
+   through this single function, so the two spaces cannot drift apart.
+
+   The manifest's `scale` is deliberately not applied: it multiplies
+   vertices and landmark anchors alike, and a uniform factor cancels out
+   of (p - centre) / extent, so honouring it would move nothing. */
+function meshSpace(mesh) {
+  const bounds = (mesh && mesh.bounds) || { min: [-1, -1, -1], max: [1, 1, 1] };
+  const centre = [0, 1, 2].map((axis) => (bounds.min[axis] + bounds.max[axis]) / 2);
+  const extent = Math.max(...[0, 1, 2].map((axis) => bounds.max[axis] - bounds.min[axis])) || 1;
+  return {
+    centre,
+    extent,
+    // One point of `source` (a flat [x,y,z,…] array) in model space.
+    place(source, index = 0) {
+      const base = index * 3;
+      return [
+        (source[base] - centre[0]) / extent,
+        (source[base + 1] - centre[1]) / extent,
+        (source[base + 2] - centre[2]) / extent,
+      ];
+    },
+  };
+}
+
+/* Model space puts every vertex within half the longest axis of the
+   origin, so |0.5| is the whole bone; past 1.5× that a landmark anchor
+   is written in some other space and cannot be placed on this mesh. */
+const LAB_ANCHOR_LIMIT = 0.75;
 
 function identity() {
   return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);

@@ -317,6 +317,118 @@ def test_command_palette_and_compact_mode_are_wired() -> None:
 
 
 # ---------------------------------------------------------------------------
+# medical academy: anatomy labels and the import report
+# ---------------------------------------------------------------------------
+
+
+# The lab only touches the overlay and the canvas rectangle, so QuickJS can
+# run drawLabels with these two stubs in place of the real page.
+LAB_DOM_STUBS = """
+const OVERLAY = {innerHTML: ""};
+const CANVAS = {getBoundingClientRect() { return {width: 900, height: 600}; }};
+function $(selector) {
+  if (selector === "#lab-overlay") return OVERLAY;
+  if (selector === "#lab-canvas") return CANVAS;
+  return null;
+}
+function $$(selector, host) { return []; }
+function esc(value) { return String(value); }
+function clamp(value) { return value; }
+"""
+
+LAB_SCENARIO = """
+(() => {
+  const bounds = __BOUNDS__;
+  const anchor = __ANCHOR__;
+  Lab.mesh = {bounds, landmarks: {acromion: anchor}};
+  Lab.structure = {structure_id: "scapula", landmarks: [{landmark_id: "acromion", latin: "Acromion"}]};
+  Lab.highlight = [];
+  Lab.showLabels = true;
+  Lab.camera = {yaw: 0.6, pitch: 0.25, distance: 2.6, panX: 0, panY: 0};
+  Lab.drawLabels();
+  // Where the geometry for that same point is drawn: buildBuffers writes
+  // every vertex as (p - centre) / extent and the shader runs with
+  // uModel = identity. Spelled out here so the check does not lean on the
+  // helper it is checking.
+  const centre = [0, 1, 2].map((axis) => (bounds.min[axis] + bounds.max[axis]) / 2);
+  const extent = Math.max(...[0, 1, 2].map((axis) => bounds.max[axis] - bounds.min[axis])) || 1;
+  const vertex = project([0, 1, 2].map((axis) => (anchor[axis] - centre[axis]) / extent),
+    lookAtView(Lab.camera), perspective(0.9, 900 / 600, 0.05, 40), 900, 600);
+  return JSON.stringify({html: OVERLAY.innerHTML, vertex});
+})()
+"""
+
+
+def lab_label_and_vertex(bounds: dict, anchor: list[float]):
+    """Run Lab.drawLabels for one landmark and report, in canvas pixels,
+    where the label went and where the mesh puts that same point."""
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    scenario = LAB_SCENARIO.replace("__BOUNDS__", json.dumps(bounds)).replace(
+        "__ANCHOR__", json.dumps(anchor)
+    )
+    measured = json.loads(context.eval(scenario))
+    drawn = re.search(r"left:([-\d.]+)px; top:([-\d.]+)px", measured["html"])
+    label = (float(drawn.group(1)), float(drawn.group(2))) if drawn else None
+    vertex = (measured["vertex"]["x"], measured["vertex"]["y"]) if measured["vertex"] else None
+    return label, vertex
+
+
+def test_landmark_labels_are_projected_in_the_mesh_own_space() -> None:
+    # A manifest anchor is written in the asset's coordinates, exactly like
+    # the vertices. Projected raw it lands on a different part of the bone
+    # (112 px away for the documented example), or vanishes entirely for an
+    # asset in millimetres.
+    cases = (
+        ({"min": [0, 0, 0], "max": [1, 1, 1]}, [0.31, 0.62, 0.04]),        # docs example
+        ({"min": [-100, -300, -60], "max": [345, 150, 65]}, [120.0, 140.0, 10.0]),  # mm asset
+    )
+    for bounds, anchor in cases:
+        label, vertex = lab_label_and_vertex(bounds, anchor)
+        assert label is not None and vertex is not None, (bounds, anchor)
+        assert abs(label[0] - vertex[0]) < 1.0 and abs(label[1] - vertex[1]) < 1.0, (bounds, anchor)
+
+
+def test_an_anchor_the_mesh_cannot_contain_draws_no_label() -> None:
+    # An anchor outside the mesh's own bounds names no point on this bone, so
+    # nothing is drawn rather than a Latin name over the wrong structure. The
+    # anchor has to be one the camera would otherwise happily draw: a point far
+    # behind the viewer projects to nothing whatever the guard does, and would
+    # make this test pass with the guard deleted.
+    bounds = {"min": [0, 0, 0], "max": [1, 1, 1]}
+    inside, vertex = lab_label_and_vertex(bounds, [0.5, 0.5, 0.5])
+    assert inside is not None and vertex is not None, "the control anchor must draw"
+
+    outside, _vertex = lab_label_and_vertex(bounds, [1.5, 0.5, 0.5])
+    assert outside is None
+
+
+def test_the_lab_has_one_model_transform_for_geometry_and_labels() -> None:
+    lab = section(JS, "const Lab = {", "\n};")
+    build = section(lab, "  buildBuffers() {", "  drawMesh() {")
+    labels = section(lab, "  drawLabels() {", "  /* ── quiz")
+    assert "meshSpace(" in build and "space.place(positions" in build
+    assert "meshSpace(" in labels and "space.place(anchor)" in labels
+    assert "project(anchor" not in JS  # never the raw manifest coordinates
+
+
+def test_the_import_report_and_a_paused_import_reach_the_student() -> None:
+    medical = JS_SOURCES["js/medical.js"]
+    assert '"kind": "job_report"' in inspect.getsource(shell)
+    handler = section(medical, "  onJobReport(payload) {", "\n};")
+    for field in ("added", "skipped", "without_key", "notes"):
+        assert field in handler, field
+    professor = section(medical, "  renderProfessor() {", "  async professorAction(")
+    assert "Son içe aktarma" in professor and "report.notes" in professor
+    # A document filed while the core is paused was not processed, so the
+    # page must not toast it as a completed import.
+    importer = section(medical, "  async importDocument() {", "  async openDocument(")
+    assert "result.started" in importer
+
+
+# ---------------------------------------------------------------------------
 # design system
 # ---------------------------------------------------------------------------
 

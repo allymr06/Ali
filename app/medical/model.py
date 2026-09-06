@@ -190,8 +190,11 @@ class MedicalModelClient:
                 attempt=attempt,
                 problems=len(problems),
             )
+        # This message reaches the student: a failed background job is toasted and
+        # published with str(exc), so it is Turkish like every other one here. The
+        # pipeline name and the schema problems stay in the ledger, in English.
         raise MedicalModelError(
-            f"{name}: model output did not match the expected shape.",
+            "Model beklenen biçimde yanıt vermedi; tekrar dene.",
             problems=last_problems,
             raw=raw[:2000],
         )

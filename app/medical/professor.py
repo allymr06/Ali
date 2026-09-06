@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import statistics
+from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
@@ -30,13 +31,21 @@ from app.medical.text import fold, latin_density, similarity, tokens
 _QUESTION_START = re.compile(r"^\s*(\d{1,3})\s*[.)\-:]\s*(.*)$")
 _OPTION_LINE = re.compile(r"^\s*\(?([A-Fa-f])\s*[.)\-:]\s*(.+)$")
 _INLINE_OPTIONS = re.compile(r"(?:(?<=\s)|^)\(?([A-Fa-f])[.)]\s*")
-_ANSWER_INLINE = re.compile(r"(?:cevap|yan[ıi]t|answer|do[gğ]ru\s*cevap|do[gğ]ru\s*yan[ıi]t|key)\s*[:\-]?\s*\(?([A-Fa-f])\)?", re.IGNORECASE)
+# A key stated at the very end of the stem ("… hangisidir? Cevap: C"). The
+# letter has to be the last thing on the line: an annotation like "Cevap D
+# değildir" names the option that is NOT the answer, and reading it as a key
+# would hand the student the inverse of what the paper says.
+_ANSWER_TAIL = re.compile(r"(?:do[gğ]ru\s+)?(?:cevap|yan[ıi]t|answer|key)\s*[:\-]?\s*\(?([A-Fa-f])\)?\s*[.)]?\s*$", re.IGNORECASE)
 # A whole line that states nothing but the answer. Exam prose mentions
 # "cevap" freely — inside an option, in a note beside the stem — and such a
 # line names no key, so anything around the statement disqualifies it.
 _ANSWER_ONLY = re.compile(r"^\(?(?:do[gğ]ru\s+)?(?:cevap|yan[ıi]t|answer|key)\)?\s*[:\-]?\s*\(?([A-Fa-f])\)?\.?$", re.IGNORECASE)
 _ANSWER_TABLE = re.compile(r"\b(\d{1,3})\s*[-.:)]\s*([A-Fa-f])\b")
 _ANSWER_HEADER = re.compile(r"(cevap anahtar|yan[ıi]t anahtar|answer key|cevaplar|answers)", re.IGNORECASE)
+# What may stand between the pairs of an answer-table line: separators only.
+# A line holding anything else ("3. B vitamini eksikliği …") is exam text.
+_TABLE_SEPARATORS = re.compile(r"[\s,;.:|/\\–—-]*")
+_DANGLING_OPENERS = re.compile(r"[\s(\[{]+$")
 _MULTI_STATEMENT = re.compile(r"(?:^|\s|\()(i{1,3}|iv|v)\s*[.)\-]", re.IGNORECASE)
 _IMAGE_WORDS = ("sekil", "resim", "okla", "isaretli", "goruntu", "fotograf", "figure", "image", "arrow", "labeled", "labelled", "mikrograf", "preparat", "kesitte")
 
@@ -61,54 +70,141 @@ class ImportResult:
     notes: list[str] = field(default_factory=list)
 
 
+@dataclass(slots=True)
+class _AnswerSection:
+    """Question lines and the answer table that closes them, if any."""
+
+    body: list[str]
+    answer_map: dict[str, str]
+    conflicts: list[str]
+
+
 class QuestionImportParser:
     """Deterministic extraction from exam-like text."""
 
     def parse(self, text: str) -> ImportResult:
         normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
         lines = normalized.split("\n")
-        answer_map, body_lines = self._split_answer_table(lines)
-        blocks = self._blocks(body_lines)
         questions: list[ParsedQuestion] = []
         notes: list[str] = []
-        for number, block_lines in blocks:
-            parsed = self._parse_block(number, block_lines)
-            if parsed is None:
-                continue
-            table_key = answer_map.get(number)
-            # A mistyped table entry ("3-F" against five options) names nothing
-            # to index, so it is dropped exactly as a stray inline key is.
-            if parsed.answer_key is None and table_key and any(key == table_key for key, _ in parsed.options):
-                parsed.answer_key = table_key
-            questions.append(parsed)
+        unresolved: list[str] = []
+        for section in self._split_answer_tables(lines):
+            parsed_section: list[ParsedQuestion] = []
+            for number, block_lines in self._blocks(section.body):
+                parsed = self._parse_block(number, block_lines)
+                if parsed is not None:
+                    parsed_section.append(parsed)
+            # Every paper starts numbering at 1, so a section that holds the
+            # same number twice holds more than one paper: a table row cannot
+            # be attributed to a single question and is refused, not guessed.
+            counted = Counter(parsed.number for parsed in parsed_section)
+            for parsed in parsed_section:
+                if parsed.answer_key is not None:
+                    continue
+                if parsed.number in section.conflicts or (counted[parsed.number] > 1 and parsed.number in section.answer_map):
+                    unresolved.append(parsed.number)
+                    continue
+                table_key = section.answer_map.get(parsed.number)
+                # A mistyped table entry ("3-F" against five options) names
+                # nothing to index, so it is dropped exactly as a stray inline
+                # key is.
+                if table_key and any(key == table_key for key, _ in parsed.options):
+                    parsed.answer_key = table_key
+            questions.extend(parsed_section)
         found = any(question.answer_key for question in questions)
-        if questions and not found:
+        if questions and not found and not unresolved:
             notes.append("Metinde cevap anahtarı bulunamadı; sorular anahtarsız kaydedildi.")
+        if unresolved:
+            listed = ", ".join(dict.fromkeys(unresolved))
+            notes.append(f"Cevap anahtarı şu soru numaralarına güvenle bağlanamadı: {listed}. Bu sorular anahtarsız kaydedildi.")
         missing = [question.number for question in questions if len(question.options) < 2]
         if missing:
             notes.append(f"Seçenekleri ayrıştırılamayan sorular: {', '.join(missing[:12])}.")
         return ImportResult(questions=[question for question in questions if len(question.options) >= 2], answer_key_found=found, notes=notes)
 
+    @classmethod
+    def _split_answer_tables(cls, lines: list[str]) -> list[_AnswerSection]:
+        """Cut the text wherever an answer table stands.
+
+        A table states the keys of the questions above it, so several papers
+        pasted into one file each keep their own table instead of the last one
+        overwriting the rest, and nothing below a table is thrown away.
+        """
+        sections: list[_AnswerSection] = []
+        body: list[str] = []
+        index = 0
+        while index < len(lines):
+            end = cls._table_end(lines, index)
+            if end is None:
+                # A run of pairs that is not a table cannot become one a line
+                # later — a suffix of it holds fewer pairs and the same text
+                # after it — so the run joins the body without being rescanned.
+                stop = index + 1
+                if cls._is_pair_line(lines[index]):
+                    while stop < len(lines) and cls._is_pair_line(lines[stop]):
+                        stop += 1
+                body.extend(lines[index:stop])
+                index = stop
+                continue
+            answer_map, conflicts = cls._table_map(lines[index:end])
+            sections.append(_AnswerSection(body=body, answer_map=answer_map, conflicts=conflicts))
+            body = []
+            index = end
+        sections.append(_AnswerSection(body=body, answer_map={}, conflicts=[]))
+        return sections
+
+    @classmethod
+    def _table_end(cls, lines: list[str], index: int) -> int | None:
+        """Where the answer table starting at `index` ends, or None."""
+        line = lines[index]
+        # A header only opens a table when pair lines actually follow it, which
+        # is a far better test than the line's length: a titled key ("CEVAP
+        # ANAHTARI (2024 - A Grubu)") is a header, a numbered stem never is.
+        header = bool(_ANSWER_HEADER.search(line)) and not _QUESTION_START.match(line)
+        if not header and not cls._is_pair_line(line):
+            return None
+        end = cursor = index + 1 if header else index
+        while cursor < len(lines):
+            if cls._is_pair_line(lines[cursor]):
+                cursor += 1
+                end = cursor
+            elif not lines[cursor].strip():
+                cursor += 1  # a blank line between table rows does not end it
+            else:
+                break
+        pairs = _ANSWER_TABLE.findall("\n".join(lines[index:end]))
+        if header:
+            return end if len(pairs) >= 3 else None
+        # With no header only a dense table at the very end of the text is
+        # certain enough to read as one; anywhere else the run is exam text.
+        if len(pairs) >= 5 and all(not rest.strip() for rest in lines[end:]):
+            return end
+        return None
+
     @staticmethod
-    def _split_answer_table(lines: list[str]) -> tuple[dict[str, str], list[str]]:
-        """A trailing 'Cevap anahtarı' block or a dense run of 'n-X' pairs."""
+    def _is_pair_line(line: str) -> bool:
+        """True for a line made of nothing but 'n-X' pairs and separators."""
+        stripped = line.strip()
+        if not stripped or not _ANSWER_TABLE.search(stripped):
+            return False
+        return _TABLE_SEPARATORS.fullmatch(_ANSWER_TABLE.sub(" ", stripped)) is not None
+
+    @staticmethod
+    def _table_map(table_lines: list[str]) -> tuple[dict[str, str], list[str]]:
+        """The table's rows, minus every number it states two ways."""
         answer_map: dict[str, str] = {}
-        body = list(lines)
-        for index, line in enumerate(lines):
-            if _ANSWER_HEADER.search(line) and len(line.strip()) < 40:
-                tail = "\n".join(lines[index:])
-                pairs = _ANSWER_TABLE.findall(tail)
-                if len(pairs) >= 3:
-                    answer_map = {number: key.upper() for number, key in pairs}
-                    body = lines[:index]
-                    break
-        if not answer_map:
-            tail = "\n".join(lines[-12:])
-            pairs = _ANSWER_TABLE.findall(tail)
-            if len(pairs) >= 5 and len(tail) < 400:
-                answer_map = {number: key.upper() for number, key in pairs}
-                body = lines[:-12]
-        return answer_map, body
+        conflicts: list[str] = []
+        for number, key in _ANSWER_TABLE.findall("\n".join(table_lines)):
+            letter = key.upper()
+            previous = answer_map.get(number)
+            if previous is not None and previous != letter and number not in conflicts:
+                # The table contradicts itself here and which row is the typo
+                # is unknowable, so neither letter may be handed to a question.
+                conflicts.append(number)
+            answer_map.setdefault(number, letter)
+        for number in conflicts:
+            answer_map.pop(number, None)
+        return answer_map, conflicts
 
     @staticmethod
     def _blocks(lines: list[str]) -> list[tuple[str, list[str]]]:
@@ -171,10 +267,14 @@ class QuestionImportParser:
             expected = "ABCDEF"[len(cleaned)] if len(cleaned) < 6 else None
             if key == expected:
                 cleaned.append((key, text))
-        stem_answer = _ANSWER_INLINE.search(stem)
-        if stem_answer and answer is None and len(stem) - stem_answer.start() < 20:
-            answer = stem_answer.group(1).upper()
-            stem = stem[: stem_answer.start()].strip()
+        stem_answer = _ANSWER_TAIL.search(stem)
+        if stem_answer and answer is None:
+            # A stem that is nothing but the statement asks nothing, so the
+            # statement is only read as a key when a question survives it.
+            remainder = _DANGLING_OPENERS.sub("", stem[: stem_answer.start()].strip())
+            if remainder:
+                answer = stem_answer.group(1).upper()
+                stem = remainder
         folded = fold(stem)
         has_image = any(word in folded for word in _IMAGE_WORDS)
         return ParsedQuestion(number=number, stem=stem, options=cleaned, answer_key=answer if answer and any(key == answer for key, _ in cleaned) else None, has_image=has_image)

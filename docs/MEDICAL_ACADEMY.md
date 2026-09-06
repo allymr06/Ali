@@ -123,14 +123,26 @@ Generation is grounded (lecture evidence + curated facts + concept hints +
 the professor directive) and then filtered by deterministic code:
 
 - `validate_question` rejects short stems, wrong option counts, non-sequential
-  keys, duplicate options, "hepsi/hiçbiri" options, a missing or impossible
-  answer key, an obviously longest correct option, a stem that contains its
-  own answer, a missing explanation and an out-of-range difficulty;
+  keys, duplicate options, "hepsi/hiçbiri" options in their inflected forms, an
+  option that names another option by letter ("A ve B doğrudur" — shuffling
+  re-letters the options, which would turn it into a false statement), a missing
+  or impossible answer key, an obviously longest correct option, a stem that
+  contains its own answer, a missing explanation and an out-of-range difficulty.
+  An imported professor question is exempt from the letter rule: it is stored as
+  it was written and never re-lettered;
 - `is_too_similar` rejects a near-copy of any existing question — including a
   reworded professor question with the same answer;
 - `shuffle_options` re-letters seeded, so answers do not cluster on A.
 
 What was rejected is reported in the exam's generation notes, never hidden.
+
+A generated question cites the excerpt it used by the `[Kaynak N]` index the
+prompt printed, not by its page number: two documents routinely share a page, and
+resolving by page alone attaches a real title and page to material the question
+never used. Index and page are two claims about the same excerpt and must agree;
+when they do not, or when the index names an excerpt that was never sent, the
+question is stored with no citation and its origin falls back to *üretilmiş*. A
+missing citation is honest where a chip that opens the wrong page is not.
 
 A "sadece yanlış yaptıklarım" paper is built from the missed questions and
 nothing else (`from_bank(..., only_wrong=True)`): if fewer were missed than
@@ -145,10 +157,18 @@ the review list and the next-step suggestion are all computed in
 ## Professor style
 
 Imported questions are parsed deterministically: numbered stems, lettered
-options on their own lines or inline, an inline `Cevap: C`, or a trailing
-answer table. **An answer key is never guessed.** A question whose key the
-text does not state is stored without one and shown as *cevap anahtarı yok*;
-the user can mark it themselves.
+options on their own lines or inline, an inline `Cevap: C`, or an answer table,
+which states the keys of the questions above it — a file holding two papers keeps
+both, and a table with no header ends where its own key lines end rather than
+consuming a fixed block of the paper. **An answer key is never guessed.** A
+question whose key the text does not state is stored without one and shown as
+*cevap anahtarı yok*; the user can mark it themselves. A sentence that only
+mentions a letter ("Cevap D değildir") is not a key, and the stem keeps it.
+
+When the deterministic parse is short and a provider is configured, the model
+is asked to read the paper as well — but its reading is stored only when it
+recovers more questions than the parser did, and the import note says which of
+the two the stored questions came from.
 
 `StyleProfiler` measures fifteen observable features (negative stems, "which
 is true", clinical vignettes, multi-statement items, Latin density, numeric
@@ -176,7 +196,9 @@ moves at most one step, and it says what it did.
 
 Wrong-answer choices are counted per concept, so an insight can name the
 actual confusion ("Scapula sorularında 2 kez fossa supraspinata seçeneğine
-kaydın") instead of a generic encouragement.
+kaydın") instead of a generic encouragement. The wording follows the count: one
+observation is reported as one, not as a tendency, and two distractors picked
+equally often are both named rather than one of them chosen arbitrarily.
 
 ## Anatomy Lab
 
@@ -184,11 +206,16 @@ The lab shows a curated structure card (Latin name, parts, surfaces,
 borders, articulations, muscle and ligament attachments, landmarks,
 high-yield facts; for muscles origo/insertio/innervatio/functio; for joints
 type, surfaces, capsule, ligaments, movements with plane and axis), the
-relationship map, movement data and a deterministic landmark quiz.
+relationship map, movement data and a deterministic landmark quiz. A quiz
+distractor is checked against the structure it is asked about: an option that is
+also a true statement for that structure and that fact is never offered, so the
+student cannot be marked wrong for a correct answer.
 
 **Geometry is never invented.** A 3D mesh is rendered only when a licensed
 asset is registered in `anatomy_assets/manifest.json` next to the academy
-data:
+data. Landmark labels are placed through the same transform as the mesh itself,
+so a label cannot drift onto another part of the bone, and an anchor that falls
+outside the model's own bounds is drawn nowhere rather than approximated:
 
 ```json
 {

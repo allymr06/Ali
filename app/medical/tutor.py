@@ -5,14 +5,20 @@ cards, session changes), model-backed where semantics are needed
 (explanations, comparisons, notes), and always explicit about which
 material grounds the answer. The result is a ``RequestAugmentation`` the
 core engine applies to the turn.
+
+``plan`` runs inside the engine's augmentation slice — about two seconds
+of the turn's budget, after which the engine cancels it — so nothing here
+awaits the provider. Work that needs the model either goes into the
+prompt the engine then sends, or onto the academy's background runner,
+which reports through events.
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from datetime import timedelta
-from typing import Any
+from typing import Any, Protocol
 
 from app.core.augmentation import RequestAugmentation
 from app.core.time import utc_now
@@ -26,7 +32,9 @@ from app.medical.learning import LearningEngine
 from app.medical.models import (
     KNOWLEDGE_SOURCE_LABELS_TR,
     SUBJECT_LABELS_TR,
+    Exam,
     ExamConfig,
+    KnowledgePriority,
     KnowledgeSource,
     Question,
     StudySession,
@@ -55,7 +63,12 @@ STOP_WORDS: frozenset[str] = frozenset({"bitir", "dur", "durdur", "stop", "yeter
 STOP_WORD_LIMIT = 6
 
 EventCallback = Callable[[dict[str, Any]], None]
-BackgroundRunner = Callable[[Awaitable[Any]], None]
+
+
+class BackgroundRunner(Protocol):
+    """Schedules a pipeline off the turn; False when there is no loop for it."""
+
+    def __call__(self, coroutine: Coroutine[Any, Any, Any], *, label: str = "") -> bool: ...
 
 
 class MedicalTutor:
@@ -94,6 +107,9 @@ class MedicalTutor:
         self._model_available = model_available
         self._document_jobs = document_jobs
         self.last_command: StudyCommand | None = None
+        # Papers the model is writing right now, so a second "beni sına"
+        # neither starts a duplicate job nor promises a second quiz.
+        self._preparing: set[str] = set()
 
     # ------------------------------------------------------------------
     # entry
@@ -133,11 +149,11 @@ class MedicalTutor:
             if intent == MedicalIntent.NEXT_QUESTION:
                 return self._next_question(session, base_metadata)
             if intent == MedicalIntent.QUIZ:
-                return await self._start_quiz(command, context, session, base_metadata)
+                return self._start_quiz(command, context, session, base_metadata)
             if intent == MedicalIntent.ORAL_EXAM:
                 return self._start_oral(command, context, session, base_metadata)
             if intent in {MedicalIntent.EXAM_GENERATE, MedicalIntent.PROFESSOR_STYLE_EXAM}:
-                return await self._generate_exam(command, context, session, base_metadata)
+                return self._generate_exam(command, context, session, base_metadata)
             if intent in {MedicalIntent.ANATOMY_OPEN, MedicalIntent.ANATOMY_HIGHLIGHT, MedicalIntent.ANATOMY_QUIZ}:
                 return self._anatomy_action(command, base_metadata)
             if intent in {MedicalIntent.PDF_ANALYZE, MedicalIntent.PDF_COMPARE}:
@@ -315,26 +331,58 @@ class MedicalTutor:
                     ids.append(question_id)
         return ids[:limit]
 
-    async def _questions_for(self, config: ExamConfig, *, session: StudySession) -> tuple[list[Question], list[str]]:
+    def _bank_questions(self, config: ExamConfig) -> tuple[list[Question], list[str]]:
+        """What the stored bank alone can offer for this paper, and its note.
+
+        Asked before the model on every chat quiz and exam: the augmenter
+        runs inside the engine's short augmentation slice, so anything the
+        bank can answer is answered without waiting for a provider.
+        """
+        if config.wrong_only:
+            wrong = self._generator.from_bank(config, wrong_question_ids=self._wrong_question_ids(), only_wrong=True)
+            # A "wrong answers only" paper is never padded from the rest of
+            # the bank, so an empty result means the model has to write it.
+            return (wrong[: config.question_count], [f"Yanlış yaptığın {len(wrong)} sorudan seçildi."]) if wrong else ([], [])
+        if config.document_ids or config.knowledge_priority == KnowledgePriority.STRICT_LECTURE:
+            # The bank is indexed by subject and topic, never by document, so
+            # a paper the student scoped to a lecture note cannot come from it.
+            return [], []
+        bank = self._generator.from_bank(config)
+        return (bank, ["Soru bankasından seçildi."]) if bank else ([], [])
+
+    def _bank_is_enough(self, questions: list[Question], config: ExamConfig) -> bool:
+        """The bank answers the turn when it fills the request — or when there
+        is no provider that could write anything better."""
+        if not questions:
+            return False
+        if config.wrong_only:
+            # A "wrong answers only" paper is exactly the student's own
+            # mistakes: a short one is honest, a topped-up one would not be
+            # theirs, so however many there are, that is the paper.
+            return True
+        return len(questions) >= config.question_count or not self._model_available()
+
+    async def _model_questions(self, config: ExamConfig) -> tuple[list[Question], list[str]]:
+        """Generate with the model. Only ever awaited off the turn."""
         notes: list[str] = []
         if config.wrong_only:
-            questions = self._generator.from_bank(config, wrong_question_ids=self._wrong_question_ids(), only_wrong=True)
-            if questions:
-                return questions[: config.question_count], [f"Yanlış yaptığın {len(questions)} sorudan seçildi."]
+            # Reached only when the bank held no recorded mistakes at all.
             notes.append("Kayıtlı yanlışın yoktu; yeni sorular üretildi.")
-        if self._model_available():
-            try:
-                generated, generation_notes = await self._generator.generate(config)
-                return generated, notes + generation_notes
-            except GenerationError as exc:
-                notes.append(str(exc))
+        try:
+            generated, generation_notes = await self._generator.generate(config)
+            return generated, notes + generation_notes
+        except GenerationError as exc:
+            notes.append(str(exc))
         bank = self._generator.from_bank(config)
         if bank:
             notes.append("Soru bankasından seçildi.")
             return bank, notes
-        raise GenerationError(notes[-1] if notes else "Uygun soru bulunamadı; önce bir ders ve konu seç ya da model bağlantısını ayarla.")
+        raise GenerationError(notes[-1])
 
-    async def _start_quiz(self, command: StudyCommand, context: StudyContext, session: StudySession, metadata: dict[str, Any]) -> RequestAugmentation:
+    def _no_questions_error(self) -> GenerationError:
+        return GenerationError("Uygun soru bulunamadı; önce bir ders ve konu seç ya da model bağlantısını ayarla.")
+
+    def _start_quiz(self, command: StudyCommand, context: StudyContext, session: StudySession, metadata: dict[str, Any]) -> RequestAugmentation:
         if context.subject is None and context.topic_id is None:
             return RequestAugmentation(
                 direct_response="Hangi dersten sınayayım? Örneğin: “beni anatomiden sına” ya da Tıp Akademisi'nde bir konu seç.",
@@ -344,17 +392,97 @@ class MedicalTutor:
             )
         count = min(CHAT_QUIZ_MAX, command.question_count or min(session.question_count, 5))
         config = self._config_from(command, context, count=count, interactive=True)
-        questions, notes = await self._questions_for(config, session=session)
+        questions, notes = self._bank_questions(config)
+        if self._bank_is_enough(questions, config):
+            exam, text = self._begin_quiz(config, questions, notes)
+            return RequestAugmentation(direct_response=text, kind="medical", suppress_memory=True, metadata={**metadata, "exam_id": exam.exam_id, "quiz": "started"})
+        if not self._model_available():
+            raise self._no_questions_error()
+        return self._prepare_later(
+            "quiz",
+            lambda: self._prepare_quiz(config),
+            label="Quiz hazırlığı",
+            text="Soruları hazırlıyorum; birkaç saniye sürebilir. Hazır olunca ilk soruyu bildirim merkezine bırakırım, sohbette harfle cevaplayabilirsin.",
+            metadata=metadata,
+        )
+
+    def _begin_quiz(self, config: ExamConfig, questions: list[Question], notes: list[str]) -> tuple[Exam, str]:
+        """Store the paper, put the chat quiz into its started state and return
+        the exam together with the text that opens it."""
         exam = self._exams.build(config, questions, notes=notes)
         attempt = new_attempt(exam)
         self._store.save_attempt(attempt)
         self._sessions.start_chat_quiz(exam.question_ids, mode="quiz", exam_id=exam.exam_id)
         self._sessions.update_chat_quiz(attempt_id=attempt.attempt_id)
-        first = self._store.get_question(exam.question_ids[0])
+        first = self._store.get_question(exam.question_ids[0]) if exam.question_ids else None
         intro = f"Quiz başladı: {exam.title}. Cevabını harfle ver (A–{'ABCDEF'[len(first.options) - 1] if first else 'E'}); “sonraki soru” ile atlayabilir, “bitir” ile kapatabilirsin."
-        text = intro + "\n\n" + (format_question_text(first, number=1) if first else "")
         self._emit({"kind": "quiz_started", "exam_id": exam.exam_id, "title": exam.title, "count": len(exam.question_ids)})
-        return RequestAugmentation(direct_response=text, kind="medical", suppress_memory=True, metadata={**metadata, "exam_id": exam.exam_id, "quiz": "started"})
+        return exam, intro + "\n\n" + (format_question_text(first, number=1) if first else "")
+
+    # ------------------------------------------------------------------
+    # papers the model has to write (never inside the turn)
+    # ------------------------------------------------------------------
+
+    def _prepare_later(
+        self,
+        key: str,
+        job: Callable[[], Coroutine[Any, Any, None]],
+        *,
+        label: str,
+        text: str,
+        metadata: dict[str, Any],
+    ) -> RequestAugmentation:
+        """Answer the turn now and let the model write the paper in the background.
+
+        The engine gives the augmenter about two seconds of the turn's
+        budget and cancels it when that expires; one generation round trip
+        takes several. Awaiting the model here would drop the turn and tell
+        the student nothing, so the request is acknowledged immediately and
+        the work reports itself through events when it lands.
+        """
+        if key in self._preparing:
+            return RequestAugmentation(
+                direct_response="Bir önceki isteğin için soruları hâlâ hazırlıyorum; hazır olunca bildiririm.",
+                kind="medical",
+                suppress_memory=True,
+                metadata={**metadata, key: "preparing"},
+            )
+        self._preparing.add(key)
+        if not self._run_background(job(), label=label):
+            # Nothing will run, so the promise below must not be made.
+            self._preparing.discard(key)
+            return RequestAugmentation(
+                direct_response="Soru hazırlığı şu an başlatılamadı; birazdan tekrar dener misin?",
+                kind="medical",
+                suppress_memory=True,
+                metadata={**metadata, "error": "background"},
+            )
+        return RequestAugmentation(direct_response=text, kind="medical", suppress_memory=True, metadata={**metadata, key: "preparing"})
+
+    async def _prepare_quiz(self, config: ExamConfig) -> None:
+        try:
+            questions, notes = await self._model_questions(config)
+        finally:
+            self._preparing.discard("quiz")
+        if self._sessions.chat_quiz_state().get("active"):
+            # The student started another quiz while the model was writing this
+            # one; the paper is kept, but what they are answering is not replaced.
+            exam = self._exams.build(config, questions, notes=notes)
+            self._emit({"kind": "exam_ready", "exam_id": exam.exam_id, "title": exam.title, "count": len(exam.question_ids)})
+            return
+        exam, text = self._begin_quiz(config, questions, notes)
+        self._emit({"kind": "quiz_ready", "exam_id": exam.exam_id, "title": exam.title, "count": len(exam.question_ids), "question": text})
+
+    async def _prepare_exam(self, config: ExamConfig) -> None:
+        try:
+            questions, notes = await self._model_questions(config)
+        finally:
+            self._preparing.discard("exam")
+        exam = self._exams.build(config, questions, notes=notes)
+        session = self._sessions.get()
+        session.active_exam_id = exam.exam_id
+        self._sessions.save(session)
+        self._emit({"kind": "exam_ready", "exam_id": exam.exam_id, "title": exam.title, "count": len(exam.question_ids)})
 
     def _start_oral(self, command: StudyCommand, context: StudyContext, session: StudySession, metadata: dict[str, Any]) -> RequestAugmentation:
         self._sessions.start_chat_quiz([], mode="oral")
@@ -496,7 +624,7 @@ class MedicalTutor:
     # exams from chat
     # ------------------------------------------------------------------
 
-    async def _generate_exam(self, command: StudyCommand, context: StudyContext, session: StudySession, metadata: dict[str, Any]) -> RequestAugmentation:
+    def _generate_exam(self, command: StudyCommand, context: StudyContext, session: StudySession, metadata: dict[str, Any]) -> RequestAugmentation:
         if context.subject is None and context.topic_id is None and not command.current_document and not context.document_ids:
             return RequestAugmentation(
                 direct_response="Hangi ders ya da konudan sınav hazırlayayım? Örneğin: “omuz eklemi konusundan 20 soru hazırla” ya da Tıp Akademisi'nde konu seç.",
@@ -521,7 +649,17 @@ class MedicalTutor:
                 suppress_memory=True,
                 metadata=metadata,
             )
-        questions, notes = await self._questions_for(config, session=session)
+        questions, notes = self._bank_questions(config)
+        if not self._bank_is_enough(questions, config):
+            if not self._model_available():
+                raise self._no_questions_error()
+            return self._prepare_later(
+                "exam",
+                lambda: self._prepare_exam(config),
+                label="Sınav hazırlığı",
+                text="Sınavı hazırlıyorum; birkaç saniye sürebilir. Hazır olunca bildirim merkezine düşer, Tıp Akademisi › Sınav ekranından başlatabilirsin.",
+                metadata=metadata,
+            )
         exam = self._exams.build(config, questions, notes=notes)
         session = self._sessions.get()
         session.active_exam_id = exam.exam_id
@@ -591,11 +729,20 @@ class MedicalTutor:
                 metadata=metadata,
             )
         if command.intent == MedicalIntent.PDF_COMPARE:
-            self._run_background(self._document_jobs.compare(chosen.document_id, page_from=page_from, page_to=page_to))
+            started = self._run_background(self._document_jobs.compare(chosen.document_id, page_from=page_from, page_to=page_to), label=f"“{chosen.title}” karşılaştırması")
             text = f"“{chosen.title}” belgesini standart tıp bilgisiyle karşılaştırmaya başladım" + (f" (s. {page_from}–{page_to})" if page_from and page_to else "") + ". Bitince bildirim merkezine ve Kütüphane'ye düşer: tutarlı / basitleştirilmiş / eksik / yanıltıcı / hatalı / terminoloji farkı olarak etiketlenir."
         else:
-            self._run_background(self._document_jobs.analyze(chosen.document_id, page_from=page_from, page_to=page_to))
+            started = self._run_background(self._document_jobs.analyze(chosen.document_id, page_from=page_from, page_to=page_to), label=f"“{chosen.title}” analizi")
             text = f"“{chosen.title}” belgesini analiz etmeye başladım" + (f" (s. {page_from}–{page_to})" if page_from and page_to else "") + ": konular, terimler ve yüksek verimli noktalar çıkarılacak; şekilli sayfalar görüntüden incelenecek. Bitince bildiririm."
+        if not started:
+            # Nothing was scheduled, so "Bitince bildiririm" would be a promise
+            # nobody keeps.
+            return RequestAugmentation(
+                direct_response=f"“{chosen.title}” için işi şu an başlatamadım; birazdan tekrar dener misin?",
+                kind="medical",
+                suppress_memory=True,
+                metadata={**metadata, "error": "background"},
+            )
         session.document_ids = [chosen.document_id] if chosen.document_id not in session.document_ids else session.document_ids
         if command.page_range:
             session.page_from, session.page_to = command.page_range

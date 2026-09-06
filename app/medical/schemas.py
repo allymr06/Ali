@@ -106,6 +106,9 @@ QUESTION_ITEM_SCHEMA: dict[str, Any] = {
         "topic": _string(160),
         "difficulty": {"type": "integer", "minimum": 1, "maximum": 5},
         "question_type": {"type": "string", "enum": ["single_best_answer", "true_false", "matching", "assertion_reason", "multi_statement"]},
+        # The excerpt this item came from, named by the N of its "[Kaynak N]" label.
+        # The page alone cannot identify it: two documents often share a page number.
+        "source_index": {"type": "integer", "minimum": 0},
         "source_page": {"type": "integer", "minimum": 0},
         "source_quote": _string(400),
         "trap": _string(400),

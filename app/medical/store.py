@@ -111,6 +111,7 @@ class MedicalStore:
             )
             self._connection.commit()
         self._revision = 0
+        self._content_revision = 0
 
     @property
     def path(self) -> Path | None:
@@ -122,8 +123,20 @@ class MedicalStore:
 
     @property
     def revision(self) -> int:
-        """Bumps on every write; the search index rebuilds when it changes."""
+        """Bumps on every write, whatever table it touched."""
         return self._revision
+
+    @property
+    def content_revision(self) -> int:
+        """Bumps only on writes the search index is built from.
+
+        Documents, chunks, notes and questions are the index; a session, page,
+        page image, exam, attempt, mastery, professor or learned-concept write
+        leaves it valid. The retriever watches this counter rather than
+        ``revision`` so the index stays warm across the session save the tutor
+        performs on every medical turn.
+        """
+        return self._content_revision
 
     def close(self) -> None:
         with self._lock:
@@ -136,18 +149,31 @@ class MedicalStore:
     # helpers
     # ------------------------------------------------------------------
 
-    def _write(self, statement: str, parameters: tuple[Any, ...] = ()) -> int:
+    def _bump(self, *, indexed: bool) -> None:
+        """Record a write; ``indexed`` says it changed what the index reads.
+
+        The retrieval index (app/medical/retrieval.py) is built from documents,
+        chunks, notes and questions and reads no other table, so every write
+        states which of the two counters it moves. The study session is why
+        this is worth the ceremony: the tutor saves it on every medical turn,
+        and a single shared counter made that rebuild the entire index.
+        """
+        self._revision += 1
+        if indexed:
+            self._content_revision += 1
+
+    def _write(self, statement: str, parameters: tuple[Any, ...] = (), *, indexed: bool) -> int:
         with self._lock:
             cursor = self._connection.execute(statement, parameters)
             self._connection.commit()
-            self._revision += 1
+            self._bump(indexed=indexed)
             return cursor.rowcount
 
-    def _write_many(self, statement: str, rows: Iterable[tuple[Any, ...]]) -> None:
+    def _write_many(self, statement: str, rows: Iterable[tuple[Any, ...]], *, indexed: bool) -> None:
         with self._lock:
             self._connection.executemany(statement, rows)
             self._connection.commit()
-            self._revision += 1
+            self._bump(indexed=indexed)
 
     def _rows(self, statement: str, parameters: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
         with self._lock:
@@ -194,6 +220,7 @@ class MedicalStore:
             "ON CONFLICT(document_id) DO UPDATE SET body = excluded.body, sha256 = excluded.sha256, "
             "imported_at = excluded.imported_at",
             (document.document_id, document.imported_at.isoformat(), document.sha256, dumps(document)),
+            indexed=True,
         )
         return document
 
@@ -219,7 +246,7 @@ class MedicalStore:
                 self._connection.execute(f"DELETE FROM {table} WHERE document_id = ?", (document_id,))
             self._connection.execute("DELETE FROM documents WHERE document_id = ?", (document_id,))
             self._connection.commit()
-            self._revision += 1
+            self._bump(indexed=True)
         return existed
 
     def save_pages(self, pages: Iterable[DocumentPage]) -> None:
@@ -227,6 +254,7 @@ class MedicalStore:
             "INSERT INTO pages (document_id, page_number, body) VALUES (?, ?, ?) "
             "ON CONFLICT(document_id, page_number) DO UPDATE SET body = excluded.body",
             ((page.document_id, page.page_number, dumps(page)) for page in pages),
+            indexed=False,  # pages carry the raw text; only chunks reach the index
         )
 
     def save_page(self, page: DocumentPage) -> None:
@@ -262,7 +290,7 @@ class MedicalStore:
                 ((chunk.chunk_id, chunk.document_id, chunk.page_number, dumps(chunk)) for chunk in items),
             )
             self._connection.commit()
-            self._revision += 1
+            self._bump(indexed=True)
         return len(items)
 
     def get_chunk(self, chunk_id: str) -> DocumentChunk | None:
@@ -298,6 +326,7 @@ class MedicalStore:
             "INSERT INTO page_images (document_id, page_number, scale, png) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(document_id, page_number, scale) DO UPDATE SET png = excluded.png",
             (document_id, int(page_number), float(scale), sqlite3.Binary(png)),
+            indexed=False,
         )
 
     def get_page_image(self, document_id: str, page_number: int, scale: float) -> bytes | None:
@@ -316,6 +345,7 @@ class MedicalStore:
             "INSERT INTO notes (note_id, created_at, body) VALUES (?, ?, ?) "
             "ON CONFLICT(note_id) DO UPDATE SET body = excluded.body, created_at = excluded.created_at",
             (note.note_id, note.created_at.isoformat(), dumps(note)),
+            indexed=True,
         )
         return note
 
@@ -339,7 +369,7 @@ class MedicalStore:
         return notes
 
     def delete_note(self, note_id: str) -> bool:
-        return self._write("DELETE FROM notes WHERE note_id = ?", (note_id,)) > 0
+        return self._write("DELETE FROM notes WHERE note_id = ?", (note_id,), indexed=True) > 0
 
     # ------------------------------------------------------------------
     # questions
@@ -362,6 +392,7 @@ class MedicalStore:
                 question.created_at.isoformat(),
                 dumps(question),
             ),
+            indexed=True,
         )
         return question
 
@@ -382,7 +413,7 @@ class MedicalStore:
         return found
 
     def delete_question(self, question_id: str) -> bool:
-        return self._write("DELETE FROM questions WHERE question_id = ?", (question_id,)) > 0
+        return self._write("DELETE FROM questions WHERE question_id = ?", (question_id,), indexed=True) > 0
 
     def query_questions(
         self,
@@ -462,6 +493,7 @@ class MedicalStore:
             "INSERT INTO exams (exam_id, created_at, body) VALUES (?, ?, ?) "
             "ON CONFLICT(exam_id) DO UPDATE SET body = excluded.body, created_at = excluded.created_at",
             (exam.exam_id, exam.created_at.isoformat(), dumps(exam)),
+            indexed=False,
         )
         return exam
 
@@ -478,7 +510,7 @@ class MedicalStore:
             self._connection.execute("DELETE FROM attempts WHERE exam_id = ?", (exam_id,))
             removed = self._connection.execute("DELETE FROM exams WHERE exam_id = ?", (exam_id,)).rowcount
             self._connection.commit()
-            self._revision += 1
+            self._bump(indexed=False)
         return removed > 0
 
     def save_attempt(self, attempt: ExamAttempt) -> ExamAttempt:
@@ -486,6 +518,7 @@ class MedicalStore:
             "INSERT INTO attempts (attempt_id, exam_id, started_at, body) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(attempt_id) DO UPDATE SET body = excluded.body, started_at = excluded.started_at",
             (attempt.attempt_id, attempt.exam_id, attempt.started_at.isoformat(), dumps(attempt)),
+            indexed=False,
         )
         return attempt
 
@@ -494,7 +527,14 @@ class MedicalStore:
         return attempt_from_dict(data) if data else None
 
     def attempts_for_exam(self, exam_id: str) -> list[ExamAttempt]:
-        rows = self._rows("SELECT body FROM attempts WHERE exam_id = ? ORDER BY started_at DESC", (exam_id,))
+        # rowid breaks the tie: the Windows clock is coarse enough that two
+        # attempts started in the same tick share an ISO timestamp, and
+        # ordering on the timestamp alone can hand back the finished one --
+        # which carries the answer key -- as the current sitting.
+        rows = self._rows(
+            "SELECT body FROM attempts WHERE exam_id = ? ORDER BY started_at DESC, rowid DESC",
+            (exam_id,),
+        )
         return [attempt_from_dict(json.loads(row["body"])) for row in rows]
 
     def latest_attempt(self, exam_id: str) -> ExamAttempt | None:
@@ -502,7 +542,7 @@ class MedicalStore:
         return attempts[0] if attempts else None
 
     def list_attempts(self, *, limit: int = 100) -> list[ExamAttempt]:
-        rows = self._rows("SELECT body FROM attempts ORDER BY started_at DESC LIMIT ?", (max(1, int(limit)),))
+        rows = self._rows("SELECT body FROM attempts ORDER BY started_at DESC, rowid DESC LIMIT ?", (max(1, int(limit)),))
         return [attempt_from_dict(json.loads(row["body"])) for row in rows]
 
     # ------------------------------------------------------------------
@@ -513,6 +553,7 @@ class MedicalStore:
         self._write(
             "INSERT INTO mastery (concept_id, body) VALUES (?, ?) ON CONFLICT(concept_id) DO UPDATE SET body = excluded.body",
             (mastery.concept_id, dumps(mastery)),
+            indexed=False,
         )
         return mastery
 
@@ -525,7 +566,7 @@ class MedicalStore:
         return [mastery_from_dict(json.loads(row["body"])) for row in rows]
 
     def clear_mastery(self) -> int:
-        return self._write("DELETE FROM mastery")
+        return self._write("DELETE FROM mastery", indexed=False)
 
     # ------------------------------------------------------------------
     # professors
@@ -535,6 +576,7 @@ class MedicalStore:
         self._write(
             "INSERT INTO professors (profile_id, body) VALUES (?, ?) ON CONFLICT(profile_id) DO UPDATE SET body = excluded.body",
             (profile.profile_id, dumps(profile)),
+            indexed=False,
         )
         return profile
 
@@ -549,7 +591,7 @@ class MedicalStore:
         return profiles
 
     def delete_professor(self, profile_id: str) -> bool:
-        return self._write("DELETE FROM professors WHERE profile_id = ?", (profile_id,)) > 0
+        return self._write("DELETE FROM professors WHERE profile_id = ?", (profile_id,), indexed=False) > 0
 
     # ------------------------------------------------------------------
     # session
@@ -566,6 +608,7 @@ class MedicalStore:
         self._write(
             "INSERT INTO sessions (session_id, body) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET body = excluded.body",
             (session.session_id, dumps(session)),
+            indexed=False,  # the session is not in the index: this is the every-turn write
         )
         return session
 
@@ -580,6 +623,7 @@ class MedicalStore:
         self._write(
             "INSERT INTO learned_concepts (concept_id, body) VALUES (?, ?) ON CONFLICT(concept_id) DO UPDATE SET body = excluded.body",
             (concept_id, json.dumps(to_plain(concept), ensure_ascii=False)),
+            indexed=False,
         )
 
     def list_learned_concepts(self) -> list[dict[str, Any]]:

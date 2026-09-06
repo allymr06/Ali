@@ -60,7 +60,12 @@ class Retriever:
     # ------------------------------------------------------------------
 
     def refresh(self, *, force: bool = False) -> None:
-        if not force and self._index_revision == self._store.revision:
+        # ``content_revision``, not ``revision``: rebuilding is linear in the
+        # size of the library and runs inline on the study path, so only the
+        # four tables read below may invalidate it. Watching every write meant
+        # the session the tutor saves each medical turn rebuilt the index
+        # before every question, and the cache never once hit.
+        if not force and self._index_revision == self._store.content_revision:
             return
         documents = self._store.list_documents()
         self._titles = {document.document_id: document.title for document in documents}
@@ -102,7 +107,7 @@ class Retriever:
                 )
             )
         self._index.build(entries)
-        self._index_revision = self._store.revision
+        self._index_revision = self._store.content_revision
 
     @property
     def index(self) -> SearchIndex:

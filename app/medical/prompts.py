@@ -345,9 +345,10 @@ def question_generation_prompt(
     if evidence_text:
         parts.append(PRIORITY_RULES.get(knowledge_priority, PRIORITY_RULES[KnowledgePriority.BALANCED]))
         parts.append(
-            "Base each question on the lecture excerpts below when the priority allows and set source_page to the page "
-            "of the excerpt used (only pages shown below) with a short source_quote; leave source_page 0 when a question "
-            "comes from general knowledge."
+            "Base each question on the lecture excerpts below when the priority allows and name the excerpt you used: "
+            "set source_index to the N of its '[Kaynak N]' label and source_page to the page printed in that same label "
+            "(two excerpts can share a page number, so the index is what identifies it), with a short source_quote from "
+            "it; leave source_index and source_page 0 when a question comes from general knowledge."
         )
         parts.append("Lecture excerpts:\n" + evidence_text)
     if curated_facts:

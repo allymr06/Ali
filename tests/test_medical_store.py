@@ -112,7 +112,7 @@ def test_memory_store_keeps_everything_off_disk_and_round_trips_documents(tmp_pa
     late = StudyDocument("d2", "Histoloji", "b.pdf", "sha-b", subject="histology", imported_at=BASE + timedelta(days=1))
     store.save_document(early)
     store.save_document(late)
-    assert store.revision == 2  # every write bumps the revision the search index watches
+    assert store.revision == 2  # every write bumps the global revision
 
     assert dumps(store.get_document("d1")) == dumps(early) and store.get_document("nope") is None
     assert [item.document_id for item in store.list_documents()] == ["d2", "d1"]  # newest import first
@@ -120,6 +120,44 @@ def test_memory_store_keeps_everything_off_disk_and_round_trips_documents(tmp_pa
     assert store.find_document_by_sha("sha-b").document_id == "d2"
     assert store.find_document_by_sha("sha-missing") is None
     assert list(tmp_path.rglob("*")) == []  # an in-memory store never touches the filesystem
+
+
+def test_only_writes_the_search_index_reads_bump_the_content_revision() -> None:
+    """Rebuilding the index costs a pass over the whole library, so the counter
+    the retriever watches must move for those four tables and nothing else."""
+    store = MedicalStore()
+    assert store.revision == 0 and store.content_revision == 0
+
+    store.save_document(StudyDocument("d1", "Atlas", "a.pdf", "sha-a", imported_at=BASE))
+    store.replace_chunks("d1", [DocumentChunk("c1", "d1", 1, 0, "Humerus govdesi.")])
+    store.save_note(StudyNote("n1", "Not", "İçerik"))
+    store.save_question(make_question(1))
+    assert store.content_revision == 4  # documents, chunks, notes, questions: all indexed
+
+    indexed, writes = store.content_revision, store.revision
+    store.save_page(DocumentPage("d1", 1, "sayfa metni"))
+    store.put_page_image("d1", 1, 1.5, b"\x00png")
+    store.save_exam(Exam("e1", "Deneme", ExamConfig(), ["q1"], created_at=BASE))
+    store.save_attempt(ExamAttempt("a1", "e1", started_at=BASE))
+    store.save_mastery(ConceptMastery("c1", attempts=1, correct=1))
+    store.save_professor(ProfessorProfile("p1", "Ahmet"))
+    store.save_learned_concept({"concept_id": "lc1", "name": "Kalp"})
+    store.save_session(StudySession(subject="anatomy"))
+    # None of these is in the index. The session is the one that matters: the
+    # tutor saves it on every medical turn, and it used to cost a full rebuild.
+    assert store.content_revision == indexed
+    assert store.revision == writes + 8  # they are still writes, just not indexed ones
+
+    # Removals invalidate too: an index that keeps a deleted page cites it.
+    store.delete_question("q1")
+    store.delete_note("n1")
+    store.delete_document("d1")
+    assert store.content_revision == indexed + 3
+
+    store.delete_exam("e1")
+    store.clear_mastery()
+    store.delete_professor("p1")
+    assert store.content_revision == indexed + 3
 
 
 def test_pages_round_trip_and_are_addressable_by_number_and_range() -> None:

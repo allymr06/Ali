@@ -28,19 +28,35 @@ from app.medical.models import (
     SUBJECT_LABELS_TR,
     new_id,
 )
-from app.medical.text import content_tokens, fold, jaccard, normalize, similarity
+from app.medical.text import fold, jaccard, normalize, similarity, stems
 
 OPTION_KEYS = "ABCDEF"
 SIMILARITY_THRESHOLD = 0.45
-FORBIDDEN_OPTION_PHRASES = (
-    "hepsi",
-    "hicbiri",
-    "yukaridakilerin hepsi",
-    "yukaridakilerin hicbiri",
-    "all of the above",
-    "none of the above",
-    "both a and b",
-    "a ve b",
+# Words that stand for the whole option list rather than for an answer. Matched as
+# whole tokens: the old substring list missed the ordinary Turkish spellings
+# ("tümü", "tamamı", "her ikisi") and threw out the legitimate biochemistry option
+# "Vitamin A ve B12 eksikliği" because it contains the letters "a ve b".
+CATCH_ALL_OPTION_WORDS = frozenset(
+    {
+        "hepsi", "hepsini", "hepsidir", "hepsinin", "hepsinde",
+        "tumu", "tumunu", "tumudur", "tumunun",
+        "tamami", "tamamini", "tamamidir", "tamaminin",
+        "hicbiri", "hicbirisi", "hicbiridir", "hicbirinin", "hicbirinde",
+        "all", "none", "both",
+    }
+)
+# "Yukarıdakilerin tümü" / "aşağıdakilerin hiçbiri": the plural genitive only ever
+# points at the option list. The singular ("yukarıdaki şekil") is left alone.
+CATCH_ALL_LIST_PREFIXES = ("yukaridakiler", "asagidakiler")
+# "Hiçbir şık doğru değildir" needs both halves: "hiçbir kas buraya tutunmaz" is a
+# real answer, "hiçbir şık" is a statement about the paper.
+OPTION_NOUN_PREFIXES = ("sik", "secene", "ifade", "ceva")
+OPTION_LETTERS = frozenset("abcdef")
+LETTER_JOINERS = frozenset({"ve", "veya", "ile", "ya", "hem", "veyahut"})
+LETTER_LEADERS = frozenset({"yalniz", "yalnizca", "sadece"})
+LETTER_TRAILERS = frozenset(
+    {"dogru", "dogrudur", "dogrudurlar", "yanlis", "yanlistir", "de", "da",
+     "secenegi", "secenekleri", "sikki", "siklari", "ifadeleri"}
 )
 MIN_STEM_CHARS = 15
 MIN_EXPLANATION_CHARS = 20
@@ -49,6 +65,32 @@ MIN_EXPLANATION_CHARS = 20
 # ---------------------------------------------------------------------------
 # validation
 # ---------------------------------------------------------------------------
+
+
+def _is_catch_all_option(words: list[str]) -> bool:
+    """Does the option stand for the whole list — hepsi, yukarıdakilerin tümü,
+    hiçbir şık doğru değildir, her ikisi de doğrudur?"""
+    if any(word in CATCH_ALL_OPTION_WORDS for word in words):
+        return True
+    if any(word.startswith(CATCH_ALL_LIST_PREFIXES) for word in words):
+        return True
+    if any(word.startswith("hicbir") for word in words) and any(word.startswith(OPTION_NOUN_PREFIXES) for word in words):
+        return True
+    return "ikisi" in words and bool({"her", "de", "da"} & set(words))
+
+
+def _references_option_letters(words: list[str]) -> bool:
+    """Does the option name other options by letter — B ve C, A ve B doğrudur?
+
+    ``shuffle_options`` re-letters every generated paper, so such an option ends up
+    pointing at options nobody meant, and its stated answer becomes false. The whole
+    option must be the letter run: "Vitamin A ve B12 eksikliği" keeps a word that is
+    not a letter, and "A ve D vitaminleri" keeps its noun, so neither is caught.
+    """
+    core = [word for word in words if word not in LETTER_LEADERS and word not in LETTER_TRAILERS]
+    letters = [word for word in core if word in OPTION_LETTERS]
+    joiners = [word for word in core if word in LETTER_JOINERS]
+    return len(letters) >= 2 and len(letters) + len(joiners) == len(core)
 
 
 def validate_question(
@@ -76,11 +118,14 @@ def validate_question(
         problems.append("empty_option")
     if len(set(normalized_texts)) != len(normalized_texts):
         problems.append("duplicate_options")
-    if not allow_all_of_the_above:
-        for text in normalized_texts:
-            if any(phrase in text for phrase in FORBIDDEN_OPTION_PHRASES):
-                problems.append("all_or_none_option")
-                break
+    option_words = [text.split() for text in normalized_texts]
+    if not allow_all_of_the_above and any(_is_catch_all_option(words) for words in option_words):
+        problems.append("all_or_none_option")
+    # This one has no relaxation: an option that names other options by letter is broken
+    # by the shuffle, not merely undesirable. An imported professor question keeps the
+    # letters its author wrote and is never re-lettered, so its "A ve B" is authentic.
+    if question.origin != QuestionOrigin.IMPORTED_EXAM and any(_references_option_letters(words) for words in option_words):
+        problems.append("option_references_another_option")
     correct = question.option(question.correct_key or "")
     if question.correct_key is None:
         problems.append("missing_answer_key")
@@ -121,6 +166,15 @@ def shuffle_options(question: Question, *, seed: str | None = None) -> Question:
     question.options = new_options
     question.correct_key = new_key
     return question
+
+
+def _stated_number(value: Any) -> int:
+    """A positive integer the model stated, or 0 when it stated nothing usable."""
+    try:
+        number = int(value) if value is not None else 0
+    except (TypeError, ValueError):
+        return 0
+    return number if number > 0 else 0
 
 
 def build_question(
@@ -182,27 +236,35 @@ def build_question(
         actual_difficulty = int(difficulty)
     actual_difficulty = max(1, min(5, actual_difficulty))
     refs = list(references)
-    page = raw.get("source_page")
-    try:
-        page_number = int(page) if page is not None else 0
-    except (TypeError, ValueError):
-        page_number = 0
-    if page_number > 0 and refs:
-        # Keep only references that match the stated page, when any do.
+    page_number = _stated_number(raw.get("source_page"))
+    source_index = _stated_number(raw.get("source_index"))
+    if source_index:
+        # The model names the excerpt by its [Kaynak N] label, which is the only handle
+        # that is unique: two documents routinely share a page number, and resolving by
+        # page alone attaches a real title and page to material the question never used.
+        chosen = refs[source_index - 1] if source_index <= len(refs) else None
+        # The page is the cross-check on the index, and the prompt asks for both:
+        # an index with no page rests on one unverified claim, so it cites nothing.
+        refs = [chosen] if chosen is not None and page_number == chosen.page_number else []
+    elif page_number and refs:
         matching = [ref for ref in refs if ref.page_number == page_number]
-        if matching:
-            refs = matching[:1]
-            refs[0] = SourceReference(
-                document_id=refs[0].document_id,
-                page_number=refs[0].page_number,
-                chunk_id=refs[0].chunk_id,
-                quote=" ".join(str(raw.get("source_quote") or refs[0].quote).split())[:300],
-                title=refs[0].title or document_title,
-            )
-        else:
-            refs = []
-    elif page_number == 0:
+        # One document on that page: cite it. Several: nothing here can tell them apart,
+        # and a missing citation is honest where a wrong one is not.
+        refs = matching[:1] if len({ref.document_id for ref in matching}) == 1 else []
+    else:
         refs = []
+    if refs:
+        refs[0] = SourceReference(
+            document_id=refs[0].document_id,
+            page_number=refs[0].page_number,
+            chunk_id=refs[0].chunk_id,
+            quote=" ".join(str(raw.get("source_quote") or refs[0].quote).split())[:300],
+            title=refs[0].title or document_title,
+        )
+    elif origin == QuestionOrigin.LECTURE_DERIVED:
+        # The badge follows the reference that survived verification. A page the model
+        # invented must not leave the item claiming a lecture origin it cannot show.
+        origin = QuestionOrigin.GENERATED
     question_type = str(raw.get("question_type") or QuestionType.SINGLE_BEST_ANSWER)
     if question_type not in {item.value for item in QuestionType}:
         question_type = QuestionType.SINGLE_BEST_ANSWER
@@ -254,7 +316,10 @@ def most_similar(question: Question, others: Iterable[Question]) -> tuple[float,
     best = 0.0
     best_id: str | None = None
     text = question_text(question)
-    stem_tokens = set(content_tokens(question.stem))
+    # Stems, not raw word forms: Turkish inflection alone ("humerus"/"humerusun",
+    # "bulunur"/"bulunmaktadır") is enough to drop a re-emitted question below the
+    # threshold, which is exactly the rewrite this shortcut exists to catch.
+    stem_stems = set(stems(question.stem))
     for other in others:
         if other.question_id == question.question_id:
             continue
@@ -264,7 +329,7 @@ def most_similar(question: Question, others: Iterable[Question]) -> tuple[float,
             mine = question.option(question.correct_key)
             theirs = other.option(other.correct_key)
             if mine is not None and theirs is not None and normalize(mine.text) == normalize(theirs.text):
-                score = max(score, 0.9 * jaccard(stem_tokens, set(content_tokens(other.stem))))
+                score = max(score, 0.9 * jaccard(stem_stems, set(stems(other.stem))))
         if score > best:
             best, best_id = score, other.question_id
     return best, best_id

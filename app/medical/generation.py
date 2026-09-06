@@ -176,6 +176,7 @@ class QuestionGenerator:
         needed = max(1, int(config.question_count))
         rounds = 0
         rejected_reasons: dict[str, int] = {}
+        unverified_sources = 0
         while len(accepted) < needed and rounds < MAX_ROUNDS:
             rounds += 1
             batch = min(MAX_BATCH, needed - len(accepted) + (1 if rounds > 1 else 0))
@@ -204,16 +205,21 @@ class QuestionGenerator:
             for raw in data.get("questions", []):
                 if len(accepted) >= needed:
                     break
+                # What the model claims about its source; build_question keeps the claim
+                # only when the excerpt it names is one of the excerpts we sent.
+                claims_lecture = bool(evidence_text and (raw.get("source_index") or raw.get("source_page")))
                 question = build_question(
                     raw,
                     subject=subject,
                     topic_id=topic_id,
                     difficulty=config.difficulty,
-                    origin=QuestionOrigin.LECTURE_DERIVED if evidence_text and raw.get("source_page") else QuestionOrigin.GENERATED,
+                    origin=QuestionOrigin.LECTURE_DERIVED if claims_lecture else QuestionOrigin.GENERATED,
                     professor_id=config.professor_id,
                     references=references,
                     option_count=config.option_count,
                 )
+                if claims_lecture and question.origin != QuestionOrigin.LECTURE_DERIVED:
+                    unverified_sources += 1
                 problems = validate_question(question, expected_options=config.option_count)
                 if problems:
                     for problem in problems:
@@ -228,6 +234,11 @@ class QuestionGenerator:
                 accepted.append(question)
         if rejected_reasons:
             notes.append("Elenen taslaklar: " + ", ".join(f"{reason}×{count}" for reason, count in sorted(rejected_reasons.items())))
+        if unverified_sources:
+            notes.append(
+                f"{unverified_sources} soruda belirtilen ders kaynağı verilen alıntılarla eşleşmedi; "
+                "bu sorular kaynaksız ve 'Üretilmiş' olarak işaretlendi."
+            )
         if not accepted:
             raise GenerationError("Model geçerli soru üretemedi; " + (notes[-1] if notes else "tekrar dene."))
         if len(accepted) < needed:

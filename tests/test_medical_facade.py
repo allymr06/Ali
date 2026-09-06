@@ -48,18 +48,34 @@ class Gateway:
         return SimpleNamespace(text=reply)
 
 
+class Ledger:
+    """The diagnostics ledger, as far as the academy uses it."""
+
+    def __init__(self) -> None:
+        self.entries: list[tuple[str, str]] = []
+
+    def record(self, area, name, message, *, level=None, attributes=None) -> None:
+        self.entries.append((name, getattr(level, "value", str(level))))
+
+
 @pytest.fixture()
 def build(tmp_path):
     built = []
 
-    def factory(gateway=None):
+    def factory(gateway=None, *, diagnostics=None):
         directory = str(tmp_path / f"medical{len(built)}")
-        built.append(create_medical_academy(settings=SimpleNamespace(medical_directory=directory), provider_gateway=gateway))
+        built.append(create_medical_academy(settings=SimpleNamespace(medical_directory=directory), provider_gateway=gateway, diagnostics=diagnostics))
         return built[-1]
 
     yield factory
     for academy in built:
         academy.close()
+
+
+async def settle(academy) -> None:
+    """Let the academy's background jobs finish, the way the app's loop does."""
+    while academy._background:
+        await asyncio.gather(*list(academy._background), return_exceptions=True)
 
 
 def seed(academy, *, status: str = DocumentStatus.READY, page: int = 12) -> StudyDocument:
@@ -299,6 +315,36 @@ def test_a_failed_analysis_clears_the_job_and_raises(build) -> None:
 
     assert academy.document_analysis("d1") is None
     assert not [event for event in events if event.get("kind") == "document_analyzed"]
+
+
+def test_a_background_job_that_fails_is_reported_rather_than_swallowed(build) -> None:
+    """A job started from chat has promised to report when it is done. Nothing
+    else retrieves the task's exception, so a failure that is not turned into
+    an event and a diagnostic reaches nobody at all."""
+    ledger = Ledger()
+    academy = build(Gateway(RuntimeError("429 quota exhausted")), diagnostics=ledger)
+    seed(academy)
+    events: list[dict] = []
+    academy.subscribe(events.append)
+
+    async def started_from_chat():
+        assert academy._run_background(academy.analyze_document("d1"), label="“Ust Ekstremite Ders Notu” analizi") is True
+        await settle(academy)
+
+    asyncio.run(started_from_chat())
+
+    failed = [event for event in events if event["kind"] == "job_failed"]
+    assert failed and failed[0]["job"] == "“Ust Ekstremite Ders Notu” analizi"
+    assert failed[0]["message"] and failed[0]["error"] == "MedicalModelError"
+    assert ("job.failed", "warning") in ledger.entries
+    assert academy.document_analysis("d1") is None
+
+
+def test_a_background_job_that_cannot_be_started_says_so(build) -> None:
+    academy = build(Gateway(ANALYSIS))
+    seed(academy)
+
+    assert academy._run_background(academy.analyze_document("d1"), label="analiz") is False
 
 
 def test_comparison_labels_every_finding_and_keeps_its_caveat(build) -> None:
@@ -542,6 +588,44 @@ def test_deleting_a_profile_can_keep_or_drop_its_questions(build) -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_a_re_sent_study_answer_is_not_counted_as_another_attempt(build) -> None:
+    """Immediate feedback reveals the key with the first answer, so a second
+    send for the same question — the flag button re-sends it, and the options
+    stay clickable — is not another try. Counting it would state attempts, a
+    level and a repeated confusion the student never produced."""
+    academy = build(None)
+    for index in range(2):
+        academy.store.save_question(question(f"q{index}"))
+    exam = asyncio.run(academy.generate_exam({"from_bank": True, "question_count": 2, "topic_ids": [ARM], "randomize": False, "immediate_feedback": True}))
+    academy.start_exam(exam["exam_id"])
+
+    academy.answer(exam["exam_id"], "q0", "B")  # the one real answer, and it is wrong
+    academy.answer(exam["exam_id"], "q0", "B", flagged=True)
+    academy.answer(exam["exam_id"], "q0", "B", flagged=False)
+    academy.answer(exam["exam_id"], "q0", "A")  # a click on the now-revealed key
+
+    mastery = academy.learning.all()[0]
+    assert (mastery.attempts, mastery.correct) == (1, 0)
+    assert mastery.confusions == {"Trochlea humeri": 1}
+    assert mastery.level == "unknown" and "1 deneme" in mastery.reason
+    assert academy.learning.insights() == [], "one wrong click is not a repeated error pattern"
+
+
+def test_a_new_sitting_of_the_same_exam_records_its_own_attempt(build) -> None:
+    academy = build(None)
+    academy.store.save_question(question("q1"))
+    exam = asyncio.run(academy.generate_exam({"from_bank": True, "question_count": 1, "topic_ids": [ARM], "immediate_feedback": True}))
+    academy.start_exam(exam["exam_id"])
+    academy.answer(exam["exam_id"], "q1", "B")
+    academy.finish_exam(exam["exam_id"])
+
+    academy.start_exam(exam["exam_id"])
+    academy.answer(exam["exam_id"], "q1", "A")
+
+    mastery = academy.learning.all()[0]
+    assert (mastery.attempts, mastery.correct) == (2, 1)
+
+
 def test_progress_reports_only_attempts_that_happened(build) -> None:
     academy = build(None)
     empty = academy.progress()
@@ -574,6 +658,27 @@ def test_a_structure_without_a_model_says_so_instead_of_drawing_one(build) -> No
 
     assert described["model"]["available"] is False
     assert mesh["available"] is False and mesh["reason"]
+
+
+def test_a_registered_model_that_will_not_load_reports_its_real_problem(build) -> None:
+    """"No licensed model is registered" is a different statement from "the
+    registered one cannot be read", and only one of them would be true here."""
+    academy = build(None)
+    structure_id = academy.anatomy.all()[0].structure_id
+    assets = academy.anatomy.assets.directory
+    assets.mkdir(parents=True, exist_ok=True)
+    (assets / "model.obj").write_text("# a file with no geometry in it\n", encoding="utf-8")
+    (assets / "manifest.json").write_text(
+        json.dumps({"assets": [{"structure_id": structure_id, "file": "model.obj", "license": "CC BY 4.0", "source": "example.org"}]}),
+        encoding="utf-8",
+    )
+    academy.anatomy.assets.reload()
+
+    mesh = academy.anatomy_mesh(structure_id)
+
+    assert mesh["available"] is False, "a model that cannot be drawn is not available"
+    assert mesh["reason"] == "OBJ dosyasında geometri yok."
+    assert mesh["license"] == "CC BY 4.0", "the registration itself is still reported"
 
 
 def test_an_unknown_structure_has_no_card_and_no_quiz(build) -> None:

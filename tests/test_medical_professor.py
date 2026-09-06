@@ -86,6 +86,157 @@ C) Üçüncü seçenek
 D) Dördüncü seçenek
 """
 
+# Two past papers pasted into one import. Each one restarts at question 1 and
+# closes with its own key table, and the second table's letters differ from
+# the first's in every position.
+TWO_PAPERS_TEXT = """2023 ANATOMİ VİZE SORULARI
+
+1. Humerus'un cisim kırığında en sık hangi sinir zedelenir?
+A) N. radialis
+B) N. ulnaris
+C) N. medianus
+D) N. axillaris
+
+2) Fossa cubiti'nin medial sınırını hangi kas yapar?
+a. M. pronator teres  b. M. brachioradialis  c. M. biceps brachii  d. M. brachialis
+
+3- Clavicula en sık hangi bölümünden kırılır?
+(A) Orta 1/3
+(B) Lateral 1/3
+(C) Medial 1/3
+(D) Sternal uç
+
+Cevap anahtarı
+1-A 2-A 3-A
+
+2024 ANATOMİ VİZE SORULARI
+
+1. Nervus facialis kafatasını hangi delikten terk eder?
+A) Foramen ovale
+B) Foramen stylomastoideum
+C) Foramen rotundum
+D) Foramen spinosum
+
+2. Musculus deltoideus'u hangi sinir innerve eder?
+A) N. radialis
+B) N. musculocutaneus
+C) N. axillaris
+D) N. ulnaris
+
+3. Arcus aortae'nin ilk dalı hangisidir?
+A) A. subclavia sinistra
+B) Truncus brachiocephalicus
+C) A. carotis communis sinistra
+D) A. coronaria dextra
+
+CEVAP ANAHTARI (Anatomi Vize Sınavı 2024 - A Grubu)
+1-B 2-C 3-B
+"""
+
+# Six five-option questions and a key row written at the bottom with no
+# header at all — the shape a scanned paper's last page usually has.
+HEADERLESS_KEY_TEXT = """1. Os frontale hangi kemikle sutura coronalis'i yapar?
+A) Os parietale
+B) Os occipitale
+C) Os temporale
+D) Os sphenoidale
+E) Os zygomaticum
+
+2. Diaphragma'yı hangi sinir innerve eder?
+A) N. vagus
+B) N. intercostalis
+C) N. phrenicus
+D) N. splanchnicus
+E) N. thoracicus longus
+
+3. Cor'un apex'i hangi tarafa bakar?
+A) Sağ ve yukarı
+B) Sol ve yukarı
+C) Sol, aşağı ve öne
+D) Sağ, aşağı ve arkaya
+E) Tam ortada
+
+4. Trachea kaç numaralı vertebra hizasında ikiye ayrılır?
+A) T2
+B) T4
+C) T6
+D) T8
+E) T10
+
+5. Humerus'un proksimal ucunda aşağıdakilerden hangisi bulunmaz?
+A) Caput humeri
+B) Collum chirurgicum
+C) Tuberculum majus
+D) Tuberculum minus
+E) Epicondylus medialis
+
+6. Vena cava inferior diaphragma'yı hangi hizada deler?
+A) T8
+B) T10
+C) T12
+D) L1
+E) L2
+
+1-A 2-C 3-C 4-B 5-E 6-A
+"""
+
+# A table that states question 1 twice, with two different letters.
+CONTRADICTORY_TABLE_TEXT = """1. Birinci soru kökü nedir?
+A) bir
+B) iki
+C) üç
+
+2. İkinci soru kökü nedir?
+A) bir
+B) iki
+C) üç
+
+3. Üçüncü soru kökü nedir?
+A) bir
+B) iki
+C) üç
+
+Cevap anahtarı
+1-A 2-B 3-C
+1-C
+"""
+
+# One booklet, two papers, a single key table at the very end: the numbers
+# 1-3 each belong to two different questions.
+SHARED_TABLE_TEXT = """1. Birinci soru kökü nedir?
+A) bir
+B) iki
+C) üç
+
+2. İkinci soru kökü nedir?
+A) bir
+B) iki
+C) üç
+
+3. Üçüncü soru kökü nedir?
+A) bir
+B) iki
+C) üç
+
+1. Dördüncü soru kökü nedir?
+A) bir
+B) iki
+C) üç
+
+2. Beşinci soru kökü nedir?
+A) bir
+B) iki
+C) üç
+
+3. Altıncı soru kökü nedir?
+A) bir
+B) iki
+C) üç
+
+Cevap anahtarı
+1-A 2-B 3-C
+"""
+
 # The trailing table names F for a question whose options stop at E.
 TABLE_TYPO_TEXT = """1. Birinci soru kökü nedir?
 A) bir
@@ -249,6 +400,92 @@ def test_a_key_from_the_answer_table_must_name_an_option_that_exists() -> None:
     assert (first.answer_key, second.answer_key) == ("B", "E")
     assert third.answer_key is None
     assert result.answer_key_found is True
+
+
+def test_each_paper_in_one_file_keeps_its_own_answer_table() -> None:
+    result = QuestionImportParser().parse(TWO_PAPERS_TEXT)
+
+    # Both papers survive the import: a table ends the paper above it, it does
+    # not end the document.
+    assert [question.number for question in result.questions] == ["1", "2", "3", "1", "2", "3"]
+
+    # Every paper restarts at question 1, so the second table's letters must
+    # never reach the first paper's questions. The 2023 paper says A, A, A.
+    assert [question.answer_key for question in result.questions] == ["A", "A", "A", "B", "C", "B"]
+    humerus = result.questions[0]
+    assert humerus.stem == "Humerus'un cisim kırığında en sık hangi sinir zedelenir?"
+    assert humerus.options[0] == ("A", "N. radialis")
+
+    # The 2024 table carries a title, which makes its header line 50
+    # characters long: a header is recognised by the rows under it, not by
+    # how short it is.
+    assert result.questions[3].stem == "Nervus facialis kafatasını hangi delikten terk eder?"
+    assert result.questions[3].options[1] == ("B", "Foramen stylomastoideum")
+
+    assert result.answer_key_found is True
+    assert result.notes == []
+
+
+def test_a_key_row_written_without_a_header_costs_no_question_and_no_option() -> None:
+    result = QuestionImportParser().parse(HEADERLESS_KEY_TEXT)
+
+    # Only the row itself is cut away. The last question is still there and
+    # the one before it still has all five options the professor wrote.
+    assert [question.number for question in result.questions] == ["1", "2", "3", "4", "5", "6"]
+    assert [question.answer_key for question in result.questions] == ["A", "C", "C", "B", "E", "A"]
+    assert all(len(question.options) == 5 for question in result.questions)
+    assert result.questions[4].options[4] == ("E", "Epicondylus medialis")
+    assert result.questions[5].stem == "Vena cava inferior diaphragma'yı hangi hizada deler?"
+    assert result.notes == []
+
+
+def test_a_table_that_states_one_number_twice_hands_out_no_key_for_it() -> None:
+    result = QuestionImportParser().parse(CONTRADICTORY_TABLE_TEXT)
+
+    first, second, third = result.questions
+    # Which of "1-A" and "1-C" is the typo cannot be known, so question 1 is
+    # stored without a key instead of taking whichever row came last.
+    assert first.answer_key is None
+    assert (second.answer_key, third.answer_key) == ("B", "C")
+    assert result.notes == ["Cevap anahtarı şu soru numaralarına güvenle bağlanamadı: 1. Bu sorular anahtarsız kaydedildi."]
+
+
+def test_one_table_over_restarted_numbering_refuses_to_pick_a_question() -> None:
+    result = QuestionImportParser().parse(SHARED_TABLE_TEXT)
+
+    # Six questions numbered 1-3 twice under a single table: each row names
+    # two questions, so it names neither of them.
+    assert [question.number for question in result.questions] == ["1", "2", "3", "1", "2", "3"]
+    assert [question.answer_key for question in result.questions] == [None] * 6
+    assert result.answer_key_found is False
+    # The honest note says the key could not be attached, not that the text
+    # had no key in it at all.
+    assert result.notes == ["Cevap anahtarı şu soru numaralarına güvenle bağlanamadı: 1, 2, 3. Bu sorular anahtarsız kaydedildi."]
+
+
+def test_a_sentence_about_which_option_is_not_the_answer_states_no_key() -> None:
+    parser = QuestionImportParser()
+    options = "A) Os frontale\nB) Os sphenoidale\nC) Os temporale\nD) Os occipitale\nE) Os ethmoidale\n"
+
+    # A margin note that excludes an option, or ordinary prose that merely
+    # begins with "cevap", is not a key — and it stays in the stem so the
+    # student can read what the paper actually said.
+    for note in ("Cevap D değildir.", "Cevap E olamaz", "Cevap A değil", "Cevap belirtiniz", "Cevap iptal edilmiştir"):
+        parsed = parser.parse(f"1. Foramen ovale hangi kemikte bulunur? {note}\n{options}").questions[0]
+        assert parsed.answer_key is None, note
+        assert parsed.stem.endswith(note), note
+
+    # The same note on its own line, which is where PDF text extraction
+    # usually drops it, is joined into the stem and is no more of a key there.
+    own_line = parser.parse(f"1. Foramen ovale hangi kemikte bulunur?\nCevap A değildir\n{options}").questions[0]
+    assert own_line.answer_key is None
+    assert own_line.stem == "Foramen ovale hangi kemikte bulunur? Cevap A değildir"
+
+    # A key really stated at the end of the stem line is still read, and the
+    # statement is taken out of the stem so it is not shown while practising.
+    for tail, expected in (("Cevap: B", "B"), ("cevap b", "B"), ("Doğru cevap: B", "B"), ("(Yanıt: B)", "B"), ("Answer: B.", "B")):
+        stated = parser.parse(f"1. Foramen ovale hangi kemikte bulunur? {tail}\n{options}").questions[0]
+        assert (stated.answer_key, stated.stem) == (expected, "Foramen ovale hangi kemikte bulunur?"), tail
 
 
 def test_option_continuations_join_and_a_broken_letter_run_is_truncated() -> None:

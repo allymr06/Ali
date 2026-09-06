@@ -17,6 +17,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.core.engine import REQUEST_AUGMENTATION_TIMEOUT_SECONDS
 from app.core.time import utc_now
 from app.medical.academy import create_medical_academy
 from app.medical.catalog import Curriculum
@@ -49,7 +50,61 @@ class Gateway:
         self.prompts.append(request.text)
         self.system_prompts.append(kwargs.get("system_prompt") or "")
         reply = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
+        if isinstance(reply, Exception):
+            raise reply
         return SimpleNamespace(text=reply)
+
+
+class HeldGateway(Gateway):
+    """A provider that answers only when the test lets it.
+
+    The shipped model takes seconds to write questions; holding the reply
+    stands in for that without the test sleeping for it.
+    """
+
+    def __init__(self, *replies: str) -> None:
+        super().__init__(*replies)
+        self.release = asyncio.Event()
+
+    async def generate(self, request, context, **kwargs):
+        await self.release.wait()
+        return await super().generate(request, context, **kwargs)
+
+
+STEMS = [
+    "Humerus distal ucunda radius basi ile eklemlesen olusum hangisidir?",
+    "Sulcus intertubercularis hangi iki cikinti arasinda uzanir?",
+    "Fossa olecrani humerusun hangi yuzunde yer alir?",
+    "Collum chirurgicum humeri neden klinik olarak onemlidir?",
+    "Tuberositas deltoidea hangi kasin yapisma yeridir?",
+    "Epicondylus medialis arkasindan hangi sinir gecer?",
+    "Caput humeri hangi cukurla eklem yapar?",
+    "Crista tuberculi majoris nereye dogru uzanir?",
+    "Sulcus nervi radialis humerusun neresinde bulunur?",
+    "Trochlea humeri hangi kemikle eklemlesir?",
+]
+
+
+def generated(count: int) -> str:
+    """A schema-valid batch of questions, distinct enough to survive the filters."""
+    return json.dumps(
+        {
+            "questions": [
+                {
+                    "stem": STEMS[index % len(STEMS)],
+                    "options": [
+                        {"key": key, "text": f"{text} {index}"}
+                        for key, text in zip("ABCDE", [*OPTIONS, "Processus coracoideus"])
+                    ],
+                    "correct_key": "B",
+                    "explanation": "Gerekce satiri modelden geldi ve kayda gecti.",
+                    "concept": "humerus",
+                    "difficulty": 3,
+                }
+                for index in range(count)
+            ]
+        }
+    )
 
 
 @pytest.fixture()
@@ -69,6 +124,18 @@ def build(tmp_path):
 
 def plan(academy, text: str, **kwargs):
     return asyncio.run(academy.tutor.plan(text, **kwargs))
+
+
+async def within_the_augmentation_budget(academy, text: str, **kwargs):
+    """One turn under the slice the engine gives the augmenter before it
+    cancels it — the budget a chat quiz has to answer inside."""
+    return await asyncio.wait_for(academy.tutor.plan(text, **kwargs), timeout=REQUEST_AUGMENTATION_TIMEOUT_SECONDS)
+
+
+async def settle(academy) -> None:
+    """Let the academy's background jobs finish, the way the app's loop does."""
+    while academy._background:
+        await asyncio.gather(*list(academy._background), return_exceptions=True)
 
 
 def bank(academy, count: int = 3, *, correct: str = "B") -> list[str]:
@@ -336,6 +403,175 @@ def test_an_answer_letter_outside_a_quiz_is_not_graded_as_one(build) -> None:
     academy = build(None)
 
     assert plan(academy, "B") is None
+
+
+# ---------------------------------------------------------------------------
+# a quiz the model has to write: the turn must not wait for it
+# ---------------------------------------------------------------------------
+
+
+def test_a_quiz_the_bank_can_fill_is_started_without_asking_the_provider(build) -> None:
+    gateway = Gateway(generated(5))
+    academy = build(gateway)
+    bank(academy, 5)
+
+    augmentation = asyncio.run(within_the_augmentation_budget(academy, "anatomiden 3 soru sor"))
+
+    assert "Quiz başladı" in augmentation.direct_response
+    assert gateway.prompts == [], "the bank could fill it, so nothing was asked of the provider"
+
+
+def test_a_quiz_that_needs_the_model_answers_the_turn_before_the_model_does(build) -> None:
+    """The engine cancels the augmenter after two seconds and says nothing,
+    so waiting for a generation round trip here means the quiz never runs."""
+    gateway = HeldGateway(generated(5))
+    academy = build(gateway)
+
+    async def turn():
+        augmentation = await within_the_augmentation_budget(academy, "anatomiden beni sina")
+        gateway.release.set()
+        await settle(academy)
+        return augmentation
+
+    augmentation = asyncio.run(turn())
+
+    assert "hazırlıyorum" in augmentation.direct_response
+    assert augmentation.metadata["quiz"] == "preparing"
+
+
+def test_nothing_claims_the_questions_exist_before_they_do(build) -> None:
+    gateway = HeldGateway(generated(5))
+    academy = build(gateway)
+    events: list[dict] = []
+    academy.subscribe(events.append)
+
+    async def turn():
+        await within_the_augmentation_budget(academy, "anatomiden beni sina")
+        held = (academy.sessions.chat_quiz_state(), academy.store.summary()["questions"], list(events))
+        gateway.release.set()
+        await settle(academy)
+        return held
+
+    quiz, questions, emitted = asyncio.run(turn())
+
+    assert quiz == {} and questions == 0
+    assert emitted == [], "no quiz may be announced while the model is still writing it"
+
+
+def test_the_prepared_quiz_starts_and_reports_its_first_question(build) -> None:
+    gateway = HeldGateway(generated(5))
+    academy = build(gateway)
+    events: list[dict] = []
+    academy.subscribe(events.append)
+
+    async def turn():
+        await within_the_augmentation_budget(academy, "anatomiden beni sina")
+        gateway.release.set()
+        await settle(academy)
+
+    asyncio.run(turn())
+
+    quiz = academy.sessions.chat_quiz_state()
+    assert quiz["active"] is True and quiz["index"] == 0 and len(quiz["question_ids"]) == 5
+    ready = [event for event in events if event["kind"] == "quiz_ready"]
+    assert ready and ready[0]["count"] == 5
+    assert "Soru 1" in ready[0]["question"] and "Doğru cevap" not in ready[0]["question"]
+
+
+def test_a_prepared_quiz_can_be_answered_in_chat_when_it_lands(build) -> None:
+    gateway = HeldGateway(generated(5))
+    academy = build(gateway)
+
+    async def turn():
+        await within_the_augmentation_budget(academy, "anatomiden beni sina")
+        gateway.release.set()
+        await settle(academy)
+
+    asyncio.run(turn())
+    asked = academy.store.get_question(academy.sessions.chat_quiz_state()["question_ids"][0])
+    augmentation = plan(academy, asked.correct_key)
+
+    assert augmentation.metadata["correct"] is True
+    assert "Soru 2" in augmentation.direct_response
+
+
+def test_a_chat_exam_that_needs_the_model_does_not_wait_for_it_either(build) -> None:
+    gateway = HeldGateway(generated(10))
+    academy = build(gateway)
+    events: list[dict] = []
+    academy.subscribe(events.append)
+
+    async def turn():
+        augmentation = await within_the_augmentation_budget(academy, "anatomiden 10 soruluk sinav hazirla")
+        gateway.release.set()
+        await settle(academy)
+        return augmentation
+
+    augmentation = asyncio.run(turn())
+
+    assert "hazırlıyorum" in augmentation.direct_response
+    ready = [event for event in events if event["kind"] == "exam_ready"]
+    assert ready and ready[0]["count"] == len(academy.store.get_exam(ready[0]["exam_id"]).question_ids)
+    assert ready[0]["count"] > 0
+    assert academy.sessions.get().active_exam_id == ready[0]["exam_id"]
+
+
+def test_a_prepared_quiz_that_fails_says_so_instead_of_going_quiet(build) -> None:
+    gateway = HeldGateway("bu JSON degil", "hala JSON degil")
+    academy = build(gateway)
+    events: list[dict] = []
+    academy.subscribe(events.append)
+
+    async def turn():
+        await within_the_augmentation_budget(academy, "anatomiden beni sina")
+        gateway.release.set()
+        await settle(academy)
+
+    asyncio.run(turn())
+
+    failed = [event for event in events if event["kind"] == "job_failed"]
+    assert failed and failed[0]["message"]
+    assert academy.sessions.chat_quiz_state() == {}
+
+
+def test_asking_again_while_the_questions_are_being_written_starts_no_second_job(build) -> None:
+    gateway = HeldGateway(generated(5))
+    academy = build(gateway)
+
+    async def turn():
+        await within_the_augmentation_budget(academy, "anatomiden beni sina")
+        second = await within_the_augmentation_budget(academy, "anatomiden beni sina")
+        gateway.release.set()
+        await settle(academy)
+        return second
+
+    second = asyncio.run(turn())
+
+    assert "hâlâ hazırlıyorum" in second.direct_response
+    assert len(gateway.prompts) == 1, "one request, one paper"
+
+
+def test_a_prepared_quiz_does_not_replace_one_the_student_already_started(build) -> None:
+    """The model can land minutes later; whatever the student is answering
+    by then is theirs, and the finished paper waits on the exam screen."""
+    gateway = HeldGateway(generated(5))
+    academy = build(gateway)
+    events: list[dict] = []
+    academy.subscribe(events.append)
+
+    async def turn():
+        await within_the_augmentation_budget(academy, "anatomiden beni sina")
+        bank(academy, 3)
+        await within_the_augmentation_budget(academy, "anatomiden 3 soru sor")
+        started = academy.sessions.chat_quiz_state()["question_ids"]
+        gateway.release.set()
+        await settle(academy)
+        return started
+
+    started = asyncio.run(turn())
+
+    assert academy.sessions.chat_quiz_state()["question_ids"] == started
+    assert [event["kind"] for event in events].count("exam_ready") == 1
 
 
 def test_an_oral_exam_leaves_the_questioning_to_the_model(build) -> None:

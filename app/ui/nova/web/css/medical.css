@@ -58,6 +58,9 @@ button.med-row:hover { background: rgba(var(--accent-rgb), 0.05); }
 .med-row.active { background: rgba(var(--accent-rgb), 0.09); }
 .med-row .med-row-title { font-size: var(--text-md); color: var(--ink-1); overflow-wrap: anywhere; }
 .med-row .med-row-sub { grid-column: 1 / -1; color: var(--ink-3); font-size: var(--text-sm); line-height: 1.45; overflow-wrap: anywhere; }
+/* What the quality filter rejected, above the paper it was rejected from. */
+.med-note-strip { display: grid; gap: 4px; padding: 10px 12px; margin-bottom: 10px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--surface-2); }
+.med-note-strip .med-row-sub { color: var(--ink-3); font-size: var(--text-sm); line-height: 1.45; }
 .med-row .med-row-meta { grid-column: 1 / -1; font-family: var(--font-mono); font-size: 0.64rem; color: var(--ink-4); display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
 .med-row .med-row-side { font-family: var(--font-mono); font-size: 0.64rem; color: var(--ink-4); white-space: nowrap; }
 

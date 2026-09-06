@@ -12,11 +12,18 @@ import json
 
 import pytest
 
-from app.medical.anatomy import FACT_ORDER, MANIFEST_NAME, AnatomyAssetRegistry, AnatomyLab, parse_obj
+from app.medical.anatomy import (
+    FACT_ORDER,
+    FACT_QUIZ_FIELDS,
+    MANIFEST_NAME,
+    AnatomyAssetRegistry,
+    AnatomyLab,
+    parse_obj,
+)
 from app.medical.catalog import default_curriculum
 from app.medical.models import AnatomyStructure, Landmark
 from app.medical.terminology import load_anatomy_data
-from app.medical.text import normalize
+from app.medical.text import normalize, tokens
 
 # A hand-written quad: four vertices, one shared normal, one face to triangulate.
 TINY_OBJ = """# tiny quad
@@ -55,6 +62,44 @@ def muscle(structure_id: str, innervation: str) -> AnatomyStructure:
         english=f"{structure_id} muscle",
         facts={"innervation": innervation},
     )
+
+
+def states_the_same(left: str, right: str) -> bool:
+    """Does one option say everything the other says, word for word?
+
+    Written out here rather than imported from the lab: the property test has
+    to be able to catch an option the lab's own filter let through.
+    """
+    return set(tokens(left)) <= set(tokens(right)) or set(tokens(right)) <= set(tokens(left))
+
+
+def asked_field(structure: AnatomyStructure, item: dict) -> str:
+    """The fact field an item asks about, read back from the stem it printed."""
+    if structure.kind not in FACT_QUIZ_FIELDS:
+        assert item["stem"] == f"{structure.canonical} hangi eklem tipindedir?"
+        return "joint_type"
+    _kind, noun, fields = FACT_QUIZ_FIELDS[structure.kind]
+    asked = [
+        key
+        for key, label in fields
+        if item["stem"] == f"{structure.canonical} {noun} {label} aşağıdakilerden hangisidir?"
+    ]
+    assert len(asked) == 1, item["stem"]  # the stem names exactly one fact
+    return asked[0]
+
+
+def expected_item_count(structure: AnatomyStructure, count: int) -> int:
+    """Every question the structure's data can carry, capped at ``count``.
+
+    Refusing a distractor must never be paid for with a missing question, so
+    the property test states the whole catalogue's expected yield.
+    """
+    landmark_items = min(count, len(structure.landmarks)) if len(structure.landmarks) >= 3 else 0
+    if structure.kind in FACT_QUIZ_FIELDS:
+        facts = sum(1 for key, _label in FACT_QUIZ_FIELDS[structure.kind][2] if structure.facts.get(key))
+    else:
+        facts = 1 if structure.kind == "joint" and structure.facts.get("joint_type") else 0
+    return min(count, landmark_items + facts)
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +381,183 @@ def test_two_muscles_that_share_a_nerve_never_offer_the_same_option_twice() -> N
         default_curriculum(),
     )
     assert thin.quiz("alpha", count=1, seed="dup") == []
+
+
+def test_a_peer_that_states_the_answer_in_another_length_is_never_a_distractor() -> None:
+    """The shorter form of the answer is still the answer.
+
+    Curated peers state one fact at two lengths — "N. musculocutaneus (C5,
+    C6)." next to the same nerve with a branch clause after it. Offering the
+    other length marks a student wrong for a correct answer and writes that
+    failure into the mastery model, so the peer is dropped instead.
+    """
+    shared = AnatomyLab(
+        [
+            muscle("alpha", "N. alpha (C5, C6); lateral parça n. beta'dan dal alır."),
+            muscle("kisa", "N. alpha (C5, C6)."),  # the same nerve, said shorter
+            muscle("gamma", "N. gamma (C7)."),
+            muscle("delta", "N. delta (C8)."),
+        ],
+        default_curriculum(),
+    )
+    item = shared.quiz("alpha", count=1, seed="subsume")[0]
+    texts = [option["text"] for option in item["options"]]
+    assert "N. alpha (C5, C6)." not in texts  # a true answer is not a wrong one
+    assert sorted(texts) == [
+        "N. alpha (C5, C6); lateral parça n. beta'dan dal alır.",
+        "N. delta (C8).",
+        "N. gamma (C7).",
+    ]
+    correct = [option for option in item["options"] if option["key"] == item["correct_key"]]
+    assert correct[0]["text"] == shared.get("alpha").facts["innervation"]
+
+    # The mirror is refused too: asked about the short form, the fuller peer
+    # differs only by a clause belonging to another muscle, which is a trap
+    # rather than a discrimination — and the shipped data loses no question
+    # by refusing it.
+    mirror = shared.quiz("kisa", count=1, seed="subsume")[0]
+    assert sorted(option["text"] for option in mirror["options"]) == [
+        "N. alpha (C5, C6).",
+        "N. delta (C8).",
+        "N. gamma (C7).",
+    ]
+
+    # With only one peer left to tell the answer apart, the question is
+    # dropped rather than shown — the same rule as identical options.
+    thin = AnatomyLab(
+        [
+            muscle("alpha", "N. alpha (C5, C6); lateral parça n. beta'dan dal alır."),
+            muscle("kisa", "N. alpha (C5, C6)."),
+            muscle("uzun", "N. alpha (C5, C6); lateral parça n. beta'dan dal alır ve derinde seyreder."),
+            muscle("gamma", "N. gamma (C7)."),
+        ],
+        default_curriculum(),
+    )
+    assert thin.quiz("alpha", count=1, seed="subsume") == []
+
+
+def test_a_landmark_is_never_asked_against_a_sibling_that_says_its_name(lab: AnatomyLab) -> None:
+    bone = AnatomyStructure(
+        structure_id="os_test", canonical="Os testum", kind="bone", region="trunk",
+        turkish="Deneme kemiği", english="Test bone",
+        landmarks=[
+            Landmark("tuberculum_majus", "Tuberculum majus", "Büyük çıkıntı"),
+            Landmark("tuberculum_majus_ossis", "Tuberculum majus ossis testi", "Kemiğin büyük çıkıntısı"),
+            Landmark("fossa_testi", "Fossa testi", "Deneme çukuru"),
+            Landmark("crista_testi", "Crista testi", "Deneme kabartısı"),
+        ],
+    )
+    small = AnatomyLab([bone], default_curriculum())
+    items = small.quiz("os_test", count=4, seed="lm")
+    assert len(items) == 4  # every landmark is still asked
+    for item in items:
+        answer = next(option["text"] for option in item["options"] if option["key"] == item["correct_key"])
+        others = [option["text"] for option in item["options"] if option["key"] != item["correct_key"]]
+        # The twin is a second true answer only when the other twin is keyed;
+        # as two distractors under a third landmark both are simply wrong.
+        assert not any(states_the_same(text, answer) for text in others)
+    keyed_on_twin = next(item for item in items if item["landmark_id"] == "tuberculum_majus")
+    assert "Tuberculum majus ossis testi" not in [option["text"] for option in keyed_on_twin["options"]]
+
+    # A landmark left with a single tellable peer is not asked at all.
+    crowded = AnatomyLab(
+        [
+            AnatomyStructure(
+                structure_id="os_test", canonical="Os testum", kind="bone", region="trunk",
+                turkish="Deneme kemiği", english="Test bone",
+                landmarks=[
+                    Landmark("tuberculum_majus", "Tuberculum majus", "Büyük çıkıntı"),
+                    Landmark("tuberculum_majus_ossis", "Tuberculum majus ossis testi", "Kemiğin büyük çıkıntısı"),
+                    Landmark("fossa_testi", "Fossa testi", "Deneme çukuru"),
+                ],
+            )
+        ],
+        default_curriculum(),
+    )
+    thin = crowded.quiz("os_test", count=3, seed="lm")
+    assert [item["landmark_id"] for item in thin] == ["fossa_testi"]
+
+    # The rule reads words, not characters: "Condylus medialis" sits inside
+    # "Epicondylus medialis" as text but names another landmark of the same
+    # femur, so the two are still asked against each other.
+    pair = next(
+        item
+        for index in range(20)
+        for item in lab.quiz("femur", count=5, seed=f"aq-{index}")
+        if item["landmark_id"] == "condylus_medialis"
+        and "Epicondylus medialis" in [option["text"] for option in item["options"]]
+    )
+    assert next(option["text"] for option in pair["options"] if option["key"] == pair["correct_key"]) == "Condylus medialis"
+
+
+def test_no_option_but_the_key_is_a_true_answer_for_the_structure_it_asks_about(lab: AnatomyLab) -> None:
+    """The whole shipped catalogue, every question it can ask.
+
+    Options are curated data, never generated text, so a distractor can only
+    be true for the structure in the stem by saying what the key says. That is
+    what this walks: every structure, twelve quiz seeds, every item kind. It
+    is the guard on ``app/medical/data/anatomy.json`` — a fact added there
+    that restates another structure's fact has to fail here rather than mark a
+    student wrong for a correct answer and record it as a failure.
+    """
+    curated: dict[tuple[str, str], dict[str, str]] = {}
+    for structure in lab.all():
+        fields = (
+            [key for key, _label in FACT_QUIZ_FIELDS[structure.kind][2]]
+            if structure.kind in FACT_QUIZ_FIELDS
+            else ["joint_type"]
+        )
+        for field in fields:
+            if structure.facts.get(field):
+                curated.setdefault((structure.kind, field), {})[structure.structure_id] = str(structure.facts[field])
+
+    # Every complaint is collected and reported together: a data edit that
+    # breaks the rule usually breaks it in several places, and the whole list
+    # is what tells the editor which fact to reword.
+    second_answers: list[str] = []
+    invented: list[str] = []
+    checked = 0
+    kinds_seen: set[str] = set()
+    for structure in lab.all():
+        latin = {landmark.landmark_id: landmark.latin for landmark in structure.landmarks}
+        for seed in tuple(f"aq-{index}" for index in range(12)):
+            items = lab.quiz(structure.structure_id, count=5, seed=seed)
+            # Refusing an option must not cost a question: the guarantee is
+            # not allowed to be bought by asking less.
+            assert len(items) == expected_item_count(structure, 5), (structure.structure_id, seed)
+            for item in items:
+                options = item["options"]
+                assert [option["key"] for option in options] == list("ABCDEF"[: len(options)])
+                keyed = [option for option in options if option["key"] == item["correct_key"]]
+                assert len(keyed) == 1
+                answer = keyed[0]["text"]
+                others = [option["text"] for option in options if option["key"] != item["correct_key"]]
+                assert len(others) >= 2
+                kinds_seen.add(item["kind"])
+                checked += 1
+
+                if item["kind"] == "landmark_identify":
+                    assert answer == latin[item["landmark_id"]]
+                    real = set(latin.values()) - {answer}  # real siblings of the same bone
+                else:
+                    field = asked_field(structure, item)
+                    assert answer == str(structure.facts[field])  # the structure's own curated fact
+                    real = {
+                        text
+                        for peer_id, text in curated[(structure.kind, field)].items()
+                        if peer_id != structure.structure_id
+                    }
+                invented.extend(f"{structure.structure_id}/{seed}: {text!r}" for text in others if text not in real)
+                second_answers.extend(
+                    f"{structure.structure_id}/{seed} {item['stem']} — {text!r} next to the key {answer!r}"
+                    for text in others
+                    if states_the_same(text, answer)
+                )
+
+    assert invented == []  # every option is curated data, nothing is written for the quiz
+    assert second_answers == []
+    assert kinds_seen == {"landmark_identify", "muscle_fact", "nerve_fact", "joint_type"}
+    assert checked > 2000  # the whole catalogue, not a lucky sample
 
 
 def test_a_nerve_is_quizzed_on_its_origin_course_and_motor_field(lab: AnatomyLab) -> None:

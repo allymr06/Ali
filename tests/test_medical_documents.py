@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from app.medical.documents import DocumentError, DocumentPipeline, human_size, page_headings, split_text_pages
@@ -100,6 +102,78 @@ def test_import_file_dedupes_by_content_and_refuses_bad_input(tmp_path) -> None:
     oversized.write_bytes(b"x" * 4096)
     with pytest.raises(DocumentError, match="çok büyük"):
         DocumentPipeline(MedicalStore(), max_bytes=1024).import_file(oversized)
+
+
+def test_re_import_repairs_a_document_whose_stored_copy_vanished(tmp_path) -> None:
+    store = MedicalStore()
+    pipeline = DocumentPipeline(store, directory=tmp_path / "academy")
+    source = tmp_path / "ders.txt"
+    source.write_text(f"{SCAPULA_PAGE}\f{HUMERUS_PAGE}", encoding="utf-8")
+    document, _ = pipeline.import_file(source, subject="anatomy")
+    assert pipeline.process(document.document_id).status == DocumentStatus.READY
+    stored = tmp_path / "academy" / "documents"
+    # An antivirus quarantine, a cleanup tool, a state folder restored without
+    # its documents: the copy is gone and the document fails.
+    (stored / f"{document.document_id}.txt").unlink()
+    failed = pipeline.process(document.document_id)
+    assert failed.error == "Belgenin kopyası bulunamadı; yeniden içe aktar."
+
+    again, needs_processing = pipeline.import_file(source, subject="anatomy")
+
+    # Doing exactly what the failure told the student to do has to work: the
+    # digest still matches, but returning the record untouched made re-import a
+    # silent no-op and left the document failed forever.
+    assert needs_processing is True and again.document_id == document.document_id
+    assert again.status == DocumentStatus.PENDING and again.status_detail == "Bekliyor"
+    assert again.error is None
+    assert [item.name for item in stored.iterdir()] == [f"{document.document_id}.txt"]
+    assert Path(again.stored_path).read_bytes() == source.read_bytes()
+    assert pipeline.process(again.document_id).status == DocumentStatus.READY
+    # A healthy duplicate is still a duplicate: nothing to repair, nothing to do.
+    assert pipeline.import_file(source)[1] is False
+
+
+def test_re_import_restores_a_ready_document_without_re_extracting_it(tmp_path) -> None:
+    store = MedicalStore()
+    pipeline = DocumentPipeline(store, directory=tmp_path / "academy")
+    source = tmp_path / "ders.txt"
+    source.write_text(f"{SCAPULA_PAGE}\f{HUMERUS_PAGE}", encoding="utf-8")
+    document, _ = pipeline.import_file(source)
+    pipeline.process(document.document_id)
+    pipeline.attach_visual_summary(document.document_id, 2, summary="Şekilde caput humeri gösterilmiş.", labels=["caput humeri"])
+    copy = tmp_path / "academy" / "documents" / f"{document.document_id}.txt"
+    copy.unlink()
+
+    again, needs_processing = pipeline.import_file(source)
+
+    # Pages, chunks and the vision pass outlived the lost copy — only page
+    # rendering was broken — so the copy comes back but nothing is re-extracted
+    # over the study material.
+    assert needs_processing is False and again.status == DocumentStatus.READY
+    assert copy.read_bytes() == source.read_bytes()
+    assert store.get_page(document.document_id, 2).visual_summary.startswith("Şekilde")
+    assert store.get_chunk(f"{document.document_id}:2:visual") is not None
+
+
+def test_re_import_writes_the_repaired_copy_under_the_current_directory(tmp_path) -> None:
+    store = MedicalStore()
+    first = DocumentPipeline(store, directory=tmp_path / "eski")
+    document, _ = first.import_text(SCAPULA_PAGE, title="Anatomi Ders 1")
+    assert first.process(document.document_id).status == DocumentStatus.READY
+    # The store was restored beside a new academy directory; stored_path is an
+    # absolute string still pointing into the old one, which is gone.
+    (tmp_path / "eski" / "documents" / f"{document.document_id}.txt").unlink()
+    moved = DocumentPipeline(store, directory=tmp_path / "yeni")
+    assert moved.process(document.document_id).status == DocumentStatus.FAILED
+
+    again, needs_processing = moved.import_text(SCAPULA_PAGE, title="Anatomi Ders 1")
+
+    assert needs_processing is True
+    assert again.stored_path == str(tmp_path / "yeni" / "documents" / f"{document.document_id}.txt")
+    assert Path(again.stored_path).is_file()
+    # The copy is never written back into the directory the record points at.
+    assert list((tmp_path / "eski" / "documents").iterdir()) == []
+    assert moved.process(again.document_id).status == DocumentStatus.READY
 
 
 def test_oversized_file_reports_a_size_the_reader_can_act_on(tmp_path) -> None:

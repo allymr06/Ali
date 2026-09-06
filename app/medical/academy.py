@@ -183,17 +183,39 @@ class MedicalAcademy:
         except Exception:
             pass
 
-    def _run_background(self, coroutine: Coroutine[Any, Any, Any]) -> None:
-        """Schedule a pipeline on the running loop; results arrive as events."""
+    def _run_background(self, coroutine: Coroutine[Any, Any, Any], *, label: str = "") -> bool:
+        """Schedule a pipeline on the running loop; results arrive as events.
+
+        Returns False when there is no loop to run it on, so a caller that
+        promised to report back can say it could not start instead.
+        """
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             coroutine.close()
-            self._record("background.rejected", "No running loop for a medical background job.", level="warning")
-            return
+            self._record("background.rejected", "No running loop for a medical background job.", level="warning", job=label)
+            return False
         task = loop.create_task(coroutine)
         self._background.add(task)
-        task.add_done_callback(self._background.discard)
+        task.add_done_callback(lambda finished: self._background_done(finished, label))
+        return True
+
+    def _background_done(self, task: asyncio.Task[Any], label: str) -> None:
+        """Say what a background pipeline raised.
+
+        Nothing else retrieves the exception, so without this it surfaces
+        only as asyncio's "never retrieved" warning at garbage collection —
+        invisible in the frozen application. A job started from chat has
+        promised to report back, so a failure has to report too.
+        """
+        self._background.discard(task)
+        if task.cancelled():
+            return
+        error = task.exception()
+        if error is None:
+            return
+        self._record("job.failed", "A medical background job failed.", level="warning", job=label, error=type(error).__name__)
+        self._emit({"kind": "job_failed", "job": label, "error": type(error).__name__, "message": str(error) or type(error).__name__})
 
     def close(self) -> None:
         self.store.close()
@@ -731,7 +753,18 @@ class MedicalAcademy:
         prompt = notes_prompt(mode=mode, subject=subject, topic_path=self.curriculum.breadcrumb(topic_id) if topic_id else "", evidence_text=evidence_text, depth=depth, curated_facts=curated)
         data = await self.model.structured("study_notes", prompt, NOTES_SCHEMA, system_prompt=PIPELINE_SYSTEM)
         cited = {int(page) for page in data.get("cited_pages", []) if isinstance(page, int)}
-        references = [block.reference for block in blocks if not cited or block.reference.page_number in cited]
+        # A page number identifies an excerpt only within one document: notes are
+        # built from up to four, so filtering on the page alone would attach a chip
+        # to every document that happens to have that page. When the cited pages
+        # cannot be resolved to exactly one document, keep every block instead of
+        # picking one -- an over-broad reference list is honest, a wrong chip is not.
+        cited_documents = {block.reference.document_id for block in blocks if block.reference.page_number in cited}
+        references = [
+            block.reference
+            for block in blocks
+            if not cited
+            or (block.reference.page_number in cited and (len(cited_documents) == 1 or block.reference.document_id in cited_documents))
+        ]
         seen: set[tuple[str, int]] = set()
         unique_refs = []
         for ref in references:
@@ -910,13 +943,20 @@ class MedicalAcademy:
             exam.status = "in_progress"
             exam.started_at = attempt.started_at
             self.store.save_exam(exam)
+        previous = attempt.answers.get(question_id)
+        answered_before = previous is not None and bool(previous.answer_key)
         entry = record_answer(attempt, question, answer_key, elapsed_seconds=elapsed_seconds, flagged=flagged)
         if current_index is not None:
             attempt.current_index = max(0, int(current_index))
         self.store.save_attempt(attempt)
         result: dict[str, Any] = {"exam_id": exam_id, "question_id": question_id, "answer": entry.answer_key, "flagged": entry.flagged, "answered": len([item for item in attempt.answers.values() if item.answer_key])}
         if exam.config.immediate_feedback and entry.answer_key:
-            if entry.correct is not None:
+            # Only the first answer to a question is an attempt at recall: in
+            # immediate feedback the key is revealed with it, so a later send
+            # for the same question — flagging it re-sends the answer, and the
+            # options stay clickable — is not a second try. Recording it would
+            # state attempts, a streak and a confusion the student never made.
+            if entry.correct is not None and not answered_before:
                 self.learning.record(question, bool(entry.correct), chosen_key=entry.answer_key)
             result["feedback"] = explanation_payload(question, entry.answer_key)
         return result
@@ -1077,7 +1117,6 @@ class MedicalAcademy:
         notes.extend(parsed.notes)
         extracted = parsed.questions
         if (len(extracted) == 0 or len(extracted) < source_text.count("?") // 3) and use_model and self.model.available:
-            notes.append("Deterministik ayrıştırma yetersiz kaldı; model yapısal çıkarım yaptı.")
             data = await self.model.structured("question_extraction", question_extraction_prompt(source_text), QUESTION_EXTRACTION_SCHEMA, system_prompt=PIPELINE_SYSTEM)
             from app.medical.professor import ParsedQuestion
 
@@ -1091,7 +1130,12 @@ class MedicalAcademy:
                 answer = str(answer).strip().upper()[:1] if answer else None
                 model_items.append(ParsedQuestion(number=str(item.get("number") or index), stem=str(item.get("stem", "")).strip(), options=options, answer_key=answer if answer and any(key == answer for key, _ in options) else None, has_image=bool(item.get("has_image"))))
             if len(model_items) > len(extracted):
+                # Only now is the claim true: the note is written where the model's
+                # reading is the one that gets stored, not where it was merely asked.
+                notes.append("Deterministik ayrıştırma yetersiz kaldı; model yapısal çıkarım yaptı.")
                 extracted = model_items
+            elif model_items:
+                notes.append("Model de denendi ama deterministik ayrıştırmadan fazlasını okuyamadı; okunan sorular ayrıştırıcıdan geliyor.")
         if not extracted:
             raise DocumentError("Metinden soru çıkarılamadı; numaralı sorular ve A) B) C) biçimli şıklar bekleniyor.")
         profile = self.store.get_professor(professor_id) if professor_id else None
@@ -1176,7 +1220,14 @@ class MedicalAcademy:
         try:
             return self.anatomy.assets.load_mesh(structure_id)
         except (FileNotFoundError, ValueError, OSError) as exc:
-            return {"available": False, "reason": str(exc), **self.anatomy.assets.describe(structure_id)}
+            described = self.anatomy.assets.describe(structure_id)
+            # ``available`` and ``reason`` come last: spread first, the registry's
+            # own "available: True" would land back on top of a model that could
+            # not be loaded, and the student would be told nothing is registered.
+            # describe() only explains what it can diagnose (nothing registered,
+            # file missing); for a registered file that will not load, the
+            # loader's message is the only true one.
+            return {**described, "available": False, "reason": described.get("reason") or str(exc)}
 
     def record_anatomy_answer(self, structure_id: str, landmark_id: str | None, correct: bool) -> dict[str, Any]:
         concept_id = f"anatomy.{structure_id}" + (f".{landmark_id}" if landmark_id else "")

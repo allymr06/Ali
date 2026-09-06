@@ -8,7 +8,7 @@ which concept) are counted so insights can name the mix-up.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -53,6 +53,27 @@ def next_review_for(mastery: ConceptMastery, now: datetime) -> datetime:
     else:
         interval = REVIEW_INTERVALS.get(level, timedelta(days=1))
     return now + interval
+
+
+def is_due(mastery: ConceptMastery, moment: datetime) -> bool:
+    """One definition of "due", so the queue and the counter cannot drift apart."""
+    return mastery.next_review_at is not None and mastery.next_review_at <= moment
+
+
+def top_confusions(confusions: Mapping[str, int], *, limit: int = 2) -> tuple[list[str], int]:
+    """The most-picked wrong options and the count they share.
+
+    Options on the top count are returned together, up to ``limit``, rather
+    than one of them: singling out one of two equally-picked distractors
+    would name a preference the history does not show. Ties are broken
+    alphabetically so the same history always produces the same line,
+    whatever order the confusions were recorded or loaded in.
+    """
+    if not confusions:
+        return [], 0
+    ordered = sorted(confusions.items(), key=lambda item: (-item[1], item[0]))
+    top = ordered[0][1]
+    return [name for name, count in ordered if count == top][: max(1, limit)], top
 
 
 def reason_for(mastery: ConceptMastery) -> str:
@@ -159,7 +180,7 @@ class LearningEngine:
 
     def review_queue(self, *, limit: int = 12, now: datetime | None = None) -> list[dict[str, Any]]:
         moment = now or self._clock()
-        due = [item for item in self.all() if item.next_review_at is not None and item.next_review_at <= moment]
+        due = [item for item in self.all() if is_due(item, moment)]
         due.sort(key=lambda item: (item.level != MasteryLevel.WEAK, item.level != MasteryLevel.MODERATE, item.next_review_at or moment))
         queue = []
         for item in due[: max(1, limit)]:
@@ -192,13 +213,30 @@ class LearningEngine:
                 continue
             name = self.concept_name(concept_id)
             if mastery.level == MasteryLevel.WEAK:
-                confusion = max(mastery.confusions.items(), key=lambda item: item[1])[0] if mastery.confusions else None
-                hints.append(f"{name}: weak ({mastery.correct}/{mastery.attempts})" + (f", often confused with '{confusion}'" if confusion else ""))
+                hints.append(f"{name}: weak ({mastery.correct}/{mastery.attempts})" + self._confusion_hint(mastery))
             elif mastery.level == MasteryLevel.STRONG:
                 hints.append(f"{name}: strong, can be brief")
             if len(hints) >= limit:
                 break
         return hints
+
+    @staticmethod
+    def _confusion_hint(mastery: ConceptMastery) -> str:
+        """Name the mix-up the way the count supports it, or not at all.
+
+        "Often" is a claim about a habit, so it waits for the second
+        occurrence, the same bar insights() applies before it names a
+        confusion to the student. A single wrong click is reported as the
+        single event it was, so the tutor is never handed a pattern the
+        history does not contain.
+        """
+        names, count = top_confusions(mastery.confusions)
+        if not names:
+            return ""
+        joined = " and ".join(f"'{item}'" for item in names)
+        if count >= 2:
+            return f", often confused with {joined}"
+        return f", picked {joined} once{' each' if len(names) > 1 else ''}"
 
     # ------------------------------------------------------------------
     # adaptive difficulty (transparent rule)
@@ -226,7 +264,8 @@ class LearningEngine:
         for item in sorted(items, key=lambda entry: (entry.level != MasteryLevel.WEAK, -entry.attempts)):
             name = self.concept_name(item.concept_id)
             if item.confusions:
-                confusion, count = max(item.confusions.items(), key=lambda pair: pair[1])
+                leaders, count = top_confusions(item.confusions, limit=1)
+                confusion = leaders[0]
                 if count >= 2:
                     lines.append(f"{name} sorularında {count} kez '{confusion}' seçeneğine kaydın: bu ikisini ayıran kriteri tekrar et.")
                     continue
@@ -249,6 +288,7 @@ class LearningEngine:
 
     def summary(self) -> dict[str, Any]:
         items = self.all()
+        moment = self._clock()
         counts = {level.value: 0 for level in MasteryLevel}
         for item in items:
             counts[item.level] = counts.get(item.level, 0) + 1
@@ -260,7 +300,10 @@ class LearningEngine:
             "correct": correct,
             "accuracy": round(correct / attempts, 3) if attempts else None,
             "levels": counts,
-            "due_reviews": len(self.review_queue(limit=100)),
+            # The progress screen renders this as an exact count, so it counts
+            # every due concept: the review queue is deliberately capped for
+            # display and its length would silently stop growing at the cap.
+            "due_reviews": sum(1 for item in items if is_due(item, moment)),
         }
 
     def mastery_payload(self, mastery: ConceptMastery) -> dict[str, Any]:

@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="css/shell.css">
 <link rel="stylesheet" href="css/components.css">
 <link rel="stylesheet" href="css/screens.css">
+<link rel="stylesheet" href="css/medical.css">
 </head>
 <body>
 
@@ -358,6 +359,224 @@
       </div>
     </section>
 
+
+    <!-- ── TIP AKADEMİSİ ───────────────────────────── -->
+    <section class="screen" data-screen="medical">
+      <div class="med-shell">
+        <header class="med-head">
+          <div class="med-head-main">
+            <span class="kicker">Tıp Akademisi</span>
+            <h1 id="med-title">Çalışma merkezi</h1>
+            <p id="med-subtitle">Birinci sınıf tıp müfredatı, kendi ders materyalin ve hocanın soru tarzı tek yerde.</p>
+          </div>
+          <div id="med-session-chips" class="med-session-chips"></div>
+        </header>
+        <nav id="med-tabs" class="med-tabs" aria-label="Tıp Akademisi bölümleri"></nav>
+        <div id="med-unavailable" class="panel med-unavailable" hidden></div>
+        <div id="med-body" class="med-body">
+
+          <!-- Panel -->
+          <section class="med-view" data-view="dashboard">
+            <div class="med-grid">
+              <div class="panel med-card med-span-2">
+                <div class="panel-title"><span class="kicker">Çalışma oturumu</span><span id="med-session-note" class="faint"></span></div>
+                <div id="med-session-form" class="med-session-form"></div>
+              </div>
+              <div class="panel med-card">
+                <div class="panel-title"><span class="kicker">Bugünün tekrarı</span><span id="med-review-count" class="faint"></span></div>
+                <div id="med-review-queue" class="med-list"></div>
+              </div>
+              <div class="panel med-card">
+                <div class="panel-title"><span class="kicker">Zayıf kavramlar</span></div>
+                <div id="med-weak" class="med-list"></div>
+              </div>
+              <div class="panel med-card">
+                <div class="panel-title"><span class="kicker">İçgörüler</span></div>
+                <div id="med-insights" class="med-list"></div>
+              </div>
+              <div class="panel med-card">
+                <div class="panel-title"><span class="kicker">Son belgeler</span></div>
+                <div id="med-recent-documents" class="med-list"></div>
+              </div>
+              <div class="panel med-card">
+                <div class="panel-title"><span class="kicker">Son sınavlar</span></div>
+                <div id="med-recent-exams" class="med-list"></div>
+              </div>
+              <div class="panel med-card med-span-2">
+                <div class="panel-title"><span class="kicker">Hızlı başlangıç</span></div>
+                <div id="med-quick" class="med-quick"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Konular -->
+          <section class="med-view" data-view="subjects" hidden>
+            <div class="med-split">
+              <aside class="panel med-tree-panel">
+                <div class="panel-title"><span class="kicker">Müfredat</span></div>
+                <label class="search med-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l6 6"/></svg><input id="med-topic-search" type="text" placeholder="Konu ara…" spellcheck="false"></label>
+                <div id="med-tree" class="med-tree"></div>
+              </aside>
+              <div id="med-topic" class="med-topic"></div>
+            </div>
+          </section>
+
+          <!-- Kütüphane -->
+          <section class="med-view" data-view="library" hidden>
+            <div class="med-split">
+              <aside class="panel med-doc-panel">
+                <div class="panel-title"><span class="kicker">Belgeler</span><span id="med-doc-count" class="faint"></span></div>
+                <div class="btn-row" style="justify-content:flex-start">
+                  <button id="med-import" class="btn btn-primary small" type="button">Belge ekle</button>
+                  <button id="med-doc-refresh" class="icon-btn small" type="button" title="Yenile"></button>
+                </div>
+                <div id="med-doc-list" class="med-list"></div>
+              </aside>
+              <div id="med-doc-detail" class="med-doc-detail"></div>
+            </div>
+          </section>
+
+          <!-- Notlar -->
+          <section class="med-view" data-view="notes" hidden>
+            <div class="panel med-card">
+              <div class="panel-title"><span class="kicker">Not üret</span></div>
+              <form id="med-note-form" class="med-form" autocomplete="off">
+                <div class="med-form-row">
+                  <select id="med-note-mode" aria-label="Not türü">
+                    <option value="medical.short_notes">Kısa sınav notu</option>
+                    <option value="medical.high_yield">Yüksek verim</option>
+                    <option value="medical.rapid_review">Hızlı tekrar</option>
+                    <option value="medical.summarize">Ders özeti</option>
+                  </select>
+                  <select id="med-note-document" aria-label="Belge"></select>
+                  <input id="med-note-from" type="number" min="0" max="9999" placeholder="ilk sayfa" aria-label="İlk sayfa">
+                  <input id="med-note-to" type="number" min="0" max="9999" placeholder="son sayfa" aria-label="Son sayfa">
+                  <button id="med-note-add" class="btn btn-primary small" type="submit">Not hazırla</button>
+                </div>
+                <p class="settings-note">Notlar seçili konudan ve belgelerden üretilir; kullanılan her sayfa kaynak olarak işaretlenir.</p>
+              </form>
+            </div>
+            <div id="med-note-list" class="med-note-list"></div>
+          </section>
+
+          <!-- Sınav -->
+          <section class="med-view" data-view="exam" hidden>
+            <div id="med-exam-setup" class="panel med-card">
+              <div class="panel-title"><span class="kicker">Sınav kur</span><span id="med-exam-note" class="faint"></span></div>
+              <form id="med-exam-form" class="med-form" autocomplete="off">
+                <div class="med-form-row">
+                  <label class="med-field"><span>Soru sayısı</span><input id="med-exam-count" type="number" min="1" max="60" value="10"></label>
+                  <label class="med-field"><span>Şık</span><input id="med-exam-options" type="number" min="2" max="6" value="5"></label>
+                  <label class="med-field"><span>Zorluk</span><select id="med-exam-difficulty"></select></label>
+                  <label class="med-field"><span>Hoca tarzı</span><select id="med-exam-professor"></select></label>
+                </div>
+                <div class="med-form-row">
+                  <label class="med-field"><span>Bilgi önceliği</span><select id="med-exam-priority"></select></label>
+                  <label class="med-field"><span>Belge</span><select id="med-exam-document"></select></label>
+                  <label class="med-field"><span>İlk sayfa</span><input id="med-exam-from" type="number" min="0" max="9999" value="0"></label>
+                  <label class="med-field"><span>Son sayfa</span><input id="med-exam-to" type="number" min="0" max="9999" value="0"></label>
+                </div>
+                <div class="med-form-row med-switches">
+                  <label class="switch-row small"><span>Cevaplar en sonda</span><input id="med-exam-end" class="switch" type="checkbox" checked></label>
+                  <label class="switch-row small"><span>Her sorudan sonra açıklama</span><input id="med-exam-immediate" class="switch" type="checkbox"></label>
+                  <label class="switch-row small"><span>Zayıf konulara ağırlık</span><input id="med-exam-weak" class="switch" type="checkbox"></label>
+                  <label class="switch-row small"><span>Yalnız yanlışlarım</span><input id="med-exam-wrong" class="switch" type="checkbox"></label>
+                  <label class="switch-row small"><span>Süreli (dk)</span><input id="med-exam-timed" type="number" min="0" max="240" value="0"></label>
+                </div>
+                <div class="btn-row">
+                  <button id="med-exam-bank" class="btn btn-ghost small" type="button">Bankadan derle</button>
+                  <button id="med-exam-create" class="btn btn-primary" type="submit">Sınav hazırla</button>
+                </div>
+              </form>
+            </div>
+            <div id="med-exam-list" class="med-list med-exam-list"></div>
+            <div id="med-exam-runner" class="med-runner" hidden></div>
+          </section>
+
+          <!-- Soru bankası -->
+          <section class="med-view" data-view="bank" hidden>
+            <div class="med-toolbar">
+              <label class="search med-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l6 6"/></svg><input id="med-bank-search" type="text" placeholder="Soru metninde ara…" spellcheck="false"></label>
+              <select id="med-bank-subject" aria-label="Ders"></select>
+              <select id="med-bank-origin" aria-label="Kaynak"></select>
+              <select id="med-bank-answered" aria-label="Durum"></select>
+              <span id="med-bank-count" class="sys-label"></span>
+              <button id="med-bank-refresh" class="icon-btn small" type="button" title="Yenile"></button>
+            </div>
+            <div id="med-bank-list" class="med-bank-list"></div>
+          </section>
+
+          <!-- Hoca tarzı -->
+          <section class="med-view" data-view="professor" hidden>
+            <div class="med-split">
+              <aside class="panel med-doc-panel">
+                <div class="panel-title"><span class="kicker">Hocalar</span></div>
+                <form id="med-prof-form" class="med-form" autocomplete="off">
+                  <div class="med-form-row">
+                    <input id="med-prof-name" type="text" maxlength="80" placeholder="Hoca adı" aria-label="Hoca adı">
+                    <select id="med-prof-subject" aria-label="Ders"></select>
+                    <button id="med-prof-add" class="btn btn-ghost small" type="submit">Ekle</button>
+                  </div>
+                </form>
+                <div id="med-prof-list" class="med-list"></div>
+              </aside>
+              <div id="med-prof-detail" class="med-prof-detail"></div>
+            </div>
+          </section>
+
+          <!-- İlerleme -->
+          <section class="med-view" data-view="progress" hidden>
+            <div class="med-grid">
+              <div class="panel med-card med-span-2">
+                <div class="panel-title"><span class="kicker">Öğrenme durumu</span></div>
+                <div id="med-progress-metrics" class="diag-metrics"></div>
+              </div>
+              <div class="panel med-card">
+                <div class="panel-title"><span class="kicker">Tekrar kuyruğu</span></div>
+                <div id="med-progress-queue" class="med-list"></div>
+              </div>
+              <div class="panel med-card">
+                <div class="panel-title"><span class="kicker">İçgörüler</span></div>
+                <div id="med-progress-insights" class="med-list"></div>
+              </div>
+              <div class="panel med-card med-span-2">
+                <div class="panel-title"><span class="kicker">Kavram ustalığı</span><span id="med-mastery-count" class="faint"></span></div>
+                <div id="med-mastery-list" class="med-mastery"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Anatomi Lab -->
+          <section class="med-view med-view-lab" data-view="anatomy" hidden>
+            <div class="lab">
+              <aside class="panel lab-tree">
+                <div class="panel-title"><span class="kicker">Yapılar</span></div>
+                <label class="search med-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l6 6"/></svg><input id="lab-search" type="text" placeholder="Yapı ara…" spellcheck="false"></label>
+                <div id="lab-list" class="lab-list"></div>
+              </aside>
+              <div class="lab-stage">
+                <div id="lab-viewport" class="lab-viewport">
+                  <canvas id="lab-canvas"></canvas>
+                  <svg id="lab-schematic" viewBox="0 0 900 600" aria-label="Şematik yapı haritası"></svg>
+                  <div id="lab-overlay" class="lab-overlay"></div>
+                  <div id="lab-notice" class="lab-notice"></div>
+                </div>
+                <div class="lab-actions">
+                  <button id="lab-labels" class="btn btn-ghost small" type="button">Etiketler</button>
+                  <button id="lab-quiz" class="btn btn-ghost small" type="button">Quiz</button>
+                  <button id="lab-movement" class="btn btn-ghost small" type="button">Hareketler</button>
+                  <button id="lab-reset" class="btn btn-ghost small" type="button">Kamerayı sıfırla</button>
+                  <button id="lab-teach" class="btn btn-primary small" type="button">JARVIS anlatsın</button>
+                </div>
+              </div>
+              <aside id="lab-info" class="panel lab-info"></aside>
+            </div>
+          </section>
+
+        </div>
+      </div>
+    </section>
+
     <!-- ── AYARLAR ─────────────────────────────────── -->
     <section class="screen" data-screen="settings">
       <div class="screen-head">
@@ -543,6 +762,7 @@
 <script src="js/conversation.js"></script>
 <script src="js/activity.js"></script>
 <script src="js/panels.js"></script>
+<script src="js/medical.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

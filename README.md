@@ -74,6 +74,22 @@ Not implemented yet:
 - plugin process isolation and a plugin settings screen
 - production code signing and an installed-runtime qualification
 
+## Medical Academy
+
+A first-year medical-school study layer lives inside JARVIS: seven subjects
+of curated curriculum, a tutor that keeps official Latin anatomical
+terminology in Latin, a PDF study engine with page-anchored citations, an
+exam engine whose questions are validated before they are shown, an
+evidence-based profile of how a professor writes questions, an interpretable
+mastery model with spaced review, and the Anatomy Lab.
+
+It is an extension, not a second application: the same core engine, the same
+permission and approval machinery, the same conversation store, the same Nova
+shell. It never invents a page number, never guesses a professor's answer key
+and never draws anatomy it does not have a licensed model for.
+
+See `docs/MEDICAL_ACADEMY.md`.
+
 ## Verification status
 
 The current test suite contains **1197 passing tests, 1 skipped** (`scripts/verify.py`), verified on 5 September 2026.

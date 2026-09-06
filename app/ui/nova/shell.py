@@ -72,6 +72,7 @@ WEB_ASSETS: tuple[str, ...] = (
     "css/shell.css",
     "css/components.css",
     "css/screens.css",
+    "css/medical.css",
     "js/foundation.js",
     "js/bridge.js",
     "js/presence.js",
@@ -79,6 +80,7 @@ WEB_ASSETS: tuple[str, ...] = (
     "js/conversation.js",
     "js/activity.js",
     "js/panels.js",
+    "js/medical.js",
     "js/main.js",
 )
 WEB_RELATIVE_PATH = PurePath("app", "ui", "nova", "web")
@@ -104,6 +106,35 @@ ROUTINE_POLL_SECONDS = 30.0
 # after this long rather than skipped to its next slot.
 ROUTINE_DEFER_SECONDS = 90.0
 ROUTINE_UNAVAILABLE = "Rutinler bu ortamda kullanılamıyor."
+MEDICAL_UNAVAILABLE = "Tıp Akademisi bu ortamda kullanılamıyor."
+# Study-layer operations that run long enough (model calls, PDF work) to
+# belong on the async runner; the page hears the outcome as a push.
+MEDICAL_BACKGROUND_ACTIONS: frozenset[str] = frozenset(
+    {
+        "process_document",
+        "analyze_document",
+        "compare_document",
+        "create_note",
+        "create_exam",
+        "import_questions",
+    }
+)
+# Destructive study-layer operations; the page must pass confirmed=True.
+MEDICAL_CONFIRMED_ACTIONS: frozenset[str] = frozenset(
+    {
+        "delete_document",
+        "delete_note",
+        "delete_exam",
+        "delete_question",
+        "delete_professor",
+        "reset_professor",
+    }
+)
+MEDICAL_DOCUMENT_TYPES = ("Ders materyali (*.pdf;*.txt;*.md)", "Tüm dosyalar (*.*)")
+MEDICAL_QUESTION_TYPES = (
+    "Sınav dosyası (*.pdf;*.txt;*.md;*.png;*.jpg;*.jpeg;*.webp)",
+    "Tüm dosyalar (*.*)",
+)
 OS_NOTIFICATION_MAX_IN_FLIGHT = 4
 # User-visible titles of the notifications the bridge raises itself.
 NOTIFICATION_TITLES: Mapping[str, str] = {
@@ -546,6 +577,10 @@ class NovaBridge:
         if watcher is not None and hasattr(watcher, "_notify"):
             watcher._notify = self._on_screen_observation
             self._detachers.append(lambda: setattr(watcher, "_notify", None))
+        academy = getattr(application, "medical", None)
+        subscribe = getattr(academy, "subscribe", None)
+        if callable(subscribe):
+            self._detachers.append(subscribe(self._on_medical_event))
         if self._ready:
             self._start_reminder_watch()
 
@@ -1004,6 +1039,340 @@ class NovaBridge:
         )
         return {"ok": True, **self._routines_payload()}
 
+    # ------------------------------------------------------------------
+    # Medical Academy
+    # ------------------------------------------------------------------
+    def _medical(self) -> Any | None:
+        return getattr(self.controller.application, "medical", None)
+
+    def _on_medical_event(self, event: Mapping[str, Any]) -> None:
+        """Forward one study-layer event to the page, and to the user when
+        a long pipeline they started has finished while they looked away."""
+        payload = dict(event)
+        self._push("medical", payload)
+        kind = str(payload.get("kind", ""))
+        titles = {
+            "document_ready": ("Belge hazır", "{title} işlendi ve dizinlendi."),
+            "document_analyzed": ("Belge analiz edildi", "{title}: konular ve terimler çıkarıldı."),
+            "comparison_ready": ("Karşılaştırma hazır", "{title}: {findings} bulgu işaretlendi."),
+            "exam_ready": ("Sınav hazır", "{title}: {count} soru."),
+            "exam_finished": ("Sınav bitti", "{title}: %{percent}."),
+            "note_ready": ("Not hazır", "{title}"),
+        }
+        entry = titles.get(kind)
+        if entry is None:
+            return
+        title, template = entry
+        try:
+            body = template.format(**{key: payload.get(key, "") for key in ("title", "findings", "count", "percent")})
+        except (KeyError, IndexError):
+            body = str(payload.get("title", ""))
+        self._publish(
+            "task",
+            f"Tıp Akademisi · {title}",
+            body,
+            target="medical",
+            data={key: value for key, value in payload.items() if isinstance(value, (str, int, float, bool))},
+            dedupe_key=f"medical:{kind}:{payload.get('document_id') or payload.get('exam_id') or ''}",
+            alert=True,
+        )
+
+    def _medical_payload(self) -> dict[str, Any]:
+        academy = self._medical()
+        if academy is None:
+            return {"available": False, "reason": MEDICAL_UNAVAILABLE}
+        try:
+            return {"available": True, **_jsonable(academy.dashboard())}
+        except Exception as exc:
+            return {"available": False, "reason": f"Tıp Akademisi okunamadı ({type(exc).__name__})."}
+
+    def medical_pick_file(self, kind: str = "document") -> dict[str, Any]:
+        """Open the native picker for a lecture document or an exam file."""
+        window = self._window
+        if window is None:
+            return {"ok": False, "error": "Pencere hazır değil."}
+        if self._medical() is None:
+            return {"ok": False, "error": MEDICAL_UNAVAILABLE}
+        file_types = (
+            MEDICAL_QUESTION_TYPES
+            if str(kind or "").strip() == "questions"
+            else MEDICAL_DOCUMENT_TYPES
+        )
+        selection: list[Any] = []
+
+        def choose() -> None:
+            selection.append(
+                window.create_file_dialog(
+                    webview.OPEN_DIALOG,
+                    allow_multiple=False,
+                    directory=str(Path.home()),
+                    file_types=file_types,
+                )
+            )
+
+        try:
+            _run_on_ui_thread(window, choose)
+        except Exception as exc:
+            return {"ok": False, "error": f"Dosya seçici açılamadı ({type(exc).__name__})."}
+        chosen = selection[0] if selection else None
+        if isinstance(chosen, (list, tuple)):
+            chosen = chosen[0] if chosen else None
+        if not chosen:
+            return {"ok": True, "path": None}
+        return {"ok": True, "path": str(chosen)}
+
+    def medical_call(self, action: str, params: Any = None) -> dict[str, Any]:
+        """One entry point for every Medical Academy operation.
+
+        Read-only views answer immediately; model-backed pipelines are
+        started on the controller's async runner and report back through
+        the ``medical`` push channel. Destructive operations refuse
+        without an explicit ``confirmed`` flag, exactly like the file and
+        memory surfaces do.
+        """
+        academy = self._medical()
+        if academy is None:
+            return {"ok": False, "available": False, "error": MEDICAL_UNAVAILABLE}
+        name = str(action or "").strip()
+        payload: Mapping[str, Any] = params if isinstance(params, Mapping) else {}
+        if name in MEDICAL_CONFIRMED_ACTIONS and payload.get("confirmed") is not True:
+            return {"ok": False, "error": "Bu işlem onaylanmadı."}
+        if name in MEDICAL_BACKGROUND_ACTIONS:
+            return self._medical_background(academy, name, payload)
+        try:
+            return self._medical_view(academy, name, payload)
+        except KeyError:
+            return {"ok": False, "error": f"Bilinmeyen işlem: {name}"}
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        except Exception as exc:
+            self._record_ui_event(
+                "medical.failed",
+                "A Medical Academy operation failed.",
+                action=name,
+                error_type=type(exc).__name__,
+            )
+            return {"ok": False, "error": f"İşlem tamamlanamadı ({type(exc).__name__})."}
+
+    def _medical_view(
+        self,
+        academy: Any,
+        name: str,
+        payload: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Synchronous study-layer operations. Raises KeyError when the
+        action is unknown, so the caller can fail closed."""
+        text = lambda key, default="": str(payload.get(key, default) or "").strip()  # noqa: E731
+        number = lambda key, default=0: int(payload.get(key) or default)  # noqa: E731
+
+        if name == "state":
+            return {"ok": True, **self._medical_payload()}
+        if name == "session":
+            return {"ok": True, **_jsonable(academy.update_session(dict(payload.get("fields") or {})))}
+        if name == "subjects":
+            return {"ok": True, "subjects": _jsonable(academy.subjects())}
+        if name == "topic":
+            topic = academy.topic(text("topic_id"))
+            if topic is None:
+                return {"ok": False, "error": "Konu bulunamadı."}
+            return {"ok": True, "topic": _jsonable(topic)}
+        if name == "search":
+            return {"ok": True, **_jsonable(academy.search(text("query"), limit=min(50, number("limit", 20))))}
+        if name == "term":
+            return {"ok": True, **_jsonable(academy.term(text("query")))}
+        if name == "documents":
+            return {"ok": True, "documents": _jsonable(academy.documents())}
+        if name == "document":
+            document = academy.document(text("document_id"))
+            if document is None:
+                return {"ok": False, "error": "Belge bulunamadı."}
+            return {"ok": True, "document": _jsonable(document)}
+        if name == "page":
+            page = academy.page(text("document_id"), number("page_number", 1), image=payload.get("image") is not False)
+            if page is None:
+                return {"ok": False, "error": "Sayfa bulunamadı."}
+            return {"ok": True, "page": _jsonable(page)}
+        if name == "import_document":
+            document, created = academy.import_document(
+                text("path"),
+                title=text("title") or None,
+                subject=text("subject") or None,
+            )
+            if created:
+                self._medical_start(academy.process_document(document.document_id))
+            return {
+                "ok": True,
+                "created": created,
+                "document": _jsonable(academy.pipeline.payload(document)),
+                "documents": _jsonable(academy.documents()),
+                "message": "Belge içe aktarıldı, işleniyor." if created else "Bu belge zaten kayıtlı.",
+            }
+        if name == "delete_document":
+            removed = academy.delete_document(text("document_id"))
+            return {"ok": removed, "documents": _jsonable(academy.documents()), "error": None if removed else "Belge bulunamadı."}
+        if name == "comparison":
+            return {"ok": True, "comparison": _jsonable(academy.comparison(text("document_id")))}
+        if name == "analysis":
+            return {"ok": True, "analysis": _jsonable(academy.document_analysis(text("document_id")))}
+        if name == "notes":
+            return {"ok": True, "notes": _jsonable(academy.notes())}
+        if name == "delete_note":
+            removed = academy.delete_note(text("note_id"))
+            return {"ok": removed, "notes": _jsonable(academy.notes()), "error": None if removed else "Not bulunamadı."}
+        if name == "exams":
+            return {"ok": True, "exams": _jsonable(academy.exams())}
+        if name == "exam":
+            exam = academy.exam(text("exam_id"))
+            if exam is None:
+                return {"ok": False, "error": "Sınav bulunamadı."}
+            return {"ok": True, "exam": _jsonable(exam)}
+        if name == "start_exam":
+            exam = academy.start_exam(text("exam_id"))
+            if exam is None:
+                return {"ok": False, "error": "Sınav bulunamadı."}
+            return {"ok": True, "exam": _jsonable(exam)}
+        if name == "answer":
+            result = academy.answer(
+                text("exam_id"),
+                text("question_id"),
+                text("answer_key") or None,
+                flagged=payload.get("flagged"),
+                current_index=payload.get("current_index"),
+            )
+            if result is None:
+                return {"ok": False, "error": "Soru bu sınavda yok."}
+            return {"ok": True, **_jsonable(result)}
+        if name == "finish_exam":
+            exam = academy.finish_exam(text("exam_id"))
+            if exam is None:
+                return {"ok": False, "error": "Sınav bulunamadı."}
+            return {"ok": True, "exam": _jsonable(exam)}
+        if name == "delete_exam":
+            removed = academy.delete_exam(text("exam_id"))
+            return {"ok": removed, "exams": _jsonable(academy.exams()), "error": None if removed else "Sınav bulunamadı."}
+        if name == "bank":
+            return {"ok": True, **_jsonable(academy.question_bank(dict(payload.get("filters") or {})))}
+        if name == "delete_question":
+            removed = academy.delete_question(text("question_id"))
+            return {"ok": removed, "error": None if removed else "Soru bulunamadı."}
+        if name == "set_answer_key":
+            question = academy.set_answer_key(text("question_id"), text("answer_key") or None)
+            if question is None:
+                return {"ok": False, "error": "Soru bulunamadı."}
+            return {"ok": True, "question": _jsonable(question)}
+        if name == "professors":
+            return {"ok": True, "professors": _jsonable(academy.professors())}
+        if name == "professor":
+            profile = academy.professor(text("profile_id"))
+            if profile is None:
+                return {"ok": False, "error": "Hoca profili bulunamadı."}
+            return {"ok": True, "professor": _jsonable(profile)}
+        if name == "create_professor":
+            if not text("name"):
+                return {"ok": False, "error": "Hoca adı gerekli."}
+            return {"ok": True, "professor": _jsonable(academy.create_professor(text("name"), text("subject") or None)), "professors": _jsonable(academy.professors())}
+        if name == "reset_professor":
+            profile = academy.reset_professor(text("profile_id"))
+            if profile is None:
+                return {"ok": False, "error": "Hoca profili bulunamadı."}
+            return {"ok": True, "professor": _jsonable(profile), "professors": _jsonable(academy.professors())}
+        if name == "delete_professor":
+            removed = academy.delete_professor(text("profile_id"), delete_questions=payload.get("delete_questions") is True)
+            return {"ok": removed, "professors": _jsonable(academy.professors()), "error": None if removed else "Hoca profili bulunamadı."}
+        if name == "progress":
+            return {"ok": True, **_jsonable(academy.progress())}
+        if name == "anatomy":
+            return {"ok": True, **_jsonable(academy.anatomy_structures())}
+        if name == "structure":
+            structure = academy.anatomy_structure(text("structure_id"))
+            if structure is None:
+                return {"ok": False, "error": "Yapı bulunamadı."}
+            return {"ok": True, "structure": _jsonable(structure)}
+        if name == "mesh":
+            return {"ok": True, "mesh": _jsonable(academy.anatomy_mesh(text("structure_id")))}
+        if name == "anatomy_quiz":
+            return {"ok": True, "questions": _jsonable(academy.anatomy_quiz(text("structure_id"), count=number("count", 5)))}
+        if name == "anatomy_answer":
+            return {"ok": True, **_jsonable(academy.record_anatomy_answer(text("structure_id"), text("landmark_id") or None, payload.get("correct") is True))}
+        raise KeyError(name)
+
+    def _medical_start(self, operation: Any) -> bool:
+        """Run one academy coroutine on the controller's async runner."""
+
+        def done(future: Future[Any]) -> None:
+            if future.cancelled():
+                return
+            try:
+                future.result()
+            except Exception as exc:
+                self._push("medical", {"kind": "job_failed", "error": f"{type(exc).__name__}", "message": str(exc)[:300]})
+                self._record_ui_event(
+                    "medical.job_failed",
+                    "A Medical Academy background job failed.",
+                    error_type=type(exc).__name__,
+                )
+            self._push("medical", {"kind": "refresh"})
+
+        try:
+            self.controller.submit_background(operation, done)
+        except RuntimeError:
+            operation.close()
+            return False
+        return True
+
+    def _medical_background(
+        self,
+        academy: Any,
+        name: str,
+        payload: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        text = lambda key, default="": str(payload.get(key, default) or "").strip()  # noqa: E731
+        number = lambda key, default=0: int(payload.get(key) or default)  # noqa: E731
+        if self.controller.paused:
+            return {"ok": False, "error": PAUSED_MESSAGE}
+        operation: Any
+        if name == "process_document":
+            if academy.store.get_document(text("document_id")) is None:
+                return {"ok": False, "error": "Belge bulunamadı."}
+            operation = academy.process_document(text("document_id"))
+            message = "Belge işleniyor."
+        elif name == "analyze_document":
+            operation = academy.analyze_document(text("document_id"), page_from=number("page_from"), page_to=number("page_to"))
+            message = "Belge analiz ediliyor."
+        elif name == "compare_document":
+            operation = academy.compare_document(text("document_id"), page_from=number("page_from"), page_to=number("page_to"))
+            message = "Belge standart bilgiyle karşılaştırılıyor."
+        elif name == "create_note":
+            operation = academy.generate_notes(
+                mode=text("mode", "medical.short_notes"),
+                subject=text("subject") or None,
+                topic_id=text("topic_id") or None,
+                document_ids=[str(item) for item in (payload.get("document_ids") or [])],
+                page_from=number("page_from"),
+                page_to=number("page_to"),
+                depth=text("depth", "standard"),
+            )
+            message = "Not hazırlanıyor."
+        elif name == "create_exam":
+            operation = academy.generate_exam(dict(payload.get("config") or {}))
+            message = "Sınav hazırlanıyor."
+        elif name == "import_questions":
+            operation = academy.import_questions(
+                professor_id=text("profile_id") or None,
+                name=text("name") or None,
+                subject=text("subject") or None,
+                text=str(payload.get("text") or "") or None,
+                path=text("path") or None,
+                image_path=text("image_path") or None,
+            )
+            message = "Sorular içe aktarılıyor."
+        else:  # pragma: no cover - guarded by MEDICAL_BACKGROUND_ACTIONS
+            return {"ok": False, "error": f"Bilinmeyen işlem: {name}"}
+        if not self._medical_start(operation):
+            return {"ok": False, "error": "İşlem başlatılamadı."}
+        self._record_ui_event("medical.started", "A Medical Academy job started.", action=name)
+        return {"ok": True, "started": True, "message": message}
+
     def _deliver_reminder(self, reminder: Mapping[str, Any]) -> None:
         text = str(reminder.get("text", "")).strip()
         if not text:
@@ -1110,6 +1479,7 @@ class NovaBridge:
             "fileRoots": self._file_roots_payload(),
             "notifications": self._notification_state(),
             "routines": self._routines_payload(),
+            "medical": self._medical_payload(),
         }
         # Started after the payload is built so a reminder that is due
         # right now reaches the page as a push it merges after boot.

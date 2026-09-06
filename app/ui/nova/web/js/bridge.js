@@ -61,6 +61,63 @@ const DEMO_ROUTINES = [
     next_run_local: "yarın 09:00", last_run_at: null, last_run_local: null, last_outcome: null, last_summary: null, run_count: 0 },
 ];
 
+/* The academy's demo shape mirrors the Python payloads one for one; every
+   string says DEMO so a screenshot can never be mistaken for real study
+   data. Nothing here writes anything. */
+const DEMO_MEDICAL_SESSION = {
+  session_id: "default", subject: "anatomy", topic_id: "anatomy.musculoskeletal.upper_limb.shoulder_girdle",
+  mode: "teach", depth: "standard", knowledge_source: "course_and_jarvis", knowledge_priority: "balanced",
+  document_ids: [], page_from: 0, page_to: 0, difficulty: 3, question_count: 10, option_count: 5,
+  professor_id: null, language: "tr", recent_topics: [], adaptive_difficulty: true,
+  labels: { subject: "Anatomi", topic: "Anatomi \u203a Hareket sistemi \u203a \u00dcst ekstremite \u203a Omuz ku\u015fa\u011f\u0131", mode: "\u00d6\u011fret",
+            depth: "Standart", knowledge_source: "Ders materyali + JARVIS bilgisi", knowledge_priority: "Dengeli" },
+  options: {
+    modes: [{ value: "teach", label: "\u00d6\u011fret" }, { value: "quiz", label: "Quiz" }],
+    depths: [{ value: "simple", label: "Basit" }, { value: "standard", label: "Standart" }, { value: "exam", label: "S\u0131nav modu" }],
+    knowledge_sources: [{ value: "course_and_jarvis", label: "Ders materyali + JARVIS bilgisi" }],
+    knowledge_priorities: [{ value: "balanced", label: "Dengeli" }],
+    subjects: [{ value: "anatomy", label: "Anatomi" }, { value: "histology", label: "Histoloji" }],
+  },
+};
+
+const DEMO_MEDICAL_DOCUMENT = {
+  document_id: "demo-doc", title: "DEMO \u00b7 \u00dcst Ekstremite Ders 4", file_name: "demo.pdf", kind: "pdf",
+  page_count: 24, subject: "anatomy", topic_ids: [], tags: [], status: "ready", status_label: "Haz\u0131r",
+  status_detail: "Haz\u0131r \u00b7 24 sayfa \u00b7 96 par\u00e7a", error: null, visual_pages_analyzed: 3,
+  visual_pages_pending: 0, chunk_count: 96, summary: "DEMO \u00f6zet.", key_terms: ["scapula", "clavicula"],
+  imported_at: new Date().toISOString(), indexed_at: new Date().toISOString(), ready: true,
+};
+
+const DEMO_MEDICAL_EXAM = {
+  exam_id: "demo-exam", title: "DEMO \u00b7 Omuz ku\u015fa\u011f\u0131 \u00b7 10 soru", status: "completed", mode: "study",
+  question_count: 10, created_at: new Date().toISOString(), finished_at: null, score: 0.7, percent: 70,
+  config: { subjects: ["anatomy"], topic_ids: [], difficulty: 3, option_count: 5, professor_id: null,
+            answers_at_end: true, immediate_feedback: false, timed_seconds: 0, wrong_only: false, document_ids: [] },
+  notes: [],
+};
+
+const DEMO_MEDICAL_STRUCTURE = {
+  structure_id: "scapula", canonical: "Scapula", kind: "bone", kind_label: "Kemik", region: "upper_limb",
+  region_label: "\u00dcst ekstremite", turkish: "K\u00fcrek kemi\u011fi", english: "Shoulder blade",
+  landmark_count: 2, has_model: false, topic_id: "anatomy",
+};
+
+const DEMO_MEDICAL = {
+  available: true,
+  session: DEMO_MEDICAL_SESSION,
+  counts: { documents: 1, pages: 24, chunks: 96, notes: 1, questions: 2, exams: 1, attempts: 1, mastery: 2, professors: 0, persistent: false },
+  learning: { concepts: 2, attempts: 6, correct: 4, accuracy: 0.667, levels: { unknown: 0, weak: 1, moderate: 1, strong: 0 }, due_reviews: 1 },
+  review_queue: [{ concept_id: "anatomy.scapula", name: "Scapula", subject: "anatomy", subject_label: "Anatomi",
+                   level: "weak", level_label: "Zay\u0131f", reason: "DEMO: 3 denemede 1 do\u011fru.", attempts: 3, correct: 1, next_review_at: null }],
+  weak_concepts: [{ concept_id: "anatomy.scapula", name: "Scapula", subject: "anatomy", subject_label: "Anatomi", attempts: 3, correct: 1,
+                    accuracy: 0.333, recent: [false, true, false], streak: 0, level: "weak", level_label: "Zay\u0131f",
+                    reason: "DEMO: fossa'lar kar\u0131\u015f\u0131yor.", confusions: {} }],
+  insights: ["DEMO: Scapula sorular\u0131nda fossa supraspinata ile infraspinata'y\u0131 kar\u0131\u015ft\u0131r\u0131yorsun."],
+  recent_documents: [DEMO_MEDICAL_DOCUMENT],
+  recent_exams: [DEMO_MEDICAL_EXAM],
+  recent_attempts: [], recent_topics: [], professors: [], jobs: [],
+};
+
 const DEMO_RUNTIME = {
   version: null, python: "3.12", platform: "Windows 11", webview2: null, user_name: "Ali",
   started_at: new Date().toISOString(), conversation_id: "demo-conv-1",
@@ -102,6 +159,7 @@ const DemoBridge = {
       ] },
       notifications: { items: DEMO_NOTIFICATIONS, unread: 1, total: DEMO_NOTIFICATIONS.length },
       routines: { available: true, routines: DEMO_ROUTINES },
+      medical: DEMO_MEDICAL,
     };
   },
   async submit_command(text) {
@@ -252,6 +310,72 @@ const DemoBridge = {
   async delete_routine(routineId, confirmed) {
     if (confirmed !== true) return { ok: false, error: "Rutin silme onaylanmadı." };
     return { ok: false, error: "Demo modu: rutin silinmedi." };
+  },
+  async medical_pick_file() { return { ok: true, path: null }; },
+  async medical_call(action, params) {
+    const query = String((params && params.query) || "");
+    const views = {
+      state: () => Object.assign({ ok: true }, DEMO_MEDICAL),
+      session: () => ({ ok: true, session: DEMO_MEDICAL_SESSION, problems: ["Demo modu: oturum de\u011fi\u015fmedi."] }),
+      subjects: () => ({ ok: true, subjects: [
+        { topic_id: "anatomy", subject: "anatomy", title: "Anatomi", title_en: "Anatomy", keywords: [],
+          mastery: { weak: 1, moderate: 0, strong: 0 }, documents: 1, concepts: 12,
+          children: [{ topic_id: "anatomy.musculoskeletal", subject: "anatomy", title: "Hareket sistemi",
+                       title_en: "Musculoskeletal", keywords: [], mastery: {}, documents: 1, concepts: 8, children: [] }] },
+        { topic_id: "histology", subject: "histology", title: "Histoloji", title_en: "Histology", keywords: [],
+          mastery: {}, documents: 0, concepts: 9, children: [] },
+      ] }),
+      topic: () => ({ ok: true, topic: {
+        topic_id: "anatomy.musculoskeletal", subject: "anatomy", subject_label: "Anatomi",
+        title: "Hareket sistemi", title_en: "Musculoskeletal system",
+        path: [{ topic_id: "anatomy", title: "Anatomi" }], children: [], keywords: [],
+        concepts: [{ concept_id: "anatomy.scapula", name: "Scapula", relations: [] }],
+        structures: [DEMO_MEDICAL_STRUCTURE], documents: [], question_count: 2, mastery: [], notes: [] } }),
+      search: () => ({ ok: true, query, terms: [], topics: [], structures: [], hits: [] }),
+      term: () => ({ ok: true, query, entries: [] }),
+      documents: () => ({ ok: true, documents: [DEMO_MEDICAL_DOCUMENT] }),
+      document: () => ({ ok: true, document: Object.assign({}, DEMO_MEDICAL_DOCUMENT, {
+        pages: [{ page_number: 1, headings: ["DEMO"], char_count: 900, image_count: 1, visual_status: "done", has_visual_summary: true }],
+        topics: [], comparison: null, questions: 2, job: null }) }),
+      page: () => ({ ok: true, page: { document_id: "demo-doc", page_number: 1,
+        text: "DEMO: bu bir \u00f6rnek sayfa metnidir.", headings: ["DEMO"],
+        visual_summary: "DEMO \u015fekil a\u00e7\u0131klamas\u0131.", visual_labels: ["acromion"],
+        visual_status: "done", image_count: 1, image_area_ratio: 0.4, image: null } }),
+      comparison: () => ({ ok: true, comparison: null }),
+      analysis: () => ({ ok: true, analysis: null }),
+      notes: () => ({ ok: true, notes: [{ note_id: "demo-note", title: "DEMO \u00b7 Scapula k\u0131sa notu",
+        content: "## Scapula\n- DEMO madde", subject: "anatomy", subject_label: "Anatomi", topic_id: null,
+        topic_label: "", mode: "medical.short_notes", references: [], created_at: new Date().toISOString() }] }),
+      exams: () => ({ ok: true, exams: [DEMO_MEDICAL_EXAM] }),
+      exam: () => ({ ok: true, exam: Object.assign({}, DEMO_MEDICAL_EXAM, { questions: [],
+        attempt: { attempt_id: null, started_at: null, finished_at: null, answered: 0, current_index: 0 }, analysis: null }) }),
+      bank: () => ({ ok: true, questions: [], counts: { total: 0 }, total: 0 }),
+      professors: () => ({ ok: true, professors: [] }),
+      progress: () => ({ ok: true, summary: DEMO_MEDICAL.learning, review_queue: DEMO_MEDICAL.review_queue,
+        weak: DEMO_MEDICAL.weak_concepts, strong: [], all: DEMO_MEDICAL.weak_concepts,
+        insights: DEMO_MEDICAL.insights, exams: [DEMO_MEDICAL_EXAM] }),
+      anatomy: () => ({ ok: true, hierarchy: [{ region: "upper_limb", label: "\u00dcst ekstremite",
+        kinds: [{ kind: "bone", label: "Kemik", structures: [DEMO_MEDICAL_STRUCTURE] }] }],
+        assets: { directory: null, available: [], problems: [] }, source: "DEMO" }),
+      structure: () => ({ ok: true, structure: Object.assign({}, DEMO_MEDICAL_STRUCTURE, {
+        abbreviations: [], synonyms: [], topic_path: "Anatomi",
+        landmarks: [{ landmark_id: "acromion", latin: "Acromion", turkish: "DEMO a\u00e7\u0131klama", note: "" },
+                    { landmark_id: "spina_scapulae", latin: "Spina scapulae", turkish: "DEMO a\u00e7\u0131klama", note: "" }],
+        sections: [{ key: "location", label: "Konum", items: ["DEMO: g\u00f6\u011f\u00fcs arka duvar\u0131nda."] }],
+        relations: [], movements: [],
+        model: { available: false, reason: "Demo modu: kay\u0131tl\u0131 3B model yok." },
+        landmark_map: { schematic: true,
+          nodes: [{ id: "scapula", label: "Scapula", kind: "bone", central: true },
+                  { id: "acromion", label: "Acromion", kind: "landmark" }],
+          edges: [{ from: "scapula", to: "acromion", relation: "landmark" }] },
+        source: "DEMO" }) }),
+      mesh: () => ({ ok: true, mesh: { available: false, reason: "Demo modu: model yok." } }),
+      anatomy_quiz: () => ({ ok: true, questions: [] }),
+      anatomy_answer: () => ({ ok: true, mastery: [] }),
+    };
+    const view = views[action];
+    if (view) return view();
+    return { ok: false, error: "Demo modu: bu i\u015flem yap\u0131lmad\u0131 (" + String(action) + ")." };
   },
   async get_settings() { return { provider: "gemini", model: "gemini-2.5-pro",
     credential_configured: true, credential_required: true }; },
@@ -412,6 +536,9 @@ const PUSH = {
   /* One entry of the notification centre (new or updated), with the
      live unread count; the core decides what deserves attention. */
   notification(payload) { Notify.onPush(payload); },
+
+  /* Tıp Akademisi: belge işleme, sınav, not ve profil olayları. */
+  medical(payload) { Medical.onPush(payload); },
 
   /* Tray menu: jump to a screen (only known ids are accepted). */
   navigate({ screen }) {

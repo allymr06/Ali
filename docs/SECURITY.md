@@ -325,3 +325,33 @@ temporary outage. Open circuits skip remote calls, preventing retry storms.
 Recovery admits one probe and blocks concurrent probes until its result is
 known. No request text, credentials, or provider response content enters circuit
 state or reliability metrics.
+
+## Medical Academy
+
+The study layer follows the same boundaries as the rest of JARVIS and adds a
+few of its own.
+
+- **Study material never becomes personal memory.** Every academy turn sets
+  `suppress_memory`, so lecture content, exam answers and study questions are
+  not written to the memory store; the response metadata states why. Learning
+  progress lives in the academy's own store and is conceptually separate from
+  personal or health information about the user.
+- **Tools stay bounded.** `medical_search_library`, `medical_lookup_term` and
+  `medical_study_state` are READ_ONLY; `medical_open_anatomy` is LOW. All four
+  go through the permission engine unchanged. The academy can only *narrow*
+  the tools the core already exposed for a turn — it can never add one.
+- **Destructive study operations require an explicit confirmation.** Deleting
+  a document, a note, an exam, a question or a professor profile, and
+  resetting a profile, are refused unless the page passes `confirmed=true`.
+- **Files stay where the user put them.** Imported documents are copied below
+  the academy directory on this machine. Rendered page images are cached in
+  the academy's own SQLite store. Nothing is uploaded beyond what the existing
+  provider policy already allows for a model call.
+- **The educational boundary is explicit.** Ordinary anatomy, histology,
+  physiology and exam questions carry no disclaimer. A request about the
+  user's own symptoms or personal medication draws one short line that the
+  answer is educational and cannot replace a clinical evaluation.
+- **No fabricated evidence.** Page citations are checked against stored
+  chunks, a professor's answer key is never guessed, confidence is reported in
+  words rather than invented percentages, and 3D anatomy is shown only from a
+  registered licensed asset.

@@ -43,6 +43,7 @@ const ICONS = {
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
   motion: '<path d="M3 12c3-5 6-5 9 0s6 5 9 0"/>',
   bell: '<path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 1.5H5z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+  medical: '<path d="M12 3.2 5 6v5.4c0 4.4 2.9 7.5 7 9.4 4.1-1.9 7-5 7-9.4V6z"/><path d="M12 8.6v5.6M9.2 11.4h5.6"/>',
   alarm: '<circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.5 1.5M4.5 6.5 7 4M19.5 6.5 17 4"/>',
 };
 function icon(name) {
@@ -52,11 +53,11 @@ function icon(name) {
 /* ── navigation ───────────────────────────────────────────────────── */
 
 const NAV = [
-  ["home", "Komuta Merkezi", "Alt+1"], ["chat", "Sohbet", "Alt+2"], ["tasks", "Görevler", "Alt+3"],
-  ["memory", "Hafıza", "Alt+4"], ["voice", "Ses", "Alt+5"], ["vision", "Görüş", "Alt+6"],
-  ["research", "Araştırma", "Alt+7"], ["tools", "Otomasyon", "Alt+8"],
-  ["integrations", "Güven", "Alt+9"], ["diagnostics", "Tanılama", "Alt+0"],
-  ["settings", "Ayarlar", "Ctrl+,"],
+  ["home", "Komuta Merkezi", "Alt+1"], ["chat", "Sohbet", "Alt+2"], ["medical", "Tıp Akademisi", "Alt+3"],
+  ["tasks", "Görevler", "Alt+4"], ["memory", "Hafıza", "Alt+5"], ["voice", "Ses", "Alt+6"],
+  ["vision", "Görüş", "Alt+7"], ["research", "Araştırma", "Alt+8"],
+  ["tools", "Otomasyon", "Alt+9"], ["integrations", "Güven", "Alt+0"],
+  ["diagnostics", "Tanılama", "Ctrl+D"], ["settings", "Ayarlar", "Ctrl+,"],
 ];
 
 function buildRail() {
@@ -114,6 +115,7 @@ function showScreen(id, { focus = true } = {}) {
   if (id === "memory") Memory.load();
   if (id === "integrations") Trust.refresh();
   if (id === "tasks") { renderTasks(State.snapshot?.tasks || []); Routines.load(); }
+  if (id === "medical") Medical.open();
   if (id === "settings") Files.load();
   requestAnimationFrame(() => Engine.resize());
   Engine.wake();
@@ -410,6 +412,14 @@ const Palette = {
     list.push({ group: "eylem", icon: State.compact ? "expand" : "compact", label: State.compact ? "Tam görünüme dön" : "Kompakt moda geç", keywords: "mini küçük pencere", run: () => setCompact(!State.compact) });
     list.push({ group: "eylem", icon: "context", label: State.contextOpen ? "Bağlam panelini kapat" : "Bağlam panelini aç", keywords: "panel yürütme", run: () => Context.toggle() });
     list.push({ group: "eylem", icon: "bell", label: State.unread > 0 ? `Bildirimler (${State.unread} okunmamış)` : "Bildirimler", keywords: "bildirim hatırlatıcı uyarı", run: () => Notify.set(true) });
+    if (State.medical && State.medical.available) {
+      MED_TABS.forEach(([view, label]) => list.push({
+        group: "tıp", icon: "medical", label: `Tıp Akademisi: ${label}`,
+        keywords: "tip akademi ders sinav anatomi soru hoca " + label,
+        run: () => { showScreen("medical"); Medical.show(view); },
+      }));
+      list.push({ group: "tıp", icon: "medical", label: "Beni sına (seçili konudan)", keywords: "quiz sina soru sor", run: () => Medical.quickAsk("bu konudan beni sına") });
+    }
     list.push({ group: "eylem", icon: "chevron", label: State.railCollapsed ? "Gezinmeyi genişlet" : "Gezinmeyi daralt", keywords: "menü rail", run: () => setRailCollapsed(!State.railCollapsed) });
     list.push({ group: "eylem", icon: "refresh", label: "Sistem sağlığını denetle", keywords: "tanılama health", run: () => { showScreen("diagnostics"); Diagnostics.refresh(); } });
     list.push({ group: "görünüm", icon: "motion", label: State.reducedMotion ? "Hareketi geri aç" : "Hareketi azalt", keywords: "animasyon", run: () => applyMotionPreference(!State.reducedMotion) });
@@ -578,6 +588,7 @@ function bindKeyboard() {
       else { showScreen("chat"); $("#chat-input").focus(); }
     }
     if (event.ctrlKey && event.key === ",") { event.preventDefault(); showScreen("settings"); }
+    if (event.ctrlKey && key === "d" && !event.shiftKey) { event.preventDefault(); showScreen("diagnostics"); }
     if (event.ctrlKey && key === "m") { event.preventDefault(); toggleVoice(); }
     if (event.ctrlKey && key === "n" && !event.shiftKey) { event.preventDefault(); newConversation(); }
     if (event.ctrlKey && event.shiftKey && key === "t") { event.preventDefault(); toggleTheme(); }
@@ -599,8 +610,10 @@ const SHORTCUTS = [
   ["Ctrl + L", "Komut alanına odaklan"], ["Ctrl + M", "Sesli modu aç/kapat"],
   ["Ctrl + N", "Yeni konuşma"], ["Ctrl + ,", "Ayarlar"],
   ["Ctrl + Shift + C", "Bağlam paneli"], ["Ctrl + Shift + N", "Bildirimler"],
+  ["Ctrl + D", "Tanılama"],
   ["Ctrl + Shift + B", "Gezinmeyi daralt/genişlet"],
   ["Ctrl + Shift + T", "Koyu/açık tema"], ["Alt + 1…9", "Ekranlar"], ["Alt + 0", "Tanılama"],
+  ["Alt + 3", "Tıp Akademisi"],
   ["↑ / ↓ · Page Up / Down", "Ekranı kaydır"], ["Home / End", "Başa / sona git"],
   ["Escape", "Kapat · Komuta Merkezi'ne dön"],
 ];
@@ -672,6 +685,7 @@ function applyBoot(bootData) {
   Notify.apply(bootData.notifications);
   State.routines = bootData.routines || { available: false, routines: [] };
   Routines.render();
+  Medical.apply(bootData.medical);
   $("#demo-badge").hidden = !State.demo;
   Presence.connected = true;
   State.status = bootData.status || READY;

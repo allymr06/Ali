@@ -1,6 +1,6 @@
 # JARVIS Project State
 
-Last verified: 5 September 2026
+Last verified: 6 September 2026
 
 ## Current status
 
@@ -38,12 +38,124 @@ Last verified: 5 September 2026
 - Completed performance milestone: voice time to first audio (streamed
   Gemini speech played as it arrives, first sentence synthesized while the
   reply is still streaming), 5 September 2026
+- Completed feature milestone: Medical Academy — a first-year medical-school
+  study layer (curriculum, terminology, concept graph, PDF study engine with
+  page-anchored citations, tutor, question and exam engine, evidence-based
+  professor-style profiling, interpretable mastery with spaced review, and the
+  Anatomy Lab), 6 September 2026
 - Next action: plugin process isolation; code signing and a user-attended
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 1431 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 1968 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Medical Academy (6 September 2026)
+
+`app/medical/` adds a first-year medical study layer for the seven subjects
+of the curriculum: anatomy, histology, microbiology, biochemistry,
+biophysics, physiology and medical biology. It is an extension of JARVIS,
+not a second application — the same core engine, permission engine, approval
+overlay, conversation store and Nova shell. Full design in
+`docs/MEDICAL_ACADEMY.md`.
+
+**How it reaches a turn.** `CoreEngine` gained one optional
+`request_augmenter` (`app/core/augmentation.py`). Identity, clock and social
+turns are answered by Core itself and never handed over; on any other turn
+the domain layer may add to the system prompt, **narrow** (never widen) the
+exposed tools, answer directly without a model call, or suppress
+personal-memory writes. A broken augmenter is recorded in the ledger and
+ignored. The academy's parser decides in about 0.5 ms whether a request is
+medical at all; a plain "hava nasıl" is untouched.
+
+**Data, not code.** 107 curriculum topics, 60 anatomical structures with 109
+landmarks and 86 Latin terms (Terminologia Anatomica nomenclature), and about
+200 learnable concepts with their relations, all in `app/medical/data/*.json`
+and bundled with the frozen build. Latin stays Latin; Turkish explanations
+follow it in the house format (`Tuberculum majus humeri — humerusun proksimal
+ucundaki büyük tüberkül`).
+
+**Documents.** PDF and text import (pypdfium2), deduplicated by digest,
+copied below the study directory, extracted page by page with heading
+detection, chunked with character offsets that map back into the page, and
+indexed for BM25 search with synonym expansion — so "shoulder blade" finds a
+Turkish passage about *scapula*. Figure-heavy pages are rendered and read by
+the vision model, and the description becomes a searchable chunk. Progress is
+reported as real stages, never as an invented percentage. Every citation
+points at a chunk that exists; a page the model states but the evidence does
+not contain is shown as unverified. `Compare with medical knowledge`
+classifies lecture statements as consistent, simplified, incomplete,
+potentially misleading, possibly incorrect or a terminology difference, each
+with its page and what standard references say.
+
+**Questions.** Generation is grounded and then filtered by deterministic
+code: short stems, wrong option counts, duplicate options, "hepsi/hiçbiri",
+an impossible answer key, an obviously longest correct option, a stem that
+contains its own answer and a missing explanation are all rejected, as is any
+near-copy of an existing question — including a reworded professor question
+with the same answer. What was rejected is reported in the exam's notes.
+Scoring, breakdowns, weak concepts and the next-step suggestion are computed
+without a model.
+
+**Professor style.** Imported exams are parsed deterministically (numbered
+stems, lettered options inline or on their own lines, an inline answer, or a
+trailing answer table). An answer key is never guessed: a question whose key
+the text does not state is stored without one and shown as such. The profiler
+measures fifteen observable features and reports each as `observed / total`
+with a confidence that follows the sample size only; under ten questions it
+says so in plain Turkish, and the generation directive repeats only ratios
+that were actually observed.
+
+**Learning.** Mastery is a readable rule (recent accuracy over the last eight
+attempts), review intervals follow the level, every queued review says why,
+and adaptive difficulty needs five recent results and moves at most one step.
+Wrong choices are counted per concept, so an insight can name the actual
+confusion instead of offering encouragement.
+
+**Anatomy Lab.** Curated structure cards (bones, joints, muscles, nerves with
+the documented field order), the relationship map, movement plane and axis,
+and a deterministic landmark quiz. Geometry is never invented: a 3D mesh is
+rendered in WebGL only when a licensed asset is registered in
+`anatomy_assets/manifest.json` (an entry without a licence and a source is
+refused); otherwise the lab says so and draws the schematic map.
+
+**Latency.** The augmenter runs on every general turn, so its cost is the
+assistant's cost. The first implementation compiled 1449 regular expressions
+per request (115–150 ms in `find_in_text` alone, 130–170 ms per parse).
+Aliases are now indexed by first token with every valid Turkish suffix strip,
+patterns are compiled once, and the curriculum's and concept graph's token
+sets are computed at load time: 0.06 ms for term recognition and 0.46–1.28 ms
+for a full parse.
+
+**Interface.** A twelfth Nova screen (Alt+3) with nine sections — panel,
+konular, kütüphane, notlar, sınav, soru bankası, hoca tarzı, ilerleme,
+Anatomi Lab — plus the study session controls, a page reader with the
+rendered PDF page beside its text, the exam runner with flagging and a timer,
+and the results screen with per-topic breakdowns and source links back to the
+lecture page. Settings: `JARVIS_MEDICAL_*` (`docs/CONFIGURATION.md`).
+
+**What the test pass changed.** 537 tests were added for the layers the first
+round left thin (pipelines, exams, the tutor and the facade), and they found
+three real defects, all now fixed with regression tests.
+
+A "wrong answers only" exam padded itself from the bank when the student had
+missed fewer questions than the paper needed, and still called the result
+"yanlış yaptığın sorulardan oluşturuldu" — most of a paper labelled as the
+student's own mistakes had never been one. `QuestionGenerator.from_bank` gained
+`only_wrong`, and both callers (the exam facade and the chat quiz) now state the
+count they actually found.
+
+A bare number pair was treated on its own as a study scope, so ordinary system
+requests — `sesi 20-40 arası ayarla`, `10-20 arası dosyaları sil` — were pulled
+into the Academy and read as a PDF page range. A pair now marks a turn as
+study-shaped only when the sentence says `sayfa`/`page`; inside an active study
+context the bare form is still read as a scope, so `20-40 arası soru hazırla`
+is unaffected.
+
+The frozen smoke report gained `medical` and `medical_data` fields in the
+previous session but the packaging test still described a complete report
+without them, so the build gate was asserting against a shape it would have
+rejected.
 
 ## Persistent notification centre (5 September 2026)
 

@@ -492,3 +492,47 @@ first failure) and the critical-directory block. `tests/test_ui_nova.py`
 covers the bridge: unavailable without Windows integrations, grant and revoke
 with confirmation and ledger events, the native folder picker on the UI
 thread, and snapshot listing and confirmed restore.
+
+The Medical Academy regression coverage (`tests/test_medical_*.py`) includes:
+
+- Turkish/Latin folding, heading-aware chunking with character offsets that
+  map back into the page, page-range parsing and question similarity;
+- the curriculum's structure, ranking and subject resolution, including the
+  negative case where no subject is named;
+- alias resolution across Latin, Turkish and English, Turkish suffix handling
+  in free text, and the guard that stops an ordinary word from becoming a term;
+- the SQLite store round-tripping every record type, in memory and on disk;
+- PDF and text ingestion, deduplication by digest, the real status sequence,
+  the failure path, and retrieval that never cites a page it does not hold;
+- deterministic intent parsing over the specification's own command list, in
+  Turkish and English, plus the non-medical requests that must stay untouched;
+- question validation, letter shuffling, grading, similarity protection and
+  exam analysis; mastery levels, review scheduling and adaptive difficulty
+  against an injected clock;
+- exam import from messy text, and the style profiler's evidence-based
+  features, confidence thresholds and never-guess-the-answer-key rule;
+- the Anatomy Lab's structure cards, movement axes, deterministic quizzes and
+  the asset registry that refuses an unlicensed or missing model;
+- the academy facade, its four tools, the tutor's decisions and question
+  generation against a fake model client;
+- the core engine's augmentation hook: prompt replacement, tool narrowing,
+  direct responses, memory suppression, and the failure paths where a broken
+  augmenter must not take the turn down;
+- the pipeline layer (`test_medical_pipelines.py`): schema validation and
+  string coercion, JSON extraction from a fenced or chatty reply, the single
+  repair round and the timeout and transport failures around it, BM25 ranking
+  with synonym expansion, and evidence blocks that mark their own truncation;
+- exam generation and the sitting (`test_medical_exams.py`): every refusal the
+  generator can raise, the quality filter and the similarity guard, lecture
+  grounding and the `lecture_derived` origin, bank selection including the
+  wrong-answers-only paper that is never padded, and the lifecycle where the
+  answer key stays hidden until the sitting ends;
+- the tutor and the study session (`test_medical_tutor.py`): which turns it
+  declines, the grounding it reports, the chat quiz end to end (answering,
+  skipping, stopping, the oral exam), and the honest refusals for a missing
+  document, profile or structure;
+- the facade the Nova screen calls (`test_medical_facade.py`): the dashboard
+  and subject tree over real data, document analysis and comparison including
+  a model-stated page the material never had, note citations, question-bank
+  filters, professor import and re-import, and the lab reporting a missing 3D
+  model rather than drawing one.

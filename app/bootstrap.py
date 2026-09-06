@@ -18,7 +18,7 @@ from app.core.engine import CoreEngine
 from app.diagnostics.health import HealthCheck
 from app.diagnostics.ledger import DiagnosticLedger
 from app.diagnostics.metrics import MetricRegistry
-from app.diagnostics.models import HealthStatus
+from app.diagnostics.models import DiagnosticLevel, HealthStatus
 from app.diagnostics.service import DiagnosticsService
 from app.memory.in_memory import InMemoryStore
 from app.memory.manager import MemoryManager
@@ -74,6 +74,7 @@ class JARVISApplication:
     engine: CoreEngine
     voice_provider_registry: VoiceProviderRegistry | None = None
     voice: VoiceService | None = None
+    medical: object | None = None
     vision: VisionService | None = None
     research: ResearchService | None = None
     reminders: object | None = None
@@ -95,6 +96,10 @@ class JARVISApplication:
         """Release durable stores owned by the application runtime."""
         if self.plugins is not None:
             self.plugins.stop_all()
+        if self.medical is not None:
+            close_medical = getattr(self.medical, "close", None)
+            if callable(close_medical):
+                close_medical()
         conversation_store = (
             self.conversation_engine.store
         )
@@ -320,6 +325,31 @@ def create_application(
 
     tool_schema_selector = ToolSchemaSelector()
 
+    # The Medical Academy owns the study layer: its tools register here
+    # (so permissions and approvals behave exactly as for any other tool)
+    # and its augmenter is handed to the engine below.
+    medical = None
+    if active_settings.medical_enabled:
+        from app.medical import create_medical_academy
+
+        try:
+            medical = create_medical_academy(
+                settings=active_settings,
+                provider_gateway=provider_gateway,
+                tool_executor=tool_executor,
+                diagnostics=diagnostics,
+            )
+        except Exception as exc:
+            # A broken study store must not stop JARVIS from starting.
+            medical = None
+            diagnostics.record(
+                "medical",
+                "academy.unavailable",
+                "Medical Academy could not be initialized.",
+                level=DiagnosticLevel.ERROR,
+                attributes={"error_type": type(exc).__name__},
+            )
+
     memory_extractor = None
     if (
         active_settings.memory_auto_capture_enabled
@@ -343,6 +373,7 @@ def create_application(
         fast_action_router=fast_action_router,
         tool_schema_selector=tool_schema_selector,
         memory_extractor=memory_extractor,
+        request_augmenter=medical.augment if medical is not None else None,
         conversation_engine=conversation_engine,
         task_runtime_directory=active_settings.task_runtime_directory,
         diagnostics=diagnostics,
@@ -723,6 +754,7 @@ def create_application(
             "research_enabled": research is not None,
             "windows_enabled": windows is not None,
             "plugins_enabled": plugins is not None,
+            "medical_enabled": medical is not None,
         },
     )
 
@@ -748,4 +780,5 @@ def create_application(
         routines=routines,
         screen_watcher=screen_watcher,
         plugins=plugins,
+        medical=medical,
     )

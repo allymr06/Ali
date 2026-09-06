@@ -14,6 +14,7 @@ async function main() {
   bindConversation();
   bindActivity();
   bindPanels();
+  bindMedical();
   Engine.staticFrame = State.reducedMotion;
   Engine.init();
 

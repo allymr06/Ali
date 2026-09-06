@@ -67,6 +67,18 @@ def smoke_test(output: Path, state_directory: Path) -> int:
             name for name in WEB_ASSETS if (nova_root / name).is_file()
         )
 
+        # The Medical Academy's curated data must be inside the bundle;
+        # without it the study layer starts with an empty curriculum.
+        from app.medical.catalog import CURRICULUM_FILE
+        from app.medical.terminology import ANATOMY_FILE
+        from app.medical.concepts import CONCEPTS_FILE
+
+        result["medical_data"] = sorted(
+            path.name
+            for path in (CURRICULUM_FILE, ANATOMY_FILE, CONCEPTS_FILE)
+            if path.is_file()
+        )
+
         application = create_application()
         report = __import__("asyncio").run(
             application.diagnostics.health_report()
@@ -82,6 +94,7 @@ def smoke_test(output: Path, state_directory: Path) -> int:
             {
                 "ok": True,
                 "screens": len(UIScreen),
+                "medical": application.medical is not None,
                 "health": report.status.value,
                 "tools": len(application.tool_executor),
                 "tcl": root.tk.call("info", "patchlevel"),

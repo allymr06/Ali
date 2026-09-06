@@ -7,6 +7,14 @@ entrypoint = root / "installer" / "entrypoint.py"
 # relative directory, so it lands below _internal/app/ui/nova/web and
 # app.ui.nova.shell.resolve_web_root() finds it through sys._MEIPASS
 # exactly as in a source checkout.
+# The Medical Academy's curated data (curriculum, anatomy, concepts). The
+# study layer cannot start without it, so it ships with the executable.
+medical_data = root / "app" / "medical" / "data"
+medical_datas = [
+    (str(path), "app/medical/data")
+    for path in sorted(medical_data.glob("*.json"))
+]
+
 nova_web = root / "app" / "ui" / "nova" / "web"
 nova_datas = [
     (
@@ -28,10 +36,14 @@ a = Analysis(
         (str(root / "docs" / "ACCEPTANCE.md"), "docs"),
         (str(root / "assets" / "branding" / "jarvis.ico"), "assets"),
         *nova_datas,
+        *medical_datas,
     ],
     hiddenimports=[
         "app.ui.nova",
         "app.ui.nova.shell",
+        "app.medical",
+        "app.medical.academy",
+        "pypdfium2",
         "webview",
         "app.voice.audio",
         "app.voice.gemini",

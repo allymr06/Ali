@@ -1,0 +1,4098 @@
+{
+  "version": 1,
+  "source": "Curated from Terminologia Anatomica (FIPAT) nomenclature and standard first-year textbook consensus (Gray's Anatomy for Students, Moore's Clinically Oriented Anatomy, Sobotta). Facts are educational summaries, not a substitute for the textbooks.",
+  "structures": [
+    {
+      "structure_id": "scapula",
+      "canonical": "Scapula",
+      "kind": "bone",
+      "region": "upper_limb",
+      "turkish": "Kürek kemiği",
+      "english": "Shoulder blade",
+      "synonyms": [
+        "kurek kemigi",
+        "shoulder blade",
+        "omoplat"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.shoulder_girdle",
+      "landmarks": [
+        {
+          "landmark_id": "spina_scapulae",
+          "latin": "Spina scapulae",
+          "turkish": "Scapula dikeni; facies posterior'u fossa supraspinata ve infraspinata'ya böler",
+          "note": "T3 spinöz çıkıntısı düzeyinde"
+        },
+        {
+          "landmark_id": "acromion",
+          "latin": "Acromion",
+          "turkish": "Spina scapulae'nin lateral, yassı uzantısı; clavicula ile eklem yapar",
+          "note": "Facies articularis acromii → articulatio acromioclavicularis"
+        },
+        {
+          "landmark_id": "processus_coracoideus",
+          "latin": "Processus coracoideus",
+          "turkish": "Öne-laterale uzanan gaga biçimli çıkıntı",
+          "note": "M. biceps brachii caput breve, m. coracobrachialis, m. pectoralis minor tutunur"
+        },
+        {
+          "landmark_id": "cavitas_glenoidalis",
+          "latin": "Cavitas glenoidalis",
+          "turkish": "Caput humeri ile eklemleşen sığ çukur",
+          "note": "Labrum glenoidale ile derinleşir"
+        },
+        {
+          "landmark_id": "fossa_supraspinata",
+          "latin": "Fossa supraspinata",
+          "turkish": "Spina'nın üstündeki çukur; m. supraspinatus origosu"
+        },
+        {
+          "landmark_id": "fossa_infraspinata",
+          "latin": "Fossa infraspinata",
+          "turkish": "Spina'nın altındaki geniş çukur; m. infraspinatus origosu"
+        },
+        {
+          "landmark_id": "fossa_subscapularis",
+          "latin": "Fossa subscapularis",
+          "turkish": "Facies costalis'teki çukur; m. subscapularis origosu"
+        },
+        {
+          "landmark_id": "margo_medialis",
+          "latin": "Margo medialis",
+          "turkish": "Omurgaya bakan kenar (margo vertebralis)",
+          "note": "Mm. rhomboidei ve m. serratus anterior tutunur"
+        },
+        {
+          "landmark_id": "margo_lateralis",
+          "latin": "Margo lateralis",
+          "turkish": "Koltuk altına bakan kalın kenar (margo axillaris)",
+          "note": "M. teres minor ve m. teres major"
+        },
+        {
+          "landmark_id": "margo_superior",
+          "latin": "Margo superior",
+          "turkish": "Üst kenar; incisura scapulae'yi taşır"
+        },
+        {
+          "landmark_id": "incisura_scapulae",
+          "latin": "Incisura scapulae",
+          "turkish": "Margo superior'daki çentik; lig. transversum scapulae superius ile foramen'e dönüşür",
+          "note": "N. suprascapularis bağın ALTINDAN, a. suprascapularis ÜSTÜNDEN geçer"
+        },
+        {
+          "landmark_id": "angulus_superior",
+          "latin": "Angulus superior",
+          "turkish": "Üst açı; m. levator scapulae"
+        },
+        {
+          "landmark_id": "angulus_inferior",
+          "latin": "Angulus inferior",
+          "turkish": "Alt açı; T7 düzeyinde, m. teres major origosu"
+        },
+        {
+          "landmark_id": "angulus_lateralis",
+          "latin": "Angulus lateralis",
+          "turkish": "Cavitas glenoidalis'i taşıyan kalın açı"
+        },
+        {
+          "landmark_id": "collum_scapulae",
+          "latin": "Collum scapulae",
+          "turkish": "Cavitas glenoidalis'i gövdeye bağlayan daralma"
+        },
+        {
+          "landmark_id": "tuberculum_supraglenoidale",
+          "latin": "Tuberculum supraglenoidale",
+          "turkish": "Cavitas glenoidalis'in üstü; m. biceps brachii caput longum origosu"
+        },
+        {
+          "landmark_id": "tuberculum_infraglenoidale",
+          "latin": "Tuberculum infraglenoidale",
+          "turkish": "Cavitas glenoidalis'in altı; m. triceps brachii caput longum origosu"
+        }
+      ],
+      "facts": {
+        "location": "Göğüs arka duvarında, 2.-7. kostalar hizasında yatan yassı üçgen kemik; omuz kuşağının (cingulum membri superioris) parçasıdır.",
+        "orientation": "Cavitas glenoidalis laterale-öne, spina scapulae arkaya bakar; angulus inferior en altta, margo medialis omurgaya paraleldir.",
+        "parts": [
+          "Corpus scapulae",
+          "Spina scapulae",
+          "Acromion",
+          "Processus coracoideus",
+          "Cavitas glenoidalis"
+        ],
+        "surfaces": [
+          "Facies costalis (anterior): fossa subscapularis",
+          "Facies posterior: spina ile fossa supraspinata ve fossa infraspinata'ya bölünür"
+        ],
+        "borders": [
+          "Margo superior",
+          "Margo medialis (vertebralis)",
+          "Margo lateralis (axillaris)"
+        ],
+        "angles": [
+          "Angulus superior",
+          "Angulus inferior",
+          "Angulus lateralis"
+        ],
+        "articulations": [
+          "Articulatio humeri (cavitas glenoidalis – caput humeri)",
+          "Articulatio acromioclavicularis (acromion – extremitas acromialis claviculae)"
+        ],
+        "muscle_attachments": [
+          "Fossa subscapularis: m. subscapularis (origo)",
+          "Fossa supraspinata: m. supraspinatus (origo)",
+          "Fossa infraspinata: m. infraspinatus (origo)",
+          "Margo lateralis: m. teres minor (üst 2/3), m. teres major (angulus inferior yakını)",
+          "Angulus inferior: m. teres major (origo), m. latissimus dorsi (bazı liflerle)",
+          "Spina scapulae ve acromion: m. deltoideus (origo), m. trapezius (insertio)",
+          "Margo medialis: mm. rhomboidei (insertio), m. serratus anterior (insertio, facies costalis)",
+          "Angulus superior: m. levator scapulae (insertio)",
+          "Processus coracoideus: m. biceps brachii caput breve, m. coracobrachialis (origo), m. pectoralis minor (insertio)",
+          "Tuberculum supraglenoidale: m. biceps brachii caput longum (origo)",
+          "Tuberculum infraglenoidale: m. triceps brachii caput longum (origo)",
+          "Margo superior (incisura yakını): m. omohyoideus venter inferior"
+        ],
+        "ligament_attachments": [
+          "Lig. coracoacromiale (processus coracoideus – acromion): omuz kubbesini oluşturur",
+          "Lig. transversum scapulae superius: incisura scapulae'yi köprüler",
+          "Lig. coracoclaviculare (lig. trapezoideum + lig. conoideum): processus coracoideus – clavicula",
+          "Lig. coracohumerale: processus coracoideus – tuberculum majus"
+        ],
+        "high_yield": [
+          "Spina scapulae T3, angulus inferior T7 spinöz çıkıntısı düzeyindedir.",
+          "N. suprascapularis lig. transversum scapulae superius'un altından, a. suprascapularis üstünden geçer.",
+          "Rotator manşet kaslarının üçü (supraspinatus, infraspinatus, subscapularis) scapula'nın fossa'larından başlar; teres minor margo lateralis'ten.",
+          "M. serratus anterior felcinde (n. thoracicus longus) scapula alata (kanat scapula) görülür.",
+          "Scapula gövdeye yalnızca clavicula aracılığıyla kemik bağlantı kurar."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "humerus"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "clavicula"
+        },
+        {
+          "relation": "part_of",
+          "target": "shoulder_girdle"
+        }
+      ]
+    },
+    {
+      "structure_id": "clavicula",
+      "canonical": "Clavicula",
+      "kind": "bone",
+      "region": "upper_limb",
+      "turkish": "Köprücük kemiği",
+      "english": "Clavicle (collarbone)",
+      "synonyms": [
+        "koprucuk kemigi",
+        "clavicle",
+        "collarbone",
+        "collar bone"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.shoulder_girdle",
+      "landmarks": [
+        {
+          "landmark_id": "extremitas_sternalis",
+          "latin": "Extremitas sternalis",
+          "turkish": "Medial uç; facies articularis sternalis ile manubrium sterni'ye eklemleşir"
+        },
+        {
+          "landmark_id": "extremitas_acromialis",
+          "latin": "Extremitas acromialis",
+          "turkish": "Lateral, yassı uç; acromion ile eklemleşir"
+        },
+        {
+          "landmark_id": "corpus_claviculae",
+          "latin": "Corpus claviculae",
+          "turkish": "Gövde; medial 2/3 öne konveks, lateral 1/3 öne konkav"
+        },
+        {
+          "landmark_id": "tuberculum_conoideum",
+          "latin": "Tuberculum conoideum",
+          "turkish": "Alt yüz, lateral; lig. conoideum tutunur"
+        },
+        {
+          "landmark_id": "linea_trapezoidea",
+          "latin": "Linea trapezoidea",
+          "turkish": "Tuberculum conoideum'un lateralinde; lig. trapezoideum tutunur"
+        },
+        {
+          "landmark_id": "impressio_ligamenti_costoclavicularis",
+          "latin": "Impressio ligamenti costoclavicularis",
+          "turkish": "Medial uç alt yüzünde; lig. costoclaviculare tutunur"
+        },
+        {
+          "landmark_id": "sulcus_musculi_subclavii",
+          "latin": "Sulcus musculi subclavii",
+          "turkish": "Alt yüzdeki oluk; m. subclavius insertio"
+        }
+      ],
+      "facts": {
+        "location": "Boyun kökünde, yatay olarak manubrium sterni ile acromion arasında uzanan S biçimli uzun kemik.",
+        "orientation": "Medial 2/3 öne doğru konveks ve yuvarlak, lateral 1/3 öne doğru konkav ve yassıdır; alt yüz pürtüklüdür.",
+        "parts": [
+          "Extremitas sternalis",
+          "Corpus claviculae",
+          "Extremitas acromialis"
+        ],
+        "articulations": [
+          "Articulatio sternoclavicularis (art. sellaris, discus articularis içerir)",
+          "Articulatio acromioclavicularis (art. plana)"
+        ],
+        "muscle_attachments": [
+          "Medial 1/3, üst yüz: m. sternocleidomastoideus (origo, caput claviculare)",
+          "Medial 1/2, ön yüz: m. pectoralis major pars clavicularis (origo)",
+          "Lateral 1/3, ön yüz: m. deltoideus pars clavicularis (origo)",
+          "Lateral 1/3, arka yüz: m. trapezius (insertio)",
+          "Sulcus musculi subclavii: m. subclavius (insertio)",
+          "Medial uç, arka-alt: m. sternohyoideus (origo)"
+        ],
+        "ligament_attachments": [
+          "Lig. costoclaviculare: 1. kosta – impressio ligamenti costoclavicularis",
+          "Lig. coracoclaviculare: lig. conoideum (tuberculum conoideum) + lig. trapezoideum (linea trapezoidea)",
+          "Lig. acromioclaviculare, lig. sternoclaviculare anterius/posterius, lig. interclaviculare"
+        ],
+        "high_yield": [
+          "Üst ekstremiteyi eksenel iskelete bağlayan tek kemik eklemi oluşturur (articulatio sternoclavicularis).",
+          "Vücutta ilk kemikleşmeye başlayan kemiktir (intramembranöz, 5.–6. hafta); epifizi en son kapanır.",
+          "En sık orta 1/3'ten kırılır; medial parça m. sternocleidomastoideus ile yukarı çekilir.",
+          "Altından a./v. subclavia ve plexus brachialis geçer; m. subclavius damarları korur."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "scapula"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "sternum"
+        },
+        {
+          "relation": "part_of",
+          "target": "shoulder_girdle"
+        }
+      ]
+    },
+    {
+      "structure_id": "humerus",
+      "canonical": "Humerus",
+      "kind": "bone",
+      "region": "upper_limb",
+      "turkish": "Kol kemiği",
+      "english": "Humerus (arm bone)",
+      "synonyms": [
+        "kol kemigi",
+        "arm bone",
+        "upper arm bone"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.arm",
+      "landmarks": [
+        {
+          "landmark_id": "caput_humeri",
+          "latin": "Caput humeri",
+          "turkish": "Yarı küre biçimli baş; cavitas glenoidalis ile eklemleşir"
+        },
+        {
+          "landmark_id": "collum_anatomicum",
+          "latin": "Collum anatomicum",
+          "turkish": "Başı tüberküllerden ayıran oluk; eklem kapsülü büyük ölçüde buraya tutunur"
+        },
+        {
+          "landmark_id": "collum_chirurgicum",
+          "latin": "Collum chirurgicum",
+          "turkish": "Tüberküllerin altındaki daralma; en sık kırık yeri",
+          "note": "N. axillaris ve a. circumflexa humeri posterior komşudur"
+        },
+        {
+          "landmark_id": "tuberculum_majus",
+          "latin": "Tuberculum majus",
+          "turkish": "Lateraldeki büyük tüberkül; m. supraspinatus, m. infraspinatus, m. teres minor insertio (üstten alta)"
+        },
+        {
+          "landmark_id": "tuberculum_minus",
+          "latin": "Tuberculum minus",
+          "turkish": "Öndeki küçük tüberkül; m. subscapularis insertio"
+        },
+        {
+          "landmark_id": "sulcus_intertubercularis",
+          "latin": "Sulcus intertubercularis",
+          "turkish": "İki tüberkül arasındaki oluk; m. biceps brachii caput longum tendonu geçer",
+          "note": "Lig. transversum humeri ile köprülenir"
+        },
+        {
+          "landmark_id": "crista_tuberculi_majoris",
+          "latin": "Crista tuberculi majoris",
+          "turkish": "Sulcus'un lateral dudağı; m. pectoralis major insertio"
+        },
+        {
+          "landmark_id": "crista_tuberculi_minoris",
+          "latin": "Crista tuberculi minoris",
+          "turkish": "Sulcus'un medial dudağı; m. teres major insertio (m. latissimus dorsi oluğun tabanına)"
+        },
+        {
+          "landmark_id": "tuberositas_deltoidea",
+          "latin": "Tuberositas deltoidea",
+          "turkish": "Gövde lateralinde V biçimli pürtük; m. deltoideus insertio"
+        },
+        {
+          "landmark_id": "sulcus_nervi_radialis",
+          "latin": "Sulcus nervi radialis",
+          "turkish": "Gövde arka yüzünde oblik oluk; n. radialis ve a. profunda brachii geçer"
+        },
+        {
+          "landmark_id": "epicondylus_medialis",
+          "latin": "Epicondylus medialis",
+          "turkish": "Distal uçta medial çıkıntı; ön kol fleksör kasları origosu",
+          "note": "Arkasındaki sulcus nervi ulnaris'ten n. ulnaris geçer"
+        },
+        {
+          "landmark_id": "epicondylus_lateralis",
+          "latin": "Epicondylus lateralis",
+          "turkish": "Distal uçta lateral çıkıntı; ön kol ekstansör kasları origosu"
+        },
+        {
+          "landmark_id": "capitulum_humeri",
+          "latin": "Capitulum humeri",
+          "turkish": "Lateraldeki küresel eklem yüzü; caput radii ile eklemleşir"
+        },
+        {
+          "landmark_id": "trochlea_humeri",
+          "latin": "Trochlea humeri",
+          "turkish": "Makara biçimli medial eklem yüzü; incisura trochlearis ulnae ile eklemleşir"
+        },
+        {
+          "landmark_id": "fossa_coronoidea",
+          "latin": "Fossa coronoidea",
+          "turkish": "Ön yüzde trochlea'nın üstü; fleksiyonda processus coronoideus ulnae girer"
+        },
+        {
+          "landmark_id": "fossa_radialis",
+          "latin": "Fossa radialis",
+          "turkish": "Ön yüzde capitulum'un üstü; fleksiyonda caput radii girer"
+        },
+        {
+          "landmark_id": "fossa_olecrani",
+          "latin": "Fossa olecrani",
+          "turkish": "Arka yüzde derin çukur; ekstansiyonda olecranon girer"
+        }
+      ],
+      "facts": {
+        "location": "Kolun tek uzun kemiği; scapula (proksimal) ile radius ve ulna (distal) arasında.",
+        "orientation": "Caput humeri mediale, yukarı ve hafif arkaya bakar; tuberculum majus lateraldedir; epicondylus medialis daha belirgindir.",
+        "parts": [
+          "Extremitas proximalis (caput, collum anatomicum, tuberculum majus/minus, collum chirurgicum)",
+          "Corpus humeri",
+          "Extremitas distalis (condylus humeri: capitulum + trochlea; epicondyli; fossae)"
+        ],
+        "surfaces": [
+          "Facies anteromedialis",
+          "Facies anterolateralis",
+          "Facies posterior"
+        ],
+        "borders": [
+          "Margo medialis",
+          "Margo lateralis",
+          "Margo anterior"
+        ],
+        "articulations": [
+          "Articulatio humeri (caput humeri – cavitas glenoidalis)",
+          "Articulatio humeroulnaris (trochlea – incisura trochlearis)",
+          "Articulatio humeroradialis (capitulum – fovea articularis capitis radii)"
+        ],
+        "muscle_attachments": [
+          "Tuberculum majus: m. supraspinatus, m. infraspinatus, m. teres minor (insertio)",
+          "Tuberculum minus: m. subscapularis (insertio)",
+          "Crista tuberculi majoris: m. pectoralis major; crista tuberculi minoris: m. teres major; sulcus tabanı: m. latissimus dorsi",
+          "Tuberositas deltoidea: m. deltoideus (insertio)",
+          "Corpus, ön yüz distal yarı: m. brachialis (origo); medial yüz orta: m. coracobrachialis (insertio)",
+          "Corpus, arka yüz: m. triceps brachii caput laterale (sulcus'un üstü) ve caput mediale (sulcus'un altı)",
+          "Epicondylus medialis: m. pronator teres, m. flexor carpi radialis, m. palmaris longus, m. flexor carpi ulnaris, m. flexor digitorum superficialis (ortak fleksör origo)",
+          "Epicondylus lateralis: m. extensor carpi radialis brevis, m. extensor digitorum, m. extensor digiti minimi, m. extensor carpi ulnaris, m. anconeus, m. supinator (ortak ekstansör origo)",
+          "Crista supracondylaris lateralis: m. brachioradialis, m. extensor carpi radialis longus"
+        ],
+        "ligament_attachments": [
+          "Lig. transversum humeri: tuberculum majus – tuberculum minus",
+          "Lig. coracohumerale: tuberculum majus'a",
+          "Lig. collaterale ulnare (epicondylus medialis) ve lig. collaterale radiale (epicondylus lateralis)"
+        ],
+        "high_yield": [
+          "Collum chirurgicum kırığı → n. axillaris (+ a. circumflexa humeri posterior) yaralanması: m. deltoideus felci, omuz lateralinde duyu kaybı.",
+          "Corpus (orta 1/3) kırığı → n. radialis yaralanması: düşük el (wrist drop).",
+          "Suprakondiler kırık → n. medianus ve a. brachialis; epicondylus medialis kırığı → n. ulnaris.",
+          "Tuberculum majus'a rotator manşetin üç kası (supraspinatus, infraspinatus, teres minor), tuberculum minus'a yalnızca m. subscapularis yapışır.",
+          "Fossa olecrani ile fossa coronoidea arasındaki kemik ince olduğundan suprakondiler kırıklar sıktır."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "scapula"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "radius"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "ulna"
+        }
+      ]
+    },
+    {
+      "structure_id": "radius",
+      "canonical": "Radius",
+      "kind": "bone",
+      "region": "upper_limb",
+      "turkish": "Döner kemik (ön kolun lateral kemiği)",
+      "english": "Radius",
+      "synonyms": [
+        "doner kemik",
+        "on kol lateral kemigi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.forearm",
+      "landmarks": [
+        {
+          "landmark_id": "caput_radii",
+          "latin": "Caput radii",
+          "turkish": "Disk biçimli baş; fovea articularis capitulum ile, circumferentia articularis incisura radialis ulnae ile eklemleşir"
+        },
+        {
+          "landmark_id": "collum_radii",
+          "latin": "Collum radii",
+          "turkish": "Başın altındaki daralma; lig. anulare radii ile sarılır"
+        },
+        {
+          "landmark_id": "tuberositas_radii",
+          "latin": "Tuberositas radii",
+          "turkish": "Collum'un altında medial pürtük; m. biceps brachii insertio"
+        },
+        {
+          "landmark_id": "corpus_radii",
+          "latin": "Corpus radii",
+          "turkish": "Gövde; margo interosseus'a membrana interossea antebrachii tutunur"
+        },
+        {
+          "landmark_id": "processus_styloideus_radii",
+          "latin": "Processus styloideus radii",
+          "turkish": "Distal uçta lateral çıkıntı; ulna'nınkinden yaklaşık 1 cm daha distaldedir"
+        },
+        {
+          "landmark_id": "incisura_ulnaris",
+          "latin": "Incisura ulnaris",
+          "turkish": "Distal uçta medial çentik; caput ulnae ile eklemleşir (art. radioulnaris distalis)"
+        },
+        {
+          "landmark_id": "facies_articularis_carpalis",
+          "latin": "Facies articularis carpalis",
+          "turkish": "Distal eklem yüzü; os scaphoideum ve os lunatum ile eklemleşir"
+        },
+        {
+          "landmark_id": "tuberculum_dorsale",
+          "latin": "Tuberculum dorsale (Lister)",
+          "turkish": "Distal uç arka yüzünde; m. extensor pollicis longus tendonu buradan kanca yapar"
+        }
+      ],
+      "facts": {
+        "location": "Ön kolun lateral (başparmak tarafı) kemiği; proksimalde küçük, distalde geniştir (ulna'nın tersi).",
+        "parts": [
+          "Caput radii",
+          "Collum radii",
+          "Tuberositas radii",
+          "Corpus radii",
+          "Extremitas distalis"
+        ],
+        "articulations": [
+          "Articulatio humeroradialis",
+          "Articulatio radioulnaris proximalis",
+          "Articulatio radioulnaris distalis",
+          "Articulatio radiocarpalis (os scaphoideum, os lunatum)"
+        ],
+        "muscle_attachments": [
+          "Tuberositas radii: m. biceps brachii (insertio)",
+          "Proksimal 1/3 lateral: m. supinator (insertio)",
+          "Orta 1/3 lateral: m. pronator teres (insertio)",
+          "Distal 1/4 ön yüz: m. pronator quadratus (insertio)",
+          "Processus styloideus: m. brachioradialis (insertio)",
+          "Ön yüz: m. flexor digitorum superficialis (kısmen), m. flexor pollicis longus (origo)"
+        ],
+        "ligament_attachments": [
+          "Lig. anulare radii (collum'u sarar)",
+          "Lig. collaterale radiale",
+          "Membrana interossea antebrachii"
+        ],
+        "high_yield": [
+          "Distal radius (Colles) kırığı: çatal sırtı deformitesi; en sık kırılan ön kol kemiğidir.",
+          "El bileği eklemine katılan tek ön kol kemiği radius'tur; ulna karpal kemiklerle doğrudan eklemleşmez.",
+          "Pronasyon-supinasyonda radius ulna'nın etrafında döner; caput radii lig. anulare içinde döner.",
+          "Çocukta kolun çekilmesiyle caput radii lig. anulare'den sıyrılır (dadı dirseği)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "humerus"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "ulna"
+        }
+      ]
+    },
+    {
+      "structure_id": "ulna",
+      "canonical": "Ulna",
+      "kind": "bone",
+      "region": "upper_limb",
+      "turkish": "Dirsek kemiği (ön kolun medial kemiği)",
+      "english": "Ulna",
+      "synonyms": [
+        "dirsek kemigi",
+        "on kol medial kemigi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.forearm",
+      "landmarks": [
+        {
+          "landmark_id": "olecranon",
+          "latin": "Olecranon",
+          "turkish": "Proksimal uçtaki büyük arka çıkıntı; dirsek ucu, m. triceps brachii insertio"
+        },
+        {
+          "landmark_id": "processus_coronoideus",
+          "latin": "Processus coronoideus",
+          "turkish": "Proksimal uçta öne bakan çıkıntı; m. brachialis tuberositas ulnae'ye yapışır"
+        },
+        {
+          "landmark_id": "incisura_trochlearis",
+          "latin": "Incisura trochlearis",
+          "turkish": "Olecranon ile processus coronoideus arasındaki yarım ay biçimli eklem yüzü; trochlea humeri ile eklemleşir"
+        },
+        {
+          "landmark_id": "incisura_radialis",
+          "latin": "Incisura radialis",
+          "turkish": "Processus coronoideus'un lateralinde; caput radii ile eklemleşir"
+        },
+        {
+          "landmark_id": "tuberositas_ulnae",
+          "latin": "Tuberositas ulnae",
+          "turkish": "Processus coronoideus'un altında; m. brachialis insertio"
+        },
+        {
+          "landmark_id": "corpus_ulnae",
+          "latin": "Corpus ulnae",
+          "turkish": "Gövde; margo interosseus, margo posterior (deri altında palpe edilir)"
+        },
+        {
+          "landmark_id": "caput_ulnae",
+          "latin": "Caput ulnae",
+          "turkish": "DİSTAL uçtaki küçük baş; incisura ulnaris radii ile eklemleşir"
+        },
+        {
+          "landmark_id": "processus_styloideus_ulnae",
+          "latin": "Processus styloideus ulnae",
+          "turkish": "Caput ulnae'nin posteromedialinde küçük çıkıntı"
+        }
+      ],
+      "facts": {
+        "location": "Ön kolun medial (serçe parmak tarafı) kemiği; proksimalde geniş, distalde incedir.",
+        "parts": [
+          "Olecranon",
+          "Processus coronoideus",
+          "Incisura trochlearis",
+          "Incisura radialis",
+          "Corpus ulnae",
+          "Caput ulnae",
+          "Processus styloideus ulnae"
+        ],
+        "articulations": [
+          "Articulatio humeroulnaris (incisura trochlearis – trochlea humeri)",
+          "Articulatio radioulnaris proximalis (incisura radialis – caput radii)",
+          "Articulatio radioulnaris distalis (caput ulnae – incisura ulnaris radii)"
+        ],
+        "muscle_attachments": [
+          "Olecranon: m. triceps brachii, m. anconeus (insertio)",
+          "Tuberositas ulnae ve processus coronoideus: m. brachialis (insertio)",
+          "Processus coronoideus: m. pronator teres caput ulnare, m. flexor digitorum superficialis (origo)",
+          "Ön yüz: m. flexor digitorum profundus (origo); distal ön yüz: m. pronator quadratus (origo)",
+          "Arka yüz: m. supinator (crista musculi supinatoris), m. extensor pollicis longus, m. abductor pollicis longus, m. extensor indicis (origo)",
+          "Margo posterior (aponeuroz ile): m. flexor carpi ulnaris, m. extensor carpi ulnaris"
+        ],
+        "ligament_attachments": [
+          "Lig. collaterale ulnare",
+          "Lig. anulare radii (incisura radialis kenarlarına)",
+          "Membrana interossea antebrachii"
+        ],
+        "high_yield": [
+          "Ulna'nın başı DİSTAL, radius'un başı PROKSİMAL uçtadır (sık sınav tuzağı).",
+          "Olecranon'a m. triceps brachii yapışır; dirseğe düşmede olecranon kırılır.",
+          "Ulna el bileği eklemine doğrudan katılmaz; discus articularis araya girer.",
+          "Monteggia kırığı: ulna proksimal kırığı + caput radii çıkığı."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "humerus"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "radius"
+        }
+      ]
+    },
+    {
+      "structure_id": "os_coxae",
+      "canonical": "Os coxae",
+      "kind": "bone",
+      "region": "lower_limb",
+      "turkish": "Kalça kemiği",
+      "english": "Hip bone",
+      "synonyms": [
+        "kalca kemigi",
+        "hip bone",
+        "innominate bone",
+        "pelvis kemigi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.pelvic_girdle",
+      "landmarks": [
+        {
+          "landmark_id": "acetabulum",
+          "latin": "Acetabulum",
+          "turkish": "Üç kemiğin (ilium, ischium, pubis) birleştiği kâse biçimli eklem çukuru; caput femoris ile eklemleşir",
+          "note": "Facies lunata (eklem yüzü), fossa acetabuli, incisura acetabuli"
+        },
+        {
+          "landmark_id": "crista_iliaca",
+          "latin": "Crista iliaca",
+          "turkish": "Ala ossis ilii'nin üst kenarı; L4 düzeyinde, kalça çevresinde palpe edilir"
+        },
+        {
+          "landmark_id": "spina_iliaca_anterior_superior",
+          "latin": "Spina iliaca anterior superior",
+          "turkish": "Crista iliaca'nın ön ucu (SIAS); m. sartorius, m. tensor fasciae latae origosu, lig. inguinale tutunur"
+        },
+        {
+          "landmark_id": "spina_iliaca_anterior_inferior",
+          "latin": "Spina iliaca anterior inferior",
+          "turkish": "SIAS'ın altında; m. rectus femoris caput rectum origosu"
+        },
+        {
+          "landmark_id": "spina_iliaca_posterior_superior",
+          "latin": "Spina iliaca posterior superior",
+          "turkish": "Crista iliaca'nın arka ucu; S2 düzeyinde, cilt gamzesine karşılık gelir"
+        },
+        {
+          "landmark_id": "fossa_iliaca",
+          "latin": "Fossa iliaca",
+          "turkish": "Ala ossis ilii'nin iç yüzündeki çukur; m. iliacus origosu"
+        },
+        {
+          "landmark_id": "facies_auricularis",
+          "latin": "Facies auricularis",
+          "turkish": "Os sacrum ile eklemleşen kulak biçimli yüz (art. sacroiliaca)"
+        },
+        {
+          "landmark_id": "linea_arcuata",
+          "latin": "Linea arcuata",
+          "turkish": "Fossa iliaca'yı alttan sınırlayan kavis; linea terminalis'in parçası"
+        },
+        {
+          "landmark_id": "lineae_gluteae",
+          "latin": "Lineae gluteae (anterior, posterior, inferior)",
+          "turkish": "Ala'nın dış yüzünde gluteal kasların origolarını ayıran çizgiler"
+        },
+        {
+          "landmark_id": "tuber_ischiadicum",
+          "latin": "Tuber ischiadicum",
+          "turkish": "Otururken ağırlık taşıyan kalın kabartı; hamstring kasları origosu"
+        },
+        {
+          "landmark_id": "spina_ischiadica",
+          "latin": "Spina ischiadica",
+          "turkish": "Incisura ischiadica major ile minor'u ayıran diken; lig. sacrospinale tutunur"
+        },
+        {
+          "landmark_id": "incisura_ischiadica_major",
+          "latin": "Incisura ischiadica major",
+          "turkish": "Büyük çentik; lig. sacrospinale ile foramen ischiadicum majus'a dönüşür (m. piriformis, n. ischiadicus geçer)"
+        },
+        {
+          "landmark_id": "incisura_ischiadica_minor",
+          "latin": "Incisura ischiadica minor",
+          "turkish": "Küçük çentik; foramen ischiadicum minus (m. obturatorius internus tendonu, n. pudendus geçer)"
+        },
+        {
+          "landmark_id": "tuberculum_pubicum",
+          "latin": "Tuberculum pubicum",
+          "turkish": "Corpus ossis pubis'in üst kenarındaki tümsek; lig. inguinale'nin medial tutunma yeri"
+        },
+        {
+          "landmark_id": "pecten_ossis_pubis",
+          "latin": "Pecten ossis pubis",
+          "turkish": "Ramus superior'un keskin üst kenarı; m. pectineus origosu, linea terminalis'in parçası"
+        },
+        {
+          "landmark_id": "facies_symphysialis",
+          "latin": "Facies symphysialis",
+          "turkish": "Karşı pubis ile symphysis pubica'yı oluşturan yüz"
+        },
+        {
+          "landmark_id": "foramen_obturatum",
+          "latin": "Foramen obturatum",
+          "turkish": "Ischium ile pubis arasındaki büyük delik; membrana obturatoria ile kapalıdır, canalis obturatorius'tan n./a./v. obturatoria geçer"
+        }
+      ],
+      "facts": {
+        "location": "Pelvis'in yan-ön duvarını oluşturan büyük düzensiz kemik; arkada os sacrum, önde karşı os coxae ile eklemleşir.",
+        "parts": [
+          "Os ilium (corpus + ala)",
+          "Os ischii (corpus + ramus)",
+          "Os pubis (corpus + ramus superior + ramus inferior)"
+        ],
+        "surfaces": [
+          "Facies glutea (ala'nın dış yüzü)",
+          "Facies sacropelvica (iç yüz: fossa iliaca, facies auricularis, tuberositas iliaca)"
+        ],
+        "articulations": [
+          "Articulatio coxae (acetabulum – caput femoris)",
+          "Articulatio sacroiliaca (facies auricularis)",
+          "Symphysis pubica (facies symphysialis)"
+        ],
+        "muscle_attachments": [
+          "Fossa iliaca: m. iliacus (origo)",
+          "Facies glutea: m. gluteus maximus (linea glutea posterior'un arkası), m. gluteus medius (linea anterior–posterior arası), m. gluteus minimus (linea anterior–inferior arası)",
+          "SIAS: m. sartorius, m. tensor fasciae latae; SIAI: m. rectus femoris",
+          "Tuber ischiadicum: m. semitendinosus, m. semimembranosus, m. biceps femoris caput longum, m. adductor magnus (hamstring parçası), m. quadratus femoris",
+          "Ramus inferior ossis pubis / ramus ossis ischii: mm. adductores, m. gracilis, m. obturatorius externus",
+          "Pecten ossis pubis: m. pectineus; corpus ossis pubis: m. adductor longus, m. rectus abdominis (insertio)",
+          "Crista iliaca: m. obliquus externus/internus abdominis, m. transversus abdominis, m. latissimus dorsi, m. quadratus lumborum, m. erector spinae"
+        ],
+        "ligament_attachments": [
+          "Lig. inguinale: SIAS – tuberculum pubicum",
+          "Lig. sacrospinale (spina ischiadica) ve lig. sacrotuberale (tuber ischiadicum): foramen ischiadicum majus/minus'u sınırlar",
+          "Lig. iliofemorale, lig. pubofemorale, lig. ischiofemorale: kalça eklemi kapsülünü güçlendirir",
+          "Lig. transversum acetabuli: incisura acetabuli'yi köprüler"
+        ],
+        "high_yield": [
+          "İlium, ischium ve pubis acetabulum'da Y biçimli kıkırdakla birleşir; kemikleşme ergenlikte tamamlanır (yaklaşık 15–17 yaş).",
+          "Crista iliaca'nın en yüksek noktası L4 düzeyindedir (lomber ponksiyon işareti).",
+          "Foramen ischiadicum majus'tan m. piriformis, üst-alt gluteal damar-sinirler, n. ischiadicus, n. pudendus geçer.",
+          "Tuber ischiadicum otururken ağırlık taşır; hamstring kaslarının ortak origosudur."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "femur"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_sacrum"
+        }
+      ]
+    },
+    {
+      "structure_id": "femur",
+      "canonical": "Femur",
+      "kind": "bone",
+      "region": "lower_limb",
+      "turkish": "Uyluk kemiği",
+      "english": "Femur (thigh bone)",
+      "synonyms": [
+        "uyluk kemigi",
+        "thigh bone"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.thigh",
+      "landmarks": [
+        {
+          "landmark_id": "caput_femoris",
+          "latin": "Caput femoris",
+          "turkish": "Kürenin 2/3'ü kadar baş; fovea capitis femoris'e lig. capitis femoris tutunur"
+        },
+        {
+          "landmark_id": "collum_femoris",
+          "latin": "Collum femoris",
+          "turkish": "Başı gövdeye bağlayan boyun; gövde ile ~125° açı (angulus inclinationis) yapar",
+          "note": "Kırığında caput'un kanlanması (retinaküler arterler) bozulur → avasküler nekroz"
+        },
+        {
+          "landmark_id": "trochanter_major",
+          "latin": "Trochanter major",
+          "turkish": "Boyun-gövde birleşiminde lateral büyük çıkıntı; m. gluteus medius/minimus, m. piriformis, m. obturatorius internus, mm. gemelli insertio"
+        },
+        {
+          "landmark_id": "trochanter_minor",
+          "latin": "Trochanter minor",
+          "turkish": "Posteromedialde küçük çıkıntı; m. iliopsoas insertio"
+        },
+        {
+          "landmark_id": "linea_intertrochanterica",
+          "latin": "Linea intertrochanterica",
+          "turkish": "Ön yüzde iki trochanter'i birleştiren çizgi; eklem kapsülü ve lig. iliofemorale tutunur"
+        },
+        {
+          "landmark_id": "crista_intertrochanterica",
+          "latin": "Crista intertrochanterica",
+          "turkish": "Arka yüzde trochanterleri birleştiren belirgin ibik; tuberculum quadratum'a m. quadratus femoris"
+        },
+        {
+          "landmark_id": "linea_aspera",
+          "latin": "Linea aspera",
+          "turkish": "Gövde arka yüzündeki pürtüklü çizgi (labium mediale + laterale); mm. adductores, m. vastus medialis/lateralis, m. biceps femoris caput breve tutunur"
+        },
+        {
+          "landmark_id": "tuberositas_glutea",
+          "latin": "Tuberositas glutea",
+          "turkish": "Linea aspera'nın proksimal lateral uzantısı; m. gluteus maximus (derin lifler) insertio"
+        },
+        {
+          "landmark_id": "linea_pectinea",
+          "latin": "Linea pectinea",
+          "turkish": "Trochanter minor'dan linea aspera'ya; m. pectineus insertio"
+        },
+        {
+          "landmark_id": "condylus_medialis",
+          "latin": "Condylus medialis",
+          "turkish": "Distal uçta medial lokma; tibia condylus medialis ile eklemleşir, epicondylus medialis ve tuberculum adductorium taşır"
+        },
+        {
+          "landmark_id": "condylus_lateralis",
+          "latin": "Condylus lateralis",
+          "turkish": "Distal uçta lateral lokma; öne daha fazla uzanır"
+        },
+        {
+          "landmark_id": "epicondylus_medialis_femoris",
+          "latin": "Epicondylus medialis",
+          "turkish": "Lig. collaterale tibiale tutunur"
+        },
+        {
+          "landmark_id": "epicondylus_lateralis_femoris",
+          "latin": "Epicondylus lateralis",
+          "turkish": "Lig. collaterale fibulare tutunur"
+        },
+        {
+          "landmark_id": "tuberculum_adductorium",
+          "latin": "Tuberculum adductorium",
+          "turkish": "Epicondylus medialis'in üstünde; m. adductor magnus tendonunun insertio'su"
+        },
+        {
+          "landmark_id": "fossa_intercondylaris",
+          "latin": "Fossa intercondylaris",
+          "turkish": "Kondiller arasındaki arka çukur; ligg. cruciata tutunur"
+        },
+        {
+          "landmark_id": "facies_patellaris",
+          "latin": "Facies patellaris",
+          "turkish": "Ön yüzde kondiller arasındaki oluk; patella ile eklemleşir"
+        },
+        {
+          "landmark_id": "facies_poplitea",
+          "latin": "Facies poplitea",
+          "turkish": "Distal arka yüzdeki üçgen düzlük; fossa poplitea'nın tabanı"
+        }
+      ],
+      "facts": {
+        "location": "Vücudun en uzun ve en güçlü kemiği; os coxae ile tibia/patella arasında.",
+        "orientation": "Caput mediale-yukarı-öne bakar; gövde aşağıya doğru mediale eğimlidir (dizler orta hatta yaklaşır); linea aspera arkadadır.",
+        "parts": [
+          "Caput femoris",
+          "Collum femoris",
+          "Trochanter major ve minor",
+          "Corpus femoris",
+          "Condylus medialis ve lateralis"
+        ],
+        "articulations": [
+          "Articulatio coxae (caput femoris – acetabulum)",
+          "Articulatio genus (condyli femoris – condyli tibiae; facies patellaris – patella)"
+        ],
+        "muscle_attachments": [
+          "Trochanter major: m. gluteus medius, m. gluteus minimus, m. piriformis, m. obturatorius internus, mm. gemelli (insertio)",
+          "Trochanter minor: m. iliopsoas (insertio)",
+          "Tuberositas glutea: m. gluteus maximus; linea pectinea: m. pectineus",
+          "Linea aspera: m. adductor longus, m. adductor brevis, m. adductor magnus, m. vastus medialis, m. vastus lateralis, m. biceps femoris caput breve",
+          "Ön yüz (gövde): m. vastus intermedius (origo)",
+          "Tuberculum adductorium: m. adductor magnus (tendinöz parça)",
+          "Condyli (arka): m. gastrocnemius caput mediale ve laterale, m. plantaris (origo); condylus lateralis: m. popliteus (origo)"
+        ],
+        "ligament_attachments": [
+          "Lig. capitis femoris (fovea capitis)",
+          "Lig. iliofemorale (linea intertrochanterica)",
+          "Ligg. cruciata (fossa intercondylaris)",
+          "Ligg. collateralia (epicondyli)"
+        ],
+        "high_yield": [
+          "Collum femoris kırığı yaşlıda (osteoporoz) sıktır; caput'un kanlanması a. circumflexa femoris medialis'in retinaküler dallarından gelir → avasküler nekroz riski.",
+          "Angulus inclinationis erişkinde ~125°; coxa vara (<120°) ve coxa valga (>135°).",
+          "Trochanter minor'a yalnızca m. iliopsoas yapışır.",
+          "Lig. capitis femoris içindeki a. capitis femoris (a. obturatoria dalı) erişkinde caput'un beslenmesine az katkı verir."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "os_coxae"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "tibia"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "patella"
+        }
+      ]
+    },
+    {
+      "structure_id": "tibia",
+      "canonical": "Tibia",
+      "kind": "bone",
+      "region": "lower_limb",
+      "turkish": "Kaval kemiği",
+      "english": "Tibia (shin bone)",
+      "synonyms": [
+        "kaval kemigi",
+        "shin bone",
+        "shinbone"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.leg",
+      "landmarks": [
+        {
+          "landmark_id": "condylus_medialis_tibiae",
+          "latin": "Condylus medialis tibiae",
+          "turkish": "Proksimal uçta medial lokma; facies articularis superior ile femur'la eklemleşir, meniscus medialis üzerinde oturur"
+        },
+        {
+          "landmark_id": "condylus_lateralis_tibiae",
+          "latin": "Condylus lateralis tibiae",
+          "turkish": "Lateral lokma; alt-arka yüzünde facies articularis fibularis (caput fibulae ile)"
+        },
+        {
+          "landmark_id": "eminentia_intercondylaris",
+          "latin": "Eminentia intercondylaris",
+          "turkish": "İki eklem yüzü arasındaki kabartı (tuberculum intercondylare mediale ve laterale)"
+        },
+        {
+          "landmark_id": "area_intercondylaris_anterior",
+          "latin": "Area intercondylaris anterior",
+          "turkish": "Lig. cruciatum anterius ve meniskuslerin ön boynuzları tutunur"
+        },
+        {
+          "landmark_id": "area_intercondylaris_posterior",
+          "latin": "Area intercondylaris posterior",
+          "turkish": "Lig. cruciatum posterius ve meniskuslerin arka boynuzları tutunur"
+        },
+        {
+          "landmark_id": "tuberositas_tibiae",
+          "latin": "Tuberositas tibiae",
+          "turkish": "Ön yüzde proksimal pürtük; lig. patellae insertio (m. quadriceps femoris'in son yapışma yeri)"
+        },
+        {
+          "landmark_id": "margo_anterior_tibiae",
+          "latin": "Margo anterior",
+          "turkish": "Deri altında palpe edilen keskin ön kenar (kaval)"
+        },
+        {
+          "landmark_id": "linea_musculi_solei",
+          "latin": "Linea musculi solei",
+          "turkish": "Arka yüzde oblik çizgi; m. soleus origosu"
+        },
+        {
+          "landmark_id": "malleolus_medialis",
+          "latin": "Malleolus medialis",
+          "turkish": "Distal uçta medial çıkıntı; talus ile eklemleşir, lig. deltoideum tutunur"
+        },
+        {
+          "landmark_id": "incisura_fibularis",
+          "latin": "Incisura fibularis",
+          "turkish": "Distal uç lateralinde; fibula ile syndesmosis tibiofibularis"
+        },
+        {
+          "landmark_id": "facies_articularis_inferior",
+          "latin": "Facies articularis inferior",
+          "turkish": "Trochlea tali ile eklemleşen distal yüz"
+        }
+      ],
+      "facts": {
+        "location": "Bacağın medial ve büyük, ağırlık taşıyan kemiği; femur ile talus arasında.",
+        "parts": [
+          "Extremitas proximalis (condyli, eminentia intercondylaris, tuberositas tibiae)",
+          "Corpus tibiae (margo anterior, medialis, interosseus)",
+          "Extremitas distalis (malleolus medialis, facies articularis inferior, incisura fibularis)"
+        ],
+        "articulations": [
+          "Articulatio genus (condyli)",
+          "Articulatio tibiofibularis (proksimal, art. plana)",
+          "Syndesmosis tibiofibularis (distal)",
+          "Articulatio talocruralis (facies articularis inferior + malleolus medialis – trochlea tali)"
+        ],
+        "muscle_attachments": [
+          "Tuberositas tibiae: lig. patellae (m. quadriceps femoris)",
+          "Pes anserinus (medial yüz proksimal): m. sartorius, m. gracilis, m. semitendinosus",
+          "Condylus medialis arka: m. semimembranosus; linea musculi solei: m. soleus, m. popliteus (üstünde)",
+          "Facies lateralis: m. tibialis anterior (origo); arka yüz: m. tibialis posterior, m. flexor digitorum longus (origo)"
+        ],
+        "ligament_attachments": [
+          "Lig. patellae",
+          "Lig. collaterale tibiale (condylus medialis)",
+          "Ligg. cruciata (areae intercondylares)",
+          "Lig. deltoideum (malleolus medialis)",
+          "Membrana interossea cruris"
+        ],
+        "high_yield": [
+          "Tibia bacağın ağırlık taşıyan kemiğidir; fibula ağırlık taşımaz.",
+          "Malleolus medialis, malleolus lateralis'ten daha yukarıda ve önde biter.",
+          "Tuberositas tibiae'ye lig. patellae yapışır; Osgood-Schlatter hastalığı buradadır.",
+          "Margo anterior ve facies medialis deri altındadır; açık kırıklar sıktır."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "femur"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "fibula"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "talus"
+        }
+      ]
+    },
+    {
+      "structure_id": "fibula",
+      "canonical": "Fibula",
+      "kind": "bone",
+      "region": "lower_limb",
+      "turkish": "Baldır kemiği (bacağın lateral ince kemiği)",
+      "english": "Fibula (calf bone)",
+      "synonyms": [
+        "baldir kemigi",
+        "calf bone",
+        "bacak lateral kemigi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.leg",
+      "landmarks": [
+        {
+          "landmark_id": "caput_fibulae",
+          "latin": "Caput fibulae",
+          "turkish": "Proksimal baş; tibia condylus lateralis ile eklemleşir, m. biceps femoris ve lig. collaterale fibulare tutunur",
+          "note": "Apex capitis fibulae"
+        },
+        {
+          "landmark_id": "collum_fibulae",
+          "latin": "Collum fibulae",
+          "turkish": "Başın altındaki boyun; n. fibularis communis buradan dolanır (yüzeyel, yaralanmaya açık)"
+        },
+        {
+          "landmark_id": "corpus_fibulae",
+          "latin": "Corpus fibulae",
+          "turkish": "İnce gövde; peroneal (fibular) kasların origosu"
+        },
+        {
+          "landmark_id": "malleolus_lateralis",
+          "latin": "Malleolus lateralis",
+          "turkish": "Distal uçtaki dış aşık kemiği; talus ile eklemleşir, lateral bağlar tutunur",
+          "note": "Malleolus medialis'ten daha aşağıda ve arkadadır"
+        }
+      ],
+      "facts": {
+        "location": "Bacağın lateral, ince, ağırlık taşımayan kemiği; kas tutunma yeri ve ayak bileği stabilizatörüdür.",
+        "parts": [
+          "Caput fibulae",
+          "Collum fibulae",
+          "Corpus fibulae",
+          "Malleolus lateralis"
+        ],
+        "articulations": [
+          "Articulatio tibiofibularis (caput – condylus lateralis tibiae)",
+          "Syndesmosis tibiofibularis",
+          "Articulatio talocruralis (malleolus lateralis – talus)"
+        ],
+        "muscle_attachments": [
+          "Caput fibulae: m. biceps femoris (insertio), m. soleus (origo, arka)",
+          "Facies lateralis: m. fibularis (peroneus) longus ve brevis (origo)",
+          "Facies medialis/anterior: m. extensor digitorum longus, m. extensor hallucis longus, m. fibularis tertius (origo)",
+          "Facies posterior: m. soleus, m. flexor hallucis longus, m. tibialis posterior (origo)"
+        ],
+        "ligament_attachments": [
+          "Lig. collaterale fibulare (caput)",
+          "Lig. talofibulare anterius/posterius, lig. calcaneofibulare (malleolus lateralis)",
+          "Membrana interossea cruris",
+          "Ligg. tibiofibularia"
+        ],
+        "high_yield": [
+          "Fibula ağırlık taşımaz; kemik grefti için sık kullanılır.",
+          "Collum fibulae kırığı → n. fibularis communis yaralanması → düşük ayak (foot drop), ayak sırtı ve bacak lateralinde duyu kaybı.",
+          "Malleolus lateralis, medialis'ten daha distaldedir; bu yüzden inversiyon eversiyondan daha kolaydır ve lateral bağ yaralanması (lig. talofibulare anterius) daha sıktır."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "tibia"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "talus"
+        }
+      ]
+    },
+    {
+      "structure_id": "patella",
+      "canonical": "Patella",
+      "kind": "bone",
+      "region": "lower_limb",
+      "turkish": "Diz kapağı",
+      "english": "Patella (kneecap)",
+      "synonyms": [
+        "diz kapagi",
+        "kneecap",
+        "knee cap"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.knee",
+      "landmarks": [
+        {
+          "landmark_id": "basis_patellae",
+          "latin": "Basis patellae",
+          "turkish": "Üstteki geniş kenar; m. quadriceps femoris tendonu yapışır"
+        },
+        {
+          "landmark_id": "apex_patellae",
+          "latin": "Apex patellae",
+          "turkish": "Alttaki sivri uç; lig. patellae buradan tuberositas tibiae'ye gider"
+        },
+        {
+          "landmark_id": "facies_articularis_patellae",
+          "latin": "Facies articularis",
+          "turkish": "Arka yüz; facies patellaris femoris ile eklemleşir (lateral yüz daha geniştir)"
+        }
+      ],
+      "facts": {
+        "location": "M. quadriceps femoris tendonu içinde yer alan vücudun en büyük sesamoid kemiği; dizin önündedir.",
+        "parts": [
+          "Basis patellae",
+          "Apex patellae",
+          "Facies anterior",
+          "Facies articularis"
+        ],
+        "articulations": [
+          "Articulatio femoropatellaris (facies articularis – facies patellaris femoris)"
+        ],
+        "muscle_attachments": [
+          "Basis: m. quadriceps femoris tendonu (insertio)",
+          "Apex: lig. patellae (tuberositas tibiae'ye)"
+        ],
+        "high_yield": [
+          "Sesamoid kemiktir; quadriceps'in kaldıraç kolunu uzatarak ekstansiyon kuvvetini artırır.",
+          "Lateral facies daha geniştir; lateral çıkık eğilimini m. vastus medialis (obliquus lifleri) önler.",
+          "Refleks çekiciyle lig. patellae'ye vurulunca patellar refleks (L2–L4, n. femoralis) alınır."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "femur"
+        }
+      ]
+    },
+    {
+      "structure_id": "articulatio_humeri",
+      "canonical": "Articulatio humeri",
+      "kind": "joint",
+      "region": "upper_limb",
+      "turkish": "Omuz eklemi",
+      "english": "Shoulder (glenohumeral) joint",
+      "synonyms": [
+        "omuz eklemi",
+        "glenohumeral joint",
+        "articulatio glenohumeralis",
+        "shoulder joint"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.shoulder_joint",
+      "facts": {
+        "joint_type": "Articulatio spheroidea (küre eklemi), çok eksenli, synovial.",
+        "articulating_surfaces": [
+          "Caput humeri (büyük, konveks)",
+          "Cavitas glenoidalis scapulae (küçük, sığ) + labrum glenoidale (fibrokartilaginöz halka, derinleştirir)"
+        ],
+        "capsule": "Gevşek ve geniştir; scapula'da cavitas glenoidalis kenarına (labrum dışına), humerus'ta collum anatomicum'a (medialde collum chirurgicum'a inerek) tutunur. Alt kısmı en zayıf yeridir.",
+        "ligaments": [
+          "Ligg. glenohumeralia (superius, medium, inferius): kapsülün ön kalınlaşmaları",
+          "Lig. coracohumerale: processus coracoideus – tuberculum majus; üstten destekler",
+          "Lig. coracoacromiale: eklem üstünde kubbe (fornix humeri); yukarı çıkığı önler",
+          "Lig. transversum humeri: sulcus intertubercularis'i köprüler"
+        ],
+        "movements": [
+          "Fleksiyon – ekstansiyon: transvers (frontal) eksen, sagittal düzlem",
+          "Abduksiyon – adduksiyon: sagittal eksen, frontal (koronal) düzlem",
+          "İç rotasyon – dış rotasyon: longitudinal (vertikal) eksen, transvers düzlem",
+          "Sirkumduksiyon"
+        ],
+        "muscles": [
+          "Abduksiyon: m. supraspinatus (ilk 15°), m. deltoideus (15°–90°); 90° üstü scapula rotasyonu (m. trapezius, m. serratus anterior)",
+          "Adduksiyon: m. pectoralis major, m. latissimus dorsi, m. teres major",
+          "Fleksiyon: m. deltoideus pars clavicularis, m. pectoralis major pars clavicularis, m. coracobrachialis, m. biceps brachii",
+          "Ekstansiyon: m. deltoideus pars spinalis, m. latissimus dorsi, m. teres major",
+          "İç rotasyon: m. subscapularis, m. pectoralis major, m. latissimus dorsi, m. teres major, m. deltoideus pars clavicularis",
+          "Dış rotasyon: m. infraspinatus, m. teres minor, m. deltoideus pars spinalis"
+        ],
+        "relations": [
+          "Rotator manşet (SITS: supraspinatus, infraspinatus, teres minor, subscapularis) kapsülü çevreleyip dinamik stabilite sağlar; alt taraf açıktır",
+          "Bursa subacromialis (subdeltoidea) ve bursa subtendinea m. subscapularis (eklemle bağlantılı)",
+          "N. axillaris ve a. circumflexa humeri posterior eklemin altından collum chirurgicum düzeyinde geçer"
+        ],
+        "high_yield": [
+          "Vücudun en hareketli ama en sık çıkan eklemidir; çıkık çoğunlukla öne-aşağı (subcoracoid) olur ve n. axillaris zarar görebilir.",
+          "Abduksiyonu m. supraspinatus başlatır, m. deltoideus sürdürür (sınav sorusu: ilk 15°).",
+          "M. biceps brachii caput longum tendonu eklem içinden (intrakapsüler, ekstrasinovyal) geçer.",
+          "Eklem kapsülünün alt kısmı bağ ve kasla desteklenmediği için en zayıf noktadır."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "formed_by",
+          "target": "humerus"
+        },
+        {
+          "relation": "formed_by",
+          "target": "scapula"
+        }
+      ]
+    },
+    {
+      "structure_id": "articulatio_cubiti",
+      "canonical": "Articulatio cubiti",
+      "kind": "joint",
+      "region": "upper_limb",
+      "turkish": "Dirsek eklemi",
+      "english": "Elbow joint",
+      "synonyms": [
+        "dirsek eklemi",
+        "elbow joint",
+        "elbow"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.elbow",
+      "facts": {
+        "joint_type": "Articulatio composita: tek kapsül içinde üç eklem. Art. humeroulnaris (ginglymus – menteşe), art. humeroradialis (spheroidea benzeri), art. radioulnaris proximalis (trochoidea – pivot).",
+        "articulating_surfaces": [
+          "Trochlea humeri – incisura trochlearis ulnae (humeroulnaris)",
+          "Capitulum humeri – fovea articularis capitis radii (humeroradialis)",
+          "Circumferentia articularis capitis radii – incisura radialis ulnae (radioulnaris proximalis)"
+        ],
+        "capsule": "Önde ve arkada gevşek (fleksiyon-ekstansiyona izin verir), yanlarda kollateral bağlarla kalınlaşmıştır; fossa coronoidea, radialis ve olecrani kapsül içindedir, epicondyli dışındadır.",
+        "ligaments": [
+          "Lig. collaterale ulnare (mediale): epicondylus medialis – processus coronoideus ve olecranon (üç parçalı)",
+          "Lig. collaterale radiale (laterale): epicondylus lateralis – lig. anulare radii",
+          "Lig. anulare radii: caput radii'yi incisura radialis'te tutar",
+          "Lig. quadratum: collum radii – incisura radialis alt kenarı"
+        ],
+        "movements": [
+          "Fleksiyon – ekstansiyon (humeroulnaris + humeroradialis): transvers eksen; aktif fleksiyon ~145°",
+          "Pronasyon – supinasyon (radioulnaris proximalis + distalis birlikte): caput radii ekseninde ~80–90°"
+        ],
+        "muscles": [
+          "Fleksiyon: m. brachialis (temel), m. biceps brachii, m. brachioradialis, m. pronator teres (yardımcı)",
+          "Ekstansiyon: m. triceps brachii, m. anconeus",
+          "Supinasyon: m. biceps brachii (dirsek fleksiyondayken en güçlü), m. supinator",
+          "Pronasyon: m. pronator teres, m. pronator quadratus"
+        ],
+        "axes_planes": "Fleksiyon-ekstansiyon transvers eksende sagittal düzlemde; ön kolun taşıma açısı (angulus cubiti, 'carrying angle') tam ekstansiyonda yaklaşık 10–15° valgus.",
+        "relations": [
+          "N. ulnaris epicondylus medialis'in arkasındaki sulcus nervi ulnaris'ten geçer (deri altında)",
+          "Fossa cubitalis'te medialden laterale: n. medianus, a. brachialis, m. biceps brachii tendonu, n. radialis (lateralde)",
+          "Bursa subcutanea olecrani (öğrenci dirseği)"
+        ],
+        "high_yield": [
+          "Art. cubiti'yi humerus, radius ve ulna oluşturur; art. radioulnaris distalis ayrı bir eklemdir ama pronasyon-supinasyonda proksimal ile birlikte çalışır.",
+          "Dirsek fleksiyonunun temel kası m. brachialis'tir; m. biceps brachii en güçlü supinatördür.",
+          "Dadı dirseği: caput radii'nin lig. anulare'den sıyrılması (subluksasyon).",
+          "Epicondylus medialis, epicondylus lateralis ve olecranon ekstansiyonda aynı doğrultudadır, 90° fleksiyonda eşkenar üçgen oluşturur (Hueter)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "formed_by",
+          "target": "humerus"
+        },
+        {
+          "relation": "formed_by",
+          "target": "radius"
+        },
+        {
+          "relation": "formed_by",
+          "target": "ulna"
+        }
+      ]
+    },
+    {
+      "structure_id": "articulatio_radiocarpalis",
+      "canonical": "Articulatio radiocarpalis",
+      "kind": "joint",
+      "region": "upper_limb",
+      "turkish": "El bileği eklemi",
+      "english": "Wrist (radiocarpal) joint",
+      "synonyms": [
+        "el bilegi eklemi",
+        "wrist joint",
+        "radiocarpal joint"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.wrist_hand",
+      "facts": {
+        "joint_type": "Articulatio ellipsoidea (elipsoid), iki eksenli, synovial.",
+        "articulating_surfaces": [
+          "Proksimal: facies articularis carpalis radii + discus articularis (ulna'yı ekleme katmaz)",
+          "Distal: os scaphoideum, os lunatum, os triquetrum"
+        ],
+        "ligaments": [
+          "Lig. radiocarpale palmare ve dorsale",
+          "Lig. collaterale carpi radiale (processus styloideus radii – os scaphoideum)",
+          "Lig. collaterale carpi ulnare (processus styloideus ulnae – os triquetrum/pisiforme)"
+        ],
+        "movements": [
+          "Fleksiyon – ekstansiyon (transvers eksen)",
+          "Abduksiyon (radial deviasyon) – adduksiyon (ulnar deviasyon) (sagittal eksen)",
+          "Sirkumduksiyon; rotasyon yoktur (radioulnar eklemlerde olur)"
+        ],
+        "muscles": [
+          "Fleksiyon: m. flexor carpi radialis, m. flexor carpi ulnaris, m. palmaris longus (+ parmak fleksörleri)",
+          "Ekstansiyon: m. extensor carpi radialis longus/brevis, m. extensor carpi ulnaris (+ parmak ekstansörleri)",
+          "Abduksiyon: m. flexor carpi radialis + m. extensor carpi radialis longus/brevis, m. abductor pollicis longus",
+          "Adduksiyon: m. flexor carpi ulnaris + m. extensor carpi ulnaris"
+        ],
+        "high_yield": [
+          "Ulna el bileği eklemine doğrudan katılmaz; discus articularis araya girer.",
+          "Adduksiyon (ulnar deviasyon), abduksiyondan daha geniştir çünkü processus styloideus radii daha distaldedir.",
+          "Os scaphoideum en sık kırılan karpal kemiktir; enfiye çukurunda (fovea radialis) hassasiyet verir."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "formed_by",
+          "target": "radius"
+        }
+      ]
+    },
+    {
+      "structure_id": "articulatio_coxae",
+      "canonical": "Articulatio coxae",
+      "kind": "joint",
+      "region": "lower_limb",
+      "turkish": "Kalça eklemi",
+      "english": "Hip joint",
+      "synonyms": [
+        "kalca eklemi",
+        "hip joint",
+        "hip"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.hip_joint",
+      "facts": {
+        "joint_type": "Articulatio spheroidea (cotylica / enarthrosis: derin küre eklemi), çok eksenli, synovial.",
+        "articulating_surfaces": [
+          "Caput femoris",
+          "Acetabulum'un facies lunata'sı + labrum acetabulare (lig. transversum acetabuli ile tamamlanır)"
+        ],
+        "capsule": "Güçlüdür; proksimalde acetabulum kenarı ve lig. transversum'a, distalde önde linea intertrochanterica'ya, arkada collum'un ortasına tutunur (collum'un arka 1/3'ü ekstrakapsülerdir).",
+        "ligaments": [
+          "Lig. iliofemorale (Bertin, Y biçimli): vücudun en güçlü bağı; SIAI – linea intertrochanterica; hiperekstansiyonu önler",
+          "Lig. pubofemorale: abduksiyon ve ekstansiyonu sınırlar",
+          "Lig. ischiofemorale: kapsülün arkasında, iç rotasyonu sınırlar",
+          "Lig. capitis femoris: fovea capitis – incisura acetabuli; a. capitis femoris'i taşır",
+          "Zona orbicularis: collum'u saran halka lifler",
+          "Lig. transversum acetabuli: incisura acetabuli'yi köprüler"
+        ],
+        "movements": [
+          "Fleksiyon – ekstansiyon (transvers eksen)",
+          "Abduksiyon – adduksiyon (sagittal eksen)",
+          "İç – dış rotasyon (longitudinal eksen)",
+          "Sirkumduksiyon"
+        ],
+        "muscles": [
+          "Fleksiyon: m. iliopsoas (temel), m. rectus femoris, m. sartorius, m. tensor fasciae latae, m. pectineus",
+          "Ekstansiyon: m. gluteus maximus (güçlü ekstansiyon), hamstringler (m. biceps femoris caput longum, m. semitendinosus, m. semimembranosus)",
+          "Abduksiyon: m. gluteus medius, m. gluteus minimus, m. tensor fasciae latae",
+          "Adduksiyon: m. adductor longus/brevis/magnus, m. gracilis, m. pectineus",
+          "İç rotasyon: m. gluteus medius ve minimus (ön lifler), m. tensor fasciae latae",
+          "Dış rotasyon: m. piriformis, m. obturatorius internus/externus, mm. gemelli, m. quadratus femoris, m. gluteus maximus"
+        ],
+        "relations": [
+          "Önde n. femoralis ve a. femoralis (lig. inguinale altından); arkada n. ischiadicus",
+          "Bursa iliopectinea sıklıkla eklem boşluğuyla bağlantılıdır"
+        ],
+        "high_yield": [
+          "Lig. iliofemorale vücudun en güçlü bağıdır ve ayakta dururken gövdenin arkaya devrilmesini önler.",
+          "Collum femoris kırığında retinaküler arterler (a. circumflexa femoris medialis) zedelenir → caput femoris avasküler nekrozu.",
+          "N. gluteus superior felci → Trendelenburg belirtisi (karşı taraf pelvis düşer).",
+          "Kalça çıkığı omuza göre nadirdir; travmatik çıkık genellikle arkaya olur ve n. ischiadicus'u tehdit eder."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "formed_by",
+          "target": "femur"
+        },
+        {
+          "relation": "formed_by",
+          "target": "os_coxae"
+        }
+      ]
+    },
+    {
+      "structure_id": "articulatio_genus",
+      "canonical": "Articulatio genus",
+      "kind": "joint",
+      "region": "lower_limb",
+      "turkish": "Diz eklemi",
+      "english": "Knee joint",
+      "synonyms": [
+        "diz eklemi",
+        "knee joint",
+        "knee"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.knee",
+      "facts": {
+        "joint_type": "Vücudun en büyük ve en karmaşık synovial eklemi; art. femorotibialis (bicondylar, ginglymus benzeri, hafif rotasyonlu) + art. femoropatellaris (plana/sellaris benzeri).",
+        "articulating_surfaces": [
+          "Condyli femoris – condyli tibiae (facies articularis superior)",
+          "Facies patellaris femoris – facies articularis patellae",
+          "Meniscus medialis (C biçimli, lig. collaterale tibiale'ye yapışık) ve meniscus lateralis (O'ya yakın, daha hareketli)"
+        ],
+        "capsule": "İnce ve eksik; önde m. quadriceps femoris tendonu, patella ve lig. patellae kapsülü tamamlar; arkada lig. popliteum obliquum ve arcuatum güçlendirir.",
+        "ligaments": [
+          "Lig. cruciatum anterius (ACL): area intercondylaris anterior tibiae – condylus lateralis femoris'in medial yüzü; tibianın öne kaymasını önler",
+          "Lig. cruciatum posterius (PCL): area intercondylaris posterior tibiae – condylus medialis femoris'in lateral yüzü; tibianın arkaya kaymasını önler, daha güçlüdür",
+          "Lig. collaterale tibiale (MCL): epicondylus medialis femoris – condylus medialis tibiae; meniscus medialis'e yapışıktır",
+          "Lig. collaterale fibulare (LCL): epicondylus lateralis femoris – caput fibulae; meniskusa yapışık değildir (m. popliteus tendonu araya girer)",
+          "Lig. patellae: apex patellae – tuberositas tibiae",
+          "Lig. popliteum obliquum (m. semimembranosus tendonunun uzantısı), lig. popliteum arcuatum",
+          "Lig. transversum genus: iki meniskusun ön boynuzlarını bağlar"
+        ],
+        "movements": [
+          "Fleksiyon – ekstansiyon (transvers eksen): ~140° fleksiyon",
+          "Rotasyon yalnızca diz fleksiyondayken: iç rotasyon ~10°, dış rotasyon ~30–40° (longitudinal eksen)",
+          "Kilitlenme: tam ekstansiyonda femur tibia üzerinde içe döner (screw-home); m. popliteus dizi açarak kilidi çözer"
+        ],
+        "muscles": [
+          "Ekstansiyon: m. quadriceps femoris (n. femoralis)",
+          "Fleksiyon: hamstringler (m. biceps femoris, m. semitendinosus, m. semimembranosus), m. gracilis, m. sartorius, m. gastrocnemius, m. popliteus",
+          "İç rotasyon (fleksiyonda): m. semitendinosus, m. semimembranosus, m. popliteus, m. sartorius, m. gracilis",
+          "Dış rotasyon (fleksiyonda): m. biceps femoris"
+        ],
+        "relations": [
+          "Bursa suprapatellaris (eklem boşluğunun uzantısı), bursa prepatellaris (ev hanımı dizi), bursa infrapatellaris",
+          "Fossa poplitea'da a./v. poplitea ve n. tibialis, n. fibularis communis eklemin arkasındadır",
+          "Corpus adiposum infrapatellare (Hoffa)"
+        ],
+        "high_yield": [
+          "Mutsuz üçlü (O'Donoghue): ACL + lig. collaterale tibiale + meniscus medialis yaralanması (lateralden gelen valgus zorlanması).",
+          "Ön çekmece testi pozitifse ACL, arka çekmece pozitifse PCL yırtıktır.",
+          "Meniscus medialis MCL'ye yapışık olduğu için daha sık yırtılır.",
+          "Ligg. cruciata intrakapsüler ama ekstrasinovyaldir.",
+          "M. popliteus kilitli dizi açar ('unlocks the knee')."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "formed_by",
+          "target": "femur"
+        },
+        {
+          "relation": "formed_by",
+          "target": "tibia"
+        },
+        {
+          "relation": "formed_by",
+          "target": "patella"
+        }
+      ]
+    },
+    {
+      "structure_id": "articulatio_talocruralis",
+      "canonical": "Articulatio talocruralis",
+      "kind": "joint",
+      "region": "lower_limb",
+      "turkish": "Ayak bileği eklemi",
+      "english": "Ankle (talocrural) joint",
+      "synonyms": [
+        "ayak bilegi eklemi",
+        "ankle joint",
+        "ankle"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.ankle_foot",
+      "facts": {
+        "joint_type": "Ginglymus (menteşe), tek eksenli, synovial.",
+        "articulating_surfaces": [
+          "Tibia (facies articularis inferior + malleolus medialis) ve fibula (malleolus lateralis) → malleolar çatal (mortise)",
+          "Trochlea tali (önde daha geniş)"
+        ],
+        "ligaments": [
+          "Lig. collaterale mediale (lig. deltoideum): pars tibionavicularis, tibiocalcanea, tibiotalaris anterior ve posterior; çok güçlüdür",
+          "Lateral bağlar: lig. talofibulare anterius (en sık yaralanan), lig. calcaneofibulare, lig. talofibulare posterius",
+          "Ligg. tibiofibularia anterius/posterius (syndesmosis)"
+        ],
+        "movements": [
+          "Dorsifleksiyon (~20°) – plantar fleksiyon (~50°): transvers eksen",
+          "İnversiyon–eversiyon bu eklemde DEĞİL, art. subtalaris ve art. talocalcaneonavicularis'te olur"
+        ],
+        "muscles": [
+          "Dorsifleksiyon: m. tibialis anterior, m. extensor digitorum longus, m. extensor hallucis longus, m. fibularis tertius (n. fibularis profundus)",
+          "Plantar fleksiyon: m. triceps surae (gastrocnemius + soleus), m. plantaris, m. tibialis posterior, m. flexor digitorum longus, m. flexor hallucis longus, mm. fibulares longus/brevis (n. tibialis; fibulares n. fibularis superficialis)"
+        ],
+        "high_yield": [
+          "Trochlea tali önde daha geniş olduğu için dorsifleksiyonda eklem en stabildir; plantar fleksiyonda burkulmalar sıktır.",
+          "En sık burkulma inversiyonla lig. talofibulare anterius yırtığıdır.",
+          "Malleolus lateralis daha aşağıda olduğundan eversiyon sınırlıdır; güçlü eversiyon zorlaması malleolus medialis'i kırar (lig. deltoideum kopmaz).",
+          "Aşil tendonu refleksi S1 (n. tibialis)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "formed_by",
+          "target": "tibia"
+        },
+        {
+          "relation": "formed_by",
+          "target": "fibula"
+        },
+        {
+          "relation": "formed_by",
+          "target": "talus"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_deltoideus",
+      "canonical": "Musculus deltoideus",
+      "kind": "muscle",
+      "region": "upper_limb",
+      "turkish": "Deltoid kas (omuz kası)",
+      "english": "Deltoid muscle",
+      "abbreviations": [
+        "m. deltoideus"
+      ],
+      "synonyms": [
+        "deltoid",
+        "deltoid kasi",
+        "deltoideus"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.shoulder_joint",
+      "facts": {
+        "group": "Omuz kasları (üst ekstremite kuşak kasları); üç parçalı: pars clavicularis, pars acromialis, pars spinalis.",
+        "origin": "Clavicula'nın lateral 1/3'ü, acromion, spina scapulae.",
+        "insertion": "Tuberositas deltoidea humeri.",
+        "innervation": "N. axillaris (C5, C6).",
+        "arterial_supply": "A. circumflexa humeri posterior (ana), a. thoracoacromialis'in r. deltoideus'u.",
+        "action": "Pars acromialis: omuz abduksiyonu (15°–90°); pars clavicularis: fleksiyon ve iç rotasyon; pars spinalis: ekstansiyon ve dış rotasyon. Tüm kas caput humeri'yi cavitas glenoidalis'te tutar.",
+        "relations": "Altında bursa subdeltoidea (subacromialis), rotator manşet tendonları ve collum chirurgicum düzeyinde n. axillaris + a. circumflexa humeri posterior bulunur.",
+        "high_yield": [
+          "Omuzun yuvarlak konturunu verir; kas içi enjeksiyon bölgesi (n. axillaris'ten uzak, acromion'un 2–3 parmak altı).",
+          "N. axillaris yaralanmasında (collum chirurgicum kırığı, omuz çıkığı) abduksiyon zayıflar, omuz düzleşir, 'asker rozeti' alanında duyu kaybolur.",
+          "Abduksiyonun ilk 15°'sini m. supraspinatus başlatır; deltoid 15° sonrasında etkindir."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "clavicula"
+        },
+        {
+          "relation": "originates_from",
+          "target": "scapula"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "humerus"
+        },
+        {
+          "relation": "innervated_by",
+          "target": "n_axillaris"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_humeri"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_supraspinatus",
+      "canonical": "Musculus supraspinatus",
+      "kind": "muscle",
+      "region": "upper_limb",
+      "turkish": "Supraspinatus kası",
+      "english": "Supraspinatus muscle",
+      "abbreviations": [
+        "m. supraspinatus"
+      ],
+      "synonyms": [
+        "supraspinatus"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.shoulder_joint",
+      "facts": {
+        "group": "Rotator manşet (SITS).",
+        "origin": "Fossa supraspinata scapulae.",
+        "insertion": "Tuberculum majus humeri (üst faset).",
+        "innervation": "N. suprascapularis (C5, C6).",
+        "arterial_supply": "A. suprascapularis.",
+        "action": "Omuz abduksiyonunu başlatır (0°–15°); caput humeri'yi cavitas glenoidalis'e bastırarak stabilize eder.",
+        "relations": "Tendonu lig. coracoacromiale ve acromion'un altından geçer; bursa subacromialis tendonu acromion'dan ayırır.",
+        "high_yield": [
+          "En sık yırtılan rotator manşet tendonudur (subakromial sıkışma).",
+          "Yırtığında hasta kolu abduksiyona başlatamaz; pasif 15° sonrası deltoid ile sürdürür.",
+          "N. suprascapularis incisura scapulae'den (bağın altından) geçer; buradaki sıkışma bu kası ve m. infraspinatus'u etkiler."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "scapula"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "humerus"
+        },
+        {
+          "relation": "innervated_by",
+          "target": "n_suprascapularis"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_humeri"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_infraspinatus",
+      "canonical": "Musculus infraspinatus",
+      "kind": "muscle",
+      "region": "upper_limb",
+      "turkish": "Infraspinatus kası",
+      "english": "Infraspinatus muscle",
+      "abbreviations": [
+        "m. infraspinatus"
+      ],
+      "synonyms": [
+        "infraspinatus"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.shoulder_joint",
+      "facts": {
+        "group": "Rotator manşet (SITS).",
+        "origin": "Fossa infraspinata scapulae.",
+        "insertion": "Tuberculum majus humeri (orta faset).",
+        "innervation": "N. suprascapularis (C5, C6).",
+        "arterial_supply": "A. suprascapularis, a. circumflexa scapulae.",
+        "action": "Omuz dış rotasyonu (temel dış rotatör); eklemi arkadan stabilize eder.",
+        "high_yield": [
+          "Dış rotasyonun ana kasıdır; m. teres minor ile birlikte çalışır.",
+          "M. supraspinatus ile aynı siniri paylaşır (n. suprascapularis)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "scapula"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "humerus"
+        },
+        {
+          "relation": "innervated_by",
+          "target": "n_suprascapularis"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_humeri"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_teres_minor",
+      "canonical": "Musculus teres minor",
+      "kind": "muscle",
+      "region": "upper_limb",
+      "turkish": "Teres minor kası",
+      "english": "Teres minor muscle",
+      "abbreviations": [
+        "m. teres minor"
+      ],
+      "synonyms": [
+        "teres minor"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.shoulder_joint",
+      "facts": {
+        "group": "Rotator manşet (SITS).",
+        "origin": "Margo lateralis scapulae'nin üst 2/3'ü (dorsal yüz).",
+        "insertion": "Tuberculum majus humeri (alt faset).",
+        "innervation": "N. axillaris (C5, C6).",
+        "action": "Omuz dış rotasyonu, zayıf adduksiyon; caput humeri'yi stabilize eder.",
+        "high_yield": [
+          "Rotator manşetin n. axillaris ile innerve olan tek kasıdır (diğerleri n. suprascapularis ve nn. subscapulares).",
+          "M. teres major ile arasında spatium axillare laterale (a. circumflexa humeri posterior, n. axillaris) ve mediale (a. circumflexa scapulae) bulunur."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "scapula"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "humerus"
+        },
+        {
+          "relation": "innervated_by",
+          "target": "n_axillaris"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_humeri"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_subscapularis",
+      "canonical": "Musculus subscapularis",
+      "kind": "muscle",
+      "region": "upper_limb",
+      "turkish": "Subscapularis kası",
+      "english": "Subscapularis muscle",
+      "abbreviations": [
+        "m. subscapularis"
+      ],
+      "synonyms": [
+        "subscapularis"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.shoulder_joint",
+      "facts": {
+        "group": "Rotator manşet (SITS); manşetin tek ön kası.",
+        "origin": "Fossa subscapularis (scapula'nın facies costalis'i).",
+        "insertion": "Tuberculum minus humeri (ve crista tuberculi minoris'in üst kısmı).",
+        "innervation": "Nn. subscapulares superior ve inferior (C5–C7).",
+        "arterial_supply": "A. subscapularis dalları.",
+        "action": "Omuz iç rotasyonu (en güçlü iç rotatör), adduksiyona yardım; caput humeri'yi önden stabilize eder.",
+        "relations": "Axilla'nın arka duvarını oluşturur; tendonu ile kapsül arasında bursa subtendinea m. subscapularis vardır.",
+        "high_yield": [
+          "Tuberculum minus'a yapışan tek kastır.",
+          "Rotator manşetin iç rotasyon yapan tek üyesidir; diğer üçü dış rotasyon/abduksiyon yapar."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "scapula"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "humerus"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_humeri"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_teres_major",
+      "canonical": "Musculus teres major",
+      "kind": "muscle",
+      "region": "upper_limb",
+      "turkish": "Teres major kası",
+      "english": "Teres major muscle",
+      "abbreviations": [
+        "m. teres major"
+      ],
+      "synonyms": [
+        "teres major"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.shoulder_joint",
+      "facts": {
+        "group": "Omuz kasları (rotator manşete DAHİL DEĞİL).",
+        "origin": "Angulus inferior scapulae'nin dorsal yüzü.",
+        "insertion": "Crista tuberculi minoris humeri.",
+        "innervation": "N. subscapularis inferior (C5–C7).",
+        "action": "Omuz adduksiyonu, iç rotasyonu ve ekstansiyonu (latissimus dorsi'nin küçük yardımcısı).",
+        "high_yield": [
+          "Adı 'teres' olsa da rotator manşet üyesi değildir; iç rotasyon yapar (teres minor dış rotasyon yapar).",
+          "M. latissimus dorsi ile birlikte axilla'nın arka kıvrımını oluşturur."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "scapula"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "humerus"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_humeri"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_biceps_brachii",
+      "canonical": "Musculus biceps brachii",
+      "kind": "muscle",
+      "region": "upper_limb",
+      "turkish": "Biseps kası (kolun ön iki başlı kası)",
+      "english": "Biceps brachii muscle",
+      "abbreviations": [
+        "m. biceps brachii"
+      ],
+      "synonyms": [
+        "biceps",
+        "biseps",
+        "pazu kasi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.arm",
+      "facts": {
+        "group": "Kolun ön (fleksör) kompartmanı.",
+        "origin": "Caput longum: tuberculum supraglenoidale scapulae (tendon eklem içinden geçer); caput breve: processus coracoideus scapulae.",
+        "insertion": "Tuberositas radii; aponeurosis musculi bicipitis brachii (lacertus fibrosus) ile fascia antebrachii'ye.",
+        "innervation": "N. musculocutaneus (C5, C6).",
+        "arterial_supply": "A. brachialis'in kas dalları.",
+        "action": "Ön kol supinasyonu (dirsek fleksiyondayken en güçlü supinatör), dirsek fleksiyonu; zayıf omuz fleksiyonu; caput longum caput humeri'yi stabilize eder.",
+        "relations": "Caput longum tendonu sulcus intertubercularis'te lig. transversum humeri altındadır; aponeuroz a. brachialis ve n. medianus'u örter.",
+        "high_yield": [
+          "Biseps refleksi C5–C6.",
+          "Caput longum tendonunun kopmasında 'Popeye' belirtisi görülür.",
+          "En güçlü supinatördür; vidayı sıkmak sağ elde biseps ile yapılır (Popeye).",
+          "N. musculocutaneus ile innerve olan üç kas: m. coracobrachialis, m. biceps brachii, m. brachialis (BBC)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "scapula"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "radius"
+        },
+        {
+          "relation": "innervated_by",
+          "target": "n_musculocutaneus"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_cubiti"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_humeri"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_coracobrachialis",
+      "canonical": "Musculus coracobrachialis",
+      "kind": "muscle",
+      "region": "upper_limb",
+      "turkish": "Coracobrachialis kası",
+      "english": "Coracobrachialis muscle",
+      "abbreviations": [
+        "m. coracobrachialis"
+      ],
+      "synonyms": [
+        "coracobrachialis"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.arm",
+      "facts": {
+        "group": "Kolun ön (fleksör) kompartmanı.",
+        "origin": "Processus coracoideus scapulae (m. biceps brachii caput breve ile ortak).",
+        "insertion": "Humerus'un medial yüzünün orta 1/3'ü.",
+        "innervation": "N. musculocutaneus (C5–C7); sinir kası deler.",
+        "action": "Kolun fleksiyonu ve adduksiyonu.",
+        "high_yield": [
+          "N. musculocutaneus tarafından delinir; sinirin kolda bulunması için işaret kastır.",
+          "Kolun ön kompartmanının üç kasından biridir."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "scapula"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "humerus"
+        },
+        {
+          "relation": "innervated_by",
+          "target": "n_musculocutaneus"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_brachialis",
+      "canonical": "Musculus brachialis",
+      "kind": "muscle",
+      "region": "upper_limb",
+      "turkish": "Brachialis kası",
+      "english": "Brachialis muscle",
+      "abbreviations": [
+        "m. brachialis"
+      ],
+      "synonyms": [
+        "brachialis"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.arm",
+      "facts": {
+        "group": "Kolun ön (fleksör) kompartmanı.",
+        "origin": "Humerus ön yüzünün distal yarısı.",
+        "insertion": "Tuberositas ulnae ve processus coronoideus ulnae.",
+        "innervation": "N. musculocutaneus (C5, C6); lateral küçük parça n. radialis'ten dal alır.",
+        "action": "Dirsek fleksiyonu (ön kolun her pozisyonunda çalışan temel fleksör).",
+        "high_yield": [
+          "Dirsek fleksiyonunun 'işçi kası'dır: pronasyon-supinasyondan bağımsız çalışır.",
+          "Yalnızca ulna'ya yapıştığı için supinasyona katılmaz (biseps radius'a yapışır ve supinasyon yapar)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "humerus"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "ulna"
+        },
+        {
+          "relation": "innervated_by",
+          "target": "n_musculocutaneus"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_cubiti"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_triceps_brachii",
+      "canonical": "Musculus triceps brachii",
+      "kind": "muscle",
+      "region": "upper_limb",
+      "turkish": "Triseps kası (kolun arka üç başlı kası)",
+      "english": "Triceps brachii muscle",
+      "abbreviations": [
+        "m. triceps brachii"
+      ],
+      "synonyms": [
+        "triceps",
+        "triseps"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.arm",
+      "facts": {
+        "group": "Kolun arka (ekstansör) kompartmanı.",
+        "origin": "Caput longum: tuberculum infraglenoidale scapulae; caput laterale: humerus arka yüzü, sulcus nervi radialis'in üst-lateralinde; caput mediale: humerus arka yüzü, sulcus nervi radialis'in altında.",
+        "insertion": "Olecranon (ve fascia antebrachii).",
+        "innervation": "N. radialis (C6–C8).",
+        "arterial_supply": "A. profunda brachii.",
+        "action": "Dirsek ekstansiyonu (ana ekstansör); caput longum omuz ekstansiyonu ve adduksiyonuna yardım eder.",
+        "relations": "N. radialis ve a. profunda brachii caput laterale ile mediale arasında sulcus nervi radialis'te seyreder.",
+        "high_yield": [
+          "Triseps refleksi C7 (C6–C8).",
+          "Caput longum spatium axillare laterale ile mediale'yi (ve trigonum omotricipitale'yi) sınırlar.",
+          "Kolun arka kompartmanının tek büyük kasıdır (m. anconeus küçük yardımcı)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "scapula"
+        },
+        {
+          "relation": "originates_from",
+          "target": "humerus"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "ulna"
+        },
+        {
+          "relation": "innervated_by",
+          "target": "n_radialis"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_cubiti"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_brachioradialis",
+      "canonical": "Musculus brachioradialis",
+      "kind": "muscle",
+      "region": "upper_limb",
+      "turkish": "Brachioradialis kası",
+      "english": "Brachioradialis muscle",
+      "abbreviations": [
+        "m. brachioradialis"
+      ],
+      "synonyms": [
+        "brachioradialis"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.forearm",
+      "facts": {
+        "group": "Ön kolun lateral (radial) grubu / yüzeyel ekstansör grup.",
+        "origin": "Crista supracondylaris lateralis humeri (üst 2/3).",
+        "insertion": "Processus styloideus radii'nin lateral yüzü.",
+        "innervation": "N. radialis (C5, C6).",
+        "action": "Dirsek fleksiyonu (ön kol yarı pronasyondayken en etkin); ön kolu nötr pozisyona getirir.",
+        "high_yield": [
+          "N. radialis ile innerve olduğu hâlde dirsek FLEKSİYONU yapan kastır (sınav tuzağı).",
+          "Brachioradialis refleksi C5–C6."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "humerus"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "radius"
+        },
+        {
+          "relation": "innervated_by",
+          "target": "n_radialis"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_cubiti"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_pectoralis_major",
+      "canonical": "Musculus pectoralis major",
+      "kind": "muscle",
+      "region": "upper_limb",
+      "turkish": "Büyük göğüs kası",
+      "english": "Pectoralis major muscle",
+      "abbreviations": [
+        "m. pectoralis major"
+      ],
+      "synonyms": [
+        "pectoralis major",
+        "buyuk gogus kasi",
+        "pektoral kas"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.shoulder_joint",
+      "facts": {
+        "group": "Göğüs-kol kasları (üst ekstremiteyi gövdeye bağlayan ön kaslar).",
+        "origin": "Pars clavicularis: clavicula'nın medial yarısı; pars sternocostalis: sternum ön yüzü ve 1.–6. kıkırdak kostalar; pars abdominalis: m. obliquus externus abdominis aponeurozu.",
+        "insertion": "Crista tuberculi majoris humeri (lifler çaprazlanarak).",
+        "innervation": "Nn. pectorales medialis ve lateralis (C5–T1).",
+        "arterial_supply": "A. thoracoacromialis r. pectoralis.",
+        "action": "Kolun adduksiyonu ve iç rotasyonu; pars clavicularis fleksiyon, pars sternocostalis fleksiyondaki kolu ekstansiyona getirir; kol sabitken yardımcı inspirasyon kası.",
+        "relations": "Axilla'nın ön kıvrımını ve ön duvarını oluşturur; altında m. pectoralis minor ve a./v. axillaris bulunur.",
+        "high_yield": [
+          "Crista tuberculi MAJORIS'e yapışır (teres major ve latissimus dorsi crista tuberculi minoris/sulcus tabanına).",
+          "Kolu güçlü adduksiyona getirir ('kucaklama kası'); yüzmede ve ittirmede çalışır."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "clavicula"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "humerus"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_humeri"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_pectoralis_minor",
+      "canonical": "Musculus pectoralis minor",
+      "kind": "muscle",
+      "region": "upper_limb",
+      "turkish": "Küçük göğüs kası",
+      "english": "Pectoralis minor muscle",
+      "abbreviations": [
+        "m. pectoralis minor"
+      ],
+      "synonyms": [
+        "pectoralis minor",
+        "kucuk gogus kasi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.shoulder_girdle",
+      "facts": {
+        "group": "Göğüs-kuşak kasları.",
+        "origin": "3.–5. kostaların ön yüzleri (kıkırdak-kemik birleşimi yakını).",
+        "insertion": "Processus coracoideus scapulae.",
+        "innervation": "N. pectoralis medialis (C8, T1) (+ lateralis).",
+        "action": "Scapula'yı öne-aşağı çeker (protraksiyon, depresyon), angulus inferior'u arkaya döndürür; yardımcı inspirasyon kası.",
+        "high_yield": [
+          "A. axillaris'i üç parçaya bölen anatomik işaret kastır.",
+          "Processus coracoideus'a yapışan üç yapıdan biri (m. biceps caput breve, m. coracobrachialis, m. pectoralis minor)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "inserts_on",
+          "target": "scapula"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_serratus_anterior",
+      "canonical": "Musculus serratus anterior",
+      "kind": "muscle",
+      "region": "upper_limb",
+      "turkish": "Serratus anterior kası (ön testere kası)",
+      "english": "Serratus anterior muscle",
+      "abbreviations": [
+        "m. serratus anterior"
+      ],
+      "synonyms": [
+        "serratus anterior",
+        "on testere kasi",
+        "boksor kasi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.shoulder_girdle",
+      "facts": {
+        "group": "Göğüs-kuşak kasları; göğüs yan duvarında.",
+        "origin": "1.–8. (9.) kostaların dış yüzleri (testere dişi biçiminde).",
+        "insertion": "Margo medialis scapulae'nin facies costalis'i (alt lifler angulus inferior'da yoğunlaşır).",
+        "innervation": "N. thoracicus longus (C5–C7).",
+        "arterial_supply": "A. thoracica lateralis, a. thoracodorsalis.",
+        "action": "Scapula'yı öne çeker (protraksiyon: 'boksör kası'), göğüs duvarına bastırır; alt lifleri scapula'yı yukarı döndürerek 90° üstü abduksiyona (elevasyon) olanak verir.",
+        "high_yield": [
+          "N. thoracicus longus yaralanmasında (mastektomi, ağır yük) scapula alata (kanat scapula) görülür; hasta kolu başının üstüne kaldıramaz.",
+          "Kolun 90° üstüne kaldırılması (elevasyon) için m. trapezius ile birlikte scapula'yı yukarı döndürür.",
+          "Axilla'nın medial duvarını oluşturur."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "inserts_on",
+          "target": "scapula"
+        },
+        {
+          "relation": "innervated_by",
+          "target": "n_thoracicus_longus"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_latissimus_dorsi",
+      "canonical": "Musculus latissimus dorsi",
+      "kind": "muscle",
+      "region": "trunk",
+      "turkish": "Geniş sırt kası",
+      "english": "Latissimus dorsi muscle",
+      "abbreviations": [
+        "m. latissimus dorsi"
+      ],
+      "synonyms": [
+        "latissimus dorsi",
+        "genis sirt kasi",
+        "latissimus"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.back_muscles",
+      "facts": {
+        "group": "Yüzeyel sırt kasları (üst ekstremiteye ait).",
+        "origin": "T7–T12 processus spinosi, fascia thoracolumbalis (L1–L5, sacrum), crista iliaca'nın arka 1/3'ü, 9.–12. kostalar, angulus inferior scapulae.",
+        "insertion": "Sulcus intertubercularis'in tabanı (crista tuberculi minoris'in önü).",
+        "innervation": "N. thoracodorsalis (C6–C8).",
+        "arterial_supply": "A. thoracodorsalis.",
+        "action": "Kolun adduksiyonu, ekstansiyonu ve iç rotasyonu ('tırmanma / kürek çekme kası'); kol sabitken gövdeyi yukarı çeker; öksürükte yardımcı.",
+        "relations": "M. teres major ile birlikte axilla'nın arka kıvrımını oluşturur; tendonu m. teres major'un önünden geçer.",
+        "high_yield": [
+          "Kolu hem adduksiyon hem ekstansiyon hem iç rotasyona getiren üç kas: m. latissimus dorsi, m. teres major, m. pectoralis major (pars sternocostalis).",
+          "Koltuk değneğiyle yürümede ve yüzmede (kulaç) temel kastır."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "inserts_on",
+          "target": "humerus"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_humeri"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_trapezius",
+      "canonical": "Musculus trapezius",
+      "kind": "muscle",
+      "region": "trunk",
+      "turkish": "Trapez kası",
+      "english": "Trapezius muscle",
+      "abbreviations": [
+        "m. trapezius"
+      ],
+      "synonyms": [
+        "trapezius",
+        "trapez kasi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.back_muscles",
+      "facts": {
+        "group": "Yüzeyel sırt kasları (üst ekstremiteye ait); pars descendens, transversa, ascendens.",
+        "origin": "Protuberantia occipitalis externa, linea nuchalis superior, lig. nuchae, C7–T12 processus spinosi.",
+        "insertion": "Clavicula'nın lateral 1/3'ü, acromion, spina scapulae.",
+        "innervation": "N. accessorius (XI. kranial sinir) motor; C3–C4 propriosepsiyon.",
+        "action": "Pars descendens: scapula elevasyonu ve yukarı rotasyon; pars transversa: retraksiyon; pars ascendens: depresyon ve yukarı rotasyon. Bilateral: baş-boyun ekstansiyonu.",
+        "high_yield": [
+          "Kranial sinirle (n. accessorius) innerve olan iki kastan biri (diğeri m. sternocleidomastoideus).",
+          "N. accessorius yaralanmasında omuz düşer ve hasta omzunu kaldıramaz.",
+          "M. serratus anterior ile birlikte scapula'nın yukarı rotasyonunu (kol elevasyonu) sağlar."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "inserts_on",
+          "target": "clavicula"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "scapula"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_levator_scapulae",
+      "canonical": "Musculus levator scapulae",
+      "kind": "muscle",
+      "region": "trunk",
+      "turkish": "Levator scapulae kası",
+      "english": "Levator scapulae muscle",
+      "abbreviations": [
+        "m. levator scapulae"
+      ],
+      "synonyms": [
+        "levator scapulae"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.back_muscles",
+      "facts": {
+        "group": "Yüzeyel sırt kasları (derin tabaka).",
+        "origin": "C1–C4 processus transversi (tubercula posteriora).",
+        "insertion": "Angulus superior scapulae ve margo medialis'in spina üstündeki kısmı.",
+        "innervation": "N. dorsalis scapulae (C4, C5) ve C3–C4 dalları.",
+        "action": "Scapula elevasyonu, aşağı rotasyon; scapula sabitken boynu aynı tarafa eğer.",
+        "high_yield": [
+          "Mm. rhomboidei ile aynı siniri (n. dorsalis scapulae) paylaşır."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "inserts_on",
+          "target": "scapula"
+        }
+      ]
+    },
+    {
+      "structure_id": "mm_rhomboidei",
+      "canonical": "Musculi rhomboidei (major et minor)",
+      "kind": "muscle",
+      "region": "trunk",
+      "turkish": "Rhomboid kaslar",
+      "english": "Rhomboid muscles",
+      "abbreviations": [
+        "m. rhomboideus major",
+        "m. rhomboideus minor"
+      ],
+      "synonyms": [
+        "rhomboid",
+        "rhomboideus",
+        "romboid"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.back_muscles",
+      "facts": {
+        "group": "Yüzeyel sırt kasları (derin tabaka).",
+        "origin": "M. rhomboideus minor: lig. nuchae, C7–T1 processus spinosi; m. rhomboideus major: T2–T5 processus spinosi.",
+        "insertion": "Margo medialis scapulae (minor spina düzeyinde, major spina'nın altında).",
+        "innervation": "N. dorsalis scapulae (C4, C5).",
+        "action": "Scapula retraksiyonu (omurgaya yaklaştırma), elevasyon ve aşağı rotasyon; scapula'yı göğüs duvarında sabitler.",
+        "high_yield": [
+          "Felçlerinde scapula laterale kayar ve margo medialis hafif kanatlaşır (serratus anterior felcinden daha hafif)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "inserts_on",
+          "target": "scapula"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_sternocleidomastoideus",
+      "canonical": "Musculus sternocleidomastoideus",
+      "kind": "muscle",
+      "region": "head_neck",
+      "turkish": "Sternokleidomastoid kas",
+      "english": "Sternocleidomastoid muscle",
+      "abbreviations": [
+        "SCM",
+        "m. sternocleidomastoideus"
+      ],
+      "synonyms": [
+        "sternocleidomastoid",
+        "sternokleidomastoid",
+        "scm"
+      ],
+      "topic_id": "anatomy.musculoskeletal.head_neck_muscles",
+      "facts": {
+        "group": "Boynun yüzeyel kasları; boynu ön ve arka üçgene ayırır.",
+        "origin": "Caput sternale: manubrium sterni ön yüzü; caput claviculare: clavicula'nın medial 1/3'ünün üst yüzü.",
+        "insertion": "Processus mastoideus ossis temporalis ve linea nuchalis superior'un lateral yarısı.",
+        "innervation": "N. accessorius (XI) motor; C2–C3 (plexus cervicalis) propriosepsiyon.",
+        "arterial_supply": "A. occipitalis, a. thyroidea superior dalları.",
+        "action": "Tek taraflı: başı aynı tarafa eğer (lateral fleksiyon), yüzü karşı tarafa döndürür; iki taraflı: boynu fleksiyona, başı ekstansiyona getirir; yardımcı inspirasyon kası.",
+        "relations": "Altında a. carotis communis, v. jugularis interna ve n. vagus (vagina carotica) seyreder; n. accessorius kası deler veya arkasından geçer.",
+        "high_yield": [
+          "Konjenital tortikolis: kasın kısalığıyla baş aynı tarafa eğik, yüz karşı tarafa dönük durur.",
+          "Regio cervicalis'i trigonum cervicale anterius ve posterius'a böler.",
+          "Kasın arka kenarının orta noktasından (punctum nervosum) plexus cervicalis'in deri dalları çıkar."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "clavicula"
+        },
+        {
+          "relation": "originates_from",
+          "target": "sternum"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_gluteus_maximus",
+      "canonical": "Musculus gluteus maximus",
+      "kind": "muscle",
+      "region": "lower_limb",
+      "turkish": "Büyük kalça kası",
+      "english": "Gluteus maximus muscle",
+      "abbreviations": [
+        "m. gluteus maximus"
+      ],
+      "synonyms": [
+        "gluteus maximus",
+        "buyuk kalca kasi",
+        "gluteal kas"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.hip_joint",
+      "facts": {
+        "group": "Gluteal bölge kasları (yüzeyel).",
+        "origin": "Ala ossis ilii'nin linea glutea posterior'un arkasında kalan kısmı, os sacrum ve os coccygis'in arka yüzü, lig. sacrotuberale, fascia thoracolumbalis.",
+        "insertion": "Liflerin çoğu tractus iliotibialis'e (fascia lata), derin lifler tuberositas glutea femoris'e.",
+        "innervation": "N. gluteus inferior (L5, S1, S2).",
+        "arterial_supply": "Aa. gluteae superior ve inferior.",
+        "action": "Kalça ekstansiyonu (özellikle fleksiyondan: merdiven çıkma, oturuştan kalkma), dış rotasyon; tractus iliotibialis yoluyla dizi ekstansiyonda sabitler.",
+        "high_yield": [
+          "Vücudun en büyük ve en kalın kasıdır; normal yürüyüşte az, merdiven çıkmada ve koşmada çok çalışır.",
+          "Kas içi enjeksiyonda n. ischiadicus'tan kaçınmak için üst-dış kadran seçilir.",
+          "Felcinde oturuştan kalkmak ve merdiven çıkmak zorlaşır ('gluteus maximus yürüyüşü')."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "os_coxae"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "femur"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_coxae"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_gluteus_medius",
+      "canonical": "Musculus gluteus medius",
+      "kind": "muscle",
+      "region": "lower_limb",
+      "turkish": "Orta kalça kası",
+      "english": "Gluteus medius muscle",
+      "abbreviations": [
+        "m. gluteus medius"
+      ],
+      "synonyms": [
+        "gluteus medius",
+        "orta kalca kasi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.hip_joint",
+      "facts": {
+        "group": "Gluteal bölge kasları.",
+        "origin": "Ala ossis ilii'nin dış yüzünde linea glutea anterior ile posterior arası.",
+        "insertion": "Trochanter major'un lateral yüzü.",
+        "innervation": "N. gluteus superior (L4, L5, S1).",
+        "arterial_supply": "A. glutea superior.",
+        "action": "Kalça abduksiyonu; ön lifler iç rotasyon, arka lifler dış rotasyon. Tek ayak üstünde dururken (yürüme) pelvisi karşı tarafta düşmekten korur.",
+        "high_yield": [
+          "N. gluteus superior felcinde Trendelenburg belirtisi: hasta bacak üstünde dururken KARŞI taraf pelvis düşer.",
+          "Kas içi enjeksiyon için güvenli bölgedir (ventrogluteal)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "os_coxae"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "femur"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_coxae"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_gluteus_minimus",
+      "canonical": "Musculus gluteus minimus",
+      "kind": "muscle",
+      "region": "lower_limb",
+      "turkish": "Küçük kalça kası",
+      "english": "Gluteus minimus muscle",
+      "abbreviations": [
+        "m. gluteus minimus"
+      ],
+      "synonyms": [
+        "gluteus minimus"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.hip_joint",
+      "facts": {
+        "group": "Gluteal bölge kasları (en derin).",
+        "origin": "Ala ossis ilii'nin dış yüzünde linea glutea anterior ile inferior arası.",
+        "insertion": "Trochanter major'un ön yüzü.",
+        "innervation": "N. gluteus superior (L4, L5, S1).",
+        "action": "Kalça abduksiyonu ve iç rotasyonu; yürürken pelvisi sabitler (gluteus medius ile birlikte).",
+        "high_yield": [
+          "M. gluteus medius, m. gluteus minimus ve m. tensor fasciae latae: n. gluteus superior'un üç kası."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "os_coxae"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "femur"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_coxae"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_tensor_fasciae_latae",
+      "canonical": "Musculus tensor fasciae latae",
+      "kind": "muscle",
+      "region": "lower_limb",
+      "turkish": "Tensor fasciae latae kası",
+      "english": "Tensor fasciae latae muscle",
+      "abbreviations": [
+        "m. tensor fasciae latae",
+        "TFL"
+      ],
+      "synonyms": [
+        "tensor fasciae latae",
+        "tfl"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.hip_joint",
+      "facts": {
+        "group": "Gluteal bölge / uyluk ön-lateral.",
+        "origin": "Spina iliaca anterior superior ve crista iliaca'nın ön kısmı.",
+        "insertion": "Tractus iliotibialis (oradan condylus lateralis tibiae'ye).",
+        "innervation": "N. gluteus superior (L4, L5).",
+        "action": "Kalça fleksiyonu, abduksiyonu ve iç rotasyonu; fascia lata'yı gererek dizi ekstansiyonda sabitler.",
+        "high_yield": [
+          "Tractus iliotibialis'e yapışan iki kas: m. tensor fasciae latae ve m. gluteus maximus."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "os_coxae"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_coxae"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_piriformis",
+      "canonical": "Musculus piriformis",
+      "kind": "muscle",
+      "region": "lower_limb",
+      "turkish": "Piriformis kası",
+      "english": "Piriformis muscle",
+      "abbreviations": [
+        "m. piriformis"
+      ],
+      "synonyms": [
+        "piriformis"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.hip_joint",
+      "facts": {
+        "group": "Derin gluteal kaslar (dış rotatörler).",
+        "origin": "Os sacrum'un facies pelvica'sı (2.–4. sakral segmentler).",
+        "insertion": "Trochanter major'un tepesi (apex).",
+        "innervation": "Plexus sacralis'in doğrudan dalları (S1, S2).",
+        "action": "Kalça dış rotasyonu; fleksiyondaki kalçada abduksiyon; caput femoris'i stabilize eder.",
+        "high_yield": [
+          "Foramen ischiadicum majus'u foramen suprapiriforme (a./v./n. glutea superior) ve infrapiriforme (n. ischiadicus, n. gluteus inferior, n. pudendus, a./v. glutea inferior) olarak böler; gluteal bölgenin anahtar işaret kasıdır.",
+          "Piriformis sendromu: kasın n. ischiadicus'u sıkıştırması."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "inserts_on",
+          "target": "femur"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_coxae"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_iliopsoas",
+      "canonical": "Musculus iliopsoas",
+      "kind": "muscle",
+      "region": "lower_limb",
+      "turkish": "İliopsoas kası",
+      "english": "Iliopsoas muscle",
+      "abbreviations": [
+        "m. iliopsoas"
+      ],
+      "synonyms": [
+        "iliopsoas",
+        "psoas major",
+        "iliacus",
+        "m. psoas major",
+        "m. iliacus"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.hip_joint",
+      "facts": {
+        "group": "Kalça fleksörleri (m. psoas major + m. iliacus).",
+        "origin": "M. psoas major: T12–L4 corpus vertebrae ve disci intervertebrales, L1–L5 processus transversi; m. iliacus: fossa iliaca.",
+        "insertion": "Trochanter minor femoris (ortak tendon).",
+        "innervation": "M. psoas major: plexus lumbalis'in ön dalları (L1–L3); m. iliacus: n. femoralis (L2, L3).",
+        "action": "Kalçanın en güçlü fleksörü; dış rotasyona hafif katkı; alt ekstremite sabitken gövdeyi öne büker (oturmaya kalkma).",
+        "relations": "Lig. inguinale'nin altından lacuna musculorum'dan geçer; n. femoralis kasın lateralinde, a. femoralis medialindedir. M. psoas major boyunca plexus lumbalis oluşur.",
+        "high_yield": [
+          "Trochanter minor'a yapışan tek kastır.",
+          "Psoas apsesi kas kılıfı boyunca uyluğa inebilir; psoas belirtisi (apandisit)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "os_coxae"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "femur"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_coxae"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_quadriceps_femoris",
+      "canonical": "Musculus quadriceps femoris",
+      "kind": "muscle",
+      "region": "lower_limb",
+      "turkish": "Dört başlı uyluk kası",
+      "english": "Quadriceps femoris muscle",
+      "abbreviations": [
+        "m. quadriceps femoris"
+      ],
+      "synonyms": [
+        "quadriceps",
+        "kuadriseps",
+        "rectus femoris",
+        "vastus lateralis",
+        "vastus medialis",
+        "vastus intermedius",
+        "dort basli uyluk kasi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.thigh",
+      "facts": {
+        "group": "Uyluğun ön kompartmanı (ekstansör).",
+        "origin": "M. rectus femoris: spina iliaca anterior inferior (caput rectum) ve acetabulum'un üst kenarı (caput reflexum); m. vastus lateralis: linea aspera labium laterale, trochanter major, linea intertrochanterica'nın lateral kısmı; m. vastus medialis: linea aspera labium mediale, linea intertrochanterica'nın medial kısmı; m. vastus intermedius: femur gövdesinin ön ve lateral yüzü.",
+        "insertion": "Ortak tendonla basis patellae; lig. patellae aracılığıyla tuberositas tibiae.",
+        "innervation": "N. femoralis (L2–L4).",
+        "arterial_supply": "A. femoralis ve a. profunda femoris dalları.",
+        "action": "Diz ekstansiyonu (tek ekstansör); m. rectus femoris ek olarak kalça fleksiyonu yapar (iki eklem geçer).",
+        "high_yield": [
+          "Patellar refleks (L2–L4, n. femoralis) bu kası test eder.",
+          "Sadece m. rectus femoris kalça eklemini geçer; kalça fleksiyondayken diz ekstansiyon gücü azalır.",
+          "M. vastus medialis'in oblik lifleri patellanın laterale kaymasını önler."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "os_coxae"
+        },
+        {
+          "relation": "originates_from",
+          "target": "femur"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "patella"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "tibia"
+        },
+        {
+          "relation": "innervated_by",
+          "target": "n_femoralis"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_genus"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_sartorius",
+      "canonical": "Musculus sartorius",
+      "kind": "muscle",
+      "region": "lower_limb",
+      "turkish": "Terzi kası",
+      "english": "Sartorius muscle",
+      "abbreviations": [
+        "m. sartorius"
+      ],
+      "synonyms": [
+        "sartorius",
+        "terzi kasi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.thigh",
+      "facts": {
+        "group": "Uyluğun ön kompartmanı.",
+        "origin": "Spina iliaca anterior superior.",
+        "insertion": "Tibia'nın medial yüzü, proksimal (pes anserinus: m. sartorius, m. gracilis, m. semitendinosus).",
+        "innervation": "N. femoralis (L2, L3).",
+        "action": "Kalça fleksiyonu, abduksiyonu ve dış rotasyonu + diz fleksiyonu ve iç rotasyonu (bağdaş kurma: terzi pozisyonu).",
+        "high_yield": [
+          "Vücudun en uzun kasıdır.",
+          "Trigonum femorale'nin lateral sınırını yapar; canalis adductorius'un çatısını oluşturur.",
+          "Pes anserinus'un üç kası farklı sinirlerle innerve olur: sartorius (n. femoralis), gracilis (n. obturatorius), semitendinosus (n. tibialis)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "os_coxae"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "tibia"
+        },
+        {
+          "relation": "innervated_by",
+          "target": "n_femoralis"
+        }
+      ]
+    },
+    {
+      "structure_id": "mm_adductores",
+      "canonical": "Musculi adductores (longus, brevis, magnus), m. gracilis, m. pectineus",
+      "kind": "muscle",
+      "region": "lower_limb",
+      "turkish": "Uyluk adduktör kasları",
+      "english": "Adductor group of the thigh",
+      "abbreviations": [
+        "m. adductor longus",
+        "m. adductor brevis",
+        "m. adductor magnus",
+        "m. gracilis",
+        "m. pectineus"
+      ],
+      "synonyms": [
+        "adductor",
+        "adduktor",
+        "adductor magnus",
+        "adductor longus",
+        "adductor brevis",
+        "gracilis",
+        "pectineus"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.thigh",
+      "facts": {
+        "group": "Uyluğun medial (adduktör) kompartmanı.",
+        "origin": "M. adductor longus: corpus ossis pubis (tuberculum pubicum altı); m. adductor brevis: corpus ve ramus inferior ossis pubis; m. adductor magnus: ramus inferior ossis pubis, ramus ossis ischii (adduktör parça) ve tuber ischiadicum (hamstring parça); m. gracilis: corpus ve ramus inferior ossis pubis; m. pectineus: pecten ossis pubis.",
+        "insertion": "Adductor longus/brevis ve magnus'un adduktör parçası: linea aspera; adductor magnus hamstring parçası: tuberculum adductorium; gracilis: pes anserinus (tibia medial); pectineus: linea pectinea femoris.",
+        "innervation": "N. obturatorius (L2–L4) hepsini innerve eder; m. adductor magnus'un hamstring parçası n. tibialis (n. ischiadicus'tan); m. pectineus n. femoralis (± n. obturatorius).",
+        "action": "Kalça adduksiyonu; adductor longus/brevis, pectineus fleksiyona yardım; adductor magnus hamstring parçası ekstansiyon; gracilis diz fleksiyonu ve iç rotasyonu.",
+        "high_yield": [
+          "M. adductor magnus çift innervasyonlu ve çift işlevlidir (adduktör parça n. obturatorius, hamstring parça n. tibialis).",
+          "Hiatus adductorius (adductor magnus'ta) a./v. femoralis'in fossa poplitea'ya geçtiği yerdir.",
+          "M. pectineus, n. femoralis ile n. obturatorius arasındaki geçiş kasıdır."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "os_coxae"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "femur"
+        },
+        {
+          "relation": "innervated_by",
+          "target": "n_obturatorius"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_coxae"
+        }
+      ]
+    },
+    {
+      "structure_id": "mm_ischiocrurales",
+      "canonical": "Musculi ischiocrurales (hamstring): m. biceps femoris, m. semitendinosus, m. semimembranosus",
+      "kind": "muscle",
+      "region": "lower_limb",
+      "turkish": "Hamstring (arka uyluk) kasları",
+      "english": "Hamstring muscles",
+      "abbreviations": [
+        "m. biceps femoris",
+        "m. semitendinosus",
+        "m. semimembranosus"
+      ],
+      "synonyms": [
+        "hamstring",
+        "biceps femoris",
+        "semitendinosus",
+        "semimembranosus",
+        "arka uyluk kaslari",
+        "ischiocrural"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.thigh",
+      "facts": {
+        "group": "Uyluğun arka kompartmanı.",
+        "origin": "Hepsi tuber ischiadicum'dan; m. biceps femoris caput breve ek olarak linea aspera'dan (bu yüzden gerçek hamstring sayılmaz).",
+        "insertion": "M. biceps femoris: caput fibulae; m. semitendinosus: pes anserinus (tibia medial yüzü); m. semimembranosus: condylus medialis tibiae (arka-medial).",
+        "innervation": "N. tibialis (n. ischiadicus'un tibial parçası, L5–S2); m. biceps femoris caput breve: n. fibularis communis.",
+        "action": "Kalça ekstansiyonu ve diz fleksiyonu (iki eklem geçer); fleksiyondaki dizde biceps femoris dış rotasyon, semitendinosus/semimembranosus iç rotasyon.",
+        "high_yield": [
+          "Fossa poplitea'nın üst-lateral sınırı m. biceps femoris, üst-medial sınırı m. semimembranosus (ve semitendinosus).",
+          "Hamstring yaralanması (sprinterlerde) en sık m. biceps femoris caput longum'dadır.",
+          "M. biceps femoris caput breve, diğer hamstringlerden farklı olarak n. fibularis communis ile innerve olur."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "os_coxae"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "fibula"
+        },
+        {
+          "relation": "inserts_on",
+          "target": "tibia"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_genus"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_coxae"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_triceps_surae",
+      "canonical": "Musculus triceps surae (m. gastrocnemius + m. soleus)",
+      "kind": "muscle",
+      "region": "lower_limb",
+      "turkish": "Baldır üç başlı kası",
+      "english": "Triceps surae (calf muscle)",
+      "abbreviations": [
+        "m. gastrocnemius",
+        "m. soleus",
+        "m. triceps surae"
+      ],
+      "synonyms": [
+        "gastrocnemius",
+        "soleus",
+        "triceps surae",
+        "baldir kasi",
+        "calf muscle",
+        "asil tendonu",
+        "achilles"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.leg",
+      "facts": {
+        "group": "Bacağın arka kompartmanı, yüzeyel tabaka.",
+        "origin": "M. gastrocnemius caput mediale: condylus medialis femoris'in üstü; caput laterale: condylus lateralis femoris; m. soleus: caput fibulae ve fibula arka yüzünün üst 1/4'ü, linea musculi solei tibiae.",
+        "insertion": "Tendo calcaneus (Achilles) ile tuber calcanei.",
+        "innervation": "N. tibialis (S1, S2).",
+        "arterial_supply": "A. tibialis posterior dalları, aa. surales.",
+        "action": "Ayak bileği plantar fleksiyonu (yürüme ve koşmada itme); m. gastrocnemius ayrıca diz fleksiyonu (iki eklem geçer); m. soleus ayakta dururken postürü korur.",
+        "high_yield": [
+          "Aşil refleksi S1.",
+          "Tendo calcaneus vücudun en kalın ve en güçlü tendonudur; kopması sıktır (Thompson testi).",
+          "M. soleus tek eklemli olduğu için diz fleksiyondayken bile plantar fleksiyon yapar; 'periferik kalp' (venöz pompa)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "femur"
+        },
+        {
+          "relation": "originates_from",
+          "target": "tibia"
+        },
+        {
+          "relation": "originates_from",
+          "target": "fibula"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_talocruralis"
+        },
+        {
+          "relation": "innervated_by",
+          "target": "n_tibialis"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_tibialis_anterior",
+      "canonical": "Musculus tibialis anterior",
+      "kind": "muscle",
+      "region": "lower_limb",
+      "turkish": "Ön kaval kası",
+      "english": "Tibialis anterior muscle",
+      "abbreviations": [
+        "m. tibialis anterior"
+      ],
+      "synonyms": [
+        "tibialis anterior",
+        "on kaval kasi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.leg",
+      "facts": {
+        "group": "Bacağın ön kompartmanı (dorsifleksörler).",
+        "origin": "Condylus lateralis tibiae, facies lateralis tibiae'nin üst 2/3'ü, membrana interossea cruris.",
+        "insertion": "Os cuneiforme mediale ve basis ossis metatarsi I (plantar-medial yüz).",
+        "innervation": "N. fibularis (peroneus) profundus (L4, L5).",
+        "arterial_supply": "A. tibialis anterior.",
+        "action": "Ayak bileği dorsifleksiyonu ve ayağın inversiyonu; yürürken ayağın yere vurmasını önler.",
+        "high_yield": [
+          "N. fibularis communis/profundus yaralanmasında düşük ayak (foot drop) ve horoz yürüyüşü.",
+          "M. fibularis longus ile aynı kemiklere (os cuneiforme mediale, metatarsal I) yapışarak 'üzengi' oluşturur ve ayak kavsini destekler."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "tibia"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_talocruralis"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_fibularis_longus",
+      "canonical": "Musculus fibularis (peroneus) longus",
+      "kind": "muscle",
+      "region": "lower_limb",
+      "turkish": "Uzun fibular kas",
+      "english": "Fibularis (peroneus) longus muscle",
+      "abbreviations": [
+        "m. fibularis longus",
+        "m. peroneus longus"
+      ],
+      "synonyms": [
+        "fibularis longus",
+        "peroneus longus"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.leg",
+      "facts": {
+        "group": "Bacağın lateral kompartmanı (evertörler).",
+        "origin": "Caput fibulae ve facies lateralis fibulae'nin üst 2/3'ü.",
+        "insertion": "Os cuneiforme mediale ve basis ossis metatarsi I (plantar yüz; tendon ayak tabanını çaprazlar).",
+        "innervation": "N. fibularis (peroneus) superficialis (L5, S1).",
+        "action": "Ayağın eversiyonu, zayıf plantar fleksiyon; transvers ayak kavsini destekler.",
+        "high_yield": [
+          "Tendonu malleolus lateralis'in arkasından geçer, os cuboideum'daki olukta ayak tabanına döner.",
+          "N. fibularis superficialis yaralanmasında eversiyon kaybolur, bacak lateral ve ayak sırtı duyusu bozulur."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "originates_from",
+          "target": "fibula"
+        },
+        {
+          "relation": "acts_on",
+          "target": "articulatio_talocruralis"
+        }
+      ]
+    },
+    {
+      "structure_id": "shoulder_girdle",
+      "canonical": "Cingulum membri superioris (cingulum pectorale)",
+      "kind": "region",
+      "region": "upper_limb",
+      "turkish": "Omuz kuşağı",
+      "english": "Shoulder (pectoral) girdle",
+      "synonyms": [
+        "omuz kusagi",
+        "shoulder girdle",
+        "pectoral girdle",
+        "cingulum pectorale"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.shoulder_girdle",
+      "facts": {
+        "location": "Üst ekstremiteyi eksenel iskelete bağlayan kemik halkası: scapula ve clavicula (her iki tarafta). Arkada scapula gövdeye yalnızca kaslarla bağlıdır; önde clavicula sternum ile eklemleşir.",
+        "parts": [
+          "Scapula",
+          "Clavicula"
+        ],
+        "articulations": [
+          "Articulatio sternoclavicularis",
+          "Articulatio acromioclavicularis",
+          "(fonksiyonel) scapulothoracic kayma"
+        ],
+        "high_yield": [
+          "Pelvis kuşağının aksine arkada kapalı bir halka oluşturmaz; bu yüzden çok hareketlidir ama zayıftır.",
+          "Kolun 180° elevasyonunun yaklaşık 60°'si scapula'nın yukarı rotasyonundan gelir (scapulohumeral ritim 2:1)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "contains",
+          "target": "scapula"
+        },
+        {
+          "relation": "contains",
+          "target": "clavicula"
+        }
+      ]
+    },
+    {
+      "structure_id": "sternum",
+      "canonical": "Sternum",
+      "kind": "bone",
+      "region": "trunk",
+      "turkish": "Göğüs kemiği (iman tahtası)",
+      "english": "Sternum (breastbone)",
+      "synonyms": [
+        "gogus kemigi",
+        "breastbone",
+        "iman tahtasi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.thoracic_cage",
+      "landmarks": [
+        {
+          "landmark_id": "manubrium_sterni",
+          "latin": "Manubrium sterni",
+          "turkish": "Üst parça; incisura jugularis ve incisura clavicularis taşır"
+        },
+        {
+          "landmark_id": "angulus_sterni",
+          "latin": "Angulus sterni (Louis)",
+          "turkish": "Manubrium–corpus birleşimi; 2. kıkırdak kosta düzeyi, T4/T5 diski hizası",
+          "note": "Trachea bifurkasyonu, arcus aortae başlangıç-bitişi, azygos'un v. cava superior'a döküldüğü düzey"
+        },
+        {
+          "landmark_id": "corpus_sterni",
+          "latin": "Corpus sterni",
+          "turkish": "Gövde; 2.–7. kostalar eklemleşir"
+        },
+        {
+          "landmark_id": "processus_xiphoideus",
+          "latin": "Processus xiphoideus",
+          "turkish": "Alt kıkırdak uç; T10 düzeyi, linea alba ve diaphragma tutunur"
+        }
+      ],
+      "facts": {
+        "location": "Göğüs ön duvarının ortasında yassı kemik; kostalarla kıkırdaklar aracılığıyla eklemleşir.",
+        "parts": [
+          "Manubrium sterni",
+          "Corpus sterni",
+          "Processus xiphoideus"
+        ],
+        "articulations": [
+          "Articulatio sternoclavicularis",
+          "Articulationes sternocostales (1. kosta synchondrosis, 2.–7. synovial)",
+          "Symphysis manubriosternalis"
+        ],
+        "high_yield": [
+          "Angulus sterni 2. kostayı saymak için işaret noktasıdır.",
+          "Kemik iliği aspirasyonu (sternal ponksiyon) corpus sterni'den yapılır."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "clavicula"
+        }
+      ]
+    },
+    {
+      "structure_id": "os_sacrum",
+      "canonical": "Os sacrum",
+      "kind": "bone",
+      "region": "trunk",
+      "turkish": "Sağrı kemiği",
+      "english": "Sacrum",
+      "synonyms": [
+        "sagri kemigi",
+        "sacrum",
+        "sakrum"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.vertebral_column",
+      "landmarks": [
+        {
+          "landmark_id": "basis_ossis_sacri",
+          "latin": "Basis ossis sacri",
+          "turkish": "Üst yüz; L5 ile eklemleşir, promontorium'u taşır"
+        },
+        {
+          "landmark_id": "promontorium",
+          "latin": "Promontorium",
+          "turkish": "Basis'in öne çıkıntılı ön kenarı; pelvis girişi ölçümlerinde işaret"
+        },
+        {
+          "landmark_id": "facies_auricularis_sacri",
+          "latin": "Facies auricularis",
+          "turkish": "Os coxae ile eklemleşen yüz (art. sacroiliaca)"
+        },
+        {
+          "landmark_id": "foramina_sacralia",
+          "latin": "Foramina sacralia anteriora et posteriora",
+          "turkish": "Sakral spinal sinirlerin ön ve arka dallarının çıktığı delikler"
+        },
+        {
+          "landmark_id": "canalis_sacralis",
+          "latin": "Canalis sacralis",
+          "turkish": "Canalis vertebralis'in devamı; hiatus sacralis ile sonlanır (kaudal anestezi)"
+        },
+        {
+          "landmark_id": "crista_sacralis_mediana",
+          "latin": "Crista sacralis mediana",
+          "turkish": "Kaynaşmış processus spinosi"
+        }
+      ],
+      "facts": {
+        "location": "Beş sakral vertebranın kaynaşmasıyla oluşan üçgen kemik; pelvisin arka duvarı.",
+        "parts": [
+          "Basis",
+          "Apex",
+          "Facies pelvica (konkav)",
+          "Facies dorsalis (konveks)",
+          "Pars lateralis"
+        ],
+        "articulations": [
+          "Articulatio lumbosacralis",
+          "Articulatio sacroiliaca",
+          "Articulatio sacrococcygea"
+        ],
+        "high_yield": [
+          "M. piriformis facies pelvica'dan başlar.",
+          "Hiatus sacralis kaudal epidural anestezinin giriş yeridir."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "os_coxae"
+        }
+      ]
+    },
+    {
+      "structure_id": "talus",
+      "canonical": "Talus",
+      "kind": "bone",
+      "region": "lower_limb",
+      "turkish": "Aşık kemiği",
+      "english": "Talus",
+      "synonyms": [
+        "asik kemigi",
+        "talus"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.ankle_foot",
+      "landmarks": [
+        {
+          "landmark_id": "trochlea_tali",
+          "latin": "Trochlea tali",
+          "turkish": "Corpus'un üst eklem yüzü; tibia ve malleoller arasında (önde daha geniş)"
+        },
+        {
+          "landmark_id": "caput_tali",
+          "latin": "Caput tali",
+          "turkish": "Öne bakan baş; os naviculare ile eklemleşir"
+        },
+        {
+          "landmark_id": "collum_tali",
+          "latin": "Collum tali",
+          "turkish": "Baş ile gövde arasındaki daralma; en sık kırık yeri"
+        },
+        {
+          "landmark_id": "processus_posterior_tali",
+          "latin": "Processus posterior tali",
+          "turkish": "Arka çıkıntı; sulcus tendinis m. flexoris hallucis longi taşır"
+        }
+      ],
+      "facts": {
+        "location": "Ayak bileğinde tibia ve fibula ile calcaneus arasında oturan kemik; vücut ağırlığını ayağa aktarır.",
+        "parts": [
+          "Caput tali",
+          "Collum tali",
+          "Corpus tali (trochlea)"
+        ],
+        "articulations": [
+          "Articulatio talocruralis",
+          "Articulatio subtalaris (talocalcanea)",
+          "Articulatio talocalcaneonavicularis"
+        ],
+        "muscle_attachments": [
+          "Hiçbir kas tutunmaz (yalnızca bağlar); yüzeyinin büyük kısmı eklem kıkırdağıdır."
+        ],
+        "high_yield": [
+          "Kas yapışması olmayan kemiktir.",
+          "Kanlanması retrograd olduğundan collum tali kırığında corpus'ta avasküler nekroz gelişir."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "tibia"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "fibula"
+        }
+      ]
+    },
+    {
+      "structure_id": "n_axillaris",
+      "canonical": "Nervus axillaris",
+      "kind": "nerve",
+      "region": "upper_limb",
+      "turkish": "Aksiller sinir",
+      "english": "Axillary nerve",
+      "abbreviations": [
+        "n. axillaris"
+      ],
+      "synonyms": [
+        "aksiller sinir",
+        "axillary nerve",
+        "axillaris"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.upper_limb_nerves",
+      "facts": {
+        "origin": "Plexus brachialis, fasciculus posterior (C5, C6).",
+        "course": "A. circumflexa humeri posterior ile birlikte spatium axillare laterale'den (dörtgen aralık) geçer, collum chirurgicum humeri'yi arkadan dolanır.",
+        "motor": "M. deltoideus, m. teres minor.",
+        "sensory": "N. cutaneus brachii lateralis superior: omuz lateralinde deri ('asker rozeti' alanı).",
+        "high_yield": [
+          "Collum chirurgicum kırığı ve omuz çıkığında yaralanır: abduksiyon kaybı (15°–90°), omuz düzleşmesi, deltoid üstünde duyu kaybı."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "innervates",
+          "target": "m_deltoideus"
+        },
+        {
+          "relation": "innervates",
+          "target": "m_teres_minor"
+        }
+      ]
+    },
+    {
+      "structure_id": "n_suprascapularis",
+      "canonical": "Nervus suprascapularis",
+      "kind": "nerve",
+      "region": "upper_limb",
+      "turkish": "Supraskapüler sinir",
+      "english": "Suprascapular nerve",
+      "abbreviations": [
+        "n. suprascapularis"
+      ],
+      "synonyms": [
+        "supraskapuler sinir",
+        "suprascapular nerve"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.upper_limb_nerves",
+      "facts": {
+        "origin": "Plexus brachialis, truncus superior (C5, C6).",
+        "course": "Incisura scapulae'den lig. transversum scapulae superius'un ALTINDAN geçer (a. suprascapularis üstünden), fossa supraspinata ve infraspinata'ya iner.",
+        "motor": "M. supraspinatus, m. infraspinatus.",
+        "sensory": "Articulatio humeri ve articulatio acromioclavicularis'e eklem dalları; deri dalı yoktur.",
+        "high_yield": [
+          "Incisura scapulae'de sıkışma → abduksiyon başlatma ve dış rotasyon zayıflığı; deri duyusu korunur."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "innervates",
+          "target": "m_supraspinatus"
+        },
+        {
+          "relation": "innervates",
+          "target": "m_infraspinatus"
+        }
+      ]
+    },
+    {
+      "structure_id": "n_musculocutaneus",
+      "canonical": "Nervus musculocutaneus",
+      "kind": "nerve",
+      "region": "upper_limb",
+      "turkish": "Muskulokutan sinir",
+      "english": "Musculocutaneous nerve",
+      "abbreviations": [
+        "n. musculocutaneus"
+      ],
+      "synonyms": [
+        "muskulokutan sinir",
+        "musculocutaneous nerve"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.upper_limb_nerves",
+      "facts": {
+        "origin": "Plexus brachialis, fasciculus lateralis (C5–C7).",
+        "course": "M. coracobrachialis'i deler, m. biceps brachii ile m. brachialis arasında iner, n. cutaneus antebrachii lateralis olarak devam eder.",
+        "motor": "M. coracobrachialis, m. biceps brachii, m. brachialis (kolun ön kompartmanı).",
+        "sensory": "Ön kolun lateral yüzü (n. cutaneus antebrachii lateralis).",
+        "high_yield": [
+          "Yaralanmasında dirsek fleksiyonu (brachioradialis sayesinde tam kaybolmaz) ve supinasyon zayıflar, biseps refleksi kaybolur."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "innervates",
+          "target": "m_biceps_brachii"
+        },
+        {
+          "relation": "innervates",
+          "target": "m_brachialis"
+        },
+        {
+          "relation": "innervates",
+          "target": "m_coracobrachialis"
+        }
+      ]
+    },
+    {
+      "structure_id": "n_radialis",
+      "canonical": "Nervus radialis",
+      "kind": "nerve",
+      "region": "upper_limb",
+      "turkish": "Radial sinir",
+      "english": "Radial nerve",
+      "abbreviations": [
+        "n. radialis"
+      ],
+      "synonyms": [
+        "radial sinir",
+        "radial nerve"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.upper_limb_nerves",
+      "facts": {
+        "origin": "Plexus brachialis, fasciculus posterior (C5–T1); en kalın dalıdır.",
+        "course": "A. profunda brachii ile sulcus nervi radialis'te humerus arka yüzünü dolanır, septum intermusculare laterale'yi deler, epicondylus lateralis önünde r. superficialis ve r. profundus'a ayrılır.",
+        "motor": "Kolun ve ön kolun bütün ekstansör kasları (m. triceps brachii, m. anconeus, m. brachioradialis, ekstansörler, m. supinator, m. abductor pollicis longus).",
+        "sensory": "Kol ve ön kol arka yüzü, el sırtının lateral 3,5 parmağı (otonom alan: 1. parmak arası boşluk dorsumu).",
+        "high_yield": [
+          "Humerus gövde kırığında (sulcus nervi radialis) yaralanır → düşük el (wrist drop).",
+          "Koltuk değneği ve 'cumartesi gecesi felci' aksillada sıkışmayla olur."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "innervates",
+          "target": "m_triceps_brachii"
+        },
+        {
+          "relation": "innervates",
+          "target": "m_brachioradialis"
+        }
+      ]
+    },
+    {
+      "structure_id": "n_thoracicus_longus",
+      "canonical": "Nervus thoracicus longus",
+      "kind": "nerve",
+      "region": "upper_limb",
+      "turkish": "Uzun torasik sinir",
+      "english": "Long thoracic nerve",
+      "abbreviations": [
+        "n. thoracicus longus"
+      ],
+      "synonyms": [
+        "uzun torasik sinir",
+        "long thoracic nerve"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.upper_limb_nerves",
+      "facts": {
+        "origin": "Plexus brachialis'in kökleri (C5, C6, C7).",
+        "course": "Göğüs yan duvarında m. serratus anterior'un yüzeyinde aşağı iner (yüzeyel seyri nedeniyle cerrahide risklidir).",
+        "motor": "M. serratus anterior.",
+        "high_yield": [
+          "Yaralanmasında scapula alata (kanat scapula); kol 90° üstüne kaldırılamaz."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "innervates",
+          "target": "m_serratus_anterior"
+        }
+      ]
+    },
+    {
+      "structure_id": "n_femoralis",
+      "canonical": "Nervus femoralis",
+      "kind": "nerve",
+      "region": "lower_limb",
+      "turkish": "Femoral sinir",
+      "english": "Femoral nerve",
+      "abbreviations": [
+        "n. femoralis"
+      ],
+      "synonyms": [
+        "femoral sinir",
+        "femoral nerve"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.lower_limb_nerves",
+      "facts": {
+        "origin": "Plexus lumbalis (L2–L4); en kalın dalı.",
+        "course": "M. psoas major'un lateral kenarından çıkar, lig. inguinale'nin altından lacuna musculorum'da (a. femoralis'in lateralinde, vagina femoralis dışında) uyluğa girer, hemen dallanır.",
+        "motor": "M. iliacus, m. pectineus, m. sartorius, m. quadriceps femoris.",
+        "sensory": "Uyluk ön yüzü (rr. cutanei anteriores), n. saphenus ile bacak ve ayak medial yüzü.",
+        "high_yield": [
+          "Yaralanmasında diz ekstansiyonu ve patellar refleks kaybolur, kalça fleksiyonu zayıflar.",
+          "Trigonum femorale'de lateralden mediale: N-A-V-L (n. femoralis, a. femoralis, v. femoralis, lacuna vasorum/lenf)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "innervates",
+          "target": "m_quadriceps_femoris"
+        },
+        {
+          "relation": "innervates",
+          "target": "m_sartorius"
+        },
+        {
+          "relation": "innervates",
+          "target": "m_iliopsoas"
+        }
+      ]
+    },
+    {
+      "structure_id": "n_obturatorius",
+      "canonical": "Nervus obturatorius",
+      "kind": "nerve",
+      "region": "lower_limb",
+      "turkish": "Obturator sinir",
+      "english": "Obturator nerve",
+      "abbreviations": [
+        "n. obturatorius"
+      ],
+      "synonyms": [
+        "obturator sinir",
+        "obturator nerve"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.lower_limb_nerves",
+      "facts": {
+        "origin": "Plexus lumbalis (L2–L4).",
+        "course": "M. psoas major'un medial kenarından çıkar, pelvis yan duvarında canalis obturatorius'tan geçerek uyluğun medial kompartmanına girer; r. anterior ve r. posterior.",
+        "motor": "M. adductor longus, m. adductor brevis, m. adductor magnus (adduktör parça), m. gracilis, m. obturatorius externus (± m. pectineus).",
+        "sensory": "Uyluk medial yüzü.",
+        "high_yield": [
+          "Yaralanmasında adduksiyon zayıflar, uyluk medialinde duyu kaybı olur; pelvik cerrahi ve doğumda risk."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "innervates",
+          "target": "mm_adductores"
+        }
+      ]
+    },
+    {
+      "structure_id": "n_tibialis",
+      "canonical": "Nervus tibialis",
+      "kind": "nerve",
+      "region": "lower_limb",
+      "turkish": "Tibial sinir",
+      "english": "Tibial nerve",
+      "abbreviations": [
+        "n. tibialis"
+      ],
+      "synonyms": [
+        "tibial sinir",
+        "tibial nerve"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.lower_limb_nerves",
+      "facts": {
+        "origin": "N. ischiadicus'un tibial parçası (L4–S3).",
+        "course": "Fossa poplitea'da a./v. poplitea'nın yüzeyelinde iner, m. soleus'un altında bacağın arka kompartmanında a. tibialis posterior ile seyreder, malleolus medialis'in arkasından (canalis malleolaris) ayak tabanına geçerek nn. plantares medialis ve lateralis'e ayrılır.",
+        "motor": "Hamstringler (biceps caput breve hariç), bacağın arka kompartmanı (m. triceps surae, m. tibialis posterior, uzun parmak fleksörleri), ayak tabanı kasları.",
+        "sensory": "Bacak arka yüzü (n. suralis ile), topuk, ayak tabanı.",
+        "high_yield": [
+          "Yaralanmasında plantar fleksiyon, inversiyon ve parmak fleksiyonu kaybolur; ayak tabanında duyu kaybı; Aşil refleksi alınmaz.",
+          "Tarsal tünel sendromu malleolus medialis arkasında sıkışmasıdır."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "innervates",
+          "target": "m_triceps_surae"
+        },
+        {
+          "relation": "innervates",
+          "target": "mm_ischiocrurales"
+        }
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "canonical": "Facies",
+      "turkish": "Yüz",
+      "english": "Surface",
+      "category": "bone_term",
+      "note": "Kemiğin bir yüzü; örn. facies costalis scapulae."
+    },
+    {
+      "canonical": "Processus",
+      "turkish": "Çıkıntı",
+      "english": "Process",
+      "category": "bone_term",
+      "note": "Kemikten dışa uzanan belirgin çıkıntı; örn. processus coracoideus."
+    },
+    {
+      "canonical": "Tuberculum",
+      "turkish": "Küçük tümsek, tüberkül",
+      "english": "Tubercle",
+      "category": "bone_term",
+      "note": "Küçük yuvarlak kabartı; tuberculum majus humeri."
+    },
+    {
+      "canonical": "Tuberositas",
+      "turkish": "Pürtüklü kabartı",
+      "english": "Tuberosity",
+      "category": "bone_term",
+      "note": "Geniş, pürtüklü kas yapışma alanı; tuberositas deltoidea."
+    },
+    {
+      "canonical": "Tuber",
+      "turkish": "Büyük yumru",
+      "english": "Tuber",
+      "category": "bone_term",
+      "note": "Büyük, yuvarlak kabartı; tuber ischiadicum."
+    },
+    {
+      "canonical": "Trochanter",
+      "turkish": "Trokanter (büyük çıkıntı)",
+      "english": "Trochanter",
+      "category": "bone_term",
+      "note": "Yalnızca femur'da: trochanter major ve minor."
+    },
+    {
+      "canonical": "Condylus",
+      "turkish": "Lokma (eklem çıkıntısı)",
+      "english": "Condyle",
+      "category": "bone_term",
+      "note": "Yuvarlak eklem yüzü taşıyan çıkıntı; condylus medialis femoris."
+    },
+    {
+      "canonical": "Epicondylus",
+      "turkish": "Lokma üstü çıkıntı",
+      "english": "Epicondyle",
+      "category": "bone_term",
+      "note": "Kondilin üstündeki eklem dışı çıkıntı; epicondylus medialis humeri."
+    },
+    {
+      "canonical": "Caput",
+      "turkish": "Baş",
+      "english": "Head",
+      "category": "bone_term",
+      "note": "Kemiğin yuvarlak eklem yapan ucu; caput humeri."
+    },
+    {
+      "canonical": "Collum",
+      "turkish": "Boyun",
+      "english": "Neck",
+      "category": "bone_term",
+      "note": "Başı gövdeye bağlayan daralma; collum femoris."
+    },
+    {
+      "canonical": "Corpus",
+      "turkish": "Gövde",
+      "english": "Body / shaft",
+      "category": "bone_term",
+      "note": "Kemiğin ana bölümü; corpus humeri (diaphysis)."
+    },
+    {
+      "canonical": "Fossa",
+      "turkish": "Çukur",
+      "english": "Fossa",
+      "category": "bone_term",
+      "note": "Geniş sığ çukur; fossa supraspinata."
+    },
+    {
+      "canonical": "Fovea",
+      "turkish": "Çukurcuk",
+      "english": "Fovea (pit)",
+      "category": "bone_term",
+      "note": "Küçük çukur; fovea capitis femoris."
+    },
+    {
+      "canonical": "Foramen",
+      "turkish": "Delik",
+      "english": "Foramen",
+      "category": "bone_term",
+      "note": "Damar-sinir geçen delik; foramen obturatum."
+    },
+    {
+      "canonical": "Canalis",
+      "turkish": "Kanal",
+      "english": "Canal",
+      "category": "bone_term",
+      "note": "Tünel biçimli geçit; canalis obturatorius."
+    },
+    {
+      "canonical": "Meatus",
+      "turkish": "Geçit, yol",
+      "english": "Meatus",
+      "category": "bone_term",
+      "note": "Kanal biçimli geçit; meatus acusticus externus."
+    },
+    {
+      "canonical": "Sulcus",
+      "turkish": "Oluk",
+      "english": "Groove / sulcus",
+      "category": "bone_term",
+      "note": "Damar-sinir-tendon yatağı; sulcus intertubercularis."
+    },
+    {
+      "canonical": "Incisura",
+      "turkish": "Çentik",
+      "english": "Notch",
+      "category": "bone_term",
+      "note": "Kenardaki girinti; incisura scapulae."
+    },
+    {
+      "canonical": "Crista",
+      "turkish": "İbik",
+      "english": "Crest",
+      "category": "bone_term",
+      "note": "Belirgin uzun kabartı; crista iliaca."
+    },
+    {
+      "canonical": "Linea",
+      "turkish": "Çizgi",
+      "english": "Line",
+      "category": "bone_term",
+      "note": "Daha az belirgin uzun kabartı; linea aspera."
+    },
+    {
+      "canonical": "Spina",
+      "turkish": "Diken",
+      "english": "Spine",
+      "category": "bone_term",
+      "note": "Sivri çıkıntı; spina scapulae, spina iliaca anterior superior."
+    },
+    {
+      "canonical": "Margo",
+      "turkish": "Kenar",
+      "english": "Border / margin",
+      "category": "bone_term",
+      "note": "margo medialis scapulae."
+    },
+    {
+      "canonical": "Angulus",
+      "turkish": "Açı, köşe",
+      "english": "Angle",
+      "category": "bone_term",
+      "note": "angulus inferior scapulae."
+    },
+    {
+      "canonical": "Apex",
+      "turkish": "Tepe",
+      "english": "Apex",
+      "category": "bone_term",
+      "note": "apex patellae."
+    },
+    {
+      "canonical": "Basis",
+      "turkish": "Taban",
+      "english": "Base",
+      "category": "bone_term",
+      "note": "basis patellae."
+    },
+    {
+      "canonical": "Cavitas",
+      "turkish": "Boşluk, oyuk",
+      "english": "Cavity",
+      "category": "bone_term",
+      "note": "cavitas glenoidalis."
+    },
+    {
+      "canonical": "Trochlea",
+      "turkish": "Makara",
+      "english": "Trochlea",
+      "category": "bone_term",
+      "note": "Makara biçimli eklem yüzü; trochlea humeri."
+    },
+    {
+      "canonical": "Capitulum",
+      "turkish": "Küçük baş",
+      "english": "Capitulum",
+      "category": "bone_term",
+      "note": "capitulum humeri."
+    },
+    {
+      "canonical": "Malleolus",
+      "turkish": "Aşık (ayak bileği çıkıntısı)",
+      "english": "Malleolus",
+      "category": "bone_term",
+      "note": "malleolus medialis/lateralis."
+    },
+    {
+      "canonical": "Labrum",
+      "turkish": "Dudak (kıkırdak halka)",
+      "english": "Labrum",
+      "category": "joint_term",
+      "note": "Eklem çukurunu derinleştiren fibrokartilaj; labrum glenoidale."
+    },
+    {
+      "canonical": "Discus articularis",
+      "turkish": "Eklem diski",
+      "english": "Articular disc",
+      "category": "joint_term"
+    },
+    {
+      "canonical": "Meniscus",
+      "turkish": "Menisküs (yarım ay kıkırdak)",
+      "english": "Meniscus",
+      "category": "joint_term"
+    },
+    {
+      "canonical": "Bursa",
+      "turkish": "Kese",
+      "english": "Bursa",
+      "category": "joint_term",
+      "note": "Sürtünmeyi azaltan sinovyal kese."
+    },
+    {
+      "canonical": "Capsula articularis",
+      "turkish": "Eklem kapsülü",
+      "english": "Joint capsule",
+      "category": "joint_term"
+    },
+    {
+      "canonical": "Ligamentum",
+      "turkish": "Bağ",
+      "english": "Ligament",
+      "category": "joint_term",
+      "note": "Kemiği kemiğe bağlayan bağ dokusu."
+    },
+    {
+      "canonical": "Tendo",
+      "turkish": "Kiriş, tendon",
+      "english": "Tendon",
+      "category": "muscle_term",
+      "note": "Kası kemiğe bağlar."
+    },
+    {
+      "canonical": "Fascia",
+      "turkish": "Fasya (kas zarı)",
+      "english": "Fascia",
+      "category": "muscle_term"
+    },
+    {
+      "canonical": "Aponeurosis",
+      "turkish": "Yassı tendon",
+      "english": "Aponeurosis",
+      "category": "muscle_term"
+    },
+    {
+      "canonical": "Origo",
+      "turkish": "Başlangıç (kasın sabit ucu)",
+      "english": "Origin",
+      "category": "muscle_term"
+    },
+    {
+      "canonical": "Insertio",
+      "turkish": "Sonlanış (kasın hareketli ucu)",
+      "english": "Insertion",
+      "category": "muscle_term"
+    },
+    {
+      "canonical": "Innervatio",
+      "turkish": "Sinirlenme",
+      "english": "Innervation",
+      "category": "muscle_term"
+    },
+    {
+      "canonical": "Functio",
+      "turkish": "İşlev",
+      "english": "Function / action",
+      "category": "muscle_term"
+    },
+    {
+      "canonical": "Articulatio",
+      "turkish": "Eklem",
+      "english": "Joint",
+      "category": "joint_term"
+    },
+    {
+      "canonical": "Musculus",
+      "turkish": "Kas",
+      "english": "Muscle",
+      "category": "muscle_term"
+    },
+    {
+      "canonical": "Os",
+      "turkish": "Kemik",
+      "english": "Bone",
+      "category": "bone_term"
+    },
+    {
+      "canonical": "Nervus",
+      "turkish": "Sinir",
+      "english": "Nerve",
+      "category": "general"
+    },
+    {
+      "canonical": "Arteria",
+      "turkish": "Atardamar",
+      "english": "Artery",
+      "category": "general"
+    },
+    {
+      "canonical": "Vena",
+      "turkish": "Toplardamar",
+      "english": "Vein",
+      "category": "general"
+    },
+    {
+      "canonical": "Planum sagittale",
+      "turkish": "Sagittal düzlem (vücudu sağ-sol böler)",
+      "english": "Sagittal plane",
+      "category": "plane",
+      "note": "Planum medianum: tam ortadan geçen sagittal düzlem."
+    },
+    {
+      "canonical": "Planum frontale (coronale)",
+      "turkish": "Frontal (koronal) düzlem (ön-arka böler)",
+      "english": "Frontal / coronal plane",
+      "category": "plane"
+    },
+    {
+      "canonical": "Planum transversale (horizontale)",
+      "turkish": "Transvers (horizontal) düzlem (üst-alt böler)",
+      "english": "Transverse / horizontal plane",
+      "category": "plane"
+    },
+    {
+      "canonical": "Axis transversalis",
+      "turkish": "Transvers eksen (fleksiyon-ekstansiyon ekseni)",
+      "english": "Transverse axis",
+      "category": "axis"
+    },
+    {
+      "canonical": "Axis sagittalis",
+      "turkish": "Sagittal eksen (abduksiyon-adduksiyon ekseni)",
+      "english": "Sagittal axis",
+      "category": "axis"
+    },
+    {
+      "canonical": "Axis longitudinalis (verticalis)",
+      "turkish": "Uzunlamasına eksen (rotasyon ekseni)",
+      "english": "Longitudinal / vertical axis",
+      "category": "axis"
+    },
+    {
+      "canonical": "Flexio",
+      "turkish": "Fleksiyon (bükme; açı küçülür)",
+      "english": "Flexion",
+      "category": "movement",
+      "synonyms": [
+        "fleksiyon",
+        "flexion"
+      ]
+    },
+    {
+      "canonical": "Extensio",
+      "turkish": "Ekstansiyon (açma; açı büyür)",
+      "english": "Extension",
+      "category": "movement",
+      "synonyms": [
+        "ekstansiyon",
+        "extension"
+      ]
+    },
+    {
+      "canonical": "Abductio",
+      "turkish": "Abduksiyon (orta hattan uzaklaştırma)",
+      "english": "Abduction",
+      "category": "movement",
+      "synonyms": [
+        "abduksiyon",
+        "abduction"
+      ]
+    },
+    {
+      "canonical": "Adductio",
+      "turkish": "Adduksiyon (orta hatta yaklaştırma)",
+      "english": "Adduction",
+      "category": "movement",
+      "synonyms": [
+        "adduksiyon",
+        "adduction"
+      ]
+    },
+    {
+      "canonical": "Rotatio interna (medialis)",
+      "turkish": "İç rotasyon",
+      "english": "Internal (medial) rotation",
+      "category": "movement",
+      "synonyms": [
+        "ic rotasyon",
+        "internal rotation",
+        "medial rotation"
+      ]
+    },
+    {
+      "canonical": "Rotatio externa (lateralis)",
+      "turkish": "Dış rotasyon",
+      "english": "External (lateral) rotation",
+      "category": "movement",
+      "synonyms": [
+        "dis rotasyon",
+        "external rotation",
+        "lateral rotation"
+      ]
+    },
+    {
+      "canonical": "Pronatio",
+      "turkish": "Pronasyon (avuç arkaya/aşağı döner)",
+      "english": "Pronation",
+      "category": "movement",
+      "synonyms": [
+        "pronasyon",
+        "pronation"
+      ]
+    },
+    {
+      "canonical": "Supinatio",
+      "turkish": "Supinasyon (avuç öne/yukarı döner)",
+      "english": "Supination",
+      "category": "movement",
+      "synonyms": [
+        "supinasyon",
+        "supination"
+      ]
+    },
+    {
+      "canonical": "Circumductio",
+      "turkish": "Sirkumduksiyon (dairesel hareket)",
+      "english": "Circumduction",
+      "category": "movement",
+      "synonyms": [
+        "sirkumduksiyon",
+        "circumduction"
+      ]
+    },
+    {
+      "canonical": "Elevatio / Depressio",
+      "turkish": "Elevasyon (yukarı) / depresyon (aşağı)",
+      "english": "Elevation / depression",
+      "category": "movement"
+    },
+    {
+      "canonical": "Protractio / Retractio",
+      "turkish": "Protraksiyon (öne) / retraksiyon (arkaya)",
+      "english": "Protraction / retraction",
+      "category": "movement"
+    },
+    {
+      "canonical": "Inversio / Eversio",
+      "turkish": "İnversiyon (taban içe) / eversiyon (taban dışa)",
+      "english": "Inversion / eversion",
+      "category": "movement",
+      "synonyms": [
+        "inversiyon",
+        "eversiyon",
+        "inversion",
+        "eversion"
+      ]
+    },
+    {
+      "canonical": "Flexio dorsalis / Flexio plantaris",
+      "turkish": "Dorsifleksiyon (ayak sırtı yukarı) / plantar fleksiyon",
+      "english": "Dorsiflexion / plantar flexion",
+      "category": "movement",
+      "synonyms": [
+        "dorsifleksiyon",
+        "plantar fleksiyon",
+        "dorsiflexion",
+        "plantarflexion"
+      ]
+    },
+    {
+      "canonical": "Anterior / Posterior",
+      "turkish": "Ön / arka",
+      "english": "Anterior / posterior",
+      "category": "position"
+    },
+    {
+      "canonical": "Superior / Inferior",
+      "turkish": "Üst / alt",
+      "english": "Superior / inferior",
+      "category": "position"
+    },
+    {
+      "canonical": "Medialis / Lateralis",
+      "turkish": "Orta hatta yakın / uzak",
+      "english": "Medial / lateral",
+      "category": "position"
+    },
+    {
+      "canonical": "Proximalis / Distalis",
+      "turkish": "Gövdeye yakın / uzak (ekstremitede)",
+      "english": "Proximal / distal",
+      "category": "position"
+    },
+    {
+      "canonical": "Superficialis / Profundus",
+      "turkish": "Yüzeyel / derin",
+      "english": "Superficial / deep",
+      "category": "position"
+    },
+    {
+      "canonical": "Cranialis / Caudalis",
+      "turkish": "Başa yakın / kuyruğa (aşağı) yakın",
+      "english": "Cranial / caudal",
+      "category": "position"
+    },
+    {
+      "canonical": "Ventralis / Dorsalis",
+      "turkish": "Karın tarafı / sırt tarafı",
+      "english": "Ventral / dorsal",
+      "category": "position"
+    },
+    {
+      "canonical": "Dexter / Sinister",
+      "turkish": "Sağ / sol",
+      "english": "Right / left",
+      "category": "position"
+    },
+    {
+      "canonical": "Palmaris / Plantaris",
+      "turkish": "Avuç içi / ayak tabanı tarafı",
+      "english": "Palmar / plantar",
+      "category": "position"
+    },
+    {
+      "canonical": "Ginglymus",
+      "turkish": "Menteşe eklem (tek eksenli)",
+      "english": "Hinge joint",
+      "category": "joint_type",
+      "note": "Art. humeroulnaris, art. talocruralis."
+    },
+    {
+      "canonical": "Articulatio trochoidea",
+      "turkish": "Pivot eklem (tek eksenli, rotasyon)",
+      "english": "Pivot joint",
+      "category": "joint_type",
+      "note": "Art. radioulnaris proximalis, art. atlantoaxialis mediana."
+    },
+    {
+      "canonical": "Articulatio ellipsoidea",
+      "turkish": "Elipsoid eklem (iki eksenli)",
+      "english": "Ellipsoid (condyloid) joint",
+      "category": "joint_type",
+      "note": "Art. radiocarpalis, art. atlantooccipitalis."
+    },
+    {
+      "canonical": "Articulatio sellaris",
+      "turkish": "Eyer eklem (iki eksenli)",
+      "english": "Saddle joint",
+      "category": "joint_type",
+      "note": "Art. carpometacarpalis pollicis, art. sternoclavicularis."
+    },
+    {
+      "canonical": "Articulatio spheroidea",
+      "turkish": "Küre eklem (çok eksenli)",
+      "english": "Ball-and-socket joint",
+      "category": "joint_type",
+      "note": "Art. humeri, art. coxae (cotylica)."
+    },
+    {
+      "canonical": "Articulatio plana",
+      "turkish": "Düz (kayan) eklem",
+      "english": "Plane joint",
+      "category": "joint_type",
+      "note": "Art. acromioclavicularis, artt. intercarpales."
+    },
+    {
+      "canonical": "Articulatio bicondylaris",
+      "turkish": "Bikondiler eklem",
+      "english": "Bicondylar joint",
+      "category": "joint_type",
+      "note": "Art. genus, art. temporomandibularis."
+    },
+    {
+      "canonical": "Syndesmosis",
+      "turkish": "Bağ dokulu (fibröz) kemik birleşimi",
+      "english": "Syndesmosis",
+      "category": "joint_type",
+      "note": "Syndesmosis tibiofibularis, membrana interossea."
+    },
+    {
+      "canonical": "Synchondrosis",
+      "turkish": "Kıkırdaklı kemik birleşimi",
+      "english": "Synchondrosis",
+      "category": "joint_type",
+      "note": "Epifiz plağı, 1. kosta-sternum."
+    },
+    {
+      "canonical": "Symphysis",
+      "turkish": "Fibrokartilajlı birleşim",
+      "english": "Symphysis",
+      "category": "joint_type",
+      "note": "Symphysis pubica, disci intervertebrales."
+    }
+  ]
+}

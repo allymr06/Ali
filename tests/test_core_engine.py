@@ -2071,7 +2071,11 @@ def test_clock_directive_is_turkish_and_local() -> None:
     assert line.startswith("Şu an yerel tarih ve saat: 5 Eylül 2026 Cumartesi, ")
     assert f"{moment:%H:%M}" in line
     assert "Saat, tarih veya gün sorulursa" in line
-    assert "Cumartesi" in clock_directive()  # today, 5 September 2026, is a Saturday
+    # The live line must name today's real weekday, whatever day it is.
+    days = ("Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar")
+    today = clock_directive()
+    assert days[datetime.now().astimezone().weekday()] in today
+    assert sum(day in today for day in days) == 1
 
 
 def test_every_system_prompt_carries_the_clock() -> None:

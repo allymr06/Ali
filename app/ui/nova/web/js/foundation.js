@@ -122,6 +122,10 @@ const TOOL_LABELS = {
   diagnostics_metrics: ["Ölçümler okunuyor", "Ölçümler okundu"],
   create_reminder: ["Hatırlatıcı kuruluyor", "Hatırlatıcı kuruldu"],
   create_routine: ["Rutin kuruluyor", "Rutin kuruldu"],
+  medical_search_library: ["Ders materyali taranıyor", "Ders materyali tarandı"],
+  medical_lookup_term: ["Terim aranıyor", "Terim bulundu"],
+  medical_open_anatomy: ["Anatomi Lab açılıyor", "Anatomi Lab açıldı"],
+  medical_study_state: ["Çalışma oturumu okunuyor", "Çalışma oturumu okundu"],
   list_routines: ["Rutinler okunuyor", "Rutinler okundu"],
   delete_routine: ["Rutin siliniyor", "Rutin silindi"],
   list_reminders: ["Hatırlatıcılar okunuyor", "Hatırlatıcılar okundu"],
@@ -175,7 +179,8 @@ const SOURCE_TR = {
   "platform:windows:window-control": "Windows · Pencereler",
   "integration:spotify": "Spotify", "integration:whatsapp": "WhatsApp",
   "integration:system": "Sistem denetimi", "integration:vision": "Ekran izleme",
-  "integration:reminders": "Hatırlatıcılar", runtime: "Çalışma zamanı",
+  "integration:reminders": "Hatırlatıcılar", "core:medical": "Tıp Akademisi",
+  runtime: "Çalışma zamanı",
 };
 function sourceLabel(source) {
   const key = String(source ?? "");
@@ -244,6 +249,10 @@ const TOOL_EFFECTS = {
   spotify_previous_track: "Spotify önceki parçaya döner.",
   spotify_create_playlist: "Spotify hesabında yeni bir çalma listesi oluşturulur.",
   spotify_authorize: "Spotify hesabı için yetkilendirme akışı başlatılır.",
+  medical_search_library: "Yüklenen ders materyalinde sayfa atıflı arama yapılır.",
+  medical_lookup_term: "Anatomik terim sözlükte aranır ve açıklanır.",
+  medical_open_anatomy: "Anatomi Lab'de bir yapı açılır ve işaret noktaları vurgulanır.",
+  medical_study_state: "Güncel çalışma oturumu (ders, konu, mod) okunur.",
   create_reminder: "Bir hatırlatıcı kaydedilir ve zamanı gelince bildirilir.",
   create_routine: "Verilen komut, zamanı gelince JARVIS tarafından kendiliğinden çalıştırılır; sonucu bildirilir.",
   delete_routine: "Rutin silinir; bir daha çalışmaz.",
@@ -289,6 +298,9 @@ const SETTING_LABELS = {
   single_instance_enabled: ["Tek örnek", "JARVIS_SINGLE_INSTANCE"],
   approval_ttl_seconds: ["Onay süresi (sn)", "JARVIS_APPROVAL_TTL_SECONDS"],
   notifications_os_enabled: ["Pencere gizliyken Windows bildirimi", "JARVIS_NOTIFICATIONS_OS_ENABLED"],
+  medical_enabled: ["Tıp Akademisi", "JARVIS_MEDICAL_ENABLED"],
+  medical_model: ["Tıp Akademisi modeli", "JARVIS_MEDICAL_MODEL"],
+  medical_vision_pages_per_document: ["Belge başına incelenen şekil sayfası", "JARVIS_MEDICAL_VISION_PAGES_PER_DOCUMENT"],
 };
 const NOTIFICATION_KIND_TR = {
   reminder: "Hatırlatıcı", approval: "Onay", reply: "Yanıt", task: "Görev",
@@ -305,6 +317,7 @@ const SETTING_GROUPS = {
   vision: ["vision_enabled", "vision_detail", "vision_redact_taskbar", "research_enabled"],
   memory: ["memory_auto_capture_enabled", "memory_extraction_model"],
   models: ["gemini_action_model", "gemini_reasoning_effort"],
+  medical: ["medical_enabled", "medical_model", "medical_vision_pages_per_document"],
   system: ["windows_integrations_enabled", "plugins_enabled", "tray_enabled",
            "tray_close_to_tray", "single_instance_enabled", "approval_ttl_seconds",
            "notifications_os_enabled"],
@@ -387,6 +400,7 @@ const State = {
   snapshots: [],
   notifications: [],       // session notification centre (newest first)
   routines: { available: false, routines: [] },
+  medical: null,            // Tıp Akademisi durumu (null: henüz okunmadı)
   unread: 0,
   messages: [],
   voiceMessages: [],

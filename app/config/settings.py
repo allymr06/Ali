@@ -224,6 +224,16 @@ class Settings:
     vision_taskbar_height: int = 64
     vision_retain_last_image: bool = False
 
+    # Medical Academy: the first-year medical study layer. Enabled by
+    # default; its own store, document copies and 3D assets live below
+    # `medical_directory`.
+    medical_enabled: bool = True
+    medical_directory: str | None = None
+    medical_model: str = ""
+    medical_max_document_pages: int = 400
+    medical_max_document_bytes: int = 60 * 1024 * 1024
+    medical_vision_pages_per_document: int = 12
+
     spotify_client_id: str | None = None
     whatsapp_contacts_path: str | None = None
     reminders_database_path: str | None = None
@@ -452,6 +462,23 @@ class Settings:
             raise ValueError("research_user_agent cannot be empty.")
         if self.plugins_directory is not None and not self.plugins_directory.strip():
             raise ValueError("plugins_directory cannot be empty when set.")
+        if (
+            self.medical_directory is not None
+            and not self.medical_directory.strip()
+        ):
+            raise ValueError("medical_directory cannot be empty when set.")
+        if not 1 <= self.medical_max_document_pages <= 5_000:
+            raise ValueError(
+                "medical_max_document_pages must be between 1 and 5000."
+            )
+        if not 1024 * 1024 <= self.medical_max_document_bytes <= 512 * 1024 * 1024:
+            raise ValueError(
+                "medical_max_document_bytes must be between 1 MiB and 512 MiB."
+            )
+        if not 0 <= self.medical_vision_pages_per_document <= 200:
+            raise ValueError(
+                "medical_vision_pages_per_document must be between 0 and 200."
+            )
         if not 1 <= self.filesystem_snapshot_max_entries <= 10_000:
             raise ValueError(
                 "filesystem_snapshot_max_entries must be between 1 and 10000."
@@ -708,6 +735,21 @@ class Settings:
             memory_extraction_model=os.getenv(
                 "JARVIS_MEMORY_EXTRACTION_MODEL",
                 "gemini-3.5-flash-lite",
+            ),
+            medical_enabled=_get_bool("JARVIS_MEDICAL_ENABLED", True),
+            medical_directory=os.getenv(
+                "JARVIS_MEDICAL_DIRECTORY",
+                default_state_path("medical"),
+            ),
+            medical_model=os.getenv("JARVIS_MEDICAL_MODEL", "").strip(),
+            medical_max_document_pages=_get_positive_int(
+                "JARVIS_MEDICAL_MAX_DOCUMENT_PAGES", 400
+            ),
+            medical_max_document_bytes=_get_positive_int(
+                "JARVIS_MEDICAL_MAX_DOCUMENT_BYTES", 60 * 1024 * 1024
+            ),
+            medical_vision_pages_per_document=_get_non_negative_int(
+                "JARVIS_MEDICAL_VISION_PAGES_PER_DOCUMENT", 12
             ),
             spotify_client_id=(
                 os.getenv("JARVIS_SPOTIFY_CLIENT_ID", "").strip()

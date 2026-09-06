@@ -1,0 +1,221 @@
+{
+  "version": 1,
+  "note": "First-year medical curriculum hierarchy. Data, not navigation code: the page and the tutor read it; extend by adding nodes.",
+  "subjects": [
+    {
+      "id": "anatomy",
+      "title_tr": "Anatomi",
+      "title_en": "Anatomy",
+      "keywords": ["anatomi", "anatomy", "kemik", "kas", "eklem", "bone", "muscle", "joint"],
+      "topics": [
+        {
+          "id": "general",
+          "title_tr": "Genel anatomi ve terminoloji",
+          "title_en": "General anatomy and terminology",
+          "keywords": ["terminoloji", "terminology", "düzlem", "plane", "eksen", "axis", "anatomik pozisyon"],
+          "topics": [
+            {"id": "planes_axes", "title_tr": "Düzlemler ve eksenler", "title_en": "Planes and axes", "keywords": ["sagittal", "frontal", "transvers", "coronal", "eksen"]},
+            {"id": "movements", "title_tr": "Hareket terimleri", "title_en": "Movement terminology", "keywords": ["fleksiyon", "ekstansiyon", "abduksiyon", "adduksiyon", "rotasyon", "pronasyon", "supinasyon"]},
+            {"id": "bone_terms", "title_tr": "Kemik terimleri", "title_en": "Bone terminology", "keywords": ["processus", "tuberculum", "fossa", "foramen", "sulcus", "crista"]}
+          ]
+        },
+        {
+          "id": "musculoskeletal",
+          "title_tr": "Hareket sistemi",
+          "title_en": "Musculoskeletal system",
+          "keywords": ["hareket sistemi", "musculoskeletal", "locomotor", "iskelet", "skeleton"],
+          "topics": [
+            {
+              "id": "skeleton",
+              "title_tr": "İskelet sistemi ve kemikler",
+              "title_en": "Skeletal system and bones",
+              "keywords": ["iskelet", "kemik", "bone", "ossification", "kemikleşme"],
+              "topics": [
+                {"id": "bone_structure", "title_tr": "Kemik yapısı ve sınıflaması", "title_en": "Bone structure and classification", "keywords": ["diafiz", "epifiz", "kompakt", "spongioz", "uzun kemik"]},
+                {"id": "ossification", "title_tr": "Kemikleşme", "title_en": "Ossification", "keywords": ["intramembranöz", "endokondral", "kemikleşme"]}
+              ]
+            },
+            {
+              "id": "joints",
+              "title_tr": "Eklemler",
+              "title_en": "Joints",
+              "keywords": ["eklem", "joint", "articulatio", "sinovyal", "ligament", "bağ"],
+              "topics": [
+                {"id": "joint_types", "title_tr": "Eklem tipleri", "title_en": "Joint classification", "keywords": ["fibröz", "kartilaginöz", "sinovyal", "ginglymus", "spheroidea", "trochoidea", "ellipsoidea", "sellaris", "plana"]}
+              ]
+            },
+            {
+              "id": "muscles",
+              "title_tr": "Kaslar ve fasyalar",
+              "title_en": "Muscles and fasciae",
+              "keywords": ["kas", "muscle", "musculus", "fasya", "fascia", "tendon", "origo", "insertio"]
+            },
+            {
+              "id": "upper_limb",
+              "title_tr": "Üst ekstremite",
+              "title_en": "Upper limb",
+              "keywords": ["üst ekstremite", "upper limb", "kol", "omuz", "ön kol", "el"],
+              "topics": [
+                {"id": "shoulder_girdle", "title_tr": "Omuz kuşağı: scapula ve clavicula", "title_en": "Shoulder girdle: scapula and clavicle", "keywords": ["scapula", "clavicula", "kürek kemiği", "köprücük", "omuz kuşağı"]},
+                {"id": "shoulder_joint", "title_tr": "Omuz eklemi ve rotator manşet", "title_en": "Shoulder joint and rotator cuff", "keywords": ["articulatio humeri", "glenohumeral", "rotator", "manşet", "omuz eklemi"]},
+                {"id": "arm", "title_tr": "Kol: humerus ve kol kasları", "title_en": "Arm: humerus and arm muscles", "keywords": ["humerus", "biceps", "triceps", "brachialis", "kol"]},
+                {"id": "elbow", "title_tr": "Dirsek eklemi", "title_en": "Elbow joint", "keywords": ["articulatio cubiti", "dirsek", "elbow"]},
+                {"id": "forearm", "title_tr": "Ön kol: radius, ulna ve ön kol kasları", "title_en": "Forearm: radius, ulna and forearm muscles", "keywords": ["radius", "ulna", "ön kol", "forearm", "pronasyon", "supinasyon"]},
+                {"id": "wrist_hand", "title_tr": "El bileği ve el", "title_en": "Wrist and hand", "keywords": ["el bileği", "karpal", "wrist", "hand", "el", "metacarpal"]},
+                {"id": "upper_limb_nerves", "title_tr": "Üst ekstremite sinir ve damarları", "title_en": "Nerves and vessels of the upper limb", "keywords": ["plexus brachialis", "n. axillaris", "n. radialis", "n. medianus", "n. ulnaris", "a. brachialis"]}
+              ]
+            },
+            {
+              "id": "lower_limb",
+              "title_tr": "Alt ekstremite",
+              "title_en": "Lower limb",
+              "keywords": ["alt ekstremite", "lower limb", "bacak", "kalça", "uyluk", "ayak"],
+              "topics": [
+                {"id": "pelvic_girdle", "title_tr": "Pelvis kuşağı: os coxae", "title_en": "Pelvic girdle: hip bone", "keywords": ["os coxae", "ilium", "ischium", "pubis", "kalça kemiği", "acetabulum"]},
+                {"id": "hip_joint", "title_tr": "Kalça eklemi ve gluteal bölge", "title_en": "Hip joint and gluteal region", "keywords": ["articulatio coxae", "kalça eklemi", "gluteus", "gluteal"]},
+                {"id": "thigh", "title_tr": "Uyluk: femur ve uyluk kasları", "title_en": "Thigh: femur and thigh muscles", "keywords": ["femur", "uyluk", "quadriceps", "hamstring", "adductor"]},
+                {"id": "knee", "title_tr": "Diz eklemi", "title_en": "Knee joint", "keywords": ["articulatio genus", "diz", "knee", "menisk", "çapraz bağ", "cruciatum"]},
+                {"id": "leg", "title_tr": "Bacak: tibia, fibula ve bacak kasları", "title_en": "Leg: tibia, fibula and leg muscles", "keywords": ["tibia", "fibula", "bacak", "gastrocnemius", "soleus", "tibialis"]},
+                {"id": "ankle_foot", "title_tr": "Ayak bileği ve ayak", "title_en": "Ankle and foot", "keywords": ["articulatio talocruralis", "ayak bileği", "ayak", "talus", "calcaneus"]},
+                {"id": "lower_limb_nerves", "title_tr": "Alt ekstremite sinir ve damarları", "title_en": "Nerves and vessels of the lower limb", "keywords": ["plexus lumbalis", "plexus sacralis", "n. ischiadicus", "n. femoralis", "n. obturatorius", "a. femoralis"]}
+              ]
+            },
+            {
+              "id": "trunk",
+              "title_tr": "Gövde: omurga, göğüs ve karın duvarı",
+              "title_en": "Trunk: vertebral column, thorax and abdominal wall",
+              "keywords": ["omurga", "vertebra", "columna vertebralis", "kosta", "sternum", "karın duvarı", "diaphragma"],
+              "topics": [
+                {"id": "vertebral_column", "title_tr": "Columna vertebralis", "title_en": "Vertebral column", "keywords": ["vertebra", "omur", "omurga", "atlas", "axis", "sacrum"]},
+                {"id": "thoracic_cage", "title_tr": "Göğüs kafesi", "title_en": "Thoracic cage", "keywords": ["costa", "kaburga", "sternum", "cavea thoracis"]},
+                {"id": "back_muscles", "title_tr": "Sırt kasları", "title_en": "Back muscles", "keywords": ["trapezius", "latissimus", "erector spinae", "sırt"]},
+                {"id": "abdominal_wall", "title_tr": "Karın ön duvarı", "title_en": "Anterior abdominal wall", "keywords": ["rectus abdominis", "obliquus", "transversus", "inguinal", "karın"]}
+              ]
+            },
+            {
+              "id": "head_neck_muscles",
+              "title_tr": "Baş ve boyun kasları",
+              "title_en": "Head and neck muscles",
+              "keywords": ["boyun", "sternocleidomastoideus", "mimik", "çiğneme", "masseter"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "histology",
+      "title_tr": "Histoloji",
+      "title_en": "Histology",
+      "keywords": ["histoloji", "histology", "doku", "tissue", "mikroskop", "boyama", "preparat", "kesit"],
+      "topics": [
+        {"id": "microscopy", "title_tr": "Mikroskopi ve boyama", "title_en": "Microscopy and staining", "keywords": ["mikroskop", "hematoksilen", "eozin", "H&E", "PAS", "boyama", "fiksasyon"]},
+        {"id": "cell", "title_tr": "Hücre yapısı", "title_en": "Cell structure", "keywords": ["hücre", "organel", "çekirdek", "nucleus", "sitoplazma"]},
+        {"id": "epithelium", "title_tr": "Epitel dokusu", "title_en": "Epithelial tissue", "keywords": ["epitel", "epithelium", "yassı", "kübik", "prizmatik", "çok katlı", "bazal membran", "bez", "gland"]},
+        {"id": "connective", "title_tr": "Bağ dokusu", "title_en": "Connective tissue", "keywords": ["bağ dokusu", "connective", "fibroblast", "kollajen", "elastik", "retiküler", "mast", "makrofaj"]},
+        {"id": "cartilage", "title_tr": "Kıkırdak dokusu", "title_en": "Cartilage", "keywords": ["kıkırdak", "cartilage", "hiyalin", "hyaline", "elastik", "fibröz", "kondrosit", "perikondriyum"]},
+        {"id": "bone_tissue", "title_tr": "Kemik dokusu", "title_en": "Bone tissue", "keywords": ["kemik dokusu", "osteon", "osteosit", "osteoblast", "osteoklast", "lamel", "Havers"]},
+        {"id": "blood", "title_tr": "Kan ve hematopoez", "title_en": "Blood and haematopoiesis", "keywords": ["kan", "eritrosit", "lökosit", "trombosit", "nötrofil", "lenfosit", "hematopoez"]},
+        {"id": "muscle_tissue", "title_tr": "Kas dokusu", "title_en": "Muscle tissue", "keywords": ["kas dokusu", "iskelet kası", "düz kas", "kalp kası", "sarkomer", "çizgili"]},
+        {"id": "nervous_tissue", "title_tr": "Sinir dokusu", "title_en": "Nervous tissue", "keywords": ["sinir dokusu", "nöron", "glia", "miyelin", "akson", "sinaps"]},
+        {"id": "glands", "title_tr": "Bezler", "title_en": "Glands", "keywords": ["bez", "gland", "ekzokrin", "endokrin", "seröz", "müköz", "merokrin", "apokrin", "holokrin"]},
+        {"id": "organ_histology", "title_tr": "Temel organ histolojisi", "title_en": "Basic organ histology", "keywords": ["organ", "karaciğer", "böbrek", "akciğer", "deri"]}
+      ]
+    },
+    {
+      "id": "microbiology",
+      "title_tr": "Mikrobiyoloji",
+      "title_en": "Microbiology",
+      "keywords": ["mikrobiyoloji", "microbiology", "bakteri", "virüs", "mantar", "parazit", "mikrop"],
+      "topics": [
+        {"id": "bacterial_structure", "title_tr": "Bakteri yapısı", "title_en": "Bacterial structure", "keywords": ["bakteri", "hücre duvarı", "peptidoglikan", "kapsül", "flagella", "pili", "spor", "LPS"]},
+        {"id": "gram", "title_tr": "Gram pozitif ve Gram negatif", "title_en": "Gram-positive and Gram-negative", "keywords": ["gram", "gram pozitif", "gram negatif", "teikoik asit", "lipopolisakkarit", "dış membran"]},
+        {"id": "bacterial_genetics", "title_tr": "Bakteri genetiği", "title_en": "Bacterial genetics", "keywords": ["plazmid", "transformasyon", "transdüksiyon", "konjugasyon", "transpozon", "mutasyon"]},
+        {"id": "growth_metabolism", "title_tr": "Bakteri üremesi ve metabolizması", "title_en": "Bacterial growth and metabolism", "keywords": ["üreme eğrisi", "lag", "log", "aerob", "anaerob", "fermentasyon", "besiyeri"]},
+        {"id": "sterilization", "title_tr": "Sterilizasyon ve dezenfeksiyon", "title_en": "Sterilization and disinfection", "keywords": ["sterilizasyon", "dezenfeksiyon", "otoklav", "antisepsi", "pastörizasyon"]},
+        {"id": "virology", "title_tr": "Temel viroloji", "title_en": "Basic virology", "keywords": ["virüs", "kapsid", "zarf", "replikasyon", "DNA virüsü", "RNA virüsü"]},
+        {"id": "mycology", "title_tr": "Temel mikoloji", "title_en": "Basic mycology", "keywords": ["mantar", "maya", "küf", "hif", "ergosterol"]},
+        {"id": "parasitology", "title_tr": "Temel parazitoloji", "title_en": "Basic parasitology", "keywords": ["parazit", "protozoa", "helmint", "vektör"]},
+        {"id": "host_microbe", "title_tr": "Konak-mikrop ilişkisi", "title_en": "Host-microbe interactions", "keywords": ["flora", "mikrobiyota", "patojen", "virülans", "toksin", "enfeksiyon"]}
+      ]
+    },
+    {
+      "id": "biochemistry",
+      "title_tr": "Biyokimya",
+      "title_en": "Biochemistry",
+      "keywords": ["biyokimya", "biochemistry", "enzim", "metabolizma", "protein", "amino asit", "lipid", "karbonhidrat"],
+      "topics": [
+        {"id": "amino_acids_proteins", "title_tr": "Amino asitler ve proteinler", "title_en": "Amino acids and proteins", "keywords": ["amino asit", "peptit", "protein", "primer", "sekonder", "alfa heliks", "beta tabaka", "denatürasyon"]},
+        {"id": "enzymes", "title_tr": "Enzimler ve enzim kinetiği", "title_en": "Enzymes and enzyme kinetics", "keywords": ["enzim", "Michaelis", "Km", "Vmax", "inhibisyon", "kompetitif", "allosterik", "kofaktör", "koenzim"]},
+        {"id": "carbohydrates", "title_tr": "Karbonhidratlar", "title_en": "Carbohydrates", "keywords": ["karbonhidrat", "glukoz", "monosakkarit", "disakkarit", "glikojen", "nişasta", "glikozidik"]},
+        {"id": "lipids_membranes", "title_tr": "Lipidler ve membranlar", "title_en": "Lipids and membranes", "keywords": ["lipid", "yağ asidi", "fosfolipid", "kolesterol", "membran", "trigliserid"]},
+        {"id": "nucleic_acids", "title_tr": "Nükleik asitler", "title_en": "Nucleic acids", "keywords": ["nükleotid", "DNA", "RNA", "pürin", "pirimidin", "baz"]},
+        {"id": "vitamins", "title_tr": "Vitaminler", "title_en": "Vitamins", "keywords": ["vitamin", "suda çözünen", "yağda çözünen", "koenzim"]},
+        {"id": "bioenergetics", "title_tr": "Biyoenerjetik", "title_en": "Bioenergetics", "keywords": ["ATP", "serbest enerji", "Gibbs", "redoks", "NADH", "FADH2"]},
+        {"id": "carbohydrate_metabolism", "title_tr": "Karbonhidrat metabolizması", "title_en": "Carbohydrate metabolism", "keywords": ["glikoliz", "glukoneogenez", "glikojen", "pentoz fosfat", "piruvat"]},
+        {"id": "tca_oxphos", "title_tr": "Sitrik asit döngüsü ve oksidatif fosforilasyon", "title_en": "Citric acid cycle and oxidative phosphorylation", "keywords": ["Krebs", "sitrik asit", "TCA", "elektron transport", "oksidatif fosforilasyon", "ATP sentaz"]},
+        {"id": "lipid_metabolism", "title_tr": "Lipid metabolizması", "title_en": "Lipid metabolism", "keywords": ["beta oksidasyon", "keton", "lipogenez", "kolesterol sentezi", "lipoprotein"]},
+        {"id": "amino_acid_metabolism", "title_tr": "Amino asit metabolizması", "title_en": "Amino acid metabolism", "keywords": ["üre döngüsü", "transaminasyon", "deaminasyon", "amonyak"]},
+        {"id": "regulation", "title_tr": "Metabolik düzenleme", "title_en": "Metabolic regulation", "keywords": ["insülin", "glukagon", "allosterik", "fosforilasyon", "açlık", "tokluk"]}
+      ]
+    },
+    {
+      "id": "biophysics",
+      "title_tr": "Biyofizik",
+      "title_en": "Biophysics",
+      "keywords": ["biyofizik", "biophysics", "difüzyon", "osmoz", "basınç", "optik", "akustik", "radyasyon"],
+      "topics": [
+        {"id": "diffusion_osmosis", "title_tr": "Difüzyon ve osmoz", "title_en": "Diffusion and osmosis", "keywords": ["difüzyon", "Fick", "osmoz", "osmotik basınç", "tonisite", "van't Hoff"]},
+        {"id": "membrane_potentials", "title_tr": "Membran potansiyelleri", "title_en": "Membrane potentials", "keywords": ["Nernst", "Goldman", "denge potansiyeli", "membran potansiyeli", "iyon"]},
+        {"id": "fluid_mechanics", "title_tr": "Akışkanlar: basınç, viskozite, akım", "title_en": "Fluid mechanics: pressure, viscosity, flow", "keywords": ["Poiseuille", "Bernoulli", "laminer", "türbülan", "viskozite", "basınç", "Laplace"]},
+        {"id": "surface_tension", "title_tr": "Yüzey gerilimi", "title_en": "Surface tension", "keywords": ["yüzey gerilimi", "sürfaktan", "Laplace", "alveol"]},
+        {"id": "optics", "title_tr": "Optik ve görme biyofiziği", "title_en": "Optics and vision", "keywords": ["mercek", "kırılma", "diyoptri", "refraksiyon", "göz"]},
+        {"id": "acoustics", "title_tr": "Akustik ve işitme biyofiziği", "title_en": "Acoustics and hearing", "keywords": ["ses", "desibel", "frekans", "ultrason", "işitme"]},
+        {"id": "electricity", "title_tr": "Biyoelektrik", "title_en": "Bioelectricity", "keywords": ["elektrik", "akım", "direnç", "kapasitans", "EKG", "elektrot"]},
+        {"id": "radiation", "title_tr": "Radyasyon temelleri", "title_en": "Radiation fundamentals", "keywords": ["radyasyon", "iyonlaştırıcı", "X ışını", "doz", "yarı ömür"]},
+        {"id": "thermodynamics", "title_tr": "Termodinamik", "title_en": "Thermodynamics", "keywords": ["termodinamik", "entropi", "entalpi", "ısı"]},
+        {"id": "biomechanics", "title_tr": "Biyomekanik", "title_en": "Biomechanics", "keywords": ["kaldıraç", "moment", "kuvvet", "biyomekanik"]},
+        {"id": "instrumentation", "title_tr": "Tıbbi cihaz temelleri", "title_en": "Medical instrumentation basics", "keywords": ["ultrasonografi", "MR", "BT", "cihaz"]}
+      ]
+    },
+    {
+      "id": "physiology",
+      "title_tr": "Fizyoloji",
+      "title_en": "Physiology",
+      "keywords": ["fizyoloji", "physiology", "homeostaz"],
+      "topics": [
+        {"id": "homeostasis", "title_tr": "Homeostaz ve kontrol", "title_en": "Homeostasis and control", "keywords": ["homeostaz", "negatif geri bildirim", "pozitif geri bildirim", "feedback"]},
+        {"id": "membrane_transport", "title_tr": "Membran fizyolojisi ve taşınma", "title_en": "Membrane physiology and transport", "keywords": ["membran", "taşınma", "aktif transport", "Na K ATPaz", "kanal", "taşıyıcı"]},
+        {"id": "excitable", "title_tr": "Uyarılabilir dokular: dinlenim ve aksiyon potansiyeli", "title_en": "Excitable tissues: resting and action potentials", "keywords": ["dinlenim membran potansiyeli", "aksiyon potansiyeli", "depolarizasyon", "repolarizasyon", "refrakter", "eşik"]},
+        {"id": "muscle_physiology", "title_tr": "Kas fizyolojisi", "title_en": "Muscle physiology", "keywords": ["kasılma", "sarkomer", "aktin", "miyozin", "kalsiyum", "nöromüsküler kavşak", "tetanus"]},
+        {"id": "nervous_basics", "title_tr": "Sinir sistemi temelleri", "title_en": "Nervous system basics", "keywords": ["sinaps", "nörotransmitter", "refleks", "otonom", "sempatik", "parasempatik"]},
+        {"id": "cardiovascular", "title_tr": "Kardiyovasküler fizyoloji", "title_en": "Cardiovascular physiology", "keywords": ["kalp", "kalp debisi", "kan basıncı", "EKG", "Frank Starling", "damar"]},
+        {"id": "respiratory", "title_tr": "Solunum fizyolojisi", "title_en": "Respiratory physiology", "keywords": ["solunum", "akciğer", "ventilasyon", "gaz değişimi", "kompliyans", "sürfaktan", "oksijen"]},
+        {"id": "renal", "title_tr": "Böbrek fizyolojisi", "title_en": "Renal physiology", "keywords": ["böbrek", "nefron", "glomerül", "filtrasyon", "GFR", "reabsorpsiyon", "klirens"]},
+        {"id": "endocrine", "title_tr": "Endokrin fizyoloji", "title_en": "Endocrine physiology", "keywords": ["hormon", "hipofiz", "tiroid", "insülin", "kortizol", "endokrin"]},
+        {"id": "gastrointestinal", "title_tr": "Sindirim fizyolojisi", "title_en": "Gastrointestinal physiology", "keywords": ["sindirim", "mide", "bağırsak", "emilim", "motilite", "safra"]},
+        {"id": "blood_physiology", "title_tr": "Kan fizyolojisi", "title_en": "Blood physiology", "keywords": ["kan", "hemoglobin", "pıhtılaşma", "eritropoez", "kan grubu"]}
+      ]
+    },
+    {
+      "id": "biology",
+      "title_tr": "Biyoloji",
+      "title_en": "Biology",
+      "keywords": ["biyoloji", "biology", "tıbbi biyoloji", "genetik", "hücre biyolojisi"],
+      "topics": [
+        {"id": "cell_biology", "title_tr": "Hücre biyolojisi ve organeller", "title_en": "Cell biology and organelles", "keywords": ["hücre", "organel", "mitokondri", "ribozom", "endoplazmik retikulum", "Golgi", "lizozom"]},
+        {"id": "membranes", "title_tr": "Hücre zarı", "title_en": "Cell membranes", "keywords": ["hücre zarı", "membran", "fosfolipid", "akışkan mozaik"]},
+        {"id": "dna_rna", "title_tr": "DNA ve RNA yapısı", "title_en": "DNA and RNA structure", "keywords": ["DNA", "RNA", "çift sarmal", "nükleotid", "kromatin"]},
+        {"id": "replication", "title_tr": "DNA replikasyonu", "title_en": "DNA replication", "keywords": ["replikasyon", "DNA polimeraz", "helikaz", "primer", "Okazaki", "telomer"]},
+        {"id": "transcription", "title_tr": "Transkripsiyon", "title_en": "Transcription", "keywords": ["transkripsiyon", "RNA polimeraz", "promotor", "splicing", "mRNA"]},
+        {"id": "translation", "title_tr": "Translasyon", "title_en": "Translation", "keywords": ["translasyon", "ribozom", "tRNA", "kodon", "genetik kod"]},
+        {"id": "genetics", "title_tr": "Genetik ve kalıtım", "title_en": "Genetics and inheritance", "keywords": ["genetik", "kalıtım", "Mendel", "otozomal", "X'e bağlı", "allel"]},
+        {"id": "chromosomes", "title_tr": "Kromozomlar", "title_en": "Chromosomes", "keywords": ["kromozom", "karyotip", "sentromer", "aneuploidi"]},
+        {"id": "cell_cycle", "title_tr": "Hücre döngüsü", "title_en": "Cell cycle", "keywords": ["hücre döngüsü", "interfaz", "G1", "S", "G2", "kontrol noktası", "siklin"]},
+        {"id": "mitosis_meiosis", "title_tr": "Mitoz ve mayoz", "title_en": "Mitosis and meiosis", "keywords": ["mitoz", "mayoz", "profaz", "metafaz", "anafaz", "telofaz", "crossing over"]},
+        {"id": "mutations", "title_tr": "Mutasyonlar ve DNA onarımı", "title_en": "Mutations and DNA repair", "keywords": ["mutasyon", "nokta mutasyonu", "çerçeve kayması", "onarım"]},
+        {"id": "molecular_basics", "title_tr": "Moleküler biyoloji temelleri", "title_en": "Molecular biology fundamentals", "keywords": ["PCR", "elektroforez", "klonlama", "gen ifadesi"]},
+        {"id": "development", "title_tr": "Gelişim biyolojisi temelleri", "title_en": "Developmental biology fundamentals", "keywords": ["embriyo", "farklılaşma", "kök hücre", "gelişim"]}
+      ]
+    }
+  ]
+}

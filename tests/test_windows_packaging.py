@@ -28,6 +28,8 @@ def test_verify_smoke_report_accepts_complete_frozen_result(tmp_path: Path) -> N
         "health": "healthy",
         "screens": 11,
         "nova_assets": sorted(nova_shell.WEB_ASSETS),
+        "medical": True,
+        "medical_data": ["anatomy.json", "concepts.json", "curriculum.json"],
         "tcl": "8.6.14",
     }
     path.write_text(json.dumps(expected), encoding="utf-8")
@@ -44,6 +46,9 @@ def test_verify_smoke_report_accepts_complete_frozen_result(tmp_path: Path) -> N
         ("screens", 10),
         ("nova_assets", ["index.html"]),
         ("nova_assets", None),
+        ("medical", False),
+        ("medical", None),
+        ("medical_data", ["curriculum.json"]),
         ("tcl", ""),
     ],
 )
@@ -59,6 +64,8 @@ def test_verify_smoke_report_rejects_incomplete_result(
         "health": "healthy",
         "screens": 11,
         "nova_assets": sorted(nova_shell.WEB_ASSETS),
+        "medical": True,
+        "medical_data": ["anatomy.json", "concepts.json", "curriculum.json"],
         "tcl": "8.6.14",
     }
     report[field] = value

@@ -11,6 +11,26 @@ be committed to source control or written to logs.
 | `JARVIS_ENVIRONMENT` | `development` | Runtime environment label. |
 | `JARVIS_DEBUG` | `false` | Enables development diagnostics. |
 
+## Medical Academy
+
+The first-year medical study layer. Enabled by default; disabling it removes
+its four tools, its request augmenter and its screen, and leaves the rest of
+JARVIS untouched.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `JARVIS_MEDICAL_ENABLED` | `true` | Enables the study layer. |
+| `JARVIS_MEDICAL_DIRECTORY` | `%LOCALAPPDATA%\JARVIS\medical` | Study store, imported document copies, rendered pages and `anatomy_assets/`. |
+| `JARVIS_MEDICAL_MODEL` | unset | Model override for the academy's structured pipelines; empty uses the routed default. |
+| `JARVIS_MEDICAL_MAX_DOCUMENT_PAGES` | `400` | Refuses a larger PDF instead of stalling on it. |
+| `JARVIS_MEDICAL_MAX_DOCUMENT_BYTES` | `62914560` | 60 MiB import limit (1 MiB to 512 MiB). |
+| `JARVIS_MEDICAL_VISION_PAGES_PER_DOCUMENT` | `12` | How many figure-heavy pages per document are read with vision. `0` disables the visual pass. |
+
+Licensed 3D anatomy assets are registered by hand in
+`<medical directory>/anatomy_assets/manifest.json`; an entry without a licence
+and a source is refused, and no geometry is ever generated. See
+`docs/MEDICAL_ACADEMY.md`.
+
 ## Provider gateway
 
 Gemini is the only production provider. `mock` is a deterministic offline

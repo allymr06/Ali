@@ -5,10 +5,12 @@ import contextlib
 import json
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime, timedelta
 from uuid import uuid4
 
 from app.conversation.engine import ConversationEngine
+from app.core.augmentation import RequestAugmentation, RequestAugmenter
 from app.core.models import (
     Context,
     Request,
@@ -67,6 +69,14 @@ from app.security.permissions import PermissionDecision
 # every tool turn; the pause doubles on repeat, up to an hour.
 ACTION_MODEL_COOLDOWN_SECONDS = 60.0
 ACTION_MODEL_COOLDOWN_MAX_SECONDS = 3600.0
+
+# A domain layer is consulted before the turn is answered, so a stuck one
+# must cost a moment rather than the whole request: it waits its own small
+# bound, and never more than a fraction of what is left of the budget, so
+# the model still has time to answer instead of the caller being told the
+# budget ran out.
+REQUEST_AUGMENTATION_TIMEOUT_SECONDS = 2.0
+REQUEST_AUGMENTATION_BUDGET_FRACTION = 0.25
 
 
 _TURKISH_DAYS = (
@@ -135,6 +145,7 @@ class CoreEngine:
         fast_action_router: ApprovedApplicationFastRouter | None = None,
         tool_schema_selector: ToolSchemaSelector | None = None,
         memory_extractor=None,
+        request_augmenter: RequestAugmenter | None = None,
         conversation_engine: ConversationEngine | None = None,
         task_runtime_directory: str | None = None,
         diagnostics=None,
@@ -147,6 +158,7 @@ class CoreEngine:
         self._memory_policy = memory_policy or MemoryPolicy()
         self._memory_analyzer = MemoryAnalyzer()
         self._memory_extractor = memory_extractor
+        self._request_augmenter = request_augmenter
         self._tool_executor = (
             tool_executor
             if tool_executor is not None
@@ -243,6 +255,77 @@ class CoreEngine:
     @property
     def tool_executor(self) -> ToolExecutor:
         return self._tool_executor
+
+    @property
+    def request_augmenter(self) -> RequestAugmenter | None:
+        """The optional domain layer consulted before a general turn."""
+        return self._request_augmenter
+
+    @request_augmenter.setter
+    def request_augmenter(self, augmenter: RequestAugmenter | None) -> None:
+        if augmenter is not None and not callable(augmenter):
+            raise TypeError("Request augmenter must be callable.")
+        self._request_augmenter = augmenter
+
+    async def _augment_request(
+        self,
+        request: Request,
+        context: Context,
+        *,
+        cancel_event,
+        remaining_seconds: float,
+    ) -> RequestAugmentation | None:
+        """Ask the domain layer what this turn needs.
+
+        A domain layer may add to the system prompt, narrow the exposed
+        tools or answer outright. Its failure is reported and ignored:
+        a broken extension must never take the assistant down with it,
+        and neither may a hanging one — it is given a small slice of the
+        remaining budget so the turn is still answered by the model.
+        """
+        if self._request_augmenter is None:
+            return None
+        timeout = min(
+            REQUEST_AUGMENTATION_TIMEOUT_SECONDS,
+            remaining_seconds * REQUEST_AUGMENTATION_BUDGET_FRACTION,
+        )
+        try:
+            augmentation = await self._await_provider(
+                self._request_augmenter(request, context),
+                cancel_event=cancel_event,
+                timeout=timeout,
+            )
+        except _ExecutionCancelled:
+            raise
+        except TimeoutError:
+            self._record_diagnostic(
+                "request.augmentation_timeout",
+                "Domain augmentation exceeded its share of the request budget.",
+                level=DiagnosticLevel.WARNING,
+                trace_id=str(request.request_id),
+                attributes={"timeout_seconds": round(timeout, 3)},
+            )
+            return None
+        except Exception as exc:
+            self._record_diagnostic(
+                "request.augmentation_failed",
+                "Domain augmentation failed; the turn continues without it.",
+                level=DiagnosticLevel.WARNING,
+                trace_id=str(request.request_id),
+                attributes={"error_type": type(exc).__name__},
+            )
+            return None
+        if augmentation is None:
+            return None
+        if not isinstance(augmentation, RequestAugmentation):
+            self._record_diagnostic(
+                "request.augmentation_invalid",
+                "Domain augmentation returned an unsupported value.",
+                level=DiagnosticLevel.WARNING,
+                trace_id=str(request.request_id),
+            )
+            return None
+        return None if augmentation.empty else augmentation
 
     def create_plan(
         self,
@@ -886,6 +969,43 @@ class CoreEngine:
             attributes={"source": request.source.value},
         )
 
+        active_limits = limits or self._execution_limits
+        usage = ExecutionUsage()
+        usage.start()
+
+        # Identity, clock and social turns are answered by Core itself and
+        # are never handed to a domain layer. Everything else may be
+        # claimed by one: it can add to the system prompt, narrow the
+        # exposed tools, or answer outright.
+        interaction_decision = self._interaction_policy.evaluate(request)
+        augmentation = None
+        if (
+            self._request_augmenter is not None
+            and interaction_decision.direct_response is None
+            and interaction_decision.expose_tools
+        ):
+            augmentation = await self._augment_request(
+                request,
+                active_context,
+                cancel_event=cancel_event,
+                remaining_seconds=usage.remaining_seconds(active_limits),
+            )
+        if augmentation is not None:
+            # An accepted claim names the turn whatever it changed about
+            # it: a layer that only narrowed the tools or only suppressed
+            # memory still owns this turn, and the ledger has to be able
+            # to tell such a turn from an ordinary one.
+            changes: dict[str, object] = {"kind": augmentation.kind}
+            if augmentation.direct_response is not None:
+                changes["expose_tools"] = False
+                changes["direct_response"] = augmentation.direct_response
+            elif augmentation.system_prompt is not None:
+                changes["system_prompt"] = augmentation.system_prompt
+            interaction_decision = replace(interaction_decision, **changes)
+        suppress_memory = bool(
+            augmentation is not None and augmentation.suppress_memory
+        )
+
         candidate = self._memory_analyzer.analyze(request)
 
         decision = self._memory_policy.evaluate(
@@ -895,7 +1015,12 @@ class CoreEngine:
 
         memory_saved = False
         memory_write_reason: str | None = None
-        if decision.should_remember:
+        if suppress_memory and decision.should_remember:
+            memory_write_reason = (
+                "A domain layer owns this turn's material; it is not "
+                "written to personal memory."
+            )
+        if decision.should_remember and not suppress_memory:
             # The policy can decide to remember without an analyzer
             # candidate (for example preference phrasing); the raw
             # request text is the memory then. Requiring a candidate
@@ -945,9 +1070,6 @@ class CoreEngine:
         self._conversation_engine.prepare_request(request, active_context)
 
         provider = self._provider_registry.get_default()
-        active_limits = limits or self._execution_limits
-        usage = ExecutionUsage()
-        usage.start()
         try:
             tool_schemas = self._tool_executor.get_openai_tools(
                 names=self._tool_filter_values(
@@ -966,14 +1088,20 @@ class CoreEngine:
         except ValueError as exc:
             tool_schemas = []
             request.metadata["tool_filter_error"] = str(exc)
-        interaction_decision = (
-            self._interaction_policy.evaluate(
-                request
-            )
-        )
 
+        domain_tool_names: frozenset[str] | None = (
+            augmentation.allowed_tools if augmentation is not None else None
+        )
         if not interaction_decision.expose_tools:
             tool_schemas = []
+        elif domain_tool_names is not None:
+            # A domain layer may only narrow what Core already exposed.
+            tool_schemas = [
+                schema
+                for schema in tool_schemas
+                if isinstance(schema.get("function"), dict)
+                and schema["function"].get("name") in domain_tool_names
+            ]
 
         exposed_tool_names = {
             str(item.get("function", {}).get("name", ""))
@@ -1155,6 +1283,7 @@ class CoreEngine:
             self._tool_schema_selector is not None
             and deterministic_tool_name is None
             and fast_action_tool_name is None
+            and domain_tool_names is None
         ):
             selection = (
                 self._tool_schema_selector.select(
@@ -1845,6 +1974,16 @@ class CoreEngine:
                 "interaction_kind": (
                     interaction_decision.kind
                 ),
+                "augmentation": (
+                    dict(augmentation.metadata)
+                    if augmentation is not None
+                    else None
+                ),
+                "augmented_tools": (
+                    sorted(domain_tool_names)
+                    if domain_tool_names is not None
+                    else None
+                ),
                 "tools_suppressed": (
                     not interaction_decision.expose_tools
                 ),
@@ -1904,6 +2043,7 @@ class CoreEngine:
         if (
             self._memory_extractor is not None
             and not memory_saved
+            and not suppress_memory
             and outcome == "completed"
             and request.source
             in (RequestSource.TEXT, RequestSource.VOICE)

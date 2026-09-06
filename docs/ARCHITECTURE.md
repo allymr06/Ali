@@ -43,6 +43,21 @@ limits, state store, and event bus.
   can complete a step.
 - `TaskManager` owns legal task and task-step state transitions.
 
+## Domain augmentation
+
+`CoreEngine` accepts one optional `request_augmenter` (`app/core/augmentation.py`).
+Identity, clock and social turns are answered by Core itself and are never
+handed over; every other turn is offered to the domain layer, which may:
+
+- add to the system prompt for that turn,
+- **narrow** (never widen) the tools Core already exposed,
+- answer directly, skipping the model,
+- suppress personal-memory writes for the turn.
+
+A domain augmenter that raises, times out or returns an unsupported value is
+recorded in the diagnostics ledger and ignored; the turn completes without it.
+The Medical Academy (`app/medical/`) is the first such layer.
+
 ## Identity and traceability
 
 `request_id`, `conversation_id`, `task_id`, `plan_id`, and the current step

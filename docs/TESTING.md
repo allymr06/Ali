@@ -305,7 +305,10 @@ deleting a memory ask first, that the approval overlay offers no blanket
 permission, that the palette and compact mode are wired, that design tokens
 live only in `tokens.css` and the motion vocabulary is shared, that the
 visible text is Turkish, and that the stylesheet ignores the OS reduced-motion
-setting.
+setting. For the Medical screen it runs the page's own helpers under QuickJS:
+figure markup and the review order of the exam results, the z-up mesh frame
+of a BodyParts3D asset, an anchor outside the mesh that is drawn nowhere, and
+the bell-ringer's lenient Latin matching.
 
 The packaging tests require the spec to collect the `web/` directory
 recursively below `app/ui/nova/web` (recomputing the mapping for every asset
@@ -512,7 +515,13 @@ The Medical Academy regression coverage (`tests/test_medical_*.py`) includes:
 - exam import from messy text, and the style profiler's evidence-based
   features, confidence thresholds and never-guess-the-answer-key rule;
 - the Anatomy Lab's structure cards, movement axes, deterministic quizzes and
-  the asset registry that refuses an unlicensed or missing model;
+  the asset registry that refuses an unlicensed or missing model, reads scenes
+  from the manifest (a scene naming an unregistered structure loses it, an
+  empty scene is reported), reports the up axis and both pin forms with their
+  confidence, and the BodyParts3D importer: the OBJ merge with index
+  re-basing, the pilot mapping checked against the curated data, derived pins
+  on a synthetic bone, no pin without a rule or enough vertices, and the
+  hand-placed pin that survives a re-import (`test_medical_anatomy.py`);
 - the academy facade, its four tools, the tutor's decisions and question
   generation against a fake model client;
 - the core engine's augmentation hook: prompt replacement, tool narrowing,

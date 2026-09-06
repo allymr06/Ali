@@ -24,6 +24,8 @@ KIND_LABELS_TR = {
     "muscle": "Kas",
     "ligament": "Bağ",
     "nerve": "Sinir",
+    "artery": "Arter",
+    "vein": "Ven",
     "region": "Bölge",
 }
 REGION_LABELS_TR = {
@@ -32,7 +34,7 @@ REGION_LABELS_TR = {
     "trunk": "Gövde",
     "head_neck": "Baş ve boyun",
 }
-KIND_ORDER = ("region", "bone", "joint", "muscle", "nerve", "ligament")
+KIND_ORDER = ("region", "bone", "joint", "muscle", "artery", "vein", "nerve", "ligament")
 FACT_ORDER: dict[str, list[tuple[str, str]]] = {
     "bone": [
         ("location", "Konum"), ("orientation", "Yön"), ("parts", "Bölümler"), ("surfaces", "Yüzler"),
@@ -50,6 +52,8 @@ FACT_ORDER: dict[str, list[tuple[str, str]]] = {
         ("axes_planes", "Eksen ve düzlemler"), ("relations", "Komşuluklar"), ("high_yield", "Yüksek verim"),
     ],
     "nerve": [("origin", "Köken"), ("course", "Seyir"), ("motor", "Motor"), ("sensory", "Duyu"), ("high_yield", "Yüksek verim")],
+    "artery": [("origin", "Köken"), ("course", "Seyir"), ("branches", "Dallar"), ("supply", "Beslediği alan"), ("relations", "Komşuluklar"), ("high_yield", "Yüksek verim")],
+    "vein": [("origin", "Başlangıç"), ("course", "Seyir"), ("tributaries", "Katılan venler"), ("drains_into", "Döküldüğü yer"), ("relations", "Komşuluklar"), ("high_yield", "Yüksek verim")],
     "region": [("location", "Tanım"), ("parts", "Bölümler"), ("articulations", "Eklemler"), ("high_yield", "Yüksek verim")],
 }
 MOVEMENT_PATTERNS = (
@@ -87,6 +91,7 @@ class AnatomyAssetRegistry:
     def __init__(self, directory: Path | None) -> None:
         self._directory = directory
         self._entries: dict[str, dict[str, Any]] = {}
+        self._scenes: list[dict[str, Any]] = []
         self._problems: list[str] = []
         self.reload()
 
@@ -96,6 +101,7 @@ class AnatomyAssetRegistry:
 
     def reload(self) -> None:
         self._entries = {}
+        self._scenes = []
         self._problems = []
         if self._directory is None:
             return
@@ -123,6 +129,25 @@ class AnatomyAssetRegistry:
             entry["path"] = str((self._directory / file_name).resolve())
             entry["available"] = (self._directory / file_name).is_file()
             self._entries[structure_id] = entry
+        # A scene names the structures one region shows together; a structure
+        # the manifest does not carry is dropped from it rather than drawn empty.
+        for item in raw.get("scenes", []) if isinstance(raw, dict) else []:
+            if not isinstance(item, dict):
+                continue
+            scene_id = str(item.get("scene_id", "")).strip()
+            wanted = [str(value) for value in (item.get("structure_ids") or []) if str(value) in self._entries]
+            if not scene_id or not wanted:
+                self._problems.append("scene_id veya kayıtlı yapısı olmayan bir sahne atlandı")
+                continue
+            self._scenes.append(
+                {
+                    "scene_id": scene_id,
+                    "title": str(item.get("title") or scene_id),
+                    "region": str(item.get("region") or ""),
+                    "structure_ids": wanted,
+                    "available": [structure_id for structure_id in wanted if self._entries[structure_id].get("available")],
+                }
+            )
 
     @property
     def problems(self) -> list[str]:
@@ -133,6 +158,9 @@ class AnatomyAssetRegistry:
 
     def available_ids(self) -> list[str]:
         return [key for key, entry in self._entries.items() if entry.get("available")]
+
+    def scenes(self) -> list[dict[str, Any]]:
+        return [dict(scene) for scene in self._scenes]
 
     def describe(self, structure_id: str) -> dict[str, Any]:
         entry = self._entries.get(structure_id)
@@ -155,6 +183,7 @@ class AnatomyAssetRegistry:
         if path.stat().st_size > MAX_OBJ_BYTES:
             raise ValueError("Model dosyası çok büyük.")
         mesh = parse_obj(path.read_text(encoding="utf-8", errors="ignore"))
+        anchors, meta = self._anchors(entry.get("landmarks"))
         mesh.update(
             {
                 "structure_id": structure_id,
@@ -162,10 +191,40 @@ class AnatomyAssetRegistry:
                 "source": entry.get("source"),
                 "attribution": entry.get("attribution", ""),
                 "scale": float(entry.get("scale", 1.0) or 1.0),
-                "landmarks": {str(key): [float(v) for v in value] for key, value in (entry.get("landmarks") or {}).items() if isinstance(value, (list, tuple)) and len(value) == 3},
+                "up_axis": str(entry.get("up_axis") or "y").lower(),
+                "landmarks": anchors,
+                "landmark_meta": meta,
             }
         )
         return mesh
+
+    @staticmethod
+    def _anchors(raw: Any) -> tuple[dict[str, list[float]], dict[str, dict[str, str]]]:
+        """Landmark anchors in either manifest form.
+
+        A hand-written entry is ``landmark_id: [x, y, z]``; the importer writes
+        ``landmark_id: {"anchor": [x, y, z], "confidence": "approximate",
+        "method": ...}`` so the lab can say which pins were derived from the
+        shape rather than placed by someone who knew. Anything else is ignored.
+        """
+        anchors: dict[str, list[float]] = {}
+        meta: dict[str, dict[str, str]] = {}
+        for key, value in (raw or {}).items() if isinstance(raw, dict) else []:
+            point = value.get("anchor") if isinstance(value, dict) else value
+            if not isinstance(point, (list, tuple)) or len(point) != 3:
+                continue
+            try:
+                anchors[str(key)] = [float(item) for item in point]
+            except (TypeError, ValueError):
+                continue
+            if isinstance(value, dict):
+                meta[str(key)] = {
+                    "confidence": str(value.get("confidence") or "confirmed"),
+                    "method": str(value.get("method") or ""),
+                }
+            else:
+                meta[str(key)] = {"confidence": "confirmed", "method": "manifest"}
+        return anchors, meta
 
 
 def parse_obj(text: str) -> dict[str, Any]:

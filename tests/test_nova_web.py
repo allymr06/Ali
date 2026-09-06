@@ -576,3 +576,58 @@ def test_the_review_puts_the_wrong_answers_first_with_their_explanation() -> Non
     # The wrong answer is explained: the correct option is ticked, the chosen one crossed.
     assert "✓ A) x" in review and "✗ B) y" in review
     assert "neden yanlis" in review and "Aciklama satiri" in review
+
+
+# ---------------------------------------------------------------------------
+# the lab's scene frame and the bell-ringer's grading, executed in QuickJS
+# ---------------------------------------------------------------------------
+
+
+LAB_HELPERS_SCENARIO = """
+(() => {
+  const yUp = meshSpace({bounds: {min: [0, 0, 0], max: [2, 4, 8]}});
+  const zUp = meshSpace({bounds: {min: [0, 0, 0], max: [2, 4, 8]}, up_axis: "z"});
+  const point = [2, 4, 8];
+  return JSON.stringify({
+    yUp: yUp.place(point), zUp: zUp.place(point),
+    matches: {
+      exact: latinMatches("Tuberculum majus", "Tuberculum majus"),
+      folded: latinMatches("tuberculum majus", "Tuberculum majus"),
+      turkish_keys: latinMatches("epıcondylus medıalıs", "Epicondylus medialis"),
+      abbreviation: latinMatches("m. biceps brachii", "Musculus biceps brachii"),
+      wrong_pair: latinMatches("tuberculum minus", "Tuberculum majus"),
+      partial: latinMatches("humeri", "Caput humeri"),
+      empty: latinMatches("", "Acromion"),
+      stem: latinMatches("acromion", "Acromion"),
+    },
+  });
+})()
+"""
+
+
+def test_a_z_up_asset_is_turned_into_the_viewer_frame_once() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+
+    result = json.loads(context.eval(LAB_HELPERS_SCENARIO))
+
+    # Normalised on the longest axis (8): the top corner of the box.
+    assert result["yUp"] == pytest.approx([0.125, 0.25, 0.5])
+    # z becomes up, the old y goes to -z, so vertices, bounds and pins agree.
+    assert result["zUp"] == pytest.approx([0.125, 0.5, -0.25])
+
+
+def test_bell_ringer_grading_forgives_spelling_but_not_the_wrong_structure() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+
+    matches = json.loads(context.eval(LAB_HELPERS_SCENARIO))["matches"]
+
+    assert matches["exact"] and matches["folded"] and matches["turkish_keys"] and matches["abbreviation"] and matches["stem"]
+    assert not matches["wrong_pair"], "majus and minus are different structures"
+    assert not matches["partial"], "naming the bone is not naming the landmark"
+    assert not matches["empty"]

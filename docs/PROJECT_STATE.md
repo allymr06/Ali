@@ -43,12 +43,51 @@ Last verified: 6 September 2026
   page-anchored citations, tutor, question and exam engine, evidence-based
   professor-style profiling, interpretable mastery with spaced review, and the
   Anatomy Lab), 6 September 2026
+- Completed feature milestone: Anatomy Lab in 3D (BodyParts3D scene of the
+  right upper limb, free navigation, detailed pins, bell-ringer exam),
+  7 September 2026
 - Next action: plugin process isolation; code signing and a user-attended
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2212 tests passing, 5 skipped (`scripts/verify.py`)
+- Automated verification: 2225 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Anatomy Lab in 3D (7 September 2026)
+
+The lab now shows real geometry. `scripts/import_bodyparts3d.py` reads the
+polygon-reduced BodyParts3D 4.0 archive (downloaded by the student; JARVIS
+fetches nothing and no mesh is committed), maps 25 structures of the right
+upper limb — bones, muscles, arteries and veins — from their FMA identifiers
+to the archive's element files, merges each structure into one OBJ under the
+state directory and writes the manifest entry with licence, attribution, side,
+up axis and provenance. The structures form one scene, which the lab opens
+with a layer chip per kind; clicking a mesh selects the structure. The view
+turns, zooms and pans with the mouse, the keyboard and an on-screen pad. Six
+vessel cards (axillary, brachial, radial and ulnar arteries; cephalic and
+basilic veins) were added so every mesh has a card. Design in
+`docs/MEDICAL_ACADEMY.md`.
+
+Two honest limits. BodyParts3D 4.0 ships no bony landmark parts, so pins are
+derived from the shape by a rule per landmark (the most proximal cap of the
+humerus is its head) and written as approximate; the lab draws them with "≈",
+a landmark no rule can place gets no pin, and a hand-placed pin outranks a
+derived one on re-import. It ships no peripheral nerves of the arm either, so
+nerves stay schematic.
+
+Two study modes on top. *Detaylı* draws every pin with its Latin name on the
+model; clicking one opens a card with the curated description and the pages
+of the student's own library that mention it. *Zilli sınav* is the
+bell-ringer: up to ten numbered stations from the scene's pins, one Latin name
+typed per station, a fixed time (30–90 s) with a bell between stations and no
+going back, the landmark list hidden while the exam runs, every station
+recorded as an anatomy answer, and a results list with the correct name and
+description.
+
+Verified live in the Nova window: the scene with its four layers and the
+attribution notice, picking, the pad and the keys, detailed pins with "≈", the
+bell-ringer setup card, a station with the numbered pin and the timer, and
+the results list.
 
 ## Medical Academy (6 September 2026)
 

@@ -1538,12 +1538,32 @@ function promptDialog({ title, body, placeholder = "" }) {
    invented: no asset means no bone on screen.
    ════════════════════════════════════════════════════════════════════ */
 
+/* Colour per system, muted and stable in both themes: the point of the
+   scene is telling a vein from an artery from a nerve at a glance. */
+const LAB_KIND_COLOURS = {
+  bone: [0.86, 0.83, 0.76],
+  joint: [0.70, 0.75, 0.80],
+  muscle: [0.70, 0.33, 0.30],
+  artery: [0.85, 0.24, 0.21],
+  vein: [0.29, 0.43, 0.78],
+  nerve: [0.92, 0.80, 0.34],
+  ligament: [0.78, 0.74, 0.60],
+  region: [0.60, 0.60, 0.60],
+};
+const LAB_KIND_LABELS = { bone: "Kemik", joint: "Eklem", muscle: "Kas", artery: "Arter", vein: "Ven", nerve: "Sinir", ligament: "Bağ" };
+const LAB_LAYER_ORDER = ["bone", "joint", "muscle", "artery", "vein", "nerve", "ligament"];
+
 const Lab = {
   hierarchy: [],
+  scenes: [],
+  scene: null,
   structure: null,
   mesh: null,
   highlight: [],
   showLabels: true,
+  detailed: false,
+  pinCard: null,
+  bell: null,
   quiz: null,
   gl: null,
   program: null,
@@ -1558,13 +1578,113 @@ const Lab = {
       if (result.ok === false) { toast(result.error || "Anatomi Lab okunamadı.", true); return; }
       this.hierarchy = result.hierarchy || [];
       this.assets = result.assets || {};
+      this.scenes = (result.scenes || []).filter((scene) => (scene.available || []).length);
       this.source = result.source || "";
       this.renderList();
+      this.renderLayers();
     }
     if (!this.structure) {
+      // Licensed meshes for a whole region are the richer first sight; a
+      // single card is what remains when the manifest names no scene.
+      if (this.scenes.length) { await this.openScene(this.scenes[0].scene_id); return; }
       const first = this.firstStructureId();
       if (first) this.select(first);
     } else this.draw();
+  },
+
+  /* ── scenes: a region's licensed meshes as one view ─────────────── */
+
+  kindOf(structureId) {
+    for (const region of this.hierarchy) {
+      for (const kind of region.kinds || []) {
+        const hit = (kind.structures || []).find((item) => item.structure_id === structureId);
+        if (hit) return { kind: kind.kind, canonical: hit.canonical, turkish: hit.turkish };
+      }
+    }
+    return { kind: "", canonical: structureId, turkish: "" };
+  },
+
+  async openScene(sceneId) {
+    const scene = this.scenes.find((item) => item.scene_id === sceneId);
+    if (!scene) return;
+    const ids = scene.available || [];
+    this.scene = { scene_id: scene.scene_id, title: scene.title, items: [], total: ids.length, visible: new Set(LAB_LAYER_ORDER), bounds: null, attribution: "" };
+    this.mesh = null;
+    this.meshNotice = "";
+    this.quiz = null;
+    this.renderLayers();
+    this.draw();
+    for (const structureId of ids) {
+      if (!this.scene || this.scene.scene_id !== scene.scene_id) return;   // the student moved on
+      const result = await Medical.request("mesh", { structure_id: structureId });
+      if (result.ok === false || !result.mesh || !result.mesh.positions) continue;
+      const meta = this.kindOf(structureId);
+      this.scene.items.push({ structure_id: structureId, kind: meta.kind, canonical: meta.canonical, mesh: result.mesh, buffers: null });
+      if (!this.scene.attribution) this.scene.attribution = result.mesh.attribution || result.mesh.license || "";
+      const notice = $("#lab-notice");
+      if (notice) { notice.hidden = false; notice.textContent = `Sahne yükleniyor · ${this.scene.items.length}/${this.scene.total}`; }
+    }
+    if (!this.scene || this.scene.scene_id !== scene.scene_id) return;
+    // Every BodyParts3D mesh shares one body frame, so the scene is placed
+    // once, on the union of its bounds, and the meshes keep their relations.
+    const bounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+    this.scene.items.forEach((item) => [0, 1, 2].forEach((axis) => {
+      bounds.min[axis] = Math.min(bounds.min[axis], item.mesh.bounds.min[axis]);
+      bounds.max[axis] = Math.max(bounds.max[axis], item.mesh.bounds.max[axis]);
+    }));
+    this.scene.bounds = bounds;
+    this.scene.upAxis = this.scene.items.some((item) => String(item.mesh.up_axis || "").toLowerCase() === "z") ? "z" : "y";
+    this.scene.items.forEach((item) => { item.buffers = null; });
+    // The camera is framed for the limb before anything is drawn, whichever
+    // card ends up selected below.
+    this.resetCamera();
+    if (!this.structure || !this.scene.items.some((item) => item.structure_id === this.structure.structure_id)) {
+      const first = this.scene.items.find((item) => item.kind === "bone") || this.scene.items[0];
+      if (first) { await this.select(first.structure_id); return; }
+    }
+    this.renderLayers();
+    this.draw();
+  },
+
+  leaveScene() {
+    const current = this.structure ? this.structure.structure_id : null;
+    this.scene = null;
+    this.renderLayers();
+    if (current) this.select(current);
+    else this.draw();
+  },
+
+  toggleLayer(kind) {
+    if (!this.scene) return;
+    if (this.scene.visible.has(kind)) this.scene.visible.delete(kind);
+    else this.scene.visible.add(kind);
+    this.renderLayers();
+    this.draw();
+  },
+
+  renderLayers() {
+    const host = $("#lab-layers");
+    if (!host) return;
+    if (!this.scenes.length) { host.innerHTML = ""; return; }
+    const sceneChips = [`<button type="button" class="lab-layer ${this.scene ? "" : "active"}" data-scene="">Tek yapı</button>`]
+      .concat(this.scenes.map((scene) => `<button type="button" class="lab-layer ${this.scene && this.scene.scene_id === scene.scene_id ? "active" : ""}" data-scene="${esc(scene.scene_id)}">${esc(scene.title)}</button>`));
+    const parts = [`<span class="lab-layer-group">${sceneChips.join("")}</span>`];
+    if (this.scene) {
+      const present = new Set(this.scene.items.map((item) => item.kind));
+      const layers = LAB_LAYER_ORDER.filter((kind) => present.has(kind)).map((kind) => {
+        const colour = LAB_KIND_COLOURS[kind] || [0.6, 0.6, 0.6];
+        const css = `rgb(${colour.map((value) => Math.round(value * 255)).join(",")})`;
+        return `<button type="button" class="lab-layer ${this.scene.visible.has(kind) ? "active" : "off"}" data-layer="${kind}"><span class="lab-swatch" style="background:${css}"></span>${esc(LAB_KIND_LABELS[kind] || kind)}</button>`;
+      });
+      parts.push(`<span class="lab-layer-group">${layers.join("")}</span>`);
+      parts.push(`<span class="lab-layer-note">${this.scene.items.length} yapı · sağ taraf · tıkla: kart</span>`);
+    }
+    host.innerHTML = parts.join("");
+    $$("[data-scene]", host).forEach((node) => node.addEventListener("click", () => {
+      if (node.dataset.scene) this.openScene(node.dataset.scene);
+      else this.leaveScene();
+    }));
+    $$("[data-layer]", host).forEach((node) => node.addEventListener("click", () => this.toggleLayer(node.dataset.layer)));
   },
 
   firstStructureId() {
@@ -1601,10 +1721,18 @@ const Lab = {
     this.structure = result.structure;
     this.highlight = highlight;
     this.quiz = null;
-    this.mesh = null;
     this.meshNotice = "";
     this.renderList($("#lab-search") ? $("#lab-search").value : "");
     this.renderInfo();
+    if (this.scene && this.scene.items.some((item) => item.structure_id === structureId)) {
+      // The region stays on screen; the chosen structure is lit within it.
+      this.renderLayers();
+      this.draw();
+      if (quiz) this.startQuiz();
+      return;
+    }
+    if (this.scene) { this.scene = null; this.renderLayers(); }
+    this.mesh = null;
     if (this.structure.model && this.structure.model.available) {
       const mesh = await Medical.request("mesh", { structure_id: structureId });
       if (mesh.ok !== false && mesh.mesh && mesh.mesh.positions) this.mesh = mesh.mesh;
@@ -1622,6 +1750,14 @@ const Lab = {
     if (!host) return;
     const structure = this.structure;
     if (!structure) { host.innerHTML = medEmpty("Yapı seç"); return; }
+    if (this.bell && this.bell.current) {
+      // The card lists every landmark with its description, which is the
+      // answer sheet; during a bell-ringer only the specimen's name shows.
+      host.innerHTML = `<h2>Zilli sınav</h2><div class="lab-tr">İstasyon ${this.bell.index + 1} / ${this.bell.stations.length}</div>
+        <div class="lab-section"><span class="ls-title">Örnek</span><ul><li>${esc(structure.canonical)} · ${esc(structure.turkish)}</li></ul></div>
+        <p class="settings-note">Numaralı pinin gösterdiği yapının Latince adını üstteki kutuya yaz; süre dolunca zil çalar.</p>`;
+      return;
+    }
     host.innerHTML = `
       <h2>${esc(structure.canonical)}</h2>
       <div class="lab-tr">${esc(structure.turkish)} · ${esc(structure.english)}</div>
@@ -1648,8 +1784,33 @@ const Lab = {
     this.draw();
   },
 
+  /* One step of the view: from the pad, the keys or a script. Pan scales
+     with distance so a step moves the picture the same amount whatever the
+     zoom; zoom is multiplicative so in and out are symmetric. */
+  nudge(action) {
+    const camera = this.camera;
+    const pan = 0.08 * camera.distance;
+    if (action === "left") camera.panX -= pan;
+    else if (action === "right") camera.panX += pan;
+    else if (action === "up") camera.panY += pan;
+    else if (action === "down") camera.panY -= pan;
+    else if (action === "in") camera.distance = clamp(camera.distance / 1.15, 0.8, 12);
+    else if (action === "out") camera.distance = clamp(camera.distance * 1.15, 0.8, 12);
+    else if (action === "rotl") camera.yaw -= 0.15;
+    else if (action === "rotr") camera.yaw += 0.15;
+    else if (action === "rotu") camera.pitch = clamp(camera.pitch - 0.12, -1.45, 1.45);
+    else if (action === "rotd") camera.pitch = clamp(camera.pitch + 0.12, -1.45, 1.45);
+    else if (action === "reset") this.resetCamera();
+    else return;
+    if (this.mesh || this.scene) { this.drawMesh(); this.drawLabels(); }
+  },
+
   resetCamera() {
-    this.camera = { yaw: 0.6, pitch: 0.25, distance: 2.6, panX: 0, panY: 0 };
+    // A whole limb is long and thin: it sits closer than a single bone would,
+    // and it opens facing the student the way an atlas plate does.
+    this.camera = this.scene
+      ? { yaw: 0.35, pitch: 0.10, distance: 1.2, panX: 0, panY: 0 }
+      : { yaw: 0.6, pitch: 0.25, distance: 2.6, panX: 0, panY: 0 };
   },
 
   /* ── drawing ───────────────────────────────────────────────────── */
@@ -1660,6 +1821,17 @@ const Lab = {
     const notice = $("#lab-notice");
     if (!canvas || !schematic || !notice) return;
     const model = this.structure && this.structure.model;
+    if (this.scene) {
+      canvas.hidden = false;
+      schematic.hidden = true;
+      notice.hidden = false;
+      const loading = this.scene.items.length < this.scene.total || !this.scene.bounds;
+      notice.textContent = loading
+        ? `Sahne yükleniyor · ${this.scene.items.length}/${this.scene.total}`
+        : `3B sahne: ${this.scene.title} · ${this.scene.attribution || "lisanslı model"}`;
+      if (!loading) { this.drawMesh(); this.drawLabels(); }
+      return;
+    }
     if (this.mesh) {
       canvas.hidden = false;
       schematic.hidden = true;
@@ -1750,8 +1922,9 @@ const Lab = {
     const fragment = compile(gl.FRAGMENT_SHADER, `
       precision mediump float;
       varying vec3 vNormal; varying vec3 vView;
-      uniform vec3 uColor; uniform vec3 uRim;
+      uniform vec3 uColor; uniform vec3 uRim; uniform float uFlat;
       void main() {
+        if (uFlat > 0.5) { gl_FragColor = vec4(uColor, 1.0); return; }
         vec3 n = normalize(vNormal);
         vec3 v = normalize(vView);
         vec3 key = normalize(vec3(0.4, 0.8, 0.6));
@@ -1778,21 +1951,24 @@ const Lab = {
       model: gl.getUniformLocation(program, "uModel"),
       colour: gl.getUniformLocation(program, "uColor"),
       rim: gl.getUniformLocation(program, "uRim"),
+      flat: gl.getUniformLocation(program, "uFlat"),
     };
     return gl;
   },
 
   buildBuffers() {
+    return this.buildBuffersFor(this.mesh, this.mesh ? meshSpace(this.mesh) : null);
+  },
+
+  buildBuffersFor(mesh, space) {
     const gl = this.gl;
-    const mesh = this.mesh;
-    if (!gl || !mesh) return null;
+    if (!gl || !mesh || !space) return null;
     const positions = mesh.positions || [];
     const indices = mesh.indices || [];
     const normals = mesh.normals || [];
     const normalIndices = mesh.normal_indices || [];
     const outPositions = new Float32Array(indices.length * 3);
     const outNormals = new Float32Array(indices.length * 3);
-    const space = meshSpace(mesh);
     for (let triangle = 0; triangle < indices.length; triangle += 3) {
       const corners = [indices[triangle], indices[triangle + 1], indices[triangle + 2]];
       const points = corners.map((index) => space.place(positions, index));
@@ -1840,6 +2016,7 @@ const Lab = {
       this.draw();
       return;
     }
+    if (this.scene) { this.drawScene(gl, canvas, { flat: false }); return; }
     if (!this.buffers || this.buffers.meshId !== this.structure.structure_id) {
       this.buffers = this.buildBuffers();
       if (this.buffers) this.buffers.meshId = this.structure.structure_id;
@@ -1861,23 +2038,82 @@ const Lab = {
     gl.uniformMatrix4fv(this.locations.view, false, view);
     gl.uniformMatrix4fv(this.locations.model, false, model);
     const light = document.body.classList.contains("light");
+    gl.uniform1f(this.locations.flat, 0);
     gl.uniform3fv(this.locations.colour, light ? [0.82, 0.80, 0.76] : [0.74, 0.72, 0.68]);
     gl.uniform3fv(this.locations.rim, light ? [0.20, 0.45, 0.55] : [0.35, 0.72, 0.95]);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
+    this.drawBuffers(gl, this.buffers);
+  },
+
+  drawBuffers(gl, buffers) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
     gl.enableVertexAttribArray(this.locations.position);
     gl.vertexAttribPointer(this.locations.position, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.normal);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
     gl.enableVertexAttribArray(this.locations.normal);
     gl.vertexAttribPointer(this.locations.normal, 3, gl.FLOAT, false, 0, 0);
-    gl.drawArrays(gl.TRIANGLES, 0, this.buffers.count);
+    gl.drawArrays(gl.TRIANGLES, 0, buffers.count);
+  },
+
+  drawScene(gl, canvas, { flat }) {
+    const scene = this.scene;
+    if (!scene || !scene.bounds) return;
+    const space = meshSpace({ bounds: scene.bounds, up_axis: scene.upAxis });
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.useProgram(this.program);
+    const aspect = canvas.width / Math.max(1, canvas.height);
+    gl.uniformMatrix4fv(this.locations.projection, false, perspective(0.9, aspect, 0.05, 40));
+    gl.uniformMatrix4fv(this.locations.view, false, lookAtView(this.camera));
+    gl.uniformMatrix4fv(this.locations.model, false, identity());
+    gl.uniform1f(this.locations.flat, flat ? 1 : 0);
+    const light = document.body.classList.contains("light");
+    gl.uniform3fv(this.locations.rim, light ? [0.20, 0.45, 0.55] : [0.35, 0.72, 0.95]);
+    const selected = this.structure ? this.structure.structure_id : null;
+    scene.items.forEach((item, index) => {
+      if (!scene.visible.has(item.kind)) return;
+      if (!item.buffers) item.buffers = this.buildBuffersFor(item.mesh, space);
+      if (!item.buffers) return;
+      if (flat) {
+        // The picking pass paints each mesh in its own id colour; index+1 keeps 0 for "nothing".
+        const id = index + 1;
+        gl.uniform3fv(this.locations.colour, [(id & 255) / 255, ((id >> 8) & 255) / 255, ((id >> 16) & 255) / 255]);
+      } else {
+        const base = LAB_KIND_COLOURS[item.kind] || [0.6, 0.6, 0.6];
+        const lit = item.structure_id === selected ? base.map((value) => Math.min(1, value * 1.25 + 0.12)) : base;
+        gl.uniform3fv(this.locations.colour, lit);
+      }
+      this.drawBuffers(gl, item.buffers);
+    });
+  },
+
+  pickAt(clientX, clientY) {
+    const gl = this.gl;
+    const canvas = $("#lab-canvas");
+    if (!gl || !canvas || !this.scene || !this.scene.bounds) return null;
+    this.drawScene(gl, canvas, { flat: true });
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.round((clientX - rect.left) * (canvas.width / Math.max(1, rect.width)));
+    const y = Math.round((rect.bottom - clientY) * (canvas.height / Math.max(1, rect.height)));
+    const pixel = new Uint8Array(4);
+    gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+    this.drawScene(gl, canvas, { flat: false });
+    const id = pixel[0] + (pixel[1] << 8) + (pixel[2] << 16);
+    return id > 0 ? this.scene.items[id - 1] || null : null;
   },
 
   drawLabels() {
     const overlay = $("#lab-overlay");
     const canvas = $("#lab-canvas");
-    if (!overlay || !canvas || !this.mesh) return;
+    const selectedItem = this.scene && this.structure ? this.scene.items.find((item) => item.structure_id === this.structure.structure_id) : null;
+    const mesh = this.scene ? (selectedItem ? selectedItem.mesh : null) : this.mesh;
+    if (!overlay || !canvas || !mesh) { if (overlay) overlay.innerHTML = ""; return; }
     if (!this.showLabels) { overlay.innerHTML = ""; return; }
-    const anchors = this.mesh.landmarks || {};
+    const anchors = mesh.landmarks || {};
     const rect = canvas.getBoundingClientRect();
     const projection = perspective(0.9, rect.width / Math.max(1, rect.height), 0.05, 40);
     const view = lookAtView(this.camera);
@@ -1885,8 +2121,10 @@ const Lab = {
     // the vertices, so it has to travel through the same normalization as
     // the geometry (meshSpace) before it is projected. Projecting it raw
     // puts a Latin name over a part of the bone the mesh never claimed.
-    const space = meshSpace(this.mesh);
+    const space = meshSpace(this.scene ? { bounds: this.scene.bounds, up_axis: this.scene.upAxis } : mesh);
+    const meta = mesh.landmark_meta || {};
     const parts = [];
+    const station = this.bell && this.bell.current ? this.bell.current : null;
     (this.structure.landmarks || []).forEach((landmark) => {
       const anchor = anchors[landmark.landmark_id];
       if (!anchor) return;
@@ -1896,11 +2134,223 @@ const Lab = {
       if (point.some((value) => Math.abs(value) > LAB_ANCHOR_LIMIT)) return;
       const projected = project(point, view, projection, rect.width, rect.height);
       if (!projected) return;
-      parts.push(`<span class="lab-label ${this.highlight.includes(landmark.landmark_id) ? "active" : ""}" data-label="${esc(landmark.landmark_id)}"
-        style="left:${projected.x.toFixed(1)}px; top:${projected.y.toFixed(1)}px">${esc(landmark.latin)}</span>`);
+      const approx = (meta[landmark.landmark_id] || {}).confidence === "approximate";
+      const at = `left:${projected.x.toFixed(1)}px; top:${projected.y.toFixed(1)}px`;
+      if (station && station.structure_id === this.structure.structure_id) {
+        // During a bell-ringer only the station's pin is on screen, unnamed:
+        // the number is the question, the name is the answer.
+        if (station.landmark_id === landmark.landmark_id) parts.push(`<span class="lab-pin station" style="${at}">${this.bell.index + 1}</span>`);
+        return;
+      }
+      if (this.detailed) parts.push(`<span class="lab-pin ${approx ? "approx" : ""}" style="${at}"></span>`);
+      parts.push(`<span class="lab-label ${this.detailed ? "detailed" : ""} ${approx ? "approx" : ""} ${this.highlight.includes(landmark.landmark_id) ? "active" : ""}" data-label="${esc(landmark.landmark_id)}"
+        style="${at}" title="${approx ? "Yaklaşık: kemiğin geometrisinden türetildi" : ""}">${esc(landmark.latin)}</span>`);
     });
-    overlay.innerHTML = parts.join("");
-    $$("[data-label]", overlay).forEach((node) => node.addEventListener("click", () => this.toggleHighlight(node.dataset.label)));
+    overlay.innerHTML = parts.join("") + (this.pinCard ? this.pinCardMarkup() : "");
+    $$("[data-label]", overlay).forEach((node) => node.addEventListener("click", (event) => {
+      if (this.detailed) this.openPinCard(node.dataset.label, event.clientX, event.clientY);
+      else this.toggleHighlight(node.dataset.label);
+    }));
+    $$("[data-pin-close]", overlay).forEach((node) => node.addEventListener("click", () => { this.pinCard = null; this.drawLabels(); }));
+    $$("[data-pin-doc]", overlay).forEach((node) => node.addEventListener("click", () => {
+      const [documentId, page] = node.dataset.pinDoc.split("|");
+      Medical.show("library");
+      Medical.openDocument(documentId).then(() => Medical.openPage(Number(page)));
+    }));
+  },
+
+  /* ── detailed mode: a pin's name, its note and where the lecture mentions it ── */
+
+  toggleDetailed() {
+    this.detailed = !this.detailed;
+    this.pinCard = null;
+    const button = $("#lab-detailed");
+    if (button) button.classList.toggle("active", this.detailed);
+    this.draw();
+  },
+
+  async openPinCard(landmarkId, clientX, clientY) {
+    const landmark = (this.structure.landmarks || []).find((item) => item.landmark_id === landmarkId);
+    if (!landmark) return;
+    const canvas = $("#lab-canvas");
+    const rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0, width: 600, height: 400 };
+    const x = clamp(clientX - rect.left + 12, 0, Math.max(0, rect.width - 330));
+    const y = clamp(clientY - rect.top + 12, 0, Math.max(0, rect.height - 160));
+    this.pinCard = { landmark, x, y, docs: null };
+    this.highlight = [landmarkId];
+    this.drawLabels();
+    // The lecture pages that name this landmark, from the student's own library.
+    const result = await Medical.request("search", { query: landmark.latin, limit: 6 });
+    if (!this.pinCard || this.pinCard.landmark.landmark_id !== landmarkId) return;
+    this.pinCard.docs = (result.ok === false ? [] : (result.hits || [])).filter((hit) => hit.kind === "chunk").slice(0, 4);
+    this.drawLabels();
+  },
+
+  pinCardMarkup() {
+    const card = this.pinCard;
+    if (!card) return "";
+    const mesh = this.scene ? (this.scene.items.find((item) => item.structure_id === this.structure.structure_id) || {}).mesh : this.mesh;
+    const meta = ((mesh && mesh.landmark_meta) || {})[card.landmark.landmark_id] || {};
+    const docs = card.docs === null
+      ? `<div class="lab-pin-note">Ders notlarında aranıyor…</div>`
+      : card.docs.length
+        ? `<div class="lab-pin-docs">${card.docs.map((hit) => `<button type="button" class="lab-pin-doc" data-pin-doc="${esc(hit.document_id + "|" + hit.page_number)}">${esc(hit.title)} · s. ${hit.page_number}</button>`).join("")}</div>`
+        : `<div class="lab-pin-note">Kütüphanendeki ders notlarında bu ad geçmiyor.</div>`;
+    return `<div class="lab-pin-card" style="left:${card.x.toFixed(0)}px; top:${card.y.toFixed(0)}px">
+      <h4>${esc(card.landmark.latin)}</h4>
+      <div>${esc(card.landmark.turkish)}${card.landmark.note ? " · " + esc(card.landmark.note) : ""}</div>
+      ${meta.confidence === "approximate" ? `<div class="lab-pin-note">≈ Pin konumu kemiğin geometrisinden yaklaşık türetildi; atlasta doğrula.</div>` : ""}
+      ${docs}
+      <div class="btn-row" style="justify-content:flex-end;margin-top:6px"><button type="button" class="btn btn-ghost small" data-pin-close>Kapat</button></div>
+    </div>`;
+  },
+
+  /* ── bell-ringer: numbered stations, a pin each, a bell between them ── */
+
+  bellStations() {
+    const stations = [];
+    const items = this.scene ? this.scene.items : (this.mesh && this.structure ? [{ structure_id: this.structure.structure_id, mesh: this.mesh, canonical: this.structure.canonical }] : []);
+    items.forEach((item) => {
+      const anchors = item.mesh.landmarks || {};
+      Object.keys(anchors).forEach((landmarkId) => stations.push({ structure_id: item.structure_id, landmark_id: landmarkId }));
+    });
+    return stations;
+  },
+
+  startBellRinger() {
+    const pool = this.bellStations();
+    if (!pool.length) { toast("Zilli sınav için pinli bir model gerekli; sahneyi ya da pinli bir kemiği aç.", true); return; }
+    // The rules of the real thing, said once: numbered stations, one pinned
+    // structure each, a bell between them, no going back.
+    const host = $("#lab-info");
+    if (!host) return;
+    this.quiz = null;
+    this.pinCard = null;
+    host.innerHTML = `<h2>Zilli sınav</h2>
+      <div class="lab-tr">${pool.length} pin · ${Math.min(10, pool.length)} istasyon</div>
+      <div class="lab-section"><span class="ls-title">Kurallar</span>
+        <ul><li>Her istasyonda numaralı bir pin görürsün; yapının Latince adını yaz.</li>
+        <li>Süre dolunca zil çalar ve sonraki istasyona geçilir; geri dönüş yok.</li>
+        <li>Sonunda her istasyonun doğru adı ve açıklaması gösterilir; sonuçlar ustalık geçmişine işlenir.</li></ul></div>
+      <div class="lab-section"><span class="ls-title">İstasyon süresi</span>
+        <div class="med-chips">${[30, 45, 60, 90].map((seconds) => `<button type="button" class="chip ${seconds === 60 ? "accent" : ""}" data-bell-start="${seconds}">${seconds} sn</button>`).join("")}</div></div>
+      <div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-ghost small" data-bell-start="">Vazgeç</button></div>`;
+    $$("[data-bell-start]", host).forEach((node) => node.addEventListener("click", () => {
+      const seconds = Number(node.dataset.bellStart || 0);
+      if (seconds) this.beginBellRinger(pool, seconds);
+      else { this.renderInfo(); this.draw(); }
+    }));
+  },
+
+  beginBellRinger(pool, seconds) {
+    const shuffled = pool.slice();
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapAt = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[swapAt]] = [shuffled[swapAt], shuffled[index]];
+    }
+    const count = Math.min(10, shuffled.length);
+    this.bell = { stations: shuffled.slice(0, count), index: -1, seconds: clamp(seconds, 15, 300), answers: [], current: null, timer: null, remaining: 0, pool };
+    this.nextStation();
+  },
+
+  ring() {
+    try {
+      const context = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.25, context.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.6);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + 0.65);
+    } catch (error) { /* no audio output: the strip still changes, the timer still runs */ }
+  },
+
+  async nextStation() {
+    const bell = this.bell;
+    if (!bell) return;
+    clearInterval(bell.timer);
+    bell.index += 1;
+    if (bell.index >= bell.stations.length) { this.finishBellRinger(); return; }
+    bell.current = bell.stations[bell.index];
+    bell.remaining = bell.seconds;
+    this.ring();
+    if (!this.structure || this.structure.structure_id !== bell.current.structure_id) await this.select(bell.current.structure_id);
+    this.highlight = [];
+    this.renderInfo();
+    this.renderBellStrip();
+    this.draw();
+    bell.timer = setInterval(() => {
+      bell.remaining -= 1;
+      const timer = $("#lab-bell-timer");
+      if (timer) { timer.textContent = `${bell.remaining} sn`; timer.classList.toggle("low", bell.remaining <= 10); }
+      if (bell.remaining <= 0) this.answerStation("", { timedOut: true });
+    }, 1000);
+  },
+
+  renderBellStrip() {
+    const viewport = $("#lab-viewport");
+    if (!viewport) return;
+    const strip = $("#lab-bell-strip");
+    if (!strip) return;
+    strip.hidden = false;
+    const bell = this.bell;
+    strip.innerHTML = `<span class="chip warn">İstasyon ${bell.index + 1}/${bell.stations.length}</span>
+      <span id="lab-bell-timer" class="lab-bell-timer">${bell.remaining} sn</span>
+      <input id="lab-bell-answer" type="text" placeholder="Pinli yapının Latince adı…" autocomplete="off" spellcheck="false">
+      <button type="button" class="btn btn-primary small" data-bell="answer">Cevapla</button>
+      <button type="button" class="btn btn-ghost small" data-bell="skip">Geç</button>
+      <button type="button" class="btn btn-ghost small" data-bell="stop">Bitir</button>`;
+    const input = $("#lab-bell-answer");
+    if (input) {
+      input.addEventListener("keydown", (event) => { if (event.key === "Enter") this.answerStation(input.value); });
+      // A plain focus() scrolls the whole shell to the input for a frame.
+      input.focus({ preventScroll: true });
+    }
+    $$("[data-bell]", strip).forEach((node) => node.addEventListener("click", () => {
+      if (node.dataset.bell === "answer") this.answerStation(($("#lab-bell-answer") || {}).value || "");
+      else if (node.dataset.bell === "skip") this.answerStation("", { skipped: true });
+      else this.finishBellRinger();
+    }));
+  },
+
+  async answerStation(text, { timedOut = false, skipped = false } = {}) {
+    const bell = this.bell;
+    if (!bell || !bell.current) return;
+    clearInterval(bell.timer);
+    const station = bell.current;
+    const landmark = (this.structure.landmarks || []).find((item) => item.landmark_id === station.landmark_id) || { latin: station.landmark_id, turkish: "" };
+    const correct = !timedOut && !skipped && latinMatches(text, landmark.latin);
+    bell.answers.push({ station, given: text, latin: landmark.latin, turkish: landmark.turkish, correct, timedOut, skipped, structure: this.structure.canonical });
+    await Medical.request("anatomy_answer", { structure_id: station.structure_id, landmark_id: station.landmark_id, correct });
+    bell.current = null;
+    this.nextStation();
+  },
+
+  finishBellRinger() {
+    const bell = this.bell;
+    if (!bell) return;
+    clearInterval(bell.timer);
+    const strip = $("#lab-bell-strip");
+    if (strip) { strip.hidden = true; strip.innerHTML = ""; }
+    this.bell = null;
+    this.draw();
+    const host = $("#lab-info");
+    if (!host) return;
+    const right = bell.answers.filter((item) => item.correct).length;
+    host.innerHTML = `<h2>Zilli sınav bitti</h2><div class="lab-tr">${bell.answers.length} istasyon · ${right} doğru</div>
+      <div class="lab-bell-results">${bell.answers.map((item, index) => `<div class="lab-bell-row ${item.correct ? "ok" : "bad"}">
+        <span>${index + 1}</span><span><b>${esc(item.latin)}</b> · ${esc(item.structure)}${item.turkish ? "<br>" + esc(item.turkish) : ""}
+        <br><span class="faint">${item.correct ? "Doğru" : item.timedOut ? "Süre doldu" : item.skipped ? "Geçildi" : "Senin cevabın: " + esc(item.given || "—")}</span></span></div>`).join("")}</div>
+      <div class="btn-row" style="justify-content:flex-start;margin-top:8px"><button type="button" class="btn btn-ghost small" data-bell-done="again">Yeniden</button>
+      <button type="button" class="btn btn-ghost small" data-bell-done="close">Karta dön</button></div>`;
+    $$("[data-bell-done]", host).forEach((node) => node.addEventListener("click", () => {
+      if (node.dataset.bellDone === "again") this.beginBellRinger(bell.pool || this.bellStations(), bell.seconds);
+      else { this.renderInfo(); this.draw(); }
+    }));
   },
 
   /* ── quiz ──────────────────────────────────────────────────────── */
@@ -1962,16 +2412,31 @@ const Lab = {
     const canvas = $("#lab-canvas");
     if (!canvas) return;
     canvas.addEventListener("pointerdown", (event) => {
-      this.dragging = { x: event.clientX, y: event.clientY, pan: event.shiftKey || event.button === 1 };
+      this.dragging = { x: event.clientX, y: event.clientY, pan: event.shiftKey || event.button === 1 || event.button === 2, startX: event.clientX, startY: event.clientY, moved: 0 };
       canvas.classList.add("dragging");
       canvas.setPointerCapture(event.pointerId);
+      if (typeof canvas.focus === "function") canvas.focus({ preventScroll: true });
     });
+    canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+    canvas.addEventListener("keydown", (event) => {
+      const step = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", "+": "in", "=": "in", "-": "out", "_": "out", r: "reset", R: "reset" }[event.key];
+      if (!step) return;
+      event.preventDefault();
+      const rotating = event.shiftKey && (step === "left" || step === "right" || step === "up" || step === "down");
+      this.nudge(rotating ? { left: "rotl", right: "rotr", up: "rotu", down: "rotd" }[step] : step);
+    });
+    $$("[data-nav]", $("#lab-nav") || document).forEach((node) => node.addEventListener("click", () => this.nudge(node.dataset.nav)));
+    const detailed = $("#lab-detailed");
+    if (detailed) detailed.addEventListener("click", () => this.toggleDetailed());
+    const bellButton = $("#lab-bell");
+    if (bellButton) bellButton.addEventListener("click", () => this.startBellRinger());
     canvas.addEventListener("pointermove", (event) => {
       if (!this.dragging) return;
       const dx = event.clientX - this.dragging.x;
       const dy = event.clientY - this.dragging.y;
       this.dragging.x = event.clientX;
       this.dragging.y = event.clientY;
+      this.dragging.moved += Math.abs(dx) + Math.abs(dy);
       if (this.dragging.pan) {
         this.camera.panX += dx * 0.003 * this.camera.distance;
         this.camera.panY -= dy * 0.003 * this.camera.distance;
@@ -1983,8 +2448,13 @@ const Lab = {
       this.drawLabels();
     });
     const release = (event) => {
+      const drag = this.dragging;
       this.dragging = null;
       canvas.classList.remove("dragging");
+      if (drag && drag.moved < 4 && event && event.type === "pointerup" && this.scene) {
+        const hit = this.pickAt(event.clientX, event.clientY);
+        if (hit && (!this.structure || hit.structure_id !== this.structure.structure_id)) this.select(hit.structure_id);
+      }
       if (event && event.pointerId !== undefined && canvas.hasPointerCapture && canvas.hasPointerCapture(event.pointerId)) {
         canvas.releasePointerCapture(event.pointerId);
       }
@@ -2011,21 +2481,41 @@ const Lab = {
    The manifest's `scale` is deliberately not applied: it multiplies
    vertices and landmark anchors alike, and a uniform factor cancels out
    of (p - centre) / extent, so honouring it would move nothing. */
+/* Does a typed answer name the pinned structure? Diacritics, case, the
+   abbreviations students write ("m.", "n.", "a.", "v.") and the small
+   Latin function words are ignored; every remaining word of the target
+   must appear in the answer, so "tuberculum majus" is not "tuberculum
+   minus" and "humeri" alone is not a landmark. */
+function latinMatches(answer, latin) {
+  const fold = (text) => String(text || "").toLowerCase()
+    .replace(/[çÇ]/g, "c").replace(/[ğĞ]/g, "g").replace(/[ıİ]/g, "i").replace(/[öÖ]/g, "o").replace(/[şŞ]/g, "s").replace(/[üÜ]/g, "u")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/\b(musculus|nervus|arteria|vena|m|n|a|v)\.?\b/g, " ")
+    .replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter(Boolean);
+  const wanted = fold(latin).filter((word) => !["et", "de", "ad"].includes(word));
+  const given = new Set(fold(answer));
+  if (!wanted.length || !given.size) return false;
+  return wanted.every((word) => given.has(word) || [...given].some((token) => token.length >= 5 && (word.startsWith(token) || token.startsWith(word))));
+}
+
 function meshSpace(mesh) {
   const bounds = (mesh && mesh.bounds) || { min: [-1, -1, -1], max: [1, 1, 1] };
   const centre = [0, 1, 2].map((axis) => (bounds.min[axis] + bounds.max[axis]) / 2);
   const extent = Math.max(...[0, 1, 2].map((axis) => bounds.max[axis] - bounds.min[axis])) || 1;
+  // An asset written z-up (BodyParts3D) is turned once, here, so vertices,
+  // bounds and landmark anchors all arrive in the viewer's y-up frame together.
+  const zUp = !!(mesh && String(mesh.up_axis || "").toLowerCase() === "z");
   return {
     centre,
     extent,
+    zUp,
     // One point of `source` (a flat [x,y,z,…] array) in model space.
     place(source, index = 0) {
       const base = index * 3;
-      return [
-        (source[base] - centre[0]) / extent,
-        (source[base + 1] - centre[1]) / extent,
-        (source[base + 2] - centre[2]) / extent,
-      ];
+      const x = (source[base] - centre[0]) / extent;
+      const y = (source[base + 1] - centre[1]) / extent;
+      const z = (source[base + 2] - centre[2]) / extent;
+      return zUp ? [x, z, -y] : [x, y, z];
     },
   };
 }

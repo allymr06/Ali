@@ -675,3 +675,213 @@ def test_the_obj_parser_reads_every_vertex_once_and_keeps_no_dead_line() -> None
     # A no-op leaves nothing behind in the output, so the source is the assertion:
     # an extend over an empty range only invites a reader to look for its purpose.
     assert "range(0)" not in inspect.getsource(parse_obj)
+
+
+# ---------------------------------------------------------------------------
+# licensed scenes: a region drawn from the manifest, and the importer behind it
+# ---------------------------------------------------------------------------
+
+
+CUBE = "\n".join([
+    "v 0 0 0", "v 1 0 0", "v 1 1 0", "v 0 1 0",
+    "f 1 2 3", "f 1 3 4",
+])
+
+
+def write_scene_manifest(directory, assets, scenes) -> None:
+    import json as _json
+
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "manifest.json").write_text(_json.dumps({"assets": assets, "scenes": scenes}), encoding="utf-8")
+
+
+def licensed(structure_id: str, **extra) -> dict:
+    return {"structure_id": structure_id, "file": f"{structure_id}.obj", "license": "CC BY 4.0", "source": "https://example.org", **extra}
+
+
+def test_a_scene_lists_only_structures_the_manifest_carries_and_files_that_exist(tmp_path) -> None:
+    from app.medical.anatomy import AnatomyAssetRegistry
+
+    directory = tmp_path / "assets"
+    write_scene_manifest(
+        directory,
+        [licensed("humerus"), licensed("scapula"), {"structure_id": "ulna", "file": "ulna.obj"}],  # ulna: no licence
+        [
+            {"scene_id": "arm", "title": "Kol", "region": "upper_limb", "structure_ids": ["humerus", "scapula", "ulna", "femur"]},
+            {"scene_id": "empty", "title": "Bos", "structure_ids": ["femur"]},
+        ],
+    )
+    (directory / "humerus.obj").write_text(CUBE, encoding="utf-8")  # scapula is registered but its file is missing
+
+    registry = AnatomyAssetRegistry(directory)
+
+    assert [scene["scene_id"] for scene in registry.scenes()] == ["arm"]
+    scene = registry.scenes()[0]
+    assert scene["structure_ids"] == ["humerus", "scapula"], "an unlicensed or unknown structure never enters a scene"
+    assert scene["available"] == ["humerus"], "a registered mesh whose file is gone is not offered as drawable"
+    assert any("sahne" in problem for problem in registry.problems), "the dropped scene is reported, not silently lost"
+
+
+def test_a_mesh_carries_the_axis_convention_its_manifest_states(tmp_path) -> None:
+    from app.medical.anatomy import AnatomyAssetRegistry
+
+    directory = tmp_path / "assets"
+    write_scene_manifest(directory, [licensed("humerus", up_axis="Z"), licensed("radius")], [])
+    (directory / "humerus.obj").write_text(CUBE, encoding="utf-8")
+    (directory / "radius.obj").write_text(CUBE, encoding="utf-8")
+    registry = AnatomyAssetRegistry(directory)
+
+    assert registry.load_mesh("humerus")["up_axis"] == "z"
+    assert registry.load_mesh("radius")["up_axis"] == "y", "an asset that says nothing is taken as the viewer's own frame"
+
+
+def test_the_lab_exposes_the_scenes_beside_the_hierarchy(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from app.medical.academy import create_medical_academy
+
+    directory = tmp_path / "medical"
+    write_scene_manifest(directory / "anatomy_assets", [licensed("humerus")], [{"scene_id": "arm", "title": "Kol", "structure_ids": ["humerus"]}])
+    (directory / "anatomy_assets" / "humerus.obj").write_text(CUBE, encoding="utf-8")
+    academy = create_medical_academy(settings=SimpleNamespace(medical_directory=str(directory)), provider_gateway=None)
+    try:
+        payload = academy.anatomy_structures()
+        assert [scene["scene_id"] for scene in payload["scenes"]] == ["arm"]
+        assert payload["assets"]["available"] == ["humerus"]
+    finally:
+        academy.close()
+
+
+def test_the_importer_merges_element_files_and_rebases_every_face() -> None:
+    from scripts.import_bodyparts3d import merge_obj
+    from app.medical.anatomy import parse_obj
+
+    first = "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nf 1//1 2//1 3//1\n"
+    second = "v 5 0 0\nv 6 0 0\nv 5 1 0\nvn 0 0 1\nf -3//-1 -2//-1 -1//-1\n"  # relative indices, as some writers emit
+
+    merged = parse_obj(merge_obj([first, second], comment="test"))
+
+    assert merged["vertex_count"] == 6 and merged["triangle_count"] == 2
+    # The second triangle points at the second file's vertices, not the first's.
+    assert merged["indices"][3:6] == [3, 4, 5]
+    assert merged["normal_indices"][3:6] == [1, 1, 1]
+
+
+def test_the_pilot_mapping_names_every_structure_the_data_knows() -> None:
+    from scripts.import_bodyparts3d import SCENES, UPPER_LIMB_RIGHT
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    known = {structure.structure_id for structure in structures}
+
+    unknown = [structure_id for structure_id in UPPER_LIMB_RIGHT if structure_id not in known]
+    assert unknown == [], f"a mesh mapped to no card would draw a structure the lab cannot explain: {unknown}"
+    for concepts in UPPER_LIMB_RIGHT.values():
+        for fma, name, files in concepts:
+            assert fma.startswith("FMA") and name and files, (fma, name, files)
+    assert set(SCENES["upper_limb_right"]["structure_ids"]) == set(UPPER_LIMB_RIGHT)
+
+
+def test_vessels_are_cards_of_their_own_kind() -> None:
+    from app.medical.anatomy import AnatomyLab, AnatomyAssetRegistry
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=None)
+
+    artery = lab.describe("a_brachialis")
+    vein = lab.describe("v_cephalica")
+    assert artery["kind_label"] == "Arter" and vein["kind_label"] == "Ven"
+    assert [section["label"] for section in artery["sections"]][:3] == ["Köken", "Seyir", "Dallar"]
+    assert any(section["label"] == "Döküldüğü yer" for section in vein["sections"])
+    kinds = {kind["kind"] for region in lab.hierarchy() if region["region"] == "upper_limb" for kind in region["kinds"]}
+    assert {"artery", "vein"} <= kinds
+
+
+# ---------------------------------------------------------------------------
+# approximate pins: derived from the shape, and always labelled as such
+# ---------------------------------------------------------------------------
+
+
+def box_positions(*, x=(0.0, 10.0), y=(0.0, 4.0), z=(0.0, 100.0), steps=12) -> list[float]:
+    """A bone-shaped box: long along z (proximal at the top), medial at +x."""
+    positions: list[float] = []
+    for i in range(steps + 1):
+        for j in range(steps + 1):
+            for k in range(steps + 1):
+                positions.extend((x[0] + (x[1] - x[0]) * i / steps, y[0] + (y[1] - y[0]) * j / steps, z[0] + (z[1] - z[0]) * k / steps))
+    return positions
+
+
+def test_pins_follow_the_shape_and_say_they_are_approximate() -> None:
+    from scripts.import_bodyparts3d import derive_landmarks
+
+    pins = derive_landmarks("humerus", box_positions())
+
+    assert pins["caput_humeri"]["anchor"][2] > 95, "the head sits at the proximal end"
+    assert pins["epicondylus_medialis"]["anchor"][2] < 8 and pins["epicondylus_medialis"]["anchor"][0] > 8, "distal and medial"
+    assert pins["epicondylus_lateralis"]["anchor"][2] < 8 and pins["epicondylus_lateralis"]["anchor"][0] < 2, "distal and lateral"
+    assert pins["tuberculum_majus"]["anchor"][0] < pins["caput_humeri"]["anchor"][0], "the greater tubercle is lateral to the head"
+    assert all(pin["confidence"] == "approximate" and "geometric" in pin["method"] for pin in pins.values())
+    # A groove or a crest has no extreme to stand on: no pin rather than a guess.
+    assert "sulcus_intertubercularis" not in pins and "crista_tuberculi_majoris" not in pins
+
+
+def test_a_structure_without_rules_or_without_enough_vertices_gets_no_pins() -> None:
+    from scripts.import_bodyparts3d import derive_landmarks
+
+    assert derive_landmarks("m_deltoideus", box_positions()) == {}
+    assert derive_landmarks("humerus", [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]) == {}
+
+
+def test_the_registry_reads_hand_placed_and_derived_pins_alike(tmp_path) -> None:
+    from app.medical.anatomy import AnatomyAssetRegistry
+
+    directory = tmp_path / "assets"
+    write_scene_manifest(
+        directory,
+        [licensed("humerus", landmarks={
+            "caput_humeri": {"anchor": [1, 2, 3], "confidence": "approximate", "method": "geometric extreme of the mesh"},
+            "acromion": [4, 5, 6],
+            "broken": {"anchor": [1, 2]},
+        })],
+        [],
+    )
+    (directory / "humerus.obj").write_text(CUBE, encoding="utf-8")
+
+    mesh = AnatomyAssetRegistry(directory).load_mesh("humerus")
+
+    assert mesh["landmarks"] == {"caput_humeri": [1.0, 2.0, 3.0], "acromion": [4.0, 5.0, 6.0]}
+    assert mesh["landmark_meta"]["caput_humeri"]["confidence"] == "approximate"
+    assert mesh["landmark_meta"]["acromion"]["confidence"] == "confirmed"
+
+
+def test_reimporting_keeps_a_confirmed_pin_over_a_derived_one(tmp_path) -> None:
+    """A pin someone placed by hand must survive the next import; only the
+    approximate ones are recomputed."""
+    import json as _json
+    import zipfile
+
+    from scripts.import_bodyparts3d import ARCHIVE_FOLDER, import_archive
+
+    archive = tmp_path / "bp3d.zip"
+    positions = box_positions(steps=6)
+    lines = [f"v {positions[i]} {positions[i + 1]} {positions[i + 2]}" for i in range(0, len(positions), 3)]
+    lines += ["f 1 2 3", "f 2 3 4"]
+    with zipfile.ZipFile(archive, "w") as zipped:
+        zipped.writestr(f"{ARCHIVE_FOLDER}/FJ3368.obj", "\n".join(lines) + "\n")
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "manifest.json").write_text(_json.dumps({"assets": [{
+        "structure_id": "humerus", "file": "humerus.obj", "license": "x", "source": "y",
+        "landmarks": {"caput_humeri": [9, 9, 9], "epicondylus_medialis": {"anchor": [0, 0, 0], "confidence": "approximate", "method": "old"}},
+    }]}), encoding="utf-8")
+
+    import_archive(archive, assets, "upper_limb_right")
+
+    manifest = _json.loads((assets / "manifest.json").read_text(encoding="utf-8"))
+    humerus = next(item for item in manifest["assets"] if item["structure_id"] == "humerus")
+    assert humerus["landmarks"]["caput_humeri"] == [9, 9, 9], "the hand-placed pin outranks the derived one"
+    assert humerus["landmarks"]["epicondylus_medialis"]["anchor"] != [0, 0, 0], "the derived pin was recomputed"
+    assert humerus["up_axis"] == "z"

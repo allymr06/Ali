@@ -3481,6 +3481,271 @@
           "target": "mm_ischiocrurales"
         }
       ]
+    },
+    {
+      "structure_id": "a_axillaris",
+      "canonical": "Arteria axillaris",
+      "kind": "artery",
+      "region": "upper_limb",
+      "turkish": "Koltuk altı atardamarı",
+      "english": "Axillary artery",
+      "abbreviations": [
+        "a. axillaris"
+      ],
+      "synonyms": [
+        "aksiller arter",
+        "axillary artery",
+        "koltukalti atardamari"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.upper_limb_nerves",
+      "facts": {
+        "origin": "A. subclavia'nın devamı; 1. kaburganın dış kenarında başlar.",
+        "course": "Fossa axillaris'te plexus brachialis'in fasciculus'ları ile sarılı seyreder; m. pectoralis minor'a göre üç parçaya ayrılır; m. teres major'un alt kenarında a. brachialis adını alır.",
+        "branches": [
+          "1. parça: a. thoracica superior",
+          "2. parça: a. thoracoacromialis, a. thoracica lateralis",
+          "3. parça: a. subscapularis, a. circumflexa humeri anterior, a. circumflexa humeri posterior"
+        ],
+        "supply": "Omuz kuşağı, göğüs ön-yan duvarı, m. deltoideus ve omuz eklemi çevresi.",
+        "relations": [
+          "V. axillaris medialde ve önde",
+          "Fasciculus lateralis, medialis ve posterior parçalara göre adlandırılır"
+        ],
+        "high_yield": [
+          "Parçalar m. pectoralis minor'a göre sayılır: 1 dal / 2 dal / 3 dal kuralı.",
+          "A. circumflexa humeri posterior, n. axillaris ile birlikte spatium quadrangulare'den geçer."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "continues_as",
+          "target": "a_brachialis"
+        },
+        {
+          "relation": "passes_through",
+          "target": "shoulder_girdle"
+        }
+      ]
+    },
+    {
+      "structure_id": "a_brachialis",
+      "canonical": "Arteria brachialis",
+      "kind": "artery",
+      "region": "upper_limb",
+      "turkish": "Kol atardamarı",
+      "english": "Brachial artery",
+      "abbreviations": [
+        "a. brachialis"
+      ],
+      "synonyms": [
+        "brakiyal arter",
+        "brachial artery",
+        "kol atardamari"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.upper_limb_nerves",
+      "facts": {
+        "origin": "A. axillaris'in m. teres major'un alt kenarından sonraki devamı.",
+        "course": "Kolun medial tarafında, m. biceps brachii'nin medial kenarı boyunca, n. medianus ile birlikte fossa cubiti'ye iner; radius boynu hizasında a. radialis ve a. ulnaris'e ayrılır.",
+        "branches": [
+          "A. profunda brachii (n. radialis ile sulcus nervi radialis'e)",
+          "A. collateralis ulnaris superior",
+          "A. collateralis ulnaris inferior",
+          "Kas dalları"
+        ],
+        "supply": "Kolun ön ve arka kompartman kasları, humerus.",
+        "relations": [
+          "N. medianus önce lateralde, sonra önünden çaprazlayarak medialde",
+          "Fossa cubiti'de aponeurosis m. bicipitis brachii'nin altında"
+        ],
+        "high_yield": [
+          "Kan basıncı fossa cubiti'de bu arterden ölçülür; nabız m. biceps tendonunun medialinde alınır.",
+          "Suprakondiler humerus kırığında zedelenmesi Volkmann iskemik kontraktürüne yol açabilir."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "continues_as",
+          "target": "a_radialis"
+        },
+        {
+          "relation": "continues_as",
+          "target": "a_ulnaris"
+        },
+        {
+          "relation": "runs_along",
+          "target": "humerus"
+        }
+      ]
+    },
+    {
+      "structure_id": "a_radialis",
+      "canonical": "Arteria radialis",
+      "kind": "artery",
+      "region": "upper_limb",
+      "turkish": "Radial atardamar",
+      "english": "Radial artery",
+      "abbreviations": [
+        "a. radialis"
+      ],
+      "synonyms": [
+        "radyal arter",
+        "radial artery"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.upper_limb_nerves",
+      "facts": {
+        "origin": "A. brachialis'in fossa cubiti'deki iki uç dalından laterali (daha ince olanı).",
+        "course": "Ön kolun lateralinde m. brachioradialis'in altında iner; distalde yüzeyelleşir, tabatière anatomique'ten el sırtına geçer ve arcus palmaris profundus'u oluşturur.",
+        "branches": [
+          "A. recurrens radialis",
+          "R. carpalis palmaris ve dorsalis",
+          "R. palmaris superficialis",
+          "A. princeps pollicis",
+          "Arcus palmaris profundus (ana katkı)"
+        ],
+        "supply": "Ön kolun lateral kasları, el bileği ve elin derin arkusu, başparmak.",
+        "relations": [
+          "Proksimalde m. brachioradialis'in altında, distalde tendonunun medialinde",
+          "R. superficialis n. radialis lateralinde"
+        ],
+        "high_yield": [
+          "Nabız el bileğinde m. flexor carpi radialis tendonunun lateralinde alınır.",
+          "Tabatière anatomique tabanında os scaphoideum ile komşudur."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "runs_along",
+          "target": "radius"
+        },
+        {
+          "relation": "related_to",
+          "target": "m_brachioradialis"
+        }
+      ]
+    },
+    {
+      "structure_id": "a_ulnaris",
+      "canonical": "Arteria ulnaris",
+      "kind": "artery",
+      "region": "upper_limb",
+      "turkish": "Ulnar atardamar",
+      "english": "Ulnar artery",
+      "abbreviations": [
+        "a. ulnaris"
+      ],
+      "synonyms": [
+        "ulnar arter",
+        "ulnar artery"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.upper_limb_nerves",
+      "facts": {
+        "origin": "A. brachialis'in fossa cubiti'deki iki uç dalından mediali (daha kalın olanı).",
+        "course": "M. pronator teres'in derin başının altından geçip ön kolun medialinde n. ulnaris ile birlikte iner; canalis ulnaris'ten (Guyon) ele girer ve arcus palmaris superficialis'i oluşturur.",
+        "branches": [
+          "A. recurrens ulnaris",
+          "A. interossea communis (anterior ve posterior)",
+          "R. carpalis palmaris ve dorsalis",
+          "R. palmaris profundus",
+          "Arcus palmaris superficialis (ana katkı)"
+        ],
+        "supply": "Ön kolun medial ve derin kasları (a. interossea ile), elin yüzeyel arkusu, parmaklar.",
+        "relations": [
+          "N. ulnaris medialinde eşlik eder",
+          "Canalis ulnaris'te os pisiforme'nin lateralinde"
+        ],
+        "high_yield": [
+          "Allen testi a. radialis ve a. ulnaris'in elde yeterli anastomozunu sınar.",
+          "Guyon kanalında sinirle birlikte sıkışabilir."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "runs_along",
+          "target": "ulna"
+        }
+      ]
+    },
+    {
+      "structure_id": "v_cephalica",
+      "canonical": "Vena cephalica",
+      "kind": "vein",
+      "region": "upper_limb",
+      "turkish": "Sefalik ven",
+      "english": "Cephalic vein",
+      "abbreviations": [
+        "v. cephalica"
+      ],
+      "synonyms": [
+        "sefalik ven",
+        "cephalic vein"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.upper_limb_nerves",
+      "facts": {
+        "origin": "El sırtındaki rete venosum dorsale manus'un lateral (radial) ucundan başlar.",
+        "course": "Ön kolun ve kolun lateralinde yüzeyel seyreder; sulcus bicipitalis lateralis'ten sulcus deltoideopectoralis'e girer ve fossa infraclavicularis'te derine dalar.",
+        "tributaries": [
+          "V. mediana cubiti (v. basilica ile bağlantı)",
+          "Ön kol ve kolun lateral yüzeyel venleri"
+        ],
+        "drains_into": "V. axillaris (m. pectoralis major ile m. deltoideus arasından geçtikten sonra).",
+        "relations": [
+          "Sulcus deltoideopectoralis: m. deltoideus ile m. pectoralis major arasında",
+          "Yüzeyel; fascia'nın üstünde seyreder"
+        ],
+        "high_yield": [
+          "Kalp damarı kateterlerinde sık kullanılan yüzeyel giriş yolu; sulcus deltoideopectoralis'te görülür.",
+          "V. mediana cubiti fossa cubiti'de kan alma yeridir; altında aponeurosis bicipitalis a. brachialis'i korur."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "related_to",
+          "target": "m_deltoideus"
+        },
+        {
+          "relation": "related_to",
+          "target": "m_pectoralis_major"
+        }
+      ]
+    },
+    {
+      "structure_id": "v_basilica",
+      "canonical": "Vena basilica",
+      "kind": "vein",
+      "region": "upper_limb",
+      "turkish": "Bazilik ven",
+      "english": "Basilic vein",
+      "abbreviations": [
+        "v. basilica"
+      ],
+      "synonyms": [
+        "bazilik ven",
+        "basilic vein"
+      ],
+      "topic_id": "anatomy.musculoskeletal.upper_limb.upper_limb_nerves",
+      "facts": {
+        "origin": "El sırtındaki rete venosum dorsale manus'un medial (ulnar) ucundan başlar.",
+        "course": "Ön kolun ve kolun medialinde yüzeyel çıkar; kolun orta hizasında fascia brachii'yi delerek derine geçer ve vv. brachiales ile birleşir.",
+        "tributaries": [
+          "V. mediana cubiti",
+          "Ön kol ve kolun medial yüzeyel venleri"
+        ],
+        "drains_into": "V. axillaris (vv. brachiales ile birleşerek, m. teres major'un alt kenarı hizasında).",
+        "relations": [
+          "Kolun ortasında n. cutaneus antebrachii medialis ile birlikte",
+          "V. cephalica'dan daha kalındır"
+        ],
+        "high_yield": [
+          "Diyaliz fistülü ve PICC kateter için tercih edilen kalın yüzeyel ven.",
+          "Fascia brachii'yi deldiği hiza kolun ortasıdır (hiatus basilicus)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "related_to",
+          "target": "humerus"
+        }
+      ]
     }
   ],
   "terms": [

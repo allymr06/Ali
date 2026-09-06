@@ -258,7 +258,24 @@ outside the model's own bounds is drawn nowhere rather than approximated:
       "license": "CC BY 4.0",
       "source": "…",
       "attribution": "…",
-      "landmarks": { "acromion": [0.31, 0.62, 0.04] }
+      "side": "right",
+      "up_axis": "z",
+      "landmarks": {
+        "acromion": [0.31, 0.62, 0.04],
+        "angulus_inferior": {
+          "anchor": [-121.3, -80.2, 1090.1],
+          "confidence": "approximate",
+          "method": "geometric extreme of the mesh: z min 0.03"
+        }
+      }
+    }
+  ],
+  "scenes": [
+    {
+      "scene_id": "upper_limb_right",
+      "title": "Üst ekstremite (sağ)",
+      "region": "upper_limb",
+      "structure_ids": ["clavicula", "scapula", "humerus", "…"]
     }
   ]
 }
@@ -268,9 +285,76 @@ An entry without a licence and a source is refused. Without an asset the lab
 says so and draws the schematic relationship map instead — which is labelled
 schematic, not anatomy.
 
-When a mesh is present the page renders it in WebGL (rotate, pan, zoom,
-landmark labels, reset camera) with neutral anatomical materials and a cold
-rim light, matching the shell rather than a game.
+When a mesh is present the page renders it in WebGL with neutral anatomical
+materials and a cold rim light, matching the shell rather than a game.
+
+### Where the meshes come from
+
+The meshes are BodyParts3D (The Database Center for Life Science), imported
+by `scripts/import_bodyparts3d.py` from the polygon-reduced archive
+`isa_BP3D_4.0_obj_99.zip`. The student downloads the archive; JARVIS fetches
+nothing, and no mesh is committed to the repository:
+
+```
+python scripts/import_bodyparts3d.py isa_BP3D_4.0_obj_99.zip
+```
+
+The importer maps 25 structures of the right upper limb — bones, muscles,
+arteries and veins — from their FMA identifiers to the archive's element
+files, merges the element files of one structure into one OBJ under the state
+directory, and writes a manifest entry per structure with the licence, the
+attribution, the side, the up axis and the provenance (FMA ids, element files,
+archive). The structures form the scene `upper_limb_right`. The licence is
+recorded as the dataset states it — the archive page says CC BY 4.0, the OBJ
+headers cite CC BY-SA 2.1 Japan — and the lab shows the attribution under the
+viewport. Every mesh has a curated card: six vessel cards (arteria axillaris,
+brachialis, radialis, ulnaris; vena cephalica, basilica) were added with
+origin, course, branches or tributaries, territory and relations.
+
+Two things the dataset does not have are not made up. BodyParts3D 4.0 ships
+no bony landmarks as parts, and no peripheral nerves of the arm. Nerves keep
+the schematic map. Landmark pins are *derived* from the shape where a rule can
+place one — the most proximal cap of the humerus is its head, its most distal
+medial corner the medial epicondyle. A rule (`LANDMARK_RULES` in the importer)
+is a chain of cuts along the body axes and the pin is the centroid of what
+survives. Every pin written this way carries `"confidence": "approximate"` and
+its method, the lab draws it with "≈", and a landmark no rule can place (a
+groove, a crest) gets no pin at all. A pin placed by hand outranks a derived
+one on re-import.
+
+### The scene
+
+The lab opens the scene rather than one bone: every mesh of the scene in the
+one body frame the dataset uses, coloured by kind, with a layer chip per kind
+(kemik, kas, arter, ven) to hide and show. Clicking a mesh selects that
+structure — the picking pass draws each mesh in a flat identifier colour and
+reads the pixel under the cursor — and the structure list follows. Dragging
+rotates; the right button or Shift+drag pans; the wheel zooms; the arrow keys
+pan, Shift+arrow rotates, `+`/`−` zoom and `R` resets; the pad in the corner
+does the same for those who do not know the gestures. Pan scales with the
+distance so a step moves the picture by the same amount at any zoom.
+
+**Detailed mode** (Detaylı) draws every pin of the selected structure with its
+Latin name on the model. Clicking a pin opens a card with the landmark's
+curated description and the pages of the student's own library that mention
+it, each opening in the reader. The card searches the library; it does not
+write what a landmark is from memory.
+
+### Bell-ringer (zilli sınav)
+
+A bell-ringer (spotter) is the practical anatomy exam: numbered pins on
+specimens, one station each, a fixed time per station, a bell that moves
+everyone on, no going back. The lab keeps those rules. Up to ten stations are
+drawn at random from the pinned landmarks of the scene (or of the open
+structure); each station shows only the numbered pin, and the landmark list of
+the card is hidden while the exam runs so the answer sheet is not on screen.
+The student types the Latin name; the timer (30, 45, 60 or 90 s) rings a bell
+and moves on. Matching is lenient the way an examiner is: case, Turkish
+letters, diacritics, punctuation and the `m.`/`n.`/`a.`/`v.` prefixes are
+ignored, and a token of five letters or more is accepted as the start of the
+word it abbreviates. At the end every station is listed with the student's
+answer, the correct name and its description, and each station was recorded
+as an anatomy answer, so the structure's mastery moves with it.
 
 ## Safety and privacy
 
@@ -307,8 +391,13 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
 
 ## Not yet built
 
-- No licensed 3D asset ships with JARVIS; the lab is schematic until one is
-  registered.
+- No 3D asset ships inside the repository. The BodyParts3D archive is
+  downloaded by the student and imported with `scripts/import_bodyparts3d.py`;
+  until then the lab is schematic. The importer covers the right upper limb;
+  another region needs a mapping of its own.
+- Peripheral nerves have no mesh in BodyParts3D 4.0, so nerve cards keep the
+  schematic map, and pins derived from the shape stay marked approximate until
+  someone who knows confirms them by hand.
 - Image-based question *generation* needs an image whose provenance is known;
   imported image questions keep their picture reference but new items are
   written as text.

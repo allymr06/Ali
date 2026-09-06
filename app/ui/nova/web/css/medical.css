@@ -407,3 +407,43 @@ body.light .lab-label { background: rgba(255, 255, 255, 0.86); }
 .mq-figure-wait { padding: 18px; color: var(--ink-3); font-size: var(--text-sm); }
 .mq-figure figcaption { color: var(--ink-3); font-size: var(--text-xs); letter-spacing: 0.04em; }
 .med-review-note { margin: 0 0 10px; color: var(--ink-3); font-size: var(--text-sm); line-height: 1.45; }
+
+/* Anatomy Lab scenes: one region as a view, with its systems as layers. */
+.lab-layers { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; min-height: 26px; }
+.lab-layers:empty { display: none; }
+.lab-layers .lab-layer-group { display: inline-flex; align-items: center; gap: 6px; padding-right: 10px; margin-right: 4px; border-right: 1px solid var(--line-2); }
+.lab-layers .lab-layer-group:last-child { border-right: 0; }
+.lab-layer { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--surface-2); color: var(--ink-2); font-size: var(--text-xs); letter-spacing: 0.04em; cursor: pointer; }
+.lab-layer.active { border-color: var(--accent); color: var(--ink-1); }
+.lab-layer.off { opacity: 0.45; }
+.lab-layer .lab-swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.lab-layer-note { color: var(--ink-3); font-size: var(--text-xs); }
+
+/* View controls: a pad for those who do not know the mouse gestures. */
+.lab-nav { position: absolute; right: 12px; bottom: 12px; display: grid; grid-template-columns: repeat(3, 30px); gap: 4px; z-index: 3; }
+.lab-nav-btn { width: 30px; height: 30px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: color-mix(in srgb, var(--surface-2) 82%, transparent); color: var(--ink-2); font-size: 14px; line-height: 1; cursor: pointer; }
+.lab-nav-btn:hover { color: var(--ink-1); border-color: var(--accent); }
+.lab-hint { margin: 6px 0 0; color: var(--ink-3); font-size: var(--text-xs); line-height: 1.5; }
+#lab-canvas:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+/* Detailed mode: every pin with its name; a derived pin says so. */
+.lab-pin { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface-1); box-shadow: 0 0 0 1px var(--accent); pointer-events: none; }
+.lab-pin.approx { background: transparent; border: 2px dashed var(--accent); box-shadow: none; }
+.lab-pin.station { width: 22px; height: 22px; margin: -11px 0 0 -11px; background: var(--warn); border-color: var(--surface-1); color: #111; font-size: 11px; font-weight: 700; display: grid; place-items: center; pointer-events: none; }
+.lab-label.detailed { padding-left: 14px; }
+.lab-label.approx::before { content: "≈ "; opacity: 0.7; }
+.lab-pin-card { position: absolute; z-index: 4; max-width: 320px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--surface-1); box-shadow: var(--shadow-2, 0 8px 24px rgba(0,0,0,0.35)); font-size: var(--text-sm); line-height: 1.45; }
+.lab-pin-card h4 { margin: 0 0 4px; font-size: var(--text-md); }
+.lab-pin-card .lab-pin-note { color: var(--ink-3); font-size: var(--text-xs); margin-top: 6px; }
+.lab-pin-card .lab-pin-docs { margin-top: 8px; display: grid; gap: 4px; }
+.lab-pin-card .lab-pin-doc { text-align: left; padding: 4px 8px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink-2); cursor: pointer; font-size: var(--text-xs); }
+/* Bell-ringer: the station strip over the view. */
+.lab-bell[hidden] { display: none; }
+.lab-bell { position: absolute; left: 12px; right: 12px; top: 12px; z-index: 4; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: color-mix(in srgb, var(--surface-1) 88%, transparent); }
+.lab-bell .lab-bell-timer { min-width: 52px; font-variant-numeric: tabular-nums; font-weight: 700; }
+.lab-bell .lab-bell-timer.low { color: var(--danger, #e06060); }
+.lab-bell input { flex: 1; min-width: 120px; }
+.lab-bell-results { display: grid; gap: 6px; }
+.lab-bell-row { display: grid; grid-template-columns: 24px 1fr; gap: 8px; padding: 6px 8px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface-2); font-size: var(--text-sm); }
+.lab-bell-row.ok { border-color: color-mix(in srgb, var(--ok, #3fa76a) 60%, transparent); }
+.lab-bell-row.bad { border-color: color-mix(in srgb, var(--danger, #e06060) 60%, transparent); }

@@ -2062,6 +2062,7 @@ def test_action_model_rate_limit_falls_back_at_once_and_starts_a_cooldown() -> N
 
 
 def test_clock_directive_is_turkish_and_local() -> None:
+    import re
     from datetime import datetime, timezone
 
     from app.core.engine import clock_directive
@@ -2071,11 +2072,14 @@ def test_clock_directive_is_turkish_and_local() -> None:
     assert line.startswith("Şu an yerel tarih ve saat: 5 Eylül 2026 Cumartesi, ")
     assert f"{moment:%H:%M}" in line
     assert "Saat, tarih veya gün sorulursa" in line
-    # The live line must name today's real weekday, whatever day it is.
+    # The live line must name today's real weekday, whatever day it is. The
+    # names are compared as whole words: "Pazar" is a substring of "Pazartesi",
+    # and a plain containment count read two weekdays into every Monday.
     days = ("Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar")
     today = clock_directive()
-    assert days[datetime.now().astimezone().weekday()] in today
-    assert sum(day in today for day in days) == 1
+    words = set(re.findall(r"\w+", today))
+    assert days[datetime.now().astimezone().weekday()] in words
+    assert sum(day in words for day in days) == 1
 
 
 def test_every_system_prompt_carries_the_clock() -> None:

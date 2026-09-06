@@ -1210,7 +1210,18 @@ class MedicalAcademy:
         }
 
     def anatomy_structures(self) -> dict[str, Any]:
-        return {"hierarchy": self.anatomy.hierarchy(), "assets": {"directory": str(self.anatomy.assets.directory) if self.anatomy.assets.directory else None, "available": self.anatomy.assets.available_ids(), "problems": self.anatomy.assets.problems}, "source": self._source_note}
+        return {
+            "hierarchy": self.anatomy.hierarchy(),
+            "assets": {
+                "directory": str(self.anatomy.assets.directory) if self.anatomy.assets.directory else None,
+                "available": self.anatomy.assets.available_ids(),
+                "problems": self.anatomy.assets.problems,
+            },
+            # A scene is a region drawn as one view from the licensed meshes the
+            # manifest lists; the page offers only what the manifest names.
+            "scenes": self.anatomy.assets.scenes(),
+            "source": self._source_note,
+        }
 
     def anatomy_structure(self, structure_id: str) -> dict[str, Any] | None:
         return self.anatomy.describe(structure_id)

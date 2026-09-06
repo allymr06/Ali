@@ -556,15 +556,31 @@
                 <div id="lab-list" class="lab-list"></div>
               </aside>
               <div class="lab-stage">
+                <div id="lab-layers" class="lab-layers" aria-label="Sahne ve katmanlar"></div>
                 <div id="lab-viewport" class="lab-viewport">
-                  <canvas id="lab-canvas"></canvas>
+                  <canvas id="lab-canvas" tabindex="0" aria-label="3B anatomi görünümü"></canvas>
                   <svg id="lab-schematic" viewBox="0 0 900 600" aria-label="Şematik yapı haritası"></svg>
                   <div id="lab-overlay" class="lab-overlay"></div>
+                  <div id="lab-bell-strip" class="lab-bell" hidden aria-live="polite"></div>
+                  <div id="lab-nav" class="lab-nav" aria-label="Görünüm denetimleri">
+                    <button type="button" class="lab-nav-btn" data-nav="rotl" title="Sola döndür (Shift+←)">↺</button>
+                    <button type="button" class="lab-nav-btn" data-nav="up" title="Yukarı kaydır (↑)">↑</button>
+                    <button type="button" class="lab-nav-btn" data-nav="rotr" title="Sağa döndür (Shift+→)">↻</button>
+                    <button type="button" class="lab-nav-btn" data-nav="left" title="Sola kaydır (←)">←</button>
+                    <button type="button" class="lab-nav-btn" data-nav="reset" title="Görünümü sıfırla (R)">⌂</button>
+                    <button type="button" class="lab-nav-btn" data-nav="right" title="Sağa kaydır (→)">→</button>
+                    <button type="button" class="lab-nav-btn" data-nav="in" title="Yakınlaştır (+)">＋</button>
+                    <button type="button" class="lab-nav-btn" data-nav="down" title="Aşağı kaydır (↓)">↓</button>
+                    <button type="button" class="lab-nav-btn" data-nav="out" title="Uzaklaştır (−)">－</button>
+                  </div>
                   <div id="lab-notice" class="lab-notice"></div>
                 </div>
+                <p class="lab-hint">Sürükle: döndür · Sağ tuş ya da Shift+sürükle: kaydır · Tekerlek: yakınlaştır · Ok tuşları: kaydır, Shift+ok: döndür, +/−: yakınlaştır, R: sıfırla</p>
                 <div class="lab-actions">
                   <button id="lab-labels" class="btn btn-ghost small" type="button">Etiketler</button>
+                  <button id="lab-detailed" class="btn btn-ghost small" type="button" title="Pinler adlarıyla; tıklayınca açıklama ve ders notları">Detaylı</button>
                   <button id="lab-quiz" class="btn btn-ghost small" type="button">Quiz</button>
+                  <button id="lab-bell" class="btn btn-ghost small" type="button" title="İstasyonlu, süreli tanıma sınavı">Zilli sınav</button>
                   <button id="lab-movement" class="btn btn-ghost small" type="button">Hareketler</button>
                   <button id="lab-reset" class="btn btn-ghost small" type="button">Kamerayı sıfırla</button>
                   <button id="lab-teach" class="btn btn-primary small" type="button">JARVIS anlatsın</button>

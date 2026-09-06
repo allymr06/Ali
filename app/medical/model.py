@@ -16,7 +16,7 @@ from collections.abc import Callable
 from typing import Any
 
 from app.core.models import Context, Request, RequestSource
-from app.medical.schemas import coerce_strings, validate
+from app.medical.schemas import coerce_strings, validate, wire_schema
 
 JSON_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 DEFAULT_TIMEOUT_SECONDS = 90.0
@@ -146,9 +146,11 @@ class MedicalModelClient:
         max_attempts: int = 2,
     ) -> dict[str, Any]:
         """Ask for JSON matching ``schema``; repair once on a bad reply."""
+        # The provider gets the structural schema only; every bound is still
+        # enforced by ``validate`` below and shown to the model in the prompt.
         response_format = {
             "type": "json_schema",
-            "json_schema": {"name": name.replace(".", "_"), "schema": schema},
+            "json_schema": {"name": name.replace(".", "_"), "schema": wire_schema(schema)},
         }
         instruction = (
             f"{prompt}\n\nReturn ONLY a JSON object that matches this JSON schema, "

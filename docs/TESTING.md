@@ -531,6 +531,12 @@ The Medical Academy regression coverage (`tests/test_medical_*.py`) includes:
   declines, the grounding it reports, the chat quiz end to end (answering,
   skipping, stopping, the oral exam), and the honest refusals for a missing
   document, profile or structure;
+- figure questions and the interactive paper (`test_medical_figures.py`): only
+  pages the vision pass described may become figures, a figure question is
+  anchored to the page it shows, a figure index the model invents yields no
+  figure, a subject-only item still gets a topic, a typed "beni sına" opens the
+  paper while the spoken one keeps the chat quiz, and the results name the
+  blanks when nothing was wrong;
 - the facade the Nova screen calls (`test_medical_facade.py`): the dashboard
   and subject tree over real data, document analysis and comparison including
   a model-stated page the material never had, note citations, question-bank

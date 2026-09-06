@@ -311,9 +311,11 @@ def test_the_schema_is_sent_as_a_response_format_and_named_without_dots() -> Non
 
     asyncio.run(MedicalModelClient(gateway).structured("medical.gen", "Uret", QUESTIONS_SCHEMA))
 
+    from app.medical.schemas import wire_schema
+
     response_format = gateway.calls[0]["kwargs"]["response_format"]
     assert response_format["json_schema"]["name"] == "medical_gen"
-    assert response_format["json_schema"]["schema"] is QUESTIONS_SCHEMA
+    assert response_format["json_schema"]["schema"] == wire_schema(QUESTIONS_SCHEMA)
 
 
 def test_a_pipeline_call_never_offers_the_model_the_assistant_tools() -> None:
@@ -812,3 +814,48 @@ def test_notes_and_questions_are_searchable_but_are_not_evidence_blocks() -> Non
 
 def test_an_unknown_document_id_is_echoed_rather_than_titled_with_a_guess() -> None:
     assert Retriever(MedicalStore()).title_of("d-missing") == "d-missing"
+
+
+# ---------------------------------------------------------------------------
+# model: what goes over the wire
+# ---------------------------------------------------------------------------
+
+
+def test_the_wire_schema_keeps_structure_and_drops_every_bound() -> None:
+    from app.medical.schemas import wire_schema
+
+    sent = wire_schema(QUESTIONS_SCHEMA)
+
+    def keywords(node) -> set[str]:
+        found: set[str] = set()
+        if isinstance(node, dict):
+            for key, value in node.items():
+                found.add(key)
+                found |= keywords(value)
+        elif isinstance(node, list):
+            for item in node:
+                found |= keywords(item)
+        return found
+
+    assert keywords(sent).isdisjoint({"maxLength", "minLength", "minItems", "maxItems", "minimum", "maximum"})
+    item = sent["properties"]["questions"]["items"]
+    assert item["required"] == QUESTION_ITEM_SCHEMA["required"]
+    assert item["properties"]["correct_key"]["enum"] == ["A", "B", "C", "D", "E", "F"]
+    assert item["properties"]["options"]["items"]["required"] == ["key", "text"]
+
+
+def test_the_provider_receives_the_wire_schema_but_the_reply_is_held_to_the_full_one() -> None:
+    """Gemini's OpenAI-compatible endpoint refuses a nested minItems/maxItems
+    with 400 INVALID_ARGUMENT (measured live), so the bounds never travel; the
+    local validator still rejects a reply that breaks one."""
+    too_many = json.dumps({"questions": [item(options=[{"key": "A", "text": "x"}])]})
+    gateway = Gateway(too_many, json.dumps({"questions": [item()]}))
+
+    data = asyncio.run(MedicalModelClient(gateway).structured("gen", "Uret", QUESTIONS_SCHEMA))
+
+    wire = gateway.calls[0]["kwargs"]["response_format"]["json_schema"]["schema"]
+    assert "minItems" not in json.dumps(wire) and "maxLength" not in json.dumps(wire)
+    assert "fewer than 2 items" in gateway.calls[1]["prompt"]  # the bound was enforced locally
+    assert len(data["questions"][0]["options"]) == 2
+    # The full schema, bounds included, is what the model reads in the prompt.
+    assert '"minItems": 2' in gateway.calls[0]["prompt"]

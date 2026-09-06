@@ -295,6 +295,10 @@ def test_an_anatomy_turn_carries_the_curated_facts_rather_than_recall(build) -> 
 # the chat quiz
 # ---------------------------------------------------------------------------
 
+# The letter-by-letter quiz is the voice loop's: a typed "beni sına" opens the
+# paper on the exam screen instead (tests/test_medical_figures.py), so every
+# turn below is spoken.
+
 
 def test_a_quiz_without_a_subject_asks_which_one_instead_of_picking_one(build) -> None:
     augmentation = plan(build(None), "beni sina")
@@ -307,7 +311,7 @@ def test_a_quiz_starts_from_the_bank_when_there_is_no_provider(build) -> None:
     academy = build(None)
     bank(academy)
 
-    augmentation = plan(academy, "anatomiden beni sina")
+    augmentation = plan(academy, "anatomiden beni sina", spoken=True)
 
     assert "Quiz başladı" in augmentation.direct_response
     assert "Soru 1" in augmentation.direct_response
@@ -319,7 +323,7 @@ def test_the_first_question_is_shown_without_its_answer(build) -> None:
     academy = build(None)
     bank(academy)
 
-    text = plan(academy, "anatomiden beni sina").direct_response
+    text = plan(academy, "anatomiden beni sina", spoken=True).direct_response
 
     assert "Doğru cevap" not in text and "correct" not in text.lower()
 
@@ -327,7 +331,7 @@ def test_the_first_question_is_shown_without_its_answer(build) -> None:
 def test_a_correct_answer_is_confirmed_and_the_next_question_follows(build) -> None:
     academy = build(None)
     bank(academy)
-    plan(academy, "anatomiden beni sina")
+    plan(academy, "anatomiden beni sina", spoken=True)
 
     augmentation = plan(academy, "B")
 
@@ -339,7 +343,7 @@ def test_a_correct_answer_is_confirmed_and_the_next_question_follows(build) -> N
 def test_a_wrong_answer_names_the_right_one_and_is_recorded(build) -> None:
     academy = build(None)
     bank(academy)
-    plan(academy, "anatomiden beni sina")
+    plan(academy, "anatomiden beni sina", spoken=True)
 
     augmentation = plan(academy, "A")
 
@@ -351,7 +355,7 @@ def test_a_wrong_answer_names_the_right_one_and_is_recorded(build) -> None:
 def test_the_last_answer_closes_the_quiz_with_a_score(build) -> None:
     academy = build(None)
     bank(academy, 2)
-    plan(academy, "anatomiden beni sina")
+    plan(academy, "anatomiden beni sina", spoken=True)
     plan(academy, "B")
 
     augmentation = plan(academy, "B")
@@ -364,7 +368,7 @@ def test_the_last_answer_closes_the_quiz_with_a_score(build) -> None:
 def test_skipping_reveals_that_question_and_moves_on(build) -> None:
     academy = build(None)
     bank(academy)
-    plan(academy, "anatomiden beni sina")
+    plan(academy, "anatomiden beni sina", spoken=True)
 
     augmentation = plan(academy, "sonraki soru")
 
@@ -375,7 +379,7 @@ def test_skipping_reveals_that_question_and_moves_on(build) -> None:
 def test_a_skipped_question_is_not_recorded_as_an_attempt(build) -> None:
     academy = build(None)
     bank(academy)
-    plan(academy, "anatomiden beni sina")
+    plan(academy, "anatomiden beni sina", spoken=True)
 
     plan(academy, "sonraki soru")
 
@@ -385,7 +389,7 @@ def test_a_skipped_question_is_not_recorded_as_an_attempt(build) -> None:
 def test_stopping_closes_the_quiz_and_reports_what_was_done(build) -> None:
     academy = build(None)
     bank(academy)
-    plan(academy, "anatomiden beni sina")
+    plan(academy, "anatomiden beni sina", spoken=True)
     plan(academy, "B")
 
     augmentation = plan(academy, "bitir")
@@ -415,7 +419,7 @@ def test_a_quiz_the_bank_can_fill_is_started_without_asking_the_provider(build) 
     academy = build(gateway)
     bank(academy, 5)
 
-    augmentation = asyncio.run(within_the_augmentation_budget(academy, "anatomiden 3 soru sor"))
+    augmentation = asyncio.run(within_the_augmentation_budget(academy, "anatomiden 3 soru sor", spoken=True))
 
     assert "Quiz başladı" in augmentation.direct_response
     assert gateway.prompts == [], "the bank could fill it, so nothing was asked of the provider"
@@ -428,7 +432,7 @@ def test_a_quiz_that_needs_the_model_answers_the_turn_before_the_model_does(buil
     academy = build(gateway)
 
     async def turn():
-        augmentation = await within_the_augmentation_budget(academy, "anatomiden beni sina")
+        augmentation = await within_the_augmentation_budget(academy, "anatomiden beni sina", spoken=True)
         gateway.release.set()
         await settle(academy)
         return augmentation
@@ -446,7 +450,7 @@ def test_nothing_claims_the_questions_exist_before_they_do(build) -> None:
     academy.subscribe(events.append)
 
     async def turn():
-        await within_the_augmentation_budget(academy, "anatomiden beni sina")
+        await within_the_augmentation_budget(academy, "anatomiden beni sina", spoken=True)
         held = (academy.sessions.chat_quiz_state(), academy.store.summary()["questions"], list(events))
         gateway.release.set()
         await settle(academy)
@@ -465,7 +469,7 @@ def test_the_prepared_quiz_starts_and_reports_its_first_question(build) -> None:
     academy.subscribe(events.append)
 
     async def turn():
-        await within_the_augmentation_budget(academy, "anatomiden beni sina")
+        await within_the_augmentation_budget(academy, "anatomiden beni sina", spoken=True)
         gateway.release.set()
         await settle(academy)
 
@@ -483,7 +487,7 @@ def test_a_prepared_quiz_can_be_answered_in_chat_when_it_lands(build) -> None:
     academy = build(gateway)
 
     async def turn():
-        await within_the_augmentation_budget(academy, "anatomiden beni sina")
+        await within_the_augmentation_budget(academy, "anatomiden beni sina", spoken=True)
         gateway.release.set()
         await settle(academy)
 
@@ -523,7 +527,7 @@ def test_a_prepared_quiz_that_fails_says_so_instead_of_going_quiet(build) -> Non
     academy.subscribe(events.append)
 
     async def turn():
-        await within_the_augmentation_budget(academy, "anatomiden beni sina")
+        await within_the_augmentation_budget(academy, "anatomiden beni sina", spoken=True)
         gateway.release.set()
         await settle(academy)
 
@@ -539,8 +543,8 @@ def test_asking_again_while_the_questions_are_being_written_starts_no_second_job
     academy = build(gateway)
 
     async def turn():
-        await within_the_augmentation_budget(academy, "anatomiden beni sina")
-        second = await within_the_augmentation_budget(academy, "anatomiden beni sina")
+        await within_the_augmentation_budget(academy, "anatomiden beni sina", spoken=True)
+        second = await within_the_augmentation_budget(academy, "anatomiden beni sina", spoken=True)
         gateway.release.set()
         await settle(academy)
         return second
@@ -560,9 +564,9 @@ def test_a_prepared_quiz_does_not_replace_one_the_student_already_started(build)
     academy.subscribe(events.append)
 
     async def turn():
-        await within_the_augmentation_budget(academy, "anatomiden beni sina")
+        await within_the_augmentation_budget(academy, "anatomiden beni sina", spoken=True)
         bank(academy, 3)
-        await within_the_augmentation_budget(academy, "anatomiden 3 soru sor")
+        await within_the_augmentation_budget(academy, "anatomiden 3 soru sor", spoken=True)
         started = academy.sessions.chat_quiz_state()["question_ids"]
         gateway.release.set()
         await settle(academy)
@@ -612,7 +616,7 @@ def test_closing_an_oral_exam_says_how_to_resume_it(build) -> None:
 def test_why_wrong_after_an_answer_gives_the_model_that_exact_item(build) -> None:
     academy = build(None)
     bank(academy)
-    plan(academy, "anatomiden beni sina")
+    plan(academy, "anatomiden beni sina", spoken=True)
     asked = academy.sessions.chat_quiz_state()["question_ids"][0]
     plan(academy, "A")
 
@@ -653,7 +657,7 @@ def test_a_review_request_with_no_history_says_so_rather_than_inventing_gaps(bui
 def test_a_review_request_lists_the_concepts_the_history_actually_holds(build) -> None:
     academy = build(None)
     bank(academy)
-    plan(academy, "anatomiden beni sina")
+    plan(academy, "anatomiden beni sina", spoken=True)
     plan(academy, "A")
     plan(academy, "A")
     plan(academy, "A")

@@ -47,7 +47,7 @@ Last verified: 6 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2188 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 2212 tests passing, 5 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
 
 ## Medical Academy (6 September 2026)
@@ -195,6 +195,43 @@ is built from.
 Nineteen candidates did not survive refutation and were left alone, including a
 duplicate of the index-rebuild finding and an unbounded page-image cache that
 turned out to be bounded by the pipeline above it.
+
+**The live run (6 September 2026, evening).** The desktop was started with the
+configured Gemini key and the Academy was driven the way the student uses it —
+the real window, real bridge, real provider. Three things no test had caught:
+
+- Every structured model call failed with HTTP 400 `INVALID_ARGUMENT`. The
+  deterministic paths were fine (a teaching turn augments in 0.1 ms, an ordinary
+  request is left alone, the quiz turn answers at once), but the background
+  generation behind it died, so the chat quiz, exam generation, document
+  analysis and comparison all reported "Model çağrısı başarısız". A live bisect
+  showed Gemini's OpenAI-compatible endpoint refusing a JSON schema whose nested
+  arrays carry `minItems`/`maxItems`. `MedicalModelClient` now sends
+  `wire_schema()` — structure, types, enums and required — and enforces every
+  bound locally; the fake gateways in the tests accept anything, which is why
+  the suite was green. After the fix a quiz was generated end to end in 12.5 s.
+- The failure surfaces wired the day before worked: the toast, the notification
+  centre entry and the `job.failed` ledger warning all appeared for the broken
+  call, which is how it was found.
+- A quiz question written for the chat carried its Markdown into the
+  notification centre (`**Soru 1**` as literal asterisks); notification bodies
+  are plain text now.
+
+The same session changed what a quiz is. Ali asked for papers he can mark, a
+finish button, and then his wrong answers explained with the correct option,
+the topics he has gaps in, and questions with figures. A typed "beni sına" now
+builds a short paper (answers at the end) and opens it on the exam screen; the
+results put the wrong answers first with their explanation and the correct
+option, then the blanks, then the correct ones, over the topic, difficulty and
+subject breakdowns and the weak-concept chips; a generated item on a
+subject-only paper is filed under the topic of its concept so the topic
+breakdown says something; and "görselli sorular" draws figure questions from the
+lecture pages the vision pass described, showing the rendered page beside the
+stem — JARVIS never draws anatomy of its own. The letter-by-letter chat quiz
+remains for the voice loop. Verified in the real window: "Bu konudan sına" opened
+the paper in four seconds, two answers were marked, the paper was finished, and
+the results screen showed the wrong answers, the blanks and four named weak
+concepts.
 
 ## Persistent notification centre (5 September 2026)
 

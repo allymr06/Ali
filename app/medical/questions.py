@@ -345,6 +345,28 @@ def is_too_similar(question: Question, others: Iterable[Question], *, threshold:
 # ---------------------------------------------------------------------------
 
 
+def figure_payload(question: Question) -> dict[str, Any] | None:
+    """The lecture page a figure question is about, or None.
+
+    ``image_ref`` holds ``document_id|page_number`` -- the same key the page
+    reader uses, so the exam runner can fetch the rendered page. Nothing is
+    drawn by JARVIS itself: the figure is always one of the student's own
+    pages, and an unreadable reference yields no figure rather than a guess.
+    """
+    ref = str(question.image_ref or "")
+    if "|" not in ref:
+        return None
+    document_id, _, page = ref.partition("|")
+    if not document_id.strip() or not page.strip().isdigit():
+        return None
+    return {
+        "document_id": document_id.strip(),
+        "page_number": int(page),
+        "title": str(question.metadata.get("figure_title") or ""),
+        "caption": str(question.metadata.get("figure_caption") or ""),
+    }
+
+
 def question_payload(
     question: Question,
     *,
@@ -367,6 +389,9 @@ def question_payload(
         "professor_id": question.professor_id,
         "has_answer_key": question.has_answer_key,
         "image_ref": question.image_ref,
+        # A figure question shows the student's own lecture page beside the
+        # stem; image_ref is "document_id|page_number", the page reader's key.
+        "figure": figure_payload(question),
         "concept_ids": list(question.concept_ids),
         "concept_name": str(question.metadata.get("concept_name") or ""),
         "references": [
@@ -523,7 +548,12 @@ def analyse_attempt(
     review_ids = list(dict.fromkeys(wrong_ids + flagged + unanswered_ids))
     weakest_topic = next((row for row in by_topic if row["accuracy"] is not None and row["accuracy"] < 0.7), None)
     suggestion: dict[str, Any] | None = None
-    if weakest_topic is not None and weakest_topic["key"] != "unknown":
+    if not wrong_ids and unanswered_ids:
+        # Nothing was answered wrongly, so no topic can be called weak and
+        # "redo your mistakes" would point at an empty set: what the paper
+        # shows is the questions left blank.
+        suggestion = {"kind": "answer_blanks", "text": f"{len(unanswered_ids)} soru boş kaldı: aynı sınavı yeniden başlatıp boş bıraktıklarını da cevapla, sonuç ancak o zaman bir şey söyler."}
+    elif weakest_topic is not None and weakest_topic["key"] != "unknown":
         suggestion = {
             "kind": "weak_topic",
             "topic_id": weakest_topic["key"],
@@ -535,7 +565,7 @@ def analyse_attempt(
             "kind": "harder",
             "text": "Sonuç güçlü: bir sonraki testte zorluğu bir kademe artırabilirsin.",
         }
-    elif total:
+    elif wrong_ids:
         suggestion = {"kind": "repeat_wrong", "text": "Yanlış yaptığın soruları 'Yalnız yanlışlarım' seçeneğiyle yeniden çöz."}
     elapsed = None
     if attempt.finished_at and attempt.started_at:

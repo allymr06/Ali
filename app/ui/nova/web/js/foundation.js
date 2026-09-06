@@ -347,8 +347,11 @@ function fmtDuration(ms) {
   if (ms === null || ms === undefined || !Number.isFinite(ms)) return "";
   if (ms < 1000) return `${Math.round(ms)} ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} sn`;
-  const minutes = Math.floor(ms / 60000);
-  return `${minutes} dk ${Math.round((ms % 60000) / 1000)} sn`;
+  // Round the whole to seconds first: rounding the remainder alone printed
+  // "3 dk 60 sn" for anything a hair under four minutes.
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  return `${minutes} dk ${totalSeconds % 60} sn`;
 }
 function fmtBytes(bytes) {
   if (!Number.isFinite(bytes)) return "—";

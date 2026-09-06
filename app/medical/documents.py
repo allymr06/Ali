@@ -39,6 +39,13 @@ VISUAL_TEXT_POOR_CHARS = 220
 DEFAULT_RENDER_SCALE = 1.5
 MAX_RENDER_SCALE = 3.0
 PDF_OBJECT_IMAGE = 3
+PDF_OBJECT_PATH = 2
+# A slide exported from a drawing tool carries its diagram as paths, not as an
+# image: labelled bone outlines, pathway arrows, axes. Enough paths with little
+# text is a figure the vision pass should read; a text page with a few rules
+# and bullets is not.
+VISUAL_MIN_PATHS = 8
+VISUAL_DIAGRAM_TEXT_CHARS = 600
 
 ProgressCallback = Callable[[str, str], None]
 
@@ -53,6 +60,7 @@ class ExtractedPage:
     text: str
     image_area_ratio: float
     image_count: int
+    path_count: int = 0
 
 
 class PdfReader:
@@ -121,9 +129,14 @@ class PdfReader:
             area = max(1.0, float(width) * float(height))
             image_area = 0.0
             image_count = 0
+            path_count = 0
             try:
                 for obj in page.get_objects():
-                    if getattr(obj, "type", None) != PDF_OBJECT_IMAGE:
+                    kind = getattr(obj, "type", None)
+                    if kind == PDF_OBJECT_PATH:
+                        path_count += 1
+                        continue
+                    if kind != PDF_OBJECT_IMAGE:
                         continue
                     left, bottom, right, top = obj.get_bounds()
                     image_area += max(0.0, (right - left)) * max(0.0, (top - bottom))
@@ -131,7 +144,7 @@ class PdfReader:
             except Exception:
                 pass
             ratio = min(1.0, image_area / area) if image_count else 0.0
-            return ExtractedPage(page_number, text.replace("\r\n", "\n").replace("\r", "\n"), round(ratio, 3), image_count)
+            return ExtractedPage(page_number, text.replace("\r\n", "\n").replace("\r", "\n"), round(ratio, 3), image_count, path_count)
         finally:
             try:
                 page.close()
@@ -504,6 +517,7 @@ class DocumentPipeline:
                     headings=headings,
                     image_area_ratio=extracted.image_area_ratio,
                     image_count=extracted.image_count,
+                    path_count=extracted.path_count,
                 )
                 pages.append(page)
                 if number % 10 == 0 or number == count:
@@ -540,19 +554,28 @@ class DocumentPipeline:
         self._store.save_pages(pages)
         return pages
 
+    @staticmethod
+    def _looks_drawn(page: DocumentPage) -> bool:
+        """A diagram made of paths rather than pixels."""
+        return page.path_count >= VISUAL_MIN_PATHS and page.char_count < VISUAL_DIAGRAM_TEXT_CHARS
+
     def _mark_visual_pages(self, pages: list[DocumentPage]) -> None:
-        candidates = [
+        pictured = [
             page
             for page in pages
             if page.image_count
             and (page.image_area_ratio >= VISUAL_MIN_IMAGE_RATIO or page.char_count < VISUAL_TEXT_POOR_CHARS)
         ]
-        candidates.sort(key=lambda page: (-page.image_area_ratio, page.char_count, page.page_number))
-        chosen = {page.page_number for page in candidates[: self._vision_budget]}
+        pictured.sort(key=lambda page: (-page.image_area_ratio, page.char_count, page.page_number))
+        # Drawn diagrams queue behind the pictured pages: the budget is spent on
+        # what is most likely a figure first, and a drawing is the weaker signal.
+        drawn = [page for page in pages if not page.image_count and self._looks_drawn(page)]
+        drawn.sort(key=lambda page: (-page.path_count, page.char_count, page.page_number))
+        chosen = {page.page_number for page in (pictured + drawn)[: self._vision_budget]}
         for page in pages:
             if page.page_number in chosen:
                 page.visual_status = "pending"
-            elif page.image_count:
+            elif page.image_count or self._looks_drawn(page):
                 page.visual_status = "skipped"
             else:
                 page.visual_status = "not_needed"

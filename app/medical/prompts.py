@@ -324,6 +324,8 @@ def question_generation_prompt(
     concept_hints: Iterable[str],
     curated_facts: str,
     weak_concepts: Iterable[str],
+    figures: Iterable[str] = (),
+    figure_questions: int = 0,
 ) -> str:
     keys = "ABCDEF"[:option_count]
     difficulty_words = {
@@ -351,6 +353,17 @@ def question_generation_prompt(
             "it; leave source_index and source_page 0 when a question comes from general knowledge."
         )
         parts.append("Lecture excerpts:\n" + evidence_text)
+    figure_lines = [line for line in figures if line]
+    if figure_lines and figure_questions > 0:
+        parts.append(
+            f"FIGURES from the student's own lecture pages are listed below, each with what the figure shows and the "
+            f"labels it carries. Write at least {min(figure_questions, count)} of the questions ABOUT a figure: the stem "
+            "must refer to it (\"Şekildeki ...\", \"Görseldeki işaretli yapı ...\"), it may ask only about structures "
+            "or labels the figure description actually lists, and it must set figure_index to that figure's N (and "
+            "source_index/source_page to the same page). Never describe a figure detail that is not in its description; "
+            "set figure_index 0 for a question that is not about a figure."
+        )
+        parts.append("Figures:\n" + "\n".join(figure_lines))
     if curated_facts:
         parts.append("Verified reference facts you may rely on:\n" + curated_facts)
     hints = [hint for hint in concept_hints if hint]

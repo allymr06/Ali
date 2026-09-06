@@ -778,6 +778,7 @@ const Medical = {
       answers_at_end: $("#med-exam-end").checked,
       weak_emphasis: $("#med-exam-weak").checked,
       wrong_only: $("#med-exam-wrong").checked,
+      include_images: $("#med-exam-images") ? $("#med-exam-images").checked : false,
     };
   },
 
@@ -815,6 +816,10 @@ const Medical = {
     this.runner = { index: Math.max(0, Number(this.exam.attempt && this.exam.attempt.current_index) || 0), finished };
     this.renderExamList();
     this.renderRunner();
+    // The builder form and the list sit above the paper; an opened exam is
+    // what the student came for, so bring it to the top of the view.
+    const runner = $("#med-exam-runner");
+    if (runner && typeof runner.scrollIntoView === "function") runner.scrollIntoView({ behavior: "smooth", block: "start" });
   },
 
   async startExam() {
@@ -871,6 +876,7 @@ const Medical = {
           ${question.topic_label ? `<span class="chip">${esc(question.topic_label)}</span>` : ""}
           <button type="button" class="chip ${question.flagged ? "warn" : ""}" data-run="flag">${question.flagged ? "İşaret kaldır" : "İşaretle"}</button>
         </div>
+        ${this.figureMarkup(question)}
         <div class="mq-stem">${esc(question.stem)}</div>
         <div class="med-options">${(question.options || []).map((option) => {
           const chosen = question.answer === option.key;
@@ -890,10 +896,42 @@ const Medical = {
         <span class="spacer"></span>
         <button type="button" class="btn btn-ghost small" data-run="ask">JARVIS'e sor</button>
       </div>`;
+    this.loadFigures(host);
     $$("[data-option]", host).forEach((node) => node.addEventListener("click", () => this.answer(question.question_id, node.dataset.option)));
     $$("[data-goto]", host).forEach((node) => node.addEventListener("click", () => { this.runner.index = Number(node.dataset.goto); this.renderRunner(); }));
     $$("[data-run]", host).forEach((node) => node.addEventListener("click", () => this.runnerAction(node.dataset.run, question)));
     this.startTimer();
+  },
+
+  figureMarkup(question) {
+    const figure = question && question.figure;
+    if (!figure || !figure.document_id) return "";
+    // One of the student's own lecture pages, never something drawn by JARVIS:
+    // the caption names the document and page so the source is always visible.
+    return `<figure class="mq-figure" data-figure="${esc(figure.document_id + "|" + figure.page_number)}">
+      <div class="mq-figure-frame"><span class="mq-figure-wait">Şekil yükleniyor…</span></div>
+      <figcaption>${esc(figure.caption || `${figure.title} · s. ${figure.page_number}`)}</figcaption>
+    </figure>`;
+  },
+
+  async loadFigures(host) {
+    this.figureCache = this.figureCache || new Map();
+    for (const node of $$("[data-figure]", host)) {
+      const key = node.dataset.figure;
+      const frame = $(".mq-figure-frame", node);
+      if (!frame) continue;
+      let image = this.figureCache.get(key);
+      if (image === undefined) {
+        const [documentId, page] = key.split("|");
+        const result = await this.request("page", { document_id: documentId, page_number: Number(page), image: true });
+        image = result.ok !== false && result.page ? result.page.image || null : null;
+        this.figureCache.set(key, image);
+      }
+      if (!node.isConnected) continue;
+      frame.innerHTML = image
+        ? `<img src="${esc(image)}" alt="Ders notu sayfası">`
+        : `<span class="mq-figure-wait">Sayfa görseli alınamadı; kaynağı Kütüphane'den açabilirsin.</span>`;
+    }
   },
 
   startTimer() {
@@ -995,11 +1033,9 @@ const Medical = {
           <div class="med-chips">${analysis.weak_concepts.map((item) => `<span class="chip bad">${esc(item.label)} · ${item.correct}/${item.total}</span>`).join("")}</div>
           <div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-ghost small" data-result="review">Zayıf alanları tekrar et</button>
           <button type="button" class="btn btn-ghost small" data-result="retry">Yanlışlarımı tekrar sor</button></div></div>` : ""}
-        <div class="panel med-card">
-          <div class="panel-title"><span class="kicker">Soru soru inceleme</span></div>
-          <div class="med-bank-list">${questions.map((question, position) => this.reviewQuestion(question, position)).join("")}</div>
-        </div>
+        ${this.reviewSection(questions)}
       </div>`;
+    this.loadFigures(host);
     $$("[data-result]", host).forEach((node) => node.addEventListener("click", () => {
       if (node.dataset.result === "review") this.quickAsk("zayıf olduğum konuları tekrar et");
       if (node.dataset.result === "retry") { const wrong = $("#med-exam-wrong"); if (wrong) wrong.checked = true; this.createExam(null, false); }
@@ -1012,12 +1048,31 @@ const Medical = {
     }));
   },
 
+  reviewSection(questions) {
+    // The student opens the results to see what went wrong: the wrong answers
+    // come first with their explanation and the correct option, then the blanks,
+    // then what was right. Positions keep the paper's numbering.
+    const indexed = questions.map((question, position) => ({ question, position }));
+    const wrong = indexed.filter(({ question }) => question.answer && question.correct === false);
+    const blank = indexed.filter(({ question }) => !question.answer);
+    const right = indexed.filter(({ question }) => question.correct === true);
+    const block = (title, tone, items, note) => items.length
+      ? `<div class="panel med-card"><div class="panel-title"><span class="kicker">${esc(title)}</span><span class="chip ${tone}">${items.length}</span></div>
+          ${note ? `<p class="med-review-note">${esc(note)}</p>` : ""}
+          <div class="med-bank-list">${items.map(({ question, position }) => this.reviewQuestion(question, position)).join("")}</div></div>`
+      : "";
+    return block("Yanlışların", "bad", wrong, "Her soruda doğru şık ✓ ile işaretli; altındaki açıklama neden doğru olduğunu, seçtiğin şıkkın yanındaki not neden yanlış olduğunu anlatır.")
+      + block("Boş bıraktıkların", "warn", blank, "")
+      + block("Doğruların", "ok", right, "");
+  },
+
   reviewQuestion(question, position) {
     const correct = question.correct === true;
     const answered = !!question.answer;
     return `<div class="panel med-bank-item">
       <div class="mb-meta"><span class="chip ${correct ? "ok" : answered ? "bad" : "warn"}">${position + 1} · ${correct ? "doğru" : answered ? "yanlış" : "boş"}</span>
         <span class="chip">zorluk ${question.difficulty}/5</span>${question.topic_label ? `<span class="chip">${esc(question.topic_label)}</span>` : ""}</div>
+      ${this.figureMarkup(question)}
       <div class="mb-stem">${esc(question.stem)}</div>
       <div class="mb-options">${(question.options || []).map((option) => {
         const isCorrect = option.key === question.correct_key;
@@ -1341,6 +1396,14 @@ const Medical = {
       return;
     }
     if (kind === "exam_ready" || kind === "exam_finished") {
+      if (kind === "exam_ready" && payload.exam_id && payload.open) {
+        // The student asked for a paper, from chat or from the form: put it in
+        // front of them rather than a toast that points at a list.
+        showScreen("medical");
+        this.show("exam");
+        this.loadExams().then(() => this.openExam(payload.exam_id));
+        return;
+      }
       if (State.screen === "medical" && this.view === "exam") this.loadExams();
       if (kind === "exam_ready" && payload.exam_id) toast(`Sınav hazır: ${payload.title}`, "ok");
       return;

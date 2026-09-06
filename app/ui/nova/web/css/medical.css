@@ -399,3 +399,11 @@ body.light .lab-label { background: rgba(255, 255, 255, 0.86); }
   .med-tabs { overflow-x: auto; flex-wrap: nowrap; }
   .med-tab { flex: none; }
 }
+
+/* Figure questions: one of the student's own lecture pages, captioned with its source. */
+.mq-figure { margin: 0 0 12px; display: grid; gap: 6px; }
+.mq-figure-frame { display: grid; place-items: center; min-height: 120px; max-height: 420px; overflow: auto; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--surface-2); }
+.mq-figure-frame img { display: block; max-width: 100%; height: auto; }
+.mq-figure-wait { padding: 18px; color: var(--ink-3); font-size: var(--text-sm); }
+.mq-figure figcaption { color: var(--ink-3); font-size: var(--text-xs); letter-spacing: 0.04em; }
+.med-review-note { margin: 0 0 10px; color: var(--ink-3); font-size: var(--text-sm); line-height: 1.45; }

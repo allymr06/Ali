@@ -15,12 +15,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.core.models import Context, Request, ToolExecutionStatus
+from app.core.models import Context, Request, RequestSource, ToolExecutionStatus
 from app.medical.academy import create_medical_academy
 from app.medical.generation import ExamBuilder, GenerationError
 from app.medical.model import MedicalModelClient, MedicalModelError, extract_json
 from app.medical.models import ExamConfig, Question, QuestionOption, QuestionOrigin
-from app.medical.schemas import NOTES_SCHEMA, QUESTIONS_SCHEMA, coerce_strings, validate
+from app.medical.schemas import NOTES_SCHEMA, QUESTIONS_SCHEMA, coerce_strings, validate, wire_schema
 from app.medical.tutor import MEDICAL_TOOLS, MedicalTutor
 from app.tools.executor import ToolExecutor
 
@@ -131,7 +131,7 @@ async def test_the_model_client_repairs_one_bad_reply_then_refuses_to_pretend() 
     assert len(data["questions"]) == 1
     assert len(gateway.calls) == 2, "one repair attempt, not an open-ended retry loop"
     assert "rejected" in gateway.calls[1]["prompt"] and "options: missing" in gateway.calls[1]["prompt"]
-    assert gateway.calls[0]["response_format"]["json_schema"] == {"name": "question_generation", "schema": QUESTIONS_SCHEMA}
+    assert gateway.calls[0]["response_format"]["json_schema"] == {"name": "question_generation", "schema": wire_schema(QUESTIONS_SCHEMA)}
     assert gateway.calls[0]["metadata"] == {"medical_pipeline": "question_generation", "tool_schema_selection": False, "structured_output": True}
 
     stubborn = FakeGateway(broken)
@@ -356,7 +356,7 @@ async def test_a_chat_quiz_grades_records_mastery_and_closes_with_a_summary(buil
     academy.store.save_question(bank_question("q2", "Musculus biceps brachii hangi eklemi bukcer?", ["Art. humeri", "Art. cubiti", "Art. radioulnaris", "Art. sternoclavicularis"]))
     academy.update_session({"topic_id": ARM})
 
-    started = await academy.augment(Request("beni sına"), Context())
+    started = await academy.augment(Request("beni sına", source=RequestSource.VOICE), Context())
     assert started.metadata["quiz"] == "started" and started.system_prompt is None
     assert "Quiz başladı" in started.direct_response and "**Soru 1**" in started.direct_response
     quiz = academy.sessions.chat_quiz_state()
@@ -384,7 +384,7 @@ async def test_a_bare_stop_word_closes_the_quiz_the_intro_promised_it_would(buil
 
     assert await academy.augment(Request("bitir"), Context()) is None, "with no quiz open there is nothing to close"
 
-    started = await academy.augment(Request("beni sına"), Context())
+    started = await academy.augment(Request("beni sına", source=RequestSource.VOICE), Context())
     assert "“bitir” ile kapatabilirsin" in started.direct_response
     assert academy.sessions.chat_quiz_state()["active"] is True
 

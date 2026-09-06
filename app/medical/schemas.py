@@ -111,6 +111,8 @@ QUESTION_ITEM_SCHEMA: dict[str, Any] = {
         "source_index": {"type": "integer", "minimum": 0},
         "source_page": {"type": "integer", "minimum": 0},
         "source_quote": _string(400),
+        # The N of the "[Şekil N]" figure the question is about; 0 for none.
+        "figure_index": {"type": "integer", "minimum": 0},
         "trap": _string(400),
     },
     "required": ["stem", "options", "correct_key", "explanation", "concept"],
@@ -261,6 +263,25 @@ def validate(data: Any, schema: dict[str, Any], path: str = "$") -> list[str]:
             for index, item in enumerate(data):
                 problems.extend(validate(item, items, f"{path}[{index}]"))
     return problems
+
+
+# Keywords the provider's structured-output endpoint may refuse. Gemini's
+# OpenAI-compatible API answers 400 INVALID_ARGUMENT to a nested array
+# carrying minItems/maxItems (measured live, 6 September 2026), and the
+# other bounds are not guaranteed either. None of them is needed on the
+# wire: ``validate`` enforces every bound locally, ``coerce_strings`` trims
+# the strings, and the full schema is printed in the prompt so the model
+# still sees the limits it is asked to respect.
+WIRE_UNSUPPORTED_KEYWORDS = frozenset({"maxLength", "minLength", "minItems", "maxItems", "minimum", "maximum"})
+
+
+def wire_schema(schema: Any) -> Any:
+    """The schema as sent to the provider: structure, types, enums, required."""
+    if isinstance(schema, dict):
+        return {key: wire_schema(value) for key, value in schema.items() if key not in WIRE_UNSUPPORTED_KEYWORDS}
+    if isinstance(schema, list):
+        return [wire_schema(item) for item in schema]
+    return schema
 
 
 def coerce_strings(data: Any, schema: dict[str, Any]) -> Any:

@@ -2251,8 +2251,10 @@ def test_a_background_quiz_puts_its_first_question_in_the_notification_centre(bo
     latest = listing["items"][0]
     assert "Quiz hazır" in latest["title"]
     # The body is the question itself: a title alone would leave the student
-    # answering a question they were never shown.
+    # answering a question they were never shown -- and it is plain text, the
+    # chat's Markdown markers would show as literal asterisks here.
     assert "Humerus distal ucunda" in latest["body"]
+    assert "Soru 1" in latest["body"] and "**" not in latest["body"]
     assert any(payload.get("kind") == "quiz_ready" for payload in booted.window.payloads("medical"))
 
 

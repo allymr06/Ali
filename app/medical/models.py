@@ -394,6 +394,7 @@ class DocumentPage:
     headings: list[str] = field(default_factory=list)
     image_area_ratio: float = 0.0
     image_count: int = 0
+    path_count: int = 0
     visual_summary: str = ""
     visual_labels: list[str] = field(default_factory=list)
     visual_status: str = "not_needed"

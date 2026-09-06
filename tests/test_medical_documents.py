@@ -508,3 +508,23 @@ def test_synonym_expansion_finds_a_turkish_query_in_an_english_chunk() -> None:
     # A synonym match is weighted below a direct one on the same passage.
     assert hits[0].score < expanded.search("scapula")[0].score
     assert dict(expanded.query_terms("scapula"))["scapu"] == 1.0
+
+
+def test_a_drawn_diagram_joins_the_vision_pass_behind_the_pictured_pages(tmp_path) -> None:
+    """A slide exported from a drawing tool carries its figure as paths, not
+    pixels; enough paths with little text is a figure, a text page with a few
+    rules is not, and the budget goes to pictured pages first."""
+    from app.medical.models import DocumentPage
+
+    pipeline = DocumentPipeline(MedicalStore(), directory=tmp_path / "academy", vision_pages_per_document=2)
+    pages = [
+        DocumentPage(document_id="d", page_number=1, text="Uzun bir metin sayfasi. " * 40, path_count=30),   # ruled text
+        DocumentPage(document_id="d", page_number=2, text="Humerus - on yuz", path_count=10),                 # drawn diagram
+        DocumentPage(document_id="d", page_number=3, text="Fig", image_count=1, image_area_ratio=0.6),       # pictured
+        DocumentPage(document_id="d", page_number=4, text="Sekil 2", path_count=25),                          # drawn diagram
+        DocumentPage(document_id="d", page_number=5, text="Kisa not", path_count=3),                          # a few rules
+    ]
+
+    pipeline._mark_visual_pages(pages)
+
+    assert [page.visual_status for page in pages] == ["not_needed", "skipped", "pending", "pending", "not_needed"]

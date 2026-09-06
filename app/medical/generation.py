@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any
 
 from app.medical.anatomy import AnatomyLab
@@ -25,6 +26,7 @@ from app.medical.models import (
     KnowledgePriority,
     Question,
     QuestionOrigin,
+    SourceReference,
     new_id,
 )
 from app.medical.professor import StyleProfiler
@@ -43,6 +45,37 @@ from app.medical.store import MedicalStore
 MAX_ROUNDS = 3
 MAX_BATCH = 20
 EVIDENCE_CHARS_FOR_GENERATION = 9000
+# Figure questions are drawn only from lecture pages the vision pass has
+# described: the description and its labels are the only facts the model may
+# ask about, so a page nobody analysed cannot become a question.
+MAX_FIGURES = 6
+FIGURE_DESCRIPTION_CHARS = 700
+
+
+@dataclass(slots=True)
+class FigureRef:
+    index: int
+    document_id: str
+    page_number: int
+    title: str
+    summary: str
+    labels: list[str]
+
+    def prompt_line(self) -> str:
+        labels = ", ".join(self.labels[:25])
+        return (
+            f"[Şekil {self.index}] {self.title}, s. {self.page_number} — {self.summary[:FIGURE_DESCRIPTION_CHARS]}"
+            + (f" | etiketler: {labels}" if labels else "")
+        )
+
+    def reference(self) -> SourceReference:
+        return SourceReference(
+            document_id=self.document_id,
+            page_number=self.page_number,
+            chunk_id=None,
+            quote=self.summary[:160],
+            title=self.title,
+        )
 
 
 class GenerationError(RuntimeError):
@@ -128,6 +161,46 @@ class QuestionGenerator:
         random.Random(",".join(config.topic_ids)).shuffle(structure_ids)
         return self._anatomy.facts_for_prompt(structure_ids, limit=3, max_chars=3500)
 
+    def _figures(self, config: ExamConfig) -> list[FigureRef]:
+        """Analysed figure pages the paper may ask about.
+
+        The selected documents come first; with none selected, the ready
+        documents of the paper's subject are used, so "görselli sorular" on
+        a bare subject still reaches the student's own material.
+        """
+        if not config.include_images:
+            return []
+        document_ids = list(config.document_ids[:6])
+        if not document_ids:
+            subject = config.subjects[0] if config.subjects else None
+            document_ids = [
+                document.document_id
+                for document in self._store.list_documents()
+                if document.status == "ready" and (subject is None or document.subject in (None, subject))
+            ][:6]
+        figures: list[FigureRef] = []
+        for document_id in document_ids:
+            document = self._store.get_document(document_id)
+            if document is None:
+                continue
+            pages = self._store.get_pages(document_id, page_from=config.page_from, page_to=config.page_to)
+            for page in pages:
+                if page.visual_status != "done" or not page.visual_summary.strip():
+                    continue
+                figures.append(
+                    FigureRef(
+                        index=len(figures) + 1,
+                        document_id=document_id,
+                        page_number=page.page_number,
+                        title=document.title,
+                        summary=" ".join(page.visual_summary.split()),
+                        labels=list(page.visual_labels),
+                    )
+                )
+                if len(figures) >= MAX_FIGURES:
+                    return figures
+        return figures
+
     def _concept_hints(self, config: ExamConfig) -> list[str]:
         hints: list[str] = []
         for topic_id in config.topic_ids:
@@ -170,7 +243,12 @@ class QuestionGenerator:
             if profile is not None:
                 directive = StyleProfiler.directive(profile)
         avoid = self._avoid(config)
-        references = [block.reference for block in blocks]
+        figures = self._figures(config)
+        # Figure pages are cited like excerpts, after them, so a figure question
+        # resolves its source through the same index-and-page cross-check.
+        references = [block.reference for block in blocks] + [figure.reference() for figure in figures]
+        figure_offset = len(blocks)
+        figure_wanted = min(len(figures), max(1, int(config.question_count) // 3)) if figures else 0
         accepted: list[Question] = []
         notes: list[str] = []
         needed = max(1, int(config.question_count))
@@ -194,6 +272,8 @@ class QuestionGenerator:
                 concept_hints=hints,
                 curated_facts=curated,
                 weak_concepts=weak,
+                figures=[figure.prompt_line() for figure in figures],
+                figure_questions=figure_wanted,
             )
             try:
                 data = await self._model.structured("question_generation", prompt, QUESTIONS_SCHEMA, system_prompt=PIPELINE_SYSTEM)
@@ -207,7 +287,12 @@ class QuestionGenerator:
                     break
                 # What the model claims about its source; build_question keeps the claim
                 # only when the excerpt it names is one of the excerpts we sent.
-                claims_lecture = bool(evidence_text and (raw.get("source_index") or raw.get("source_page")))
+                figure = self._figure_for(raw, figures)
+                if figure is not None:
+                    # A figure question is anchored to its page whatever the model
+                    # said about excerpts: the page is the source.
+                    raw = {**raw, "source_index": figure_offset + figure.index, "source_page": figure.page_number}
+                claims_lecture = bool((evidence_text or figures) and (raw.get("source_index") or raw.get("source_page")))
                 question = build_question(
                     raw,
                     subject=subject,
@@ -229,7 +314,15 @@ class QuestionGenerator:
                 if similar:
                     rejected_reasons["too_similar"] = rejected_reasons.get("too_similar", 0) + 1
                     continue
+                if figure is not None:
+                    question.image_ref = f"{figure.document_id}|{figure.page_number}"
+                    question.metadata["figure_title"] = figure.title
+                    question.metadata["figure_caption"] = f"{figure.title} · s. {figure.page_number}"
                 question.concept_ids = self._concept_ids_for(question, topic_id)
+                if question.topic_id is None:
+                    # A subject-only paper still needs a topic per item, or the
+                    # results screen cannot say which topic the gaps are in.
+                    question.topic_id = self._topic_for(question.concept_ids)
                 shuffle_options(question, seed=question.question_id)
                 accepted.append(question)
         if rejected_reasons:
@@ -245,6 +338,24 @@ class QuestionGenerator:
             notes.append(f"{needed} sorudan {len(accepted)} tanesi kalite süzgecinden geçti.")
         self._store.save_questions(accepted)
         return accepted, notes
+
+    @staticmethod
+    def _figure_for(raw: dict[str, Any], figures: list[FigureRef]) -> FigureRef | None:
+        """The figure the model says it used, only if that figure was offered."""
+        try:
+            index = int(raw.get("figure_index") or 0)
+        except (TypeError, ValueError):
+            return None
+        if index <= 0 or index > len(figures):
+            return None
+        return figures[index - 1]
+
+    def _topic_for(self, concept_ids: list[str]) -> str | None:
+        for concept_id in concept_ids:
+            concept = self._concepts.get(concept_id)
+            if concept is not None and concept.topic_id and self._curriculum.exists(concept.topic_id):
+                return concept.topic_id
+        return None
 
     def _concept_ids_for(self, question: Question, topic_id: str | None) -> list[str]:
         name = str(question.metadata.get("concept_name") or "")

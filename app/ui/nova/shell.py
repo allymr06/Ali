@@ -35,6 +35,7 @@ import importlib.metadata
 import json
 import os
 import platform
+import re as _re
 import shutil
 import sys
 import threading
@@ -352,6 +353,20 @@ def detect_webview2_runtime() -> str | None:
         return _registry_webview2_version()
     except Exception:
         return None
+
+
+def _plain_text(text: str) -> str:
+    """Chat Markdown as the notification centre shows it: plain.
+
+    A quiz question is written for the chat, where ``**Soru 1**`` renders
+    bold; the notification list renders text as it is, so the markers
+    come off here rather than showing as literal asterisks.
+    """
+    plain = _re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    plain = _re.sub(r"__(.+?)__", r"\1", plain)
+    plain = _re.sub(r"`(.+?)`", r"\1", plain)
+    plain = _re.sub(r"^#{1,6}\s*", "", plain, flags=_re.MULTILINE)
+    return plain.strip()
 
 
 def _jsonable(value: Any) -> Any:
@@ -1069,7 +1084,7 @@ class NovaBridge:
             return
         title, template = entry
         try:
-            body = template.format(**{key: payload.get(key, "") for key in ("title", "findings", "count", "percent", "question", "message")})
+            body = _plain_text(template.format(**{key: payload.get(key, "") for key in ("title", "findings", "count", "percent", "question", "message")}))
         except (KeyError, IndexError):
             body = str(payload.get("title", ""))
         self._publish(

@@ -390,6 +390,12 @@ class MedicalTutor:
                 suppress_memory=True,
                 metadata=metadata,
             )
+        if not context.spoken:
+            # Typed at the keyboard, a quiz is a paper on the exam screen: options
+            # to mark, a finish button, then the wrong answers explained. The
+            # letter-by-letter chat quiz stays for the voice loop, where there is
+            # no screen to mark on.
+            return self._open_paper(command, context, session, metadata)
         count = min(CHAT_QUIZ_MAX, command.question_count or min(session.question_count, 5))
         config = self._config_from(command, context, count=count, interactive=True)
         questions, notes = self._bank_questions(config)
@@ -405,6 +411,43 @@ class MedicalTutor:
             text="Soruları hazırlıyorum; birkaç saniye sürebilir. Hazır olunca ilk soruyu bildirim merkezine bırakırım, sohbette harfle cevaplayabilirsin.",
             metadata=metadata,
         )
+
+    def _open_paper(self, command: StudyCommand, context: StudyContext, session: StudySession, metadata: dict[str, Any]) -> RequestAugmentation:
+        """A short interactive paper on the exam screen, answers at the end."""
+        count = min(CHAT_QUIZ_MAX, command.question_count or min(session.question_count, 5))
+        config = self._config_from(command, context, count=count, interactive=False)
+        config.immediate_feedback = False
+        config.answers_at_end = True
+        config.include_images = True
+        questions, notes = self._bank_questions(config)
+        if not self._bank_is_enough(questions, config):
+            if not self._model_available():
+                raise self._no_questions_error()
+            return self._prepare_later(
+                "exam",
+                lambda: self._prepare_exam(config, open_runner=True),
+                label="Sınav hazırlığı",
+                text="Soruları hazırlıyorum; birkaç saniye sürebilir. Hazır olunca Tıp Akademisi › Sınav ekranında açacağım: şıkları işaretle, “Sınavı bitir” deyince doğrularını, yanlışlarını ve eksik konularını göstereceğim.",
+                metadata=metadata,
+            )
+        exam = self._publish_exam(config, questions, notes, open_runner=True)
+        text = (
+            f"Sınav hazır: **{exam.title}** — Tıp Akademisi › Sınav ekranında açtım. "
+            "Şıkları işaretle; “Sınavı bitir” deyince doğrularını, yanlışlarını, eksik konularını ve yanlışların açıklamasını göstereceğim."
+        )
+        return RequestAugmentation(direct_response=text, kind="medical", suppress_memory=True, metadata={**metadata, "exam_id": exam.exam_id, "exam": "opened"})
+
+    def _publish_exam(self, config: ExamConfig, questions: list[Question], notes: list[str], *, open_runner: bool = False) -> Exam:
+        """Store the paper, make it the session's active exam and announce it."""
+        exam = self._exams.build(config, questions, notes=notes)
+        session = self._sessions.get()
+        session.active_exam_id = exam.exam_id
+        self._sessions.save(session)
+        event = {"kind": "exam_ready", "exam_id": exam.exam_id, "title": exam.title, "count": len(exam.question_ids)}
+        if open_runner:
+            event["open"] = True
+        self._emit(event)
+        return exam
 
     def _begin_quiz(self, config: ExamConfig, questions: list[Question], notes: list[str]) -> tuple[Exam, str]:
         """Store the paper, put the chat quiz into its started state and return
@@ -473,16 +516,12 @@ class MedicalTutor:
         exam, text = self._begin_quiz(config, questions, notes)
         self._emit({"kind": "quiz_ready", "exam_id": exam.exam_id, "title": exam.title, "count": len(exam.question_ids), "question": text})
 
-    async def _prepare_exam(self, config: ExamConfig) -> None:
+    async def _prepare_exam(self, config: ExamConfig, *, open_runner: bool = False) -> None:
         try:
             questions, notes = await self._model_questions(config)
         finally:
             self._preparing.discard("exam")
-        exam = self._exams.build(config, questions, notes=notes)
-        session = self._sessions.get()
-        session.active_exam_id = exam.exam_id
-        self._sessions.save(session)
-        self._emit({"kind": "exam_ready", "exam_id": exam.exam_id, "title": exam.title, "count": len(exam.question_ids)})
+        self._publish_exam(config, questions, notes, open_runner=open_runner)
 
     def _start_oral(self, command: StudyCommand, context: StudyContext, session: StudySession, metadata: dict[str, Any]) -> RequestAugmentation:
         self._sessions.start_chat_quiz([], mode="oral")
@@ -655,16 +694,12 @@ class MedicalTutor:
                 raise self._no_questions_error()
             return self._prepare_later(
                 "exam",
-                lambda: self._prepare_exam(config),
+                lambda: self._prepare_exam(config, open_runner=not context.spoken),
                 label="Sınav hazırlığı",
-                text="Sınavı hazırlıyorum; birkaç saniye sürebilir. Hazır olunca bildirim merkezine düşer, Tıp Akademisi › Sınav ekranından başlatabilirsin.",
+                text="Sınavı hazırlıyorum; birkaç saniye sürebilir. Hazır olunca Tıp Akademisi › Sınav ekranında açacağım ve bildirim merkezine düşecek.",
                 metadata=metadata,
             )
-        exam = self._exams.build(config, questions, notes=notes)
-        session = self._sessions.get()
-        session.active_exam_id = exam.exam_id
-        self._sessions.save(session)
-        self._emit({"kind": "exam_ready", "exam_id": exam.exam_id, "title": exam.title, "count": len(exam.question_ids)})
+        exam = self._publish_exam(config, questions, notes, open_runner=not context.spoken)
         lines = [f"Sınav hazır: **{exam.title}** — {len(exam.question_ids)} soru, {config.option_count} şık, zorluk {config.difficulty}/5."]
         if config.professor_id:
             profile = self._store.get_professor(config.professor_id)
@@ -674,7 +709,7 @@ class MedicalTutor:
             lines.append("Cevaplar sınav bitince gösterilecek.")
         for note in notes[:3]:
             lines.append(f"Not: {note}")
-        lines.append("Tıp Akademisi › Sınav ekranında başlatabilirsin; “beni sına” dersen sohbette tek tek sorarım.")
+        lines.append("Tıp Akademisi › Sınav ekranında açtım; şıkları işaretleyip “Sınavı bitir” deyince sonuçları ve yanlışlarının açıklamasını göstereceğim.")
         return RequestAugmentation(direct_response="\n".join(lines), kind="medical", suppress_memory=True, metadata={**metadata, "exam_id": exam.exam_id})
 
     # ------------------------------------------------------------------

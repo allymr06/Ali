@@ -521,3 +521,58 @@ def test_voice_silence_settings_are_labelled_for_the_settings_screen() -> None:
         assert field in shell.RUNTIME_SETTING_FIELDS
         assert field in labels and field in groups
     assert "Konuşma sonu sessizliği" in labels
+
+
+# ---------------------------------------------------------------------------
+# the paper: figures and the review order, executed rather than grepped
+# ---------------------------------------------------------------------------
+
+
+PAPER_SCENARIO = """
+(() => {
+  const figure = Medical.figureMarkup({figure: {document_id: "d1", page_number: 7, title: "Slaytlar", caption: "Slaytlar · s. 7"}});
+  const none = Medical.figureMarkup({figure: null}) + Medical.figureMarkup({});
+  const questions = [
+    {question_id: "a", stem: "Dogru cevaplanan", options: [{key: "A", text: "x"}, {key: "B", text: "y"}], correct_key: "A", answer: "A", correct: true, difficulty: 3},
+    {question_id: "b", stem: "Bos birakilan", options: [{key: "A", text: "x"}, {key: "B", text: "y"}], correct_key: "A", answer: null, correct: null, difficulty: 3},
+    {question_id: "c", stem: "Yanlis cevaplanan", options: [{key: "A", text: "x", explanation: "neden dogru"}, {key: "B", text: "y", explanation: "neden yanlis"}], correct_key: "A", answer: "B", correct: false, difficulty: 3, explanation: "Aciklama satiri"},
+  ];
+  const review = Medical.reviewSection(questions);
+  return JSON.stringify({figure, none, review});
+})()
+"""
+
+
+def test_a_figure_question_renders_its_lecture_page_and_nothing_without_one() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+
+    result = json.loads(context.eval(PAPER_SCENARIO))
+
+    # The page key the loader fetches, and the caption naming the source.
+    assert 'data-figure="d1|7"' in result["figure"]
+    assert "Slaytlar · s. 7" in result["figure"]
+    assert "Şekil yükleniyor" in result["figure"]
+    assert result["none"] == "", "a question without a figure draws no figure block"
+
+
+def test_the_review_puts_the_wrong_answers_first_with_their_explanation() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+
+    review = json.loads(context.eval(PAPER_SCENARIO))["review"]
+
+    wrong = review.index("Yanlışların")
+    blank = review.index("Boş bıraktıkların")
+    right = review.index("Doğruların")
+    assert wrong < blank < right
+    # The wrong item sits in the first block, the correct one in the last.
+    assert wrong < review.index("Yanlis cevaplanan") < blank
+    assert right < review.index("Dogru cevaplanan")
+    # The wrong answer is explained: the correct option is ticked, the chosen one crossed.
+    assert "✓ A) x" in review and "✗ B) y" in review
+    assert "neden yanlis" in review and "Aciklama satiri" in review

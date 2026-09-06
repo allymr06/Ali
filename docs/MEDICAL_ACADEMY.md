@@ -144,6 +144,38 @@ when they do not, or when the index names an excerpt that was never sent, the
 question is stored with no citation and its origin falls back to *üretilmiş*. A
 missing citation is honest where a chip that opens the wrong page is not.
 
+**Which pages are figures.** The vision pass reads a bounded number of pages
+per document (`JARVIS_MEDICAL_VISION_PAGES_PER_DOCUMENT`): pictured pages first
+— an embedded image covering enough of the page, or an image on a text-poor page
+— then drawn diagrams, which a slide exported from a drawing tool carries as
+paths rather than pixels (labelled bone outlines, pathway arrows): enough path
+objects with little text. A text page with a few rules is not a figure. The
+same rule decides which pages "görselli sorular" may draw on.
+
+**Figure questions.** With "görselli sorular" on (the exam form's default, and
+always on for a chat-started paper), the generator offers the model the lecture
+pages the vision pass has described — the description and its labels are the
+only facts a figure question may ask about — and a question that names one of
+those figures is anchored to that page: the runner and the results show the
+rendered page beside the stem, captioned with the document and page. JARVIS
+never draws anatomy of its own: a figure is always one of the student's pages,
+and a figure index the model invents yields a question with no figure.
+
+**The paper, not the chat.** A typed "beni sına" builds a short paper with the
+answers at the end and opens it on the exam screen (`exam_ready` with `open`):
+options to mark, a finish button, and then the results with the wrong answers
+first — each with the correct option and its explanation — the blanks, the
+correct ones, and the breakdown by topic, difficulty and subject. The
+letter-by-letter chat quiz remains for the voice loop, where there is no screen
+to mark on. When nothing was answered wrongly the suggestion names the blanks
+rather than a "weakest topic" no wrong answer supports.
+
+**Over the wire.** Gemini's OpenAI-compatible endpoint refuses a JSON schema
+carrying nested `minItems`/`maxItems` with 400 INVALID_ARGUMENT (measured live),
+so `MedicalModelClient` sends `wire_schema()` — structure, types, enums and
+required only — and enforces every bound locally through `validate` and
+`coerce_strings`; the full schema is still printed in the prompt.
+
 A "sadece yanlış yaptıklarım" paper is built from the missed questions and
 nothing else (`from_bank(..., only_wrong=True)`): if fewer were missed than
 were asked for, the paper is shorter and the note states the number found.

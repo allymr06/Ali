@@ -854,7 +854,9 @@ class MedicalAcademy:
         session.active_exam_id = exam.exam_id
         self.sessions.save(session)
         self._record("exam.generated", "Exam generated.", exam_id=exam.exam_id, questions=len(questions))
-        self._emit({"kind": "exam_ready", "exam_id": exam.exam_id, "title": exam.title, "count": len(exam.question_ids)})
+        # "open" asks the page to put the paper in front of the student: they
+        # asked for it from the exam screen and the form is not the paper.
+        self._emit({"kind": "exam_ready", "exam_id": exam.exam_id, "title": exam.title, "count": len(exam.question_ids), "open": True})
         return self.exam(exam.exam_id) or {}
 
     def exam_summary(self, exam: Any) -> dict[str, Any]:

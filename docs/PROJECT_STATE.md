@@ -50,8 +50,53 @@ Last verified: 6 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2225 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 2237 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Black stage, free turn and the neurocranium (7 September 2026)
+
+Three requests from the student, in one sitting. The lab's viewport is now
+black in both themes, and the tissues are matte and saturated in the atlas
+convention (bone ivory, cartilage cyan, muscle red-brown, arteries red, veins
+blue, nerves yellow; a page test keeps every pair apart in RGB). The shader
+lost its rim light and has no specular term; detail comes from a low ambient
+floor and a grazing-angle darkening instead of a highlight. The model turns
+about the viewer's own axes with no clamp (a rotation matrix accumulated by
+the mouse, the keys and the pad, re-orthonormalised after each step) and
+pans along the screen's axes.
+
+While verifying the turn with a real drag, the reason the mouse had never
+worked came out: the schematic map is an SVG, an SVG has no `hidden`
+property, and `schematic.hidden = true` had hidden nothing — the transparent
+map lay over the canvas and took every drag, click and wheel. The lab hides
+it by attribute now; a page test forbids the property form, and the drag was
+verified in a real Chromium with a real pointer.
+
+The neurocranium has a section of its own: a region card written as a study
+guide (calvaria and base, sutures and craniometric points, clinical
+high-yield, how to study it) with two curated tables — the three cranial
+fossae and a foramen-by-foramen list of what passes through — plus six bone
+cards with eight to fifteen landmarks each, a curriculum topic
+(`anatomy.musculoskeletal.skull`), and a second importer scene that draws
+the eight bones from BodyParts3D, colours them one by one, hides them one by
+one so the vault can be lifted off the base, and opens on the card. Pins are
+derived by rule and marked approximate; a foramen gets no pin.
+
+**Coverage audit** (asked for after the skull: "if the skull was missing,
+other things may be"). Of the 28 anatomy leaf topics, the ones without a
+structure card are the general topics served by the term glossary (planes,
+movements, bone terms, bone structure, ossification, joint types, muscles and
+fasciae) and two real gaps: the abdominal wall (no muscle cards) and the new
+viscerocranium topic. By region and kind, the head and neck have skull bones
+and one muscle but no cranial nerves, vessels or joints (temporomandibular,
+atlanto-occipital); the trunk has two bones and four muscles, no vertebral
+column cards beyond them, no joints, no vessels; the lower limb has bones,
+joints, muscles and nerves but no vessels; the upper limb is the only region
+with vessels. The other six subjects have 9–13 leaf topics each and no
+structure cards by design. In priority order for a first year: the
+viscerocranium bones (mandibula, maxilla, os zygomaticum), the cranial
+nerves as nerve cards, the vertebral column and thoracic cage, the abdominal
+wall muscles, then lower-limb vessels.
 
 ## Anatomy Lab in 3D (7 September 2026)
 

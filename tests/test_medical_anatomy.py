@@ -885,3 +885,116 @@ def test_reimporting_keeps_a_confirmed_pin_over_a_derived_one(tmp_path) -> None:
     assert humerus["landmarks"]["caput_humeri"] == [9, 9, 9], "the hand-placed pin outranks the derived one"
     assert humerus["landmarks"]["epicondylus_medialis"]["anchor"] != [0, 0, 0], "the derived pin was recomputed"
     assert humerus["up_axis"] == "z"
+
+
+def test_the_neurocranium_card_explains_the_fossae_and_their_foramina() -> None:
+    """The hardest region gets a card of its own: the three cranial fossae with
+    their bones, contents and foramina, a foramen table that names what passes
+    through, sutures, and how to study it — all curated, none generated."""
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=None)
+    card = lab.describe("neurocranium")
+    assert card is not None and card["kind"] == "region" and card["region"] == "head_neck"
+    labels = [section["label"] for section in card["sections"]]
+    assert "Sütürler ve kraniyometrik noktalar" in labels and "Nasıl çalışılır" in labels
+    fossae = next(table for table in card["tables"] if "fossae" in table["title"].lower())
+    assert [row[0] for row in fossae["rows"]] == ["Fossa cranii anterior", "Fossa cranii media", "Fossa cranii posterior"]
+    assert all(len(row) == len(fossae["columns"]) for row in fossae["rows"])
+    foramina = next(table for table in card["tables"] if "delik" in table["title"].lower())
+    by_name = {row[0]: row for row in foramina["rows"]}
+    assert "V2" in by_name["Foramen rotundum"][2]
+    assert "meningea media" in by_name["Foramen spinosum"][2]
+    assert all(nerve in by_name["Foramen jugulare"][2] for nerve in ("IX", "X", "XI"))
+    assert "hypoglossus" in by_name["Canalis nervi hypoglossi"][2]
+    assert "Medulla oblongata" in by_name["Foramen magnum"][2]
+    assert "CN II" in by_name["Canalis opticus"][2] or "opticus" in by_name["Canalis opticus"][2]
+    # The topic is real: the breadcrumb resolves through the curriculum.
+    assert "kafatas" in card["topic_path"].lower() or "nörokranyum" in card["topic_path"].lower()
+    bones = {"os_frontale", "os_parietale", "os_temporale", "os_occipitale", "os_sphenoidale", "os_ethmoidale"}
+    assert {relation["structure_id"] for relation in card["relations"] if relation["relation"] == "contains"} == bones
+    for bone_id in bones:
+        bone = lab.describe(bone_id)
+        assert bone["kind"] == "bone" and bone["region"] == "head_neck" and len(bone["landmarks"]) >= 8, bone_id
+        assert "Yüksek verim" in [section["label"] for section in bone["sections"]], bone_id
+        assert bone["tables"] == []
+    kinds = {kind["kind"]: kind for region in lab.hierarchy() if region["region"] == "head_neck" for kind in region["kinds"]}
+    assert "neurocranium" in {item["structure_id"] for item in kinds["region"]["structures"]}
+    assert bones <= {item["structure_id"] for item in kinds["bone"]["structures"]}
+
+
+def test_tables_keep_one_shape_and_drop_what_does_not_fit() -> None:
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.models import AnatomyStructure
+
+    structure = AnatomyStructure(
+        structure_id="x", canonical="X", kind="region", region="trunk", turkish="x", english="x",
+        facts={"tables": [
+            {"title": "T", "columns": ["a", "b"], "rows": [["1", "2", "3"], ["only"], "not a row", ["4", "5"]]},
+            {"title": "no columns", "columns": [], "rows": [["1"]]},
+            {"title": "no rows", "columns": ["a"], "rows": []},
+            "not a table",
+        ]},
+    )
+    assert AnatomyLab.tables(structure) == [{"title": "T", "columns": ["a", "b"], "rows": [["1", "2"], ["only", ""], ["4", "5"]]}]
+
+
+def test_every_scene_mapping_names_structures_the_data_knows() -> None:
+    from scripts.import_bodyparts3d import NEUROCRANIUM, SCENES
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    known = {structure.structure_id for structure in structures}
+    assert set(SCENES) == {"upper_limb_right", "neurocranium"}
+    for scene_id, scene in SCENES.items():
+        mapping = scene["mapping"]
+        assert set(scene["structure_ids"]) == set(mapping), scene_id
+        unknown = [structure_id for structure_id in mapping if structure_id not in known]
+        assert unknown == [], f"{scene_id}: a mesh mapped to no card would draw a structure the lab cannot explain: {unknown}"
+        for concepts in mapping.values():
+            for fma, name, files in concepts:
+                assert fma.startswith("FMA") and name and files, (fma, name, files)
+        assert not scene["card"] or scene["card"] in known, scene_id
+        assert set(scene["palette"]) <= set(mapping), scene_id
+    assert SCENES["neurocranium"]["card"] == "neurocranium" and set(NEUROCRANIUM) == set(SCENES["neurocranium"]["palette"])
+    # Paired bones are one card and one mesh each: both sides' element files.
+    assert len(NEUROCRANIUM["os_parietale"]) == 2 and len(NEUROCRANIUM["os_temporale"]) == 2
+
+
+def test_skull_rules_put_the_foramen_magnum_low_and_the_crista_galli_high() -> None:
+    from scripts.import_bodyparts3d import derive_landmarks
+
+    occipital = derive_landmarks("os_occipitale", box_positions(x=(-40.0, 40.0), y=(-30.0, 50.0), z=(0.0, 60.0)))
+    assert occipital["foramen_magnum"]["confidence"] == "approximate"
+    assert occipital["foramen_magnum"]["anchor"][2] < 10 and abs(occipital["foramen_magnum"]["anchor"][0]) < 1e-6
+    assert occipital["protuberantia_occipitalis_externa"]["anchor"][1] > 45  # the most posterior point
+    assert occipital["condylus_occipitalis"]["anchor"][0] <= -19  # the body's right side lies at -x
+    ethmoid = derive_landmarks("os_ethmoidale", box_positions(x=(-20.0, 20.0), y=(-30.0, 10.0), z=(0.0, 40.0)))
+    assert ethmoid["crista_galli"]["anchor"][2] > 36 and abs(ethmoid["crista_galli"]["anchor"][0]) < 1e-6
+    assert ethmoid["lamina_orbitalis"]["anchor"][0] < -18
+    # A foramen is a hole: no rule, no pin, never a made-up point.
+    assert "canalis_nervi_hypoglossi" not in occipital and "foramina_cribrosa" not in ethmoid
+
+
+def test_a_scene_carries_its_card_palette_and_note(tmp_path) -> None:
+    from app.medical.anatomy import AnatomyAssetRegistry
+
+    directory = tmp_path / "assets"
+    write_scene_manifest(
+        directory,
+        [licensed("os_frontale"), licensed("os_occipitale")],
+        [{
+            "scene_id": "skull", "title": "Kafa", "region": "head_neck", "structure_ids": ["os_frontale", "os_occipitale"],
+            "card": "neurocranium", "note": "iki taraf",
+            "palette": {"os_frontale": [0.9, 0.8, 0.3], "os_occipitale": ["bad", 0, 0], "femur": [1, 1, 1], "os_frontale_x": [2, 2, 2]},
+        }],
+    )
+    for name in ("os_frontale", "os_occipitale"):
+        (directory / f"{name}.obj").write_text(CUBE, encoding="utf-8")
+    scene = AnatomyAssetRegistry(directory).scenes()[0]
+    assert scene["card"] == "neurocranium" and scene["note"] == "iki taraf"
+    # A colour that is not three numbers, or names a structure outside the scene, is dropped.
+    assert scene["palette"] == {"os_frontale": [0.9, 0.8, 0.3]}

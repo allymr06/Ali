@@ -1538,17 +1538,20 @@ function promptDialog({ title, body, placeholder = "" }) {
    invented: no asset means no bone on screen.
    ════════════════════════════════════════════════════════════════════ */
 
-/* Colour per system, muted and stable in both themes: the point of the
-   scene is telling a vein from an artery from a nerve at a glance. */
+/* Colour per system on a black stage, the atlas convention with the
+   saturation turned up: bone ivory, cartilage cyan, muscle the red-brown of
+   meat, arteries pure red, veins blue, nerves yellow. Every pair sits well
+   apart in RGB (the page test holds them to it), and the shading below adds
+   no highlight that would wash a colour out. */
 const LAB_KIND_COLOURS = {
-  bone: [0.86, 0.83, 0.76],
-  joint: [0.70, 0.75, 0.80],
-  muscle: [0.70, 0.33, 0.30],
-  artery: [0.85, 0.24, 0.21],
-  vein: [0.29, 0.43, 0.78],
-  nerve: [0.92, 0.80, 0.34],
-  ligament: [0.78, 0.74, 0.60],
-  region: [0.60, 0.60, 0.60],
+  bone: [0.93, 0.89, 0.80],
+  joint: [0.40, 0.84, 0.90],
+  muscle: [0.76, 0.36, 0.30],
+  artery: [0.96, 0.12, 0.14],
+  vein: [0.22, 0.44, 0.96],
+  nerve: [1.00, 0.86, 0.22],
+  ligament: [0.72, 0.90, 0.55],
+  region: [0.58, 0.58, 0.62],
 };
 const LAB_KIND_LABELS = { bone: "Kemik", joint: "Eklem", muscle: "Kas", artery: "Arter", vein: "Ven", nerve: "Sinir", ligament: "Bağ" };
 const LAB_LAYER_ORDER = ["bone", "joint", "muscle", "artery", "vein", "nerve", "ligament"];
@@ -1568,7 +1571,7 @@ const Lab = {
   gl: null,
   program: null,
   buffers: null,
-  camera: { yaw: 0.6, pitch: 0.25, distance: 2.6, panX: 0, panY: 0 },
+  camera: { rotation: null, distance: 2.6, panX: 0, panY: 0 },
   dragging: null,
   frame: 0,
 
@@ -1595,7 +1598,7 @@ const Lab = {
   /* ── scenes: a region's licensed meshes as one view ─────────────── */
 
   kindOf(structureId) {
-    for (const region of this.hierarchy) {
+    for (const region of this.hierarchy || []) {
       for (const kind of region.kinds || []) {
         const hit = (kind.structures || []).find((item) => item.structure_id === structureId);
         if (hit) return { kind: kind.kind, canonical: hit.canonical, turkish: hit.turkish };
@@ -1608,7 +1611,14 @@ const Lab = {
     const scene = this.scenes.find((item) => item.scene_id === sceneId);
     if (!scene) return;
     const ids = scene.available || [];
-    this.scene = { scene_id: scene.scene_id, title: scene.title, items: [], total: ids.length, visible: new Set(LAB_LAYER_ORDER), bounds: null, attribution: "" };
+    // A scene with a palette is told apart structure by structure (a skull is
+    // all bone): its chips and its visibility set are per structure, not per kind.
+    const palette = scene.palette && Object.keys(scene.palette).length ? scene.palette : null;
+    this.scene = {
+      scene_id: scene.scene_id, title: scene.title, items: [], total: ids.length,
+      visible: new Set(palette ? ids : LAB_LAYER_ORDER), palette, card: scene.card || "", note: scene.note || "",
+      bounds: null, attribution: "",
+    };
     this.mesh = null;
     this.meshNotice = "";
     this.quiz = null;
@@ -1638,8 +1648,11 @@ const Lab = {
     // The camera is framed for the limb before anything is drawn, whichever
     // card ends up selected below.
     this.resetCamera();
-    if (!this.structure || !this.scene.items.some((item) => item.structure_id === this.structure.structure_id)) {
-      const first = this.scene.items.find((item) => item.kind === "bone") || this.scene.items[0];
+    const inScene = (structureId) => structureId && (this.scene.items.some((item) => item.structure_id === structureId) || structureId === this.scene.card);
+    if (!this.structure || !inScene(this.structure.structure_id)) {
+      // A scene with a card (the neurocranium's explanation) opens on it;
+      // otherwise on its first bone.
+      const first = this.scene.card ? { structure_id: this.scene.card } : (this.scene.items.find((item) => item.kind === "bone") || this.scene.items[0]);
       if (first) { await this.select(first.structure_id); return; }
     }
     this.renderLayers();
@@ -1654,12 +1667,26 @@ const Lab = {
     else this.draw();
   },
 
-  toggleLayer(kind) {
+  toggleLayer(key) {
     if (!this.scene) return;
-    if (this.scene.visible.has(kind)) this.scene.visible.delete(kind);
-    else this.scene.visible.add(kind);
+    if (this.scene.visible.has(key)) this.scene.visible.delete(key);
+    else this.scene.visible.add(key);
     this.renderLayers();
     this.draw();
+  },
+
+  /* Whether a scene item is drawn: by its kind, or by itself when the scene
+     colours structures one by one. */
+  itemVisible(item) {
+    if (!this.scene) return true;
+    return this.scene.palette ? this.scene.visible.has(item.structure_id) : this.scene.visible.has(item.kind);
+  },
+
+  /* The colour a scene item wears: the scene's own for that structure when
+     it has one, else the colour of its kind. */
+  itemColour(item) {
+    const own = this.scene && this.scene.palette ? this.scene.palette[item.structure_id] : null;
+    return own || LAB_KIND_COLOURS[item.kind] || [0.6, 0.6, 0.6];
   },
 
   renderLayers() {
@@ -1670,14 +1697,18 @@ const Lab = {
       .concat(this.scenes.map((scene) => `<button type="button" class="lab-layer ${this.scene && this.scene.scene_id === scene.scene_id ? "active" : ""}" data-scene="${esc(scene.scene_id)}">${esc(scene.title)}</button>`));
     const parts = [`<span class="lab-layer-group">${sceneChips.join("")}</span>`];
     if (this.scene) {
-      const present = new Set(this.scene.items.map((item) => item.kind));
-      const layers = LAB_LAYER_ORDER.filter((kind) => present.has(kind)).map((kind) => {
-        const colour = LAB_KIND_COLOURS[kind] || [0.6, 0.6, 0.6];
-        const css = `rgb(${colour.map((value) => Math.round(value * 255)).join(",")})`;
-        return `<button type="button" class="lab-layer ${this.scene.visible.has(kind) ? "active" : "off"}" data-layer="${kind}"><span class="lab-swatch" style="background:${css}"></span>${esc(LAB_KIND_LABELS[kind] || kind)}</button>`;
-      });
+      const css = (colour) => `rgb(${colour.map((value) => Math.round(value * 255)).join(",")})`;
+      let layers;
+      if (this.scene.palette) {
+        // One chip per structure, in its own colour: hide the vault, see the base.
+        layers = this.scene.items.map((item) => `<button type="button" class="lab-layer ${this.scene.visible.has(item.structure_id) ? "active" : "off"}" data-layer="${esc(item.structure_id)}"><span class="lab-swatch" style="background:${css(this.itemColour(item))}"></span>${esc(item.canonical)}</button>`);
+      } else {
+        const present = new Set(this.scene.items.map((item) => item.kind));
+        layers = LAB_LAYER_ORDER.filter((kind) => present.has(kind)).map((kind) =>
+          `<button type="button" class="lab-layer ${this.scene.visible.has(kind) ? "active" : "off"}" data-layer="${kind}"><span class="lab-swatch" style="background:${css(LAB_KIND_COLOURS[kind] || [0.6, 0.6, 0.6])}"></span>${esc(LAB_KIND_LABELS[kind] || kind)}</button>`);
+      }
       parts.push(`<span class="lab-layer-group">${layers.join("")}</span>`);
-      parts.push(`<span class="lab-layer-note">${this.scene.items.length} yapı · sağ taraf · tıkla: kart</span>`);
+      parts.push(`<span class="lab-layer-note">${this.scene.items.length} yapı · ${esc(this.scene.note || "sağ taraf")} · tıkla: kart</span>`);
     }
     host.innerHTML = parts.join("");
     $$("[data-scene]", host).forEach((node) => node.addEventListener("click", () => {
@@ -1724,8 +1755,9 @@ const Lab = {
     this.meshNotice = "";
     this.renderList($("#lab-search") ? $("#lab-search").value : "");
     this.renderInfo();
-    if (this.scene && this.scene.items.some((item) => item.structure_id === structureId)) {
-      // The region stays on screen; the chosen structure is lit within it.
+    if (this.scene && (this.scene.items.some((item) => item.structure_id === structureId) || structureId === this.scene.card)) {
+      // The region stays on screen; the chosen structure is lit within it
+      // (the scene's own card lights nothing and explains everything).
       this.renderLayers();
       this.draw();
       if (quiz) this.startQuiz();
@@ -1768,6 +1800,9 @@ const Lab = {
           <span class="ll-latin">${esc(landmark.latin)}</span><span class="ll-tr">${esc(landmark.turkish)}${landmark.note ? " · " + esc(landmark.note) : ""}</span></button>`).join("")}</div></div>` : ""}
       ${(structure.sections || []).map((section) => `<div class="lab-section"><span class="ls-title">${esc(section.label)}</span>
         <ul>${section.items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul></div>`).join("")}
+      ${(structure.tables || []).map((table) => `<div class="lab-section"><span class="ls-title">${esc(table.title)}</span>
+        <div class="lab-table-wrap"><table class="lab-table"><thead><tr>${table.columns.map((column) => `<th>${esc(column)}</th>`).join("")}</tr></thead>
+        <tbody>${table.rows.map((row) => `<tr>${row.map((cell, index) => index === 0 ? `<th scope="row">${esc(cell)}</th>` : `<td>${esc(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`).join("")}
       ${(structure.relations || []).length ? `<div class="lab-section"><span class="ls-title">İlişkiler</span>
         <div class="med-chips">${structure.relations.map((relation) => `<button type="button" class="chip" data-lab-go="${esc(relation.structure_id)}">${esc(relation.canonical)}</button>`).join("")}</div></div>` : ""}
       ${structure.source ? `<p class="settings-note">${esc(structure.source)}</p>` : ""}`;
@@ -1796,21 +1831,32 @@ const Lab = {
     else if (action === "down") camera.panY -= pan;
     else if (action === "in") camera.distance = clamp(camera.distance / 1.15, 0.8, 12);
     else if (action === "out") camera.distance = clamp(camera.distance * 1.15, 0.8, 12);
-    else if (action === "rotl") camera.yaw -= 0.15;
-    else if (action === "rotr") camera.yaw += 0.15;
-    else if (action === "rotu") camera.pitch = clamp(camera.pitch - 0.12, -1.45, 1.45);
-    else if (action === "rotd") camera.pitch = clamp(camera.pitch + 0.12, -1.45, 1.45);
+    else if (action === "rotl") this.turn(-0.15, 0);
+    else if (action === "rotr") this.turn(0.15, 0);
+    else if (action === "rotu") this.turn(0, -0.12);
+    else if (action === "rotd") this.turn(0, 0.12);
     else if (action === "reset") this.resetCamera();
     else return;
     if (this.mesh || this.scene) { this.drawMesh(); this.drawLabels(); }
+  },
+
+  /* Turn the model about the viewer's own axes: a horizontal pull spins it
+     about the screen's vertical axis, a vertical pull tips it about the
+     screen's horizontal axis, whichever way it already faces. Nothing is
+     clamped, so a bone can be looked at from below or upside down like one
+     held in the hand. The matrix is re-orthonormalised after every step so
+     a long session of small turns cannot shear the model. */
+  turn(aboutY, aboutX) {
+    const camera = this.camera;
+    camera.rotation = orthonormal3(mul3(mul3(rotX3(aboutX), rotY3(aboutY)), rotationOf(camera)));
   },
 
   resetCamera() {
     // A whole limb is long and thin: it sits closer than a single bone would,
     // and it opens facing the student the way an atlas plate does.
     this.camera = this.scene
-      ? { yaw: 0.35, pitch: 0.10, distance: 1.2, panX: 0, panY: 0 }
-      : { yaw: 0.6, pitch: 0.25, distance: 2.6, panX: 0, panY: 0 };
+      ? { rotation: rotationFromAngles(0.35, 0.10), distance: 1.2, panX: 0, panY: 0 }
+      : { rotation: rotationFromAngles(0.6, 0.25), distance: 2.6, panX: 0, panY: 0 };
   },
 
   /* ── drawing ───────────────────────────────────────────────────── */
@@ -1822,8 +1868,8 @@ const Lab = {
     if (!canvas || !schematic || !notice) return;
     const model = this.structure && this.structure.model;
     if (this.scene) {
-      canvas.hidden = false;
-      schematic.hidden = true;
+      setHidden(canvas, false);
+      setHidden(schematic, true);
       notice.hidden = false;
       const loading = this.scene.items.length < this.scene.total || !this.scene.bounds;
       notice.textContent = loading
@@ -1833,16 +1879,16 @@ const Lab = {
       return;
     }
     if (this.mesh) {
-      canvas.hidden = false;
-      schematic.hidden = true;
+      setHidden(canvas, false);
+      setHidden(schematic, true);
       notice.hidden = false;
       notice.textContent = `3B model: ${model.license || "lisans belirtilmemiş"} · ${model.source || ""}${model.attribution ? " · " + model.attribution : ""}`;
       this.drawMesh();
       this.drawLabels();
       return;
     }
-    canvas.hidden = true;
-    schematic.hidden = false;
+    setHidden(canvas, true);
+    setHidden(schematic, false);
     this.drawSchematic();
     notice.hidden = false;
     notice.textContent = this.meshNotice
@@ -1911,28 +1957,32 @@ const Lab = {
     const vertex = compile(gl.VERTEX_SHADER, `
       attribute vec3 aPosition; attribute vec3 aNormal;
       uniform mat4 uProjection; uniform mat4 uView; uniform mat4 uModel;
-      varying vec3 vNormal; varying vec3 vView;
+      varying vec3 vNormal;
       void main() {
-        vec4 world = uModel * vec4(aPosition, 1.0);
-        vec4 eye = uView * world;
-        vNormal = mat3(uModel) * aNormal;
-        vView = -eye.xyz;
+        vec4 eye = uView * uModel * vec4(aPosition, 1.0);
+        vNormal = mat3(uView) * mat3(uModel) * aNormal;
         gl_Position = uProjection * eye;
       }`);
+    // Matte shading with contrast: a key light and a fill fixed to the
+    // viewer, so the lit side does not wander as the model turns; no
+    // specular term and no rim, so nothing glares. Detail comes from two
+    // matte cues instead — a low ambient floor, so the grooves between muscle
+    // bellies and the ridges of a bone read as light against dark, and a
+    // grazing-angle darkening, so a surface turning away from the eye
+    // (the edge of a fibre bundle, the lip of a fossa) draws its own outline.
     const fragment = compile(gl.FRAGMENT_SHADER, `
       precision mediump float;
-      varying vec3 vNormal; varying vec3 vView;
-      uniform vec3 uColor; uniform vec3 uRim; uniform float uFlat;
+      varying vec3 vNormal;
+      uniform vec3 uColor; uniform float uFlat;
       void main() {
         if (uFlat > 0.5) { gl_FragColor = vec4(uColor, 1.0); return; }
         vec3 n = normalize(vNormal);
-        vec3 v = normalize(vView);
-        vec3 key = normalize(vec3(0.4, 0.8, 0.6));
-        float lambert = max(dot(n, key), 0.0);
-        float fill = max(dot(n, normalize(vec3(-0.5, -0.2, 0.4))), 0.0) * 0.25;
-        float rim = pow(1.0 - max(dot(n, v), 0.0), 2.5);
-        vec3 colour = uColor * (0.22 + 0.78 * lambert + fill) + uRim * rim * 0.9;
-        gl_FragColor = vec4(colour, 1.0);
+        float key = max(dot(n, normalize(vec3(-0.35, 0.55, 0.76))), 0.0);
+        float fill = max(dot(n, normalize(vec3(0.60, -0.25, 0.75))), 0.0);
+        float facing = max(n.z, 0.0);
+        float grazing = pow(1.0 - facing, 3.0);
+        float shade = (0.20 + 0.62 * key + 0.18 * fill) * (1.0 - 0.45 * grazing);
+        gl_FragColor = vec4(uColor * shade, 1.0);
       }`);
     if (!vertex || !fragment) return null;
     const program = gl.createProgram();
@@ -1950,7 +2000,6 @@ const Lab = {
       view: gl.getUniformLocation(program, "uView"),
       model: gl.getUniformLocation(program, "uModel"),
       colour: gl.getUniformLocation(program, "uColor"),
-      rim: gl.getUniformLocation(program, "uRim"),
       flat: gl.getUniformLocation(program, "uFlat"),
     };
     return gl;
@@ -2027,7 +2076,7 @@ const Lab = {
     canvas.width = Math.max(1, Math.round(rect.width * dpr));
     canvas.height = Math.max(1, Math.round(rect.height * dpr));
     gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.clearColor(0, 0, 0, 0);
+    gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.useProgram(this.program);
     const aspect = canvas.width / Math.max(1, canvas.height);
@@ -2037,10 +2086,10 @@ const Lab = {
     gl.uniformMatrix4fv(this.locations.projection, false, projection);
     gl.uniformMatrix4fv(this.locations.view, false, view);
     gl.uniformMatrix4fv(this.locations.model, false, model);
-    const light = document.body.classList.contains("light");
     gl.uniform1f(this.locations.flat, 0);
-    gl.uniform3fv(this.locations.colour, light ? [0.82, 0.80, 0.76] : [0.74, 0.72, 0.68]);
-    gl.uniform3fv(this.locations.rim, light ? [0.20, 0.45, 0.55] : [0.35, 0.72, 0.95]);
+    // A bone on its own wears the same colour it would in the scene.
+    const kind = this.structure ? this.kindOf(this.structure.structure_id).kind : "";
+    gl.uniform3fv(this.locations.colour, LAB_KIND_COLOURS[kind] || LAB_KIND_COLOURS.bone);
     this.drawBuffers(gl, this.buffers);
   },
 
@@ -2063,7 +2112,7 @@ const Lab = {
     canvas.width = Math.max(1, Math.round(rect.width * dpr));
     canvas.height = Math.max(1, Math.round(rect.height * dpr));
     gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.clearColor(0, 0, 0, 0);
+    gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.useProgram(this.program);
     const aspect = canvas.width / Math.max(1, canvas.height);
@@ -2071,11 +2120,9 @@ const Lab = {
     gl.uniformMatrix4fv(this.locations.view, false, lookAtView(this.camera));
     gl.uniformMatrix4fv(this.locations.model, false, identity());
     gl.uniform1f(this.locations.flat, flat ? 1 : 0);
-    const light = document.body.classList.contains("light");
-    gl.uniform3fv(this.locations.rim, light ? [0.20, 0.45, 0.55] : [0.35, 0.72, 0.95]);
     const selected = this.structure ? this.structure.structure_id : null;
     scene.items.forEach((item, index) => {
-      if (!scene.visible.has(item.kind)) return;
+      if (!this.itemVisible(item)) return;
       if (!item.buffers) item.buffers = this.buildBuffersFor(item.mesh, space);
       if (!item.buffers) return;
       if (flat) {
@@ -2083,8 +2130,9 @@ const Lab = {
         const id = index + 1;
         gl.uniform3fv(this.locations.colour, [(id & 255) / 255, ((id >> 8) & 255) / 255, ((id >> 16) & 255) / 255]);
       } else {
-        const base = LAB_KIND_COLOURS[item.kind] || [0.6, 0.6, 0.6];
-        const lit = item.structure_id === selected ? base.map((value) => Math.min(1, value * 1.25 + 0.12)) : base;
+        const base = this.itemColour(item);
+        // The chosen structure is lifted towards white, keeping its hue.
+        const lit = item.structure_id === selected ? base.map((value) => value + (1 - value) * 0.38) : base;
         gl.uniform3fv(this.locations.colour, lit);
       }
       this.drawBuffers(gl, item.buffers);
@@ -2441,8 +2489,7 @@ const Lab = {
         this.camera.panX += dx * 0.003 * this.camera.distance;
         this.camera.panY -= dy * 0.003 * this.camera.distance;
       } else {
-        this.camera.yaw += dx * 0.008;
-        this.camera.pitch = clamp(this.camera.pitch + dy * 0.008, -1.45, 1.45);
+        this.turn(dx * 0.008, dy * 0.008);
       }
       this.drawMesh();
       this.drawLabels();
@@ -2498,6 +2545,17 @@ function latinMatches(answer, latin) {
   return wanted.every((word) => given.has(word) || [...given].some((token) => token.length >= 5 && (word.startsWith(token) || token.startsWith(word))));
 }
 
+/* Hide or show a node by its attribute. An SVG element has no `hidden`
+   property: assigning one only creates an expando, the [hidden] rule never
+   applies, and the transparent relationship map kept lying over the canvas
+   and swallowing every pointer event — no drag, no click, no wheel ever
+   reached the model. The attribute is what CSS sees, so that is what is set. */
+function setHidden(node, flag) {
+  if (!node) return;
+  if (typeof node.toggleAttribute === "function") node.toggleAttribute("hidden", !!flag);
+  node.hidden = !!flag;
+}
+
 function meshSpace(mesh) {
   const bounds = (mesh && mesh.bounds) || { min: [-1, -1, -1], max: [1, 1, 1] };
   const centre = [0, 1, 2].map((axis) => (bounds.min[axis] + bounds.max[axis]) / 2);
@@ -2540,25 +2598,47 @@ function perspective(fov, aspect, near, far) {
   ]);
 }
 
+/* The eye sits on +z at `distance` looking down -z; the model's own turn
+   (the rotation the mouse and the pad accumulate) is folded into the view,
+   and the pan moves the picture along the screen's axes whatever way the
+   model faces. Vertices, normals and label anchors all go through this one
+   matrix. A camera written with yaw/pitch (older callers, the page tests)
+   is turned into the same rotation first. */
 function lookAtView(camera) {
-  const cp = Math.cos(camera.pitch), sp = Math.sin(camera.pitch);
-  const cy = Math.cos(camera.yaw), sy = Math.sin(camera.yaw);
-  const eye = [
-    camera.distance * cp * sy + camera.panX,
-    camera.distance * sp + camera.panY,
-    camera.distance * cp * cy,
-  ];
-  const target = [camera.panX, camera.panY, 0];
-  const forward = normalize([target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]]);
-  const right = normalize(cross(forward, [0, 1, 0]));
-  const up = cross(right, forward);
+  const r = rotationOf(camera);
   return new Float32Array([
-    right[0], up[0], -forward[0], 0,
-    right[1], up[1], -forward[1], 0,
-    right[2], up[2], -forward[2], 0,
-    -dot(right, eye), -dot(up, eye), dot(forward, eye), 1,
+    r[0], r[1], r[2], 0,
+    r[3], r[4], r[5], 0,
+    r[6], r[7], r[8], 0,
+    camera.panX || 0, camera.panY || 0, -camera.distance, 1,
   ]);
 }
+
+/* 3x3 rotations, column-major like the 4x4s: element [column * 3 + row]. */
+const IDENTITY3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+function rotX3(angle) { const c = Math.cos(angle), s = Math.sin(angle); return [1, 0, 0, 0, c, s, 0, -s, c]; }
+function rotY3(angle) { const c = Math.cos(angle), s = Math.sin(angle); return [c, 0, -s, 0, 1, 0, s, 0, c]; }
+function mul3(a, b) {
+  const out = new Array(9);
+  for (let col = 0; col < 3; col += 1) {
+    for (let row = 0; row < 3; row += 1) {
+      out[col * 3 + row] = a[row] * b[col * 3] + a[3 + row] * b[col * 3 + 1] + a[6 + row] * b[col * 3 + 2];
+    }
+  }
+  return out;
+}
+function orthonormal3(m) {
+  const x = normalize([m[0], m[1], m[2]]);
+  const yRaw = [m[3], m[4], m[5]];
+  const along = dot(x, yRaw);
+  const y = normalize([yRaw[0] - x[0] * along, yRaw[1] - x[1] * along, yRaw[2] - x[2] * along]);
+  const z = cross(x, y);
+  return [x[0], x[1], x[2], y[0], y[1], y[2], z[0], z[1], z[2]];
+}
+/* The orbit the old camera described: yaw about the world's vertical axis,
+   then pitch about the viewer's horizontal one. */
+function rotationFromAngles(yaw, pitch) { return mul3(rotX3(pitch || 0), rotY3(-(yaw || 0))); }
+function rotationOf(camera) { return (camera && camera.rotation) || rotationFromAngles(camera && camera.yaw, camera && camera.pitch) || IDENTITY3; }
 
 function project(point, view, projection, width, height) {
   const apply = (matrix, vector) => [0, 1, 2, 3].map((row) =>

@@ -3746,6 +3746,1012 @@
           "target": "humerus"
         }
       ]
+    },
+    {
+      "structure_id": "neurocranium",
+      "canonical": "Neurocranium",
+      "kind": "region",
+      "region": "head_neck",
+      "turkish": "Nörokranyum (beyin kutusu)",
+      "english": "Neurocranium (braincase)",
+      "synonyms": [
+        "norokranyum",
+        "beyin kutusu",
+        "braincase",
+        "neurocranium",
+        "kafa tabani",
+        "basis cranii",
+        "calvaria"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.neurocranium",
+      "facts": {
+        "location": "Beyni, beyin zarlarını ve beyin damarlarını saran kemik kutu. Üstte kubbe (calvaria), altta taban (basis cranii) olarak incelenir. Sekiz kemikten oluşur: os frontale, iki os parietale, os occipitale, iki os temporale, os sphenoidale ve os ethmoidale. Yüz iskeleti (viscerocranium) buna dahil değildir.",
+        "parts": [
+          "Calvaria (kubbe): os frontale'nin squama'sı, ossa parietalia ve os occipitale'nin squama'sı; sütürlerle birleşir, içte sulcus sinus sagittalis superioris ve a. meningea media olukları",
+          "Basis cranii interna (iç taban): basamak biçiminde üç çukur — fossa cranii anterior, media ve posterior; her biri arkadakinden daha yüksektedir",
+          "Basis cranii externa (dış taban): önde palatum durum, ortada processus pterygoidei ve foramen lacerum/ovale/spinosum, arkada foramen magnum, condyli occipitales, processus mastoideus ve styloideus"
+        ],
+        "sutures": [
+          "Sutura coronalis: os frontale ile ossa parietalia arasında",
+          "Sutura sagittalis: iki os parietale arasında, orta hatta",
+          "Sutura lambdoidea: ossa parietalia ile os occipitale arasında (sık ossa suturalia / Worm kemikleri)",
+          "Sutura squamosa: os temporale'nin pars squamosa'sı ile os parietale arasında",
+          "Bregma: sutura coronalis ile sagittalis'in kesişimi (ön fontanelin yeri, 18–24 ayda kapanır); Lambda: sagittalis ile lambdoidea'nın kesişimi (arka fontanel, 2–3 ayda kapanır)",
+          "Pterion: os frontale, os parietale, os temporale ve ala major ossis sphenoidalis'in buluştuğu H biçimli ince alan; altından a. meningea media'nın ön dalı geçer",
+          "Asterion: sutura lambdoidea, occipitomastoidea ve parietomastoidea'nın birleşimi; sinus transversus–sigmoideus geçişinin dıştaki izdüşümü"
+        ],
+        "articulations": [
+          "Articulatio atlantooccipitalis: condyli occipitales – atlas (evet hareketi: fleksiyon-ekstansiyon)",
+          "Articulatio temporomandibularis: fossa mandibularis ve tuberculum articulare – caput mandibulae",
+          "Synchondrosis sphenooccipitalis: clivus'ta, 18–25 yaş civarında kemikleşir (kafa tabanı büyümesinin son merkezi)"
+        ],
+        "high_yield": [
+          "Pterion kırığı → a. meningea media yaralanması → epidural hematom (klasik 'lucid interval')",
+          "Fossa cranii anterior kırığı → lamina cribrosa: BOS rinoresi, anosmi, periorbital ekimoz ('rakun gözü')",
+          "Fossa cranii media / pars petrosa kırığı → BOS otoresi, hemotympanum, n. facialis ve n. vestibulocochlearis zedelenmesi, Battle belirtisi (mastoid ekimozu)",
+          "Foramen magnum: medulla oblongata–medulla spinalis geçişi; kafa içi basınç artışında tonsilla cerebelli buradan herniye olur",
+          "Fissura orbitalis superior sendromu: CN III, IV, V1, VI birlikte etkilenir (oftalmopleji + alın-göz duyusu kaybı)",
+          "Foramen jugulare sendromu: CN IX, X, XI birlikte (yutma, ses ve omuz silkme kaybı)"
+        ],
+        "study_notes": [
+          "Önce üç fossa'yı sınırlarıyla öğren; sonra her fossa'nın deliklerini 'delik → kemik → içinden geçen' üçlüsüyle ezberle. Tablolar bu sırayla dizildi.",
+          "Kafa tabanını hem içten hem dıştan çalış: foramen ovale, spinosum ve lacerum iki yüzde de görünür; foramen jugulare ve canalis caroticus dıştan daha nettir.",
+          "Sfenoid kemiği tek başına eline al: corpus, ala minor, ala major ve processus pterygoideus. Fossa cranii media'nın deliklerinin neredeyse hepsi bu kemiktedir.",
+          "Kraniyal sinirleri numarayla eşle: I lamina cribrosa, II canalis opticus, III-IV-V1-VI fissura orbitalis superior, V2 rotundum, V3 ovale, VII-VIII meatus acusticus internus, IX-X-XI jugulare, XII canalis hypoglossi.",
+          "3B sahnede kemikleri tek tek kapat: kubbeyi kaldırınca tabanın üç basamağı, sfenoid ve etmoid ortaya çıkar. Pinler yaklaşık (≈) olduğundan atlasla karşılaştır."
+        ],
+        "tables": [
+          {
+            "title": "Kafa tabanı çukurları (fossae cranii)",
+            "columns": [
+              "Fossa",
+              "Oluşturan kemikler",
+              "Sınırlar",
+              "Barındırdığı yapılar",
+              "Delikleri ve geçenler"
+            ],
+            "rows": [
+              [
+                "Fossa cranii anterior",
+                "Os frontale (pars orbitalis), os ethmoidale (lamina cribrosa, crista galli), os sphenoidale (ala minor, jugum sphenoidale)",
+                "Arkada ala minor'un arka kenarı ve limbus sphenoidalis",
+                "Frontal loblar; bulbus olfactorius lamina cribrosa üzerinde; falx cerebri crista galli'ye tutunur",
+                "Foramina cribrosa: fila olfactoria (CN I) · Foramen caecum: küçük v. emissaria"
+              ],
+              [
+                "Fossa cranii media",
+                "Os sphenoidale (corpus, ala major), os temporale (pars squamosa, pars petrosa'nın ön yüzü)",
+                "Önde ala minor ve limbus sphenoidalis; arkada pars petrosa'nın üst kenarı ve dorsum sellae",
+                "Temporal loblar (yan bölümler); hypophysis sella turcica'da (orta bölüm); sinus cavernosus corpus'un iki yanında",
+                "Canalis opticus: CN II, a. ophthalmica · Fissura orbitalis superior: CN III, IV, V1, VI, v. ophthalmica superior · Foramen rotundum: V2 · Foramen ovale: V3, a. meningea accessoria, n. petrosus minor · Foramen spinosum: a. ve v. meningea media, r. meningeus V3 · Foramen lacerum: kıkırdakla kapalı, a. carotis interna üst açıklığından geçer"
+              ],
+              [
+                "Fossa cranii posterior",
+                "Os occipitale, os temporale (pars petrosa'nın arka yüzü, pars mastoidea), os sphenoidale (dorsum sellae, clivus'un üst bölümü), os parietale (angulus mastoideus)",
+                "Önde dorsum sellae ve pars petrosa'nın üst kenarı; üstte tentorium cerebelli ile fossa media'dan ayrılır",
+                "Cerebellum, pons, medulla oblongata; sinus transversus ve sigmoideus olukları",
+                "Foramen magnum: medulla oblongata, meninksler, aa. vertebrales, aa. spinales, radices spinales CN XI · Meatus acusticus internus: CN VII, VIII, a. labyrinthi · Foramen jugulare: CN IX, X, XI, sinus sigmoideus → v. jugularis interna, sinus petrosus inferior · Canalis nervi hypoglossi: CN XII · Canalis condylaris ve foramen mastoideum: vv. emissariae"
+              ]
+            ]
+          },
+          {
+            "title": "Delikler ve içinden geçenler",
+            "columns": [
+              "Delik",
+              "Kemik",
+              "Geçen yapılar"
+            ],
+            "rows": [
+              [
+                "Foramina cribrosa (lamina cribrosa)",
+                "Os ethmoidale",
+                "Fila olfactoria — n. olfactorius (CN I)"
+              ],
+              [
+                "Foramen caecum",
+                "Os frontale – os ethmoidale arası",
+                "Küçük v. emissaria (burun boşluğu ile sinus sagittalis superior arasında)"
+              ],
+              [
+                "Canalis opticus",
+                "Os sphenoidale (ala minor kökü)",
+                "N. opticus (CN II), a. ophthalmica"
+              ],
+              [
+                "Fissura orbitalis superior",
+                "Os sphenoidale (ala minor ile ala major arası)",
+                "N. oculomotorius (III), n. trochlearis (IV), n. ophthalmicus (V1) dalları (nn. lacrimalis, frontalis, nasociliaris), n. abducens (VI), v. ophthalmica superior, sempatik lifler"
+              ],
+              [
+                "Foramen rotundum",
+                "Os sphenoidale (ala major)",
+                "N. maxillaris (V2) → fossa pterygopalatina"
+              ],
+              [
+                "Foramen ovale",
+                "Os sphenoidale (ala major)",
+                "N. mandibularis (V3), a. meningea accessoria, n. petrosus minor, v. emissaria (plexus pterygoideus ile sinus cavernosus)"
+              ],
+              [
+                "Foramen spinosum",
+                "Os sphenoidale (ala major, spina'nın önünde)",
+                "A. meningea media, v. meningea media, r. meningeus n. mandibularis"
+              ],
+              [
+                "Foramen lacerum",
+                "Os sphenoidale – os temporale (apex partis petrosae) – os occipitale arası",
+                "Canlıda fibrokartilajla kapalıdır; a. carotis interna üst açıklığı üzerinden fossa media'ya geçer; n. petrosus major ile n. petrosus profundus burada n. canalis pterygoidei'yi oluşturur"
+              ],
+              [
+                "Canalis caroticus",
+                "Os temporale (pars petrosa, alt yüz)",
+                "A. carotis interna, plexus caroticus internus (sempatik)"
+              ],
+              [
+                "Meatus acusticus internus",
+                "Os temporale (pars petrosa, arka yüz)",
+                "N. facialis (VII), n. vestibulocochlearis (VIII), a. labyrinthi"
+              ],
+              [
+                "Foramen jugulare",
+                "Os temporale – os occipitale arası",
+                "N. glossopharyngeus (IX), n. vagus (X), n. accessorius (XI); sinus sigmoideus'un v. jugularis interna'ya dönüştüğü yer; sinus petrosus inferior"
+              ],
+              [
+                "Canalis nervi hypoglossi",
+                "Os occipitale (condylus'un üstünden geçer)",
+                "N. hypoglossus (XII)"
+              ],
+              [
+                "Foramen magnum",
+                "Os occipitale",
+                "Medulla oblongata – medulla spinalis geçişi, meninksler, aa. vertebrales, a. spinalis anterior ve aa. spinales posteriores, radices spinales n. accessorii (XI)"
+              ],
+              [
+                "Foramen stylomastoideum",
+                "Os temporale (processus styloideus ile mastoideus arası)",
+                "N. facialis (VII) kafatasını burada terk eder; a. stylomastoidea"
+              ],
+              [
+                "Canalis condylaris · foramen mastoideum · foramen parietale",
+                "Os occipitale · os temporale · os parietale",
+                "Vv. emissariae (kafa içi sinüsler ile dış venler arasındaki bağlantılar; enfeksiyon yolu)"
+              ]
+            ]
+          }
+        ]
+      },
+      "relations": [
+        {
+          "relation": "contains",
+          "target": "os_frontale"
+        },
+        {
+          "relation": "contains",
+          "target": "os_parietale"
+        },
+        {
+          "relation": "contains",
+          "target": "os_temporale"
+        },
+        {
+          "relation": "contains",
+          "target": "os_occipitale"
+        },
+        {
+          "relation": "contains",
+          "target": "os_sphenoidale"
+        },
+        {
+          "relation": "contains",
+          "target": "os_ethmoidale"
+        }
+      ]
+    },
+    {
+      "structure_id": "os_frontale",
+      "canonical": "Os frontale",
+      "kind": "bone",
+      "region": "head_neck",
+      "turkish": "Alın kemiği",
+      "english": "Frontal bone",
+      "synonyms": [
+        "alin kemigi",
+        "frontal bone",
+        "frontal kemik"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.neurocranium",
+      "landmarks": [
+        {
+          "landmark_id": "squama_frontalis",
+          "latin": "Squama frontalis",
+          "turkish": "Alnı oluşturan geniş, dikey bölüm; içinde sinus frontalis"
+        },
+        {
+          "landmark_id": "glabella",
+          "latin": "Glabella",
+          "turkish": "İki arcus superciliaris arasında orta hattaki düz çıkıntı"
+        },
+        {
+          "landmark_id": "arcus_superciliaris",
+          "latin": "Arcus superciliaris",
+          "turkish": "Kaş kemeri; orbita'nın üst kenarı üzerindeki kavisli kabartı"
+        },
+        {
+          "landmark_id": "tuber_frontale",
+          "latin": "Tuber frontale",
+          "turkish": "Alın tümseği; squama'nın ön yüzünde iki yanda"
+        },
+        {
+          "landmark_id": "margo_supraorbitalis",
+          "latin": "Margo supraorbitalis",
+          "turkish": "Orbita'nın üst kenarı; incisura/foramen supraorbitale'den n. ve a. supraorbitalis geçer"
+        },
+        {
+          "landmark_id": "processus_zygomaticus",
+          "latin": "Processus zygomaticus",
+          "turkish": "Os zygomaticum ile eklemleşen kalın lateral çıkıntı"
+        },
+        {
+          "landmark_id": "pars_orbitalis",
+          "latin": "Pars orbitalis",
+          "turkish": "Orbita tavanını ve fossa cranii anterior'un tabanını yapan yatay ince plak",
+          "note": "fossa cranii anterior"
+        },
+        {
+          "landmark_id": "pars_nasalis",
+          "latin": "Pars nasalis",
+          "turkish": "Ossa nasalia ve maxilla ile eklemleşen orta bölüm; spina nasalis"
+        },
+        {
+          "landmark_id": "crista_frontalis",
+          "latin": "Crista frontalis",
+          "turkish": "İç yüzde orta hatta falx cerebri'nin tutunduğu kabartı; üstünde sulcus sinus sagittalis superioris"
+        },
+        {
+          "landmark_id": "sinus_frontalis",
+          "latin": "Sinus frontalis",
+          "turkish": "Squama'nın içindeki paranazal hava boşluğu; meatus nasi medius'a açılır"
+        }
+      ],
+      "facts": {
+        "location": "Kafatasının ön bölümü: alnı, orbita tavanlarını ve fossa cranii anterior'un ön bölümünü yapar. Erişkinde tek kemiktir; iki yarıyı birleştiren sutura metopica çoğunlukla 6–8 yaşta kaybolur.",
+        "orientation": "Squama frontalis öne ve yukarı, pars orbitalis arkaya ve aşağı bakar; pars nasalis orta hatta öne çıkar.",
+        "parts": [
+          "Squama frontalis (alın bölümü)",
+          "Pars orbitalis (iki tane; orbita tavanı)",
+          "Pars nasalis (burun kökü; spina nasalis)"
+        ],
+        "surfaces": [
+          "Facies externa: tuber frontale, arcus superciliaris, glabella, linea temporalis",
+          "Facies interna: crista frontalis, sulcus sinus sagittalis superioris, foramen caecum, foveolae granulares",
+          "Facies orbitalis: fossa glandulae lacrimalis (lateral), fovea trochlearis (medial)"
+        ],
+        "borders": [
+          "Margo supraorbitalis: incisura/foramen supraorbitale",
+          "Margo parietalis: sutura coronalis",
+          "Margo nasalis ve incisura ethmoidalis (os ethmoidale'nin lamina cribrosa'sı buraya oturur)"
+        ],
+        "articulations": [
+          "Ossa parietalia (sutura coronalis)",
+          "Os sphenoidale (ala major ve ala minor)",
+          "Os ethmoidale (incisura ethmoidalis çevresi)",
+          "Ossa nasalia, maxillae, ossa zygomatica, ossa lacrimalia"
+        ],
+        "muscle_attachments": [
+          "M. temporalis (linea temporalis'in altında, fossa temporalis'in ön bölümü)",
+          "M. corrugator supercilii ve m. orbicularis oculi'nin pars orbitalis'i (arcus superciliaris çevresi)",
+          "M. occipitofrontalis'in venter frontalis'i kemiğe değil galea aponeurotica'ya ve cilde tutunur"
+        ],
+        "ligament_attachments": [
+          "Lig. palpebrale mediale (pars nasalis / processus frontalis maxillae ile birlikte)",
+          "Trochlea (fovea trochlearis): m. obliquus superior'un makarası"
+        ],
+        "high_yield": [
+          "Sinus frontalis squama'nın içindedir; ductus nasofrontalis ile meatus nasi medius'a (hiatus semilunaris) açılır",
+          "Foramen/incisura supraorbitale: n. supraorbitalis (V1) ve a. supraorbitalis — supraorbital sinir bloğu noktası",
+          "Pars orbitalis ince olduğundan orbita tavanı kırıkları fossa cranii anterior'a açılır; frontal lob ve bulbus olfactorius tehlikede"
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "os_parietale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_sphenoidale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_ethmoidale"
+        }
+      ]
+    },
+    {
+      "structure_id": "os_parietale",
+      "canonical": "Os parietale",
+      "kind": "bone",
+      "region": "head_neck",
+      "turkish": "Duvar kemiği (çift)",
+      "english": "Parietal bone (paired)",
+      "synonyms": [
+        "duvar kemigi",
+        "yan kafa kemigi",
+        "parietal bone",
+        "parietal kemik",
+        "ossa parietalia"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.neurocranium",
+      "landmarks": [
+        {
+          "landmark_id": "tuber_parietale",
+          "latin": "Tuber parietale",
+          "turkish": "Dış yüzün en dışbükey noktası; kafanın en geniş yeri buradan ölçülür"
+        },
+        {
+          "landmark_id": "linea_temporalis_superior",
+          "latin": "Linea temporalis superior",
+          "turkish": "Dış yüzde kavisli üst çizgi; fascia temporalis tutunur"
+        },
+        {
+          "landmark_id": "linea_temporalis_inferior",
+          "latin": "Linea temporalis inferior",
+          "turkish": "Alttaki çizgi; m. temporalis'in origo sınırı"
+        },
+        {
+          "landmark_id": "margo_sagittalis",
+          "latin": "Margo sagittalis",
+          "turkish": "Karşı taraf os parietale ile sutura sagittalis'i yapan üst kenar; içinde sulcus sinus sagittalis superioris"
+        },
+        {
+          "landmark_id": "margo_frontalis",
+          "latin": "Margo frontalis",
+          "turkish": "Os frontale ile sutura coronalis'i yapan ön kenar"
+        },
+        {
+          "landmark_id": "margo_occipitalis",
+          "latin": "Margo occipitalis",
+          "turkish": "Os occipitale ile sutura lambdoidea'yı yapan arka kenar"
+        },
+        {
+          "landmark_id": "margo_squamosus",
+          "latin": "Margo squamosus",
+          "turkish": "Os temporale'nin squama'sı ve ala major ile birleşen alt kenar"
+        },
+        {
+          "landmark_id": "angulus_frontalis",
+          "latin": "Angulus frontalis",
+          "turkish": "Ön-üst köşe; bregma'yı yapar"
+        },
+        {
+          "landmark_id": "angulus_occipitalis",
+          "latin": "Angulus occipitalis",
+          "turkish": "Arka-üst köşe; lambda'yı yapar"
+        },
+        {
+          "landmark_id": "angulus_sphenoidalis",
+          "latin": "Angulus sphenoidalis",
+          "turkish": "Ön-alt köşe; pterion'un parçası, altından a. meningea media'nın ön dalı geçer"
+        },
+        {
+          "landmark_id": "angulus_mastoideus",
+          "latin": "Angulus mastoideus",
+          "turkish": "Arka-alt köşe; asterion'un parçası, içinde sulcus sinus sigmoidei"
+        },
+        {
+          "landmark_id": "foramen_parietale",
+          "latin": "Foramen parietale",
+          "turkish": "Margo sagittalis yakınında küçük delik; v. emissaria parietalis"
+        }
+      ],
+      "facts": {
+        "location": "Kafatası kubbesinin üst ve yan duvarını yapan dört kenarlı, dört köşeli çift kemik; iki os parietale orta hatta sutura sagittalis'te birleşir.",
+        "orientation": "Dışbükey yüz dışa, tuber parietale en dışta; margo sagittalis üstte ve orta hatta, angulus sphenoidalis önde-altta.",
+        "parts": [
+          "Facies externa (tuber parietale, lineae temporales)",
+          "Facies interna (foveolae granulares, sulci arteriosi, sulcus sinus sagittalis superioris)"
+        ],
+        "surfaces": [
+          "Facies externa: tuber parietale, linea temporalis superior ve inferior, foramen parietale",
+          "Facies interna: sulcus sinus sagittalis superioris (margo sagittalis boyunca), a. meningea media'nın ön ve arka dallarının olukları, foveolae granulares (granulationes arachnoideae), sulcus sinus sigmoidei (angulus mastoideus'ta)"
+        ],
+        "borders": [
+          "Margo sagittalis (sutura sagittalis)",
+          "Margo frontalis (sutura coronalis)",
+          "Margo occipitalis (sutura lambdoidea)",
+          "Margo squamosus (sutura squamosa ve sutura sphenoparietalis)"
+        ],
+        "angles": [
+          "Angulus frontalis (bregma)",
+          "Angulus occipitalis (lambda)",
+          "Angulus sphenoidalis (pterion)",
+          "Angulus mastoideus (asterion)"
+        ],
+        "articulations": [
+          "Karşı taraf os parietale (sutura sagittalis)",
+          "Os frontale (sutura coronalis)",
+          "Os occipitale (sutura lambdoidea)",
+          "Os temporale (sutura squamosa, sutura parietomastoidea)",
+          "Os sphenoidale, ala major (sutura sphenoparietalis)"
+        ],
+        "muscle_attachments": [
+          "M. temporalis: linea temporalis inferior'un altındaki alan (fossa temporalis)",
+          "Fascia temporalis: linea temporalis superior"
+        ],
+        "ligament_attachments": [
+          "Doğrudan bağ tutunması yoktur; sütür bağ dokusu (syndesmosis)"
+        ],
+        "high_yield": [
+          "Angulus sphenoidalis = pterion: kalvaryanın en ince yeri; altındaki a. meningea media yaralanınca epidural hematom",
+          "Foramen parietale: sinus sagittalis superior ile saçlı deri venleri arasında v. emissaria — enfeksiyon kafa içine yayılabilir",
+          "İç yüzdeki sulci arteriosi a. meningea media'nın izidir; kırık hattı bu olukları kesiyorsa kanama beklenir"
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "os_frontale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_occipitale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_temporale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_sphenoidale"
+        }
+      ]
+    },
+    {
+      "structure_id": "os_temporale",
+      "canonical": "Os temporale",
+      "kind": "bone",
+      "region": "head_neck",
+      "turkish": "Şakak kemiği (çift)",
+      "english": "Temporal bone (paired)",
+      "synonyms": [
+        "sakak kemigi",
+        "temporal bone",
+        "temporal kemik",
+        "ossa temporalia"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.neurocranium",
+      "landmarks": [
+        {
+          "landmark_id": "pars_squamosa",
+          "latin": "Pars squamosa",
+          "turkish": "Yassı, dikey bölüm; fossa temporalis'in tabanını yapar"
+        },
+        {
+          "landmark_id": "pars_petrosa",
+          "latin": "Pars petrosa",
+          "turkish": "Kafa tabanına gömülü piramit; iç kulağı, canalis caroticus'u ve canalis nervi facialis'i barındırır",
+          "note": "fossa cranii media ve posterior"
+        },
+        {
+          "landmark_id": "pars_tympanica",
+          "latin": "Pars tympanica",
+          "turkish": "Meatus acusticus externus'un ön, alt ve arka duvarını yapan kıvrık plak"
+        },
+        {
+          "landmark_id": "processus_zygomaticus",
+          "latin": "Processus zygomaticus",
+          "turkish": "Öne uzanıp os zygomaticum ile arcus zygomaticus'u yapan çıkıntı"
+        },
+        {
+          "landmark_id": "processus_mastoideus",
+          "latin": "Processus mastoideus",
+          "turkish": "Kulak arkasındaki kalın çıkıntı; m. sternocleidomastoideus tutunur; içi cellulae mastoideae"
+        },
+        {
+          "landmark_id": "processus_styloideus",
+          "latin": "Processus styloideus",
+          "turkish": "Aşağı ve öne uzanan ince çıkıntı; Riolan demetinin kasları ve bağları"
+        },
+        {
+          "landmark_id": "porus_acusticus_externus",
+          "latin": "Porus acusticus externus",
+          "turkish": "Dış kulak yolunun kemik girişi; pars tympanica ile çevrili"
+        },
+        {
+          "landmark_id": "meatus_acusticus_internus",
+          "latin": "Meatus acusticus internus",
+          "turkish": "Pars petrosa'nın arka yüzünde; n. facialis, n. vestibulocochlearis ve a. labyrinthi",
+          "note": "fossa cranii posterior"
+        },
+        {
+          "landmark_id": "fossa_mandibularis",
+          "latin": "Fossa mandibularis",
+          "turkish": "Caput mandibulae'nin oturduğu çukur; art. temporomandibularis"
+        },
+        {
+          "landmark_id": "tuberculum_articulare",
+          "latin": "Tuberculum articulare",
+          "turkish": "Fossa mandibularis'in önündeki tümsek; ağız açılınca caput mandibulae buraya kayar"
+        },
+        {
+          "landmark_id": "foramen_stylomastoideum",
+          "latin": "Foramen stylomastoideum",
+          "turkish": "Processus styloideus ile mastoideus arasında; n. facialis'in çıkış deliği"
+        },
+        {
+          "landmark_id": "canalis_caroticus",
+          "latin": "Canalis caroticus",
+          "turkish": "Pars petrosa'nın alt yüzünde; a. carotis interna'nın girişi"
+        },
+        {
+          "landmark_id": "fossa_jugularis",
+          "latin": "Fossa jugularis",
+          "turkish": "Bulbus superior venae jugularis internae'nin oturduğu çukur; foramen jugulare'nin önünde-dışında"
+        },
+        {
+          "landmark_id": "eminentia_arcuata",
+          "latin": "Eminentia arcuata",
+          "turkish": "Pars petrosa ön yüzünde canalis semicircularis anterior'un kabartısı",
+          "note": "fossa cranii media"
+        }
+      ],
+      "facts": {
+        "location": "Kafatasının yan-alt duvarı ve tabanının bir bölümü; işitme ve denge organını (pars petrosa) barındıran çift kemik.",
+        "orientation": "Pars squamosa dışa ve yukarı, pars petrosa içe-öne doğru kafa tabanına gömülü (piramidin tepesi foramen lacerum'a bakar); processus mastoideus arkada-altta, processus styloideus önde-altta.",
+        "parts": [
+          "Pars squamosa (yassı; processus zygomaticus, fossa mandibularis, tuberculum articulare)",
+          "Pars petrosa (piramit; iç kulak, canalis caroticus, meatus acusticus internus, canalis nervi facialis; pars mastoidea ile processus mastoideus)",
+          "Pars tympanica (meatus acusticus externus'un duvarı; vagina processus styloidei)"
+        ],
+        "surfaces": [
+          "Pars petrosa facies anterior: impressio trigeminalis, eminentia arcuata, tegmen tympani, hiatus canalis nervi petrosi majoris",
+          "Pars petrosa facies posterior: porus ve meatus acusticus internus, fossa subarcuata, apertura externa aqueductus vestibuli",
+          "Facies inferior: canalis caroticus, fossa jugularis, foramen stylomastoideum, incisura mastoidea (m. digastricus)"
+        ],
+        "borders": [
+          "Margo superior partis petrosae: sulcus sinus petrosi superioris; tentorium cerebelli tutunur",
+          "Margo squamosus: sutura squamosa",
+          "Margo occipitalis: sutura occipitomastoidea"
+        ],
+        "articulations": [
+          "Os parietale (sutura squamosa, sutura parietomastoidea)",
+          "Os occipitale (sutura occipitomastoidea; foramen jugulare'yi birlikte sınırlar)",
+          "Os sphenoidale (sutura sphenosquamosa; ala major)",
+          "Os zygomaticum (sutura temporozygomatica; arcus zygomaticus)",
+          "Mandibula (articulatio temporomandibularis: fossa mandibularis ve tuberculum articulare)"
+        ],
+        "muscle_attachments": [
+          "Processus mastoideus: m. sternocleidomastoideus, m. splenius capitis, m. longissimus capitis; incisura mastoidea: m. digastricus venter posterior",
+          "Processus styloideus: m. styloglossus, m. stylohyoideus, m. stylopharyngeus (Riolan demeti)",
+          "Pars squamosa (fossa temporalis): m. temporalis"
+        ],
+        "ligament_attachments": [
+          "Lig. stylohyoideum ve lig. stylomandibulare (processus styloideus)",
+          "Lig. laterale articulationis temporomandibularis (tuberculum articulare ve processus zygomaticus kökü)",
+          "Tentorium cerebelli (margo superior partis petrosae)"
+        ],
+        "high_yield": [
+          "N. facialis pars petrosa içinde canalis nervi facialis'te seyreder; foramen stylomastoideum'dan çıkar — periferik fasiyal paralizi ayrımı",
+          "Pars petrosa kırığı: BOS otoresi, hemotympanum, n. facialis ve n. vestibulocochlearis zedelenmesi, Battle belirtisi",
+          "Cellulae mastoideae antrum mastoideum ile cavitas tympani'ye bağlıdır; otitis media mastoidite ilerleyebilir",
+          "Canalis caroticus'ta a. carotis interna önce yukarı sonra öne-içe döner ve foramen lacerum'un üstünden fossa media'ya girer"
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "os_parietale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_occipitale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_sphenoidale"
+        }
+      ]
+    },
+    {
+      "structure_id": "os_occipitale",
+      "canonical": "Os occipitale",
+      "kind": "bone",
+      "region": "head_neck",
+      "turkish": "Artkafa kemiği",
+      "english": "Occipital bone",
+      "synonyms": [
+        "artkafa kemigi",
+        "oksipital kemik",
+        "occipital bone"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.neurocranium",
+      "landmarks": [
+        {
+          "landmark_id": "foramen_magnum",
+          "latin": "Foramen magnum",
+          "turkish": "Büyük delik; medulla oblongata'nın medulla spinalis'e geçtiği yer, aa. vertebrales",
+          "note": "fossa cranii posterior"
+        },
+        {
+          "landmark_id": "pars_basilaris",
+          "latin": "Pars basilaris",
+          "turkish": "Foramen magnum'un önündeki kalın bölüm; os sphenoidale ile clivus'u yapar, altında tuberculum pharyngeum"
+        },
+        {
+          "landmark_id": "clivus",
+          "latin": "Clivus",
+          "turkish": "Dorsum sellae'den foramen magnum'a inen eğik iç yüzey; pons ve a. basilaris üzerinde yatar",
+          "note": "fossa cranii posterior"
+        },
+        {
+          "landmark_id": "condylus_occipitalis",
+          "latin": "Condylus occipitalis",
+          "turkish": "Atlas ile eklemleşen oval, dışbükey eklem yüzü; foramen magnum'un iki yanında"
+        },
+        {
+          "landmark_id": "canalis_nervi_hypoglossi",
+          "latin": "Canalis nervi hypoglossi",
+          "turkish": "Condylus'un üstünden geçen kanal; n. hypoglossus (CN XII)"
+        },
+        {
+          "landmark_id": "squama_occipitalis",
+          "latin": "Squama occipitalis",
+          "turkish": "Foramen magnum'un arkasındaki geniş yassı bölüm; iç yüzde fossae cerebrales ve cerebellares"
+        },
+        {
+          "landmark_id": "protuberantia_occipitalis_externa",
+          "latin": "Protuberantia occipitalis externa",
+          "turkish": "Dış yüzde orta hattaki çıkıntı (inion); lig. nuchae'nin tutunduğu yer"
+        },
+        {
+          "landmark_id": "linea_nuchalis_superior",
+          "latin": "Linea nuchalis superior",
+          "turkish": "Protuberantia'dan yanlara uzanan çizgi; m. trapezius ve m. sternocleidomastoideus"
+        },
+        {
+          "landmark_id": "linea_nuchalis_inferior",
+          "latin": "Linea nuchalis inferior",
+          "turkish": "Daha alttaki çizgi; suboksipital kasların tutunma alanı"
+        },
+        {
+          "landmark_id": "protuberantia_occipitalis_interna",
+          "latin": "Protuberantia occipitalis interna",
+          "turkish": "İç yüzde eminentia cruciformis'in merkezi; confluens sinuum"
+        },
+        {
+          "landmark_id": "sulcus_sinus_transversi",
+          "latin": "Sulcus sinus transversi",
+          "turkish": "İç yüzde sinus transversus'un oluğu; tentorium cerebelli'nin tutunma çizgisi"
+        }
+      ],
+      "facts": {
+        "location": "Kafatasının arka-alt bölümü; foramen magnum'u çevreler ve fossa cranii posterior'un büyük bölümünü yapar. Tek kemiktir.",
+        "orientation": "Squama arkada-yukarıda, pars basilaris önde; condyli occipitales foramen magnum'un iki yanında aşağı bakar.",
+        "parts": [
+          "Pars basilaris (foramen magnum'un önünde; clivus'u os sphenoidale ile birlikte oluşturur)",
+          "Partes laterales (condyli occipitales, canalis nervi hypoglossi, canalis condylaris, processus jugularis)",
+          "Squama occipitalis (protuberantia occipitalis externa ve interna, lineae nuchales, eminentia cruciformis)"
+        ],
+        "surfaces": [
+          "Facies externa: protuberantia occipitalis externa, linea nuchalis suprema, superior ve inferior, crista occipitalis externa",
+          "Facies interna: eminentia cruciformis, protuberantia occipitalis interna, sulcus sinus transversi ve sigmoidei, fossae cerebrales (üst) ve cerebellares (alt)"
+        ],
+        "borders": [
+          "Margo lambdoideus (sutura lambdoidea)",
+          "Margo mastoideus (sutura occipitomastoidea)"
+        ],
+        "articulations": [
+          "Ossa parietalia (sutura lambdoidea)",
+          "Ossa temporalia (sutura occipitomastoidea; foramen jugulare'yi birlikte sınırlar)",
+          "Os sphenoidale (synchondrosis sphenooccipitalis, 18–25 yaşta kemikleşir)",
+          "Atlas (articulatio atlantooccipitalis; condyli occipitales)"
+        ],
+        "muscle_attachments": [
+          "Linea nuchalis superior: m. trapezius, m. sternocleidomastoideus, m. splenius capitis",
+          "Linea nuchalis superior ile inferior arası: m. semispinalis capitis, m. obliquus capitis superior",
+          "Linea nuchalis inferior'un altı: m. rectus capitis posterior major ve minor",
+          "Pars basilaris: m. longus capitis, m. rectus capitis anterior; tuberculum pharyngeum: raphe pharyngis (m. constrictor pharyngis superior)"
+        ],
+        "ligament_attachments": [
+          "Membrana atlantooccipitalis anterior ve posterior (foramen magnum kenarları)",
+          "Membrana tectoria ve lig. apicis dentis, ligg. alaria (clivus ve foramen magnum'un ön kenarı, condylus iç yüzü)",
+          "Lig. nuchae (protuberantia occipitalis externa – crista occipitalis externa)"
+        ],
+        "high_yield": [
+          "Foramen magnum: medulla oblongata, meninksler, aa. vertebrales, aa. spinales, radices spinales n. accessorii",
+          "Canalis nervi hypoglossi condylus'un üstünden geçer (CN XII); canalis condylaris ise v. emissaria taşır — ikisini karıştırma",
+          "Clivus = pars basilaris + corpus ossis sphenoidalis; pons ve a. basilaris üzerinde yatar",
+          "Sutura lambdoidea'da ossa suturalia sıktır; kırıkla karıştırılabilir"
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "os_parietale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_temporale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_sphenoidale"
+        }
+      ]
+    },
+    {
+      "structure_id": "os_sphenoidale",
+      "canonical": "Os sphenoidale",
+      "kind": "bone",
+      "region": "head_neck",
+      "turkish": "Kama kemiği (sfenoid)",
+      "english": "Sphenoid bone",
+      "synonyms": [
+        "kama kemigi",
+        "sfenoid kemik",
+        "sfenoid",
+        "sphenoid bone",
+        "sphenoid"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.neurocranium",
+      "landmarks": [
+        {
+          "landmark_id": "corpus",
+          "latin": "Corpus ossis sphenoidalis",
+          "turkish": "Küp biçimli gövde; içinde sinus sphenoidalis, üstünde sella turcica"
+        },
+        {
+          "landmark_id": "sella_turcica",
+          "latin": "Sella turcica",
+          "turkish": "Corpus'un üst yüzündeki eyer biçimli çukur; ortasında fossa hypophysialis (hipofiz)",
+          "note": "fossa cranii media"
+        },
+        {
+          "landmark_id": "dorsum_sellae",
+          "latin": "Dorsum sellae",
+          "turkish": "Sella'nın arka duvarı; üst köşeleri processus clinoideus posterior, arkası clivus'a iner"
+        },
+        {
+          "landmark_id": "ala_minor",
+          "latin": "Ala minor",
+          "turkish": "Küçük kanat; fossa cranii anterior'un arka sınırı, kökünde canalis opticus",
+          "note": "fossa cranii anterior"
+        },
+        {
+          "landmark_id": "processus_clinoideus_anterior",
+          "latin": "Processus clinoideus anterior",
+          "turkish": "Ala minor'un arkaya bakan ucu; tentorium cerebelli ve diaphragma sellae tutunur"
+        },
+        {
+          "landmark_id": "ala_major",
+          "latin": "Ala major",
+          "turkish": "Büyük kanat; fossa cranii media'nın tabanı, orbita'nın yan duvarı, fossa temporalis ve infratemporalis",
+          "note": "fossa cranii media"
+        },
+        {
+          "landmark_id": "processus_pterygoideus",
+          "latin": "Processus pterygoideus",
+          "turkish": "Aşağı uzanan çift lamina (lamina medialis ve lateralis) ve arada fossa pterygoidea; çiğneme kaslarının tutunma yeri"
+        },
+        {
+          "landmark_id": "hamulus_pterygoideus",
+          "latin": "Hamulus pterygoideus",
+          "turkish": "Lamina medialis'in alt ucundaki çengel; m. tensor veli palatini tendonu buradan döner"
+        },
+        {
+          "landmark_id": "canalis_opticus",
+          "latin": "Canalis opticus",
+          "turkish": "Ala minor'un kökünde; n. opticus ve a. ophthalmica"
+        },
+        {
+          "landmark_id": "fissura_orbitalis_superior",
+          "latin": "Fissura orbitalis superior",
+          "turkish": "Ala major ile ala minor arasındaki yarık; CN III, IV, V1, VI ve v. ophthalmica superior"
+        },
+        {
+          "landmark_id": "foramen_rotundum",
+          "latin": "Foramen rotundum",
+          "turkish": "Ala major'da; n. maxillaris (V2) fossa pterygopalatina'ya geçer"
+        },
+        {
+          "landmark_id": "foramen_ovale",
+          "latin": "Foramen ovale",
+          "turkish": "Ala major'da; n. mandibularis (V3), a. meningea accessoria, n. petrosus minor"
+        },
+        {
+          "landmark_id": "foramen_spinosum",
+          "latin": "Foramen spinosum",
+          "turkish": "Ala major'da spina'nın önünde; a. meningea media"
+        },
+        {
+          "landmark_id": "sulcus_caroticus",
+          "latin": "Sulcus caroticus",
+          "turkish": "Corpus'un yan yüzünde a. carotis interna'nın oluğu; sinus cavernosus komşuluğu"
+        },
+        {
+          "landmark_id": "sinus_sphenoidalis",
+          "latin": "Sinus sphenoidalis",
+          "turkish": "Corpus içindeki hava boşluğu; recessus sphenoethmoidalis'e açılır"
+        }
+      ],
+      "facts": {
+        "location": "Kafa tabanının ortasında; öteki kafatası kemiklerinin hepsiyle eklemleşen tek kemik. Kanatlarını açmış yarasa biçimindedir: corpus, iki ala minor, iki ala major ve iki processus pterygoideus.",
+        "orientation": "Corpus orta hatta, sella turcica üstte; ala minor öne-yukarı, ala major dışa, processus pterygoideus aşağı uzanır.",
+        "parts": [
+          "Corpus (sella turcica, sinus sphenoidalis, clivus'un üst bölümü, sulcus caroticus)",
+          "Ala minor (canalis opticus, processus clinoideus anterior)",
+          "Ala major (foramen rotundum, ovale, spinosum; facies cerebralis, temporalis, infratemporalis, orbitalis, maxillaris)",
+          "Processus pterygoideus (lamina medialis ve lateralis, fossa pterygoidea, hamulus pterygoideus, canalis pterygoideus)"
+        ],
+        "surfaces": [
+          "Corpus üst yüzü: jugum sphenoidale, sulcus prechiasmaticus, tuberculum sellae, fossa hypophysialis, dorsum sellae, processus clinoideus posterior",
+          "Corpus yan yüzü: sulcus caroticus (a. carotis interna, sinus cavernosus)",
+          "Ala major facies cerebralis: fossa cranii media'nın ön duvarı ve tabanı; facies orbitalis: orbita'nın yan duvarı"
+        ],
+        "borders": [
+          "Ala minor'un arka kenarı: fossa cranii anterior ile media'nın sınırı",
+          "Ala major ile ala minor arası: fissura orbitalis superior",
+          "Spina ossis sphenoidalis: lig. sphenomandibulare'nin tutunduğu arka-alt çıkıntı"
+        ],
+        "articulations": [
+          "Os frontale ve os ethmoidale (önde)",
+          "Ossa parietalia (pterion) ve ossa temporalia (yanlarda)",
+          "Os occipitale (synchondrosis sphenooccipitalis)",
+          "Vomer, ossa palatina, maxillae, ossa zygomatica (yüz iskeleti)"
+        ],
+        "muscle_attachments": [
+          "Lamina lateralis processus pterygoidei: dış yüz m. pterygoideus lateralis (caput inferius), iç yüz (fossa pterygoidea) m. pterygoideus medialis",
+          "Ala major facies infratemporalis: m. pterygoideus lateralis caput superius; facies temporalis: m. temporalis",
+          "Hamulus pterygoideus: m. tensor veli palatini'nin tendonu döner; m. constrictor pharyngis superior (raphe pterygomandibularis)"
+        ],
+        "ligament_attachments": [
+          "Lig. sphenomandibulare (spina ossis sphenoidalis)",
+          "Lig. pterygospinale (lamina lateralis – spina)",
+          "Diaphragma sellae ve tentorium cerebelli (processus clinoidei)"
+        ],
+        "high_yield": [
+          "Sella turcica'daki fossa hypophysialis'te hipofiz; transsfenoidal cerrahi sinus sphenoidalis üzerinden yapılır",
+          "Fossa cranii media'nın deliklerinin çoğu bu kemiktedir: canalis opticus (ala minor), fissura orbitalis superior, foramen rotundum, ovale ve spinosum (ala major)",
+          "Sulcus caroticus ve sinus cavernosus komşuluğu: CN III, IV, V1, V2, VI ve a. carotis interna",
+          "Canalis pterygoideus (Vidian kanalı): n. canalis pterygoidei → ganglion pterygopalatinum"
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "os_frontale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_parietale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_temporale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_occipitale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_ethmoidale"
+        }
+      ]
+    },
+    {
+      "structure_id": "os_ethmoidale",
+      "canonical": "Os ethmoidale",
+      "kind": "bone",
+      "region": "head_neck",
+      "turkish": "Kalbur kemiği (etmoid)",
+      "english": "Ethmoid bone",
+      "synonyms": [
+        "kalbur kemigi",
+        "etmoid kemik",
+        "etmoid",
+        "ethmoid bone",
+        "ethmoid"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.neurocranium",
+      "landmarks": [
+        {
+          "landmark_id": "crista_galli",
+          "latin": "Crista galli",
+          "turkish": "Lamina cribrosa'nın üstünde yukarı uzanan çıkıntı; falx cerebri'nin ön tutunma yeri",
+          "note": "fossa cranii anterior"
+        },
+        {
+          "landmark_id": "lamina_cribrosa",
+          "latin": "Lamina cribrosa",
+          "turkish": "Fossa cranii anterior'un tabanındaki delikli plak; fila olfactoria (CN I) geçer",
+          "note": "fossa cranii anterior"
+        },
+        {
+          "landmark_id": "lamina_perpendicularis",
+          "latin": "Lamina perpendicularis",
+          "turkish": "Orta hatta aşağı inen plak; septum nasi'nin üst bölümü"
+        },
+        {
+          "landmark_id": "labyrinthus_ethmoidalis",
+          "latin": "Labyrinthus ethmoidalis",
+          "turkish": "Yanlardaki hava hücreli kütle; cellulae ethmoidales anterior, media ve posterior"
+        },
+        {
+          "landmark_id": "lamina_orbitalis",
+          "latin": "Lamina orbitalis (lamina papyracea)",
+          "turkish": "Labirentin dış duvarı; orbita'nın medial duvarı, kâğıt inceliğinde"
+        },
+        {
+          "landmark_id": "concha_nasalis_superior",
+          "latin": "Concha nasalis superior",
+          "turkish": "Labirentin iç yüzünden sarkan küçük üst kıvrım; altında meatus nasi superior"
+        },
+        {
+          "landmark_id": "concha_nasalis_media",
+          "latin": "Concha nasalis media",
+          "turkish": "Daha büyük alt kıvrım; altında meatus nasi medius"
+        },
+        {
+          "landmark_id": "bulla_ethmoidalis",
+          "latin": "Bulla ethmoidalis",
+          "turkish": "Meatus nasi medius'taki kabarıklık; ön/orta hücreler buraya açılır"
+        },
+        {
+          "landmark_id": "processus_uncinatus",
+          "latin": "Processus uncinatus",
+          "turkish": "Bulla'nın önündeki çengel; hiatus semilunaris'i sınırlar"
+        },
+        {
+          "landmark_id": "cellulae_ethmoidales",
+          "latin": "Cellulae ethmoidales",
+          "turkish": "Labirent içindeki hava hücreleri; anterior/media → meatus nasi medius, posterior → meatus nasi superior"
+        }
+      ],
+      "facts": {
+        "location": "İki orbita arasında, burun boşluğunun tavanı ile fossa cranii anterior'un tabanı arasında; ince, hava hücreli tek kemik.",
+        "orientation": "Crista galli yukarı, lamina perpendicularis aşağı; labirentler iki yanda, lamina orbitalis dışa bakar.",
+        "parts": [
+          "Lamina cribrosa (kalbur plak; foramina cribrosa) ve üstünde crista galli",
+          "Lamina perpendicularis (septum nasi'nin üst bölümü)",
+          "Labyrinthus ethmoidalis (iki taraflı: cellulae ethmoidales, concha nasalis superior ve media, lamina orbitalis, processus uncinatus, bulla ethmoidalis)"
+        ],
+        "surfaces": [
+          "Lamina orbitalis (lamina papyracea): orbita'nın medial duvarı",
+          "Facies nasalis: concha nasalis superior ve media, meatus nasi superior ve medius"
+        ],
+        "borders": [
+          "Crista galli: falx cerebri tutunur",
+          "Lamina cribrosa'nın kenarı os frontale'nin incisura ethmoidalis'ine oturur"
+        ],
+        "articulations": [
+          "Os frontale (üstte), os sphenoidale (arkada)",
+          "Ossa nasalia, maxillae, ossa lacrimalia, ossa palatina, conchae nasales inferiores, vomer"
+        ],
+        "muscle_attachments": [
+          "Doğrudan kas tutunması yoktur; yalnızca mukoza ve bağ dokusu"
+        ],
+        "ligament_attachments": [
+          "Falx cerebri (crista galli)"
+        ],
+        "high_yield": [
+          "Lamina cribrosa kırığı: anosmi ve BOS rinoresi; nazogastrik sonda kafa içine girebilir",
+          "Lamina papyracea ince: etmoidit orbita'ya yayılabilir (orbital selülit)",
+          "Cellulae ethmoidales anterior ve media meatus nasi medius'a, posterior meatus nasi superior'a açılır",
+          "Concha nasalis inferior ayrı bir kemiktir; superior ve media os ethmoidale'ye aittir"
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "os_frontale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_sphenoidale"
+        }
+      ]
     }
   ],
   "terms": [

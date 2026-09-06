@@ -307,8 +307,13 @@ live only in `tokens.css` and the motion vocabulary is shared, that the
 visible text is Turkish, and that the stylesheet ignores the OS reduced-motion
 setting. For the Medical screen it runs the page's own helpers under QuickJS:
 figure markup and the review order of the exam results, the z-up mesh frame
-of a BodyParts3D asset, an anchor outside the mesh that is drawn nowhere, and
-the bell-ringer's lenient Latin matching.
+of a BodyParts3D asset, an anchor outside the mesh that is drawn nowhere, the
+bell-ringer's lenient Latin matching, the free turn about the viewer's axes
+(right is right, down is down, past the old clamp, orthonormal after two
+thousand steps), screen-aligned pan, the black stage and the matte distinct
+palette, the schematic map hidden by attribute (an SVG has no `hidden`
+property), the shader without a highlight, a card's tables, and a scene with
+a palette drawn and hidden structure by structure.
 
 The packaging tests require the spec to collect the `web/` directory
 recursively below `app/ui/nova/web` (recomputing the mapping for every asset
@@ -521,7 +526,12 @@ The Medical Academy regression coverage (`tests/test_medical_*.py`) includes:
   confidence, and the BodyParts3D importer: the OBJ merge with index
   re-basing, the pilot mapping checked against the curated data, derived pins
   on a synthetic bone, no pin without a rule or enough vertices, and the
-  hand-placed pin that survives a re-import (`test_medical_anatomy.py`);
+  hand-placed pin that survives a re-import, the neurocranium card's fossae
+  and foramen tables with the nerves and vessels they must name, the fixed
+  table shape, every importer scene's mapping against the curated data, the
+  skull rules on a synthetic bone (foramen magnum low and midline, crista
+  galli high, no pin for a hole), and a scene's card, palette and note with
+  the malformed colours dropped (`test_medical_anatomy.py`);
 - the academy facade, its four tools, the tutor's decisions and question
   generation against a fake model client;
 - the core engine's augmentation hook: prompt replacement, tool narrowing,

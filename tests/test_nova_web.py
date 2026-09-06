@@ -631,3 +631,195 @@ def test_bell_ringer_grading_forgives_spelling_but_not_the_wrong_structure() -> 
     assert not matches["wrong_pair"], "majus and minus are different structures"
     assert not matches["partial"], "naming the bone is not naming the landmark"
     assert not matches["empty"]
+
+
+def test_the_lab_turns_the_model_about_the_viewer_axes() -> None:
+    """A pull to the right spins the near face to the right, a pull down tips
+    it down, from any orientation, with no clamp and no shear."""
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    report = json.loads(context.eval("""
+      (() => {
+        const apply = (view, p) => [0, 1, 2].map((row) => view[row] * p[0] + view[4 + row] * p[1] + view[8 + row] * p[2]);
+        Lab.scene = null;
+        Lab.camera = { rotation: null, distance: 2.6, panX: 0, panY: 0 };
+        const near = [0, 0, 1];
+        const before = apply(lookAtView(Lab.camera), near);
+        Lab.turn(Math.PI / 2, 0);
+        const right = apply(lookAtView(Lab.camera), near);
+        Lab.camera = { rotation: null, distance: 2.6, panX: 0, panY: 0 };
+        Lab.turn(0, Math.PI / 2);
+        const down = apply(lookAtView(Lab.camera), near);
+        // Well past the old ±83° clamp: the top of the model ends up at the bottom.
+        Lab.camera = { rotation: null, distance: 2.6, panX: 0, panY: 0 };
+        for (let i = 0; i < 200; i += 1) Lab.turn(0, Math.PI / 200);
+        const flipped = apply(lookAtView(Lab.camera), [0, 1, 0]);
+        for (let i = 0; i < 2000; i += 1) Lab.turn(0.013, -0.007);
+        const r = Lab.camera.rotation;
+        const lengths = [0, 3, 6].map((c) => Math.hypot(r[c], r[c + 1], r[c + 2]));
+        const dots = [r[0] * r[3] + r[1] * r[4] + r[2] * r[5], r[0] * r[6] + r[1] * r[7] + r[2] * r[8], r[3] * r[6] + r[4] * r[7] + r[5] * r[8]];
+        return JSON.stringify({ before, right, down, flipped, lengths, dots });
+      })()
+    """))
+    assert [round(v, 6) for v in report["before"]] == [0, 0, 1]
+    assert [round(v, 6) for v in report["right"]] == [1, 0, 0]
+    assert [round(v, 6) for v in report["down"]] == [0, -1, 0]
+    assert [round(v, 6) for v in report["flipped"]] == [0, -1, 0]
+    assert all(abs(length - 1) < 1e-9 for length in report["lengths"])
+    assert all(abs(value) < 1e-9 for value in report["dots"])
+
+
+def test_the_lab_pans_along_the_screen_and_the_old_orbit_still_reads() -> None:
+    """Pan moves the picture on the screen's own axes whichever way the model
+    faces, and a camera written with yaw and pitch draws the same view as the
+    rotation it stands for."""
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    report = json.loads(context.eval("""
+      (() => {
+        const projection = perspective(0.9, 900 / 600, 0.05, 40);
+        const at = (camera) => project([0, 0, 0], lookAtView(camera), projection, 900, 600);
+        const turned = { rotation: rotationFromAngles(1.1, -0.7), distance: 2.6, panX: 0, panY: 0 };
+        const centre = at(turned);
+        const right = at({ ...turned, panX: 0.4 });
+        const up = at({ ...turned, panY: 0.4 });
+        const angles = lookAtView({ yaw: 0.6, pitch: 0.25, distance: 2.6, panX: 0, panY: 0 });
+        const rotation = lookAtView({ rotation: rotationFromAngles(0.6, 0.25), distance: 2.6, panX: 0, panY: 0 });
+        return JSON.stringify({ centre, right, up, same: Array.from(angles).every((v, i) => Math.abs(v - rotation[i]) < 1e-9) });
+      })()
+    """))
+    assert report["right"]["x"] > report["centre"]["x"] and abs(report["right"]["y"] - report["centre"]["y"]) < 1e-6
+    assert report["up"]["y"] < report["centre"]["y"] and abs(report["up"]["x"] - report["centre"]["x"]) < 1e-6
+    assert report["same"]
+
+
+def test_the_lab_stage_is_black_and_its_tissues_matte_and_distinct() -> None:
+    """Black behind the model, no rim or specular term in the shader, and
+    every pair of tissue colours far enough apart to tell at a glance."""
+    quickjs = pytest.importorskip("quickjs")
+    source = JS_SOURCES["js/medical.js"]
+    assert "background: #000" in re.search(r"#lab-canvas \{[^}]*\}", CSS).group(0)
+    assert source.count("gl.clearColor(0, 0, 0, 1)") == 2
+    fragment = source[source.index("gl.FRAGMENT_SHADER"):source.index("if (!vertex || !fragment)")]
+    assert "rim" not in fragment.lower() and "specular" not in fragment.lower()
+    assert "uRim" not in source
+    context = quickjs.Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(source)
+    colours = json.loads(context.eval("JSON.stringify(LAB_KIND_COLOURS)"))
+    kinds = ["bone", "joint", "muscle", "artery", "vein", "nerve", "ligament", "region"]
+    assert set(kinds) <= set(colours)
+    for index, first in enumerate(kinds):
+        for second in kinds[index + 1:]:
+            distance = sum((a - b) ** 2 for a, b in zip(colours[first], colours[second])) ** 0.5
+            assert distance > 0.3, f"{first} and {second} are too alike: {distance:.2f}"
+    assert all(0 <= channel <= 1 for kind in kinds for channel in colours[kind])
+
+
+def test_the_lab_hides_its_schematic_map_by_attribute_so_the_canvas_gets_the_mouse() -> None:
+    """An SVG has no `hidden` property. Assigning one hid nothing: the
+    transparent map stayed over the canvas and took every drag and click.
+    The lab must set the attribute, which is what the [hidden] rule reads."""
+    quickjs = pytest.importorskip("quickjs")
+    source = JS_SOURCES["js/medical.js"]
+    assert "schematic.hidden =" not in source, "the map must be hidden through setHidden, not a property an SVG lacks"
+    assert "#lab-schematic[hidden] { display: none; }" in CSS
+    context = quickjs.Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(source)
+    report = json.loads(context.eval("""
+      (() => {
+        const svg = { attrs: {}, toggleAttribute(name, force) { if (force) this.attrs[name] = ""; else delete this.attrs[name]; } };
+        setHidden(svg, true);
+        const hiddenAttr = "hidden" in svg.attrs;
+        setHidden(svg, false);
+        const shownAttr = "hidden" in svg.attrs;
+        const plain = {};
+        setHidden(plain, true);
+        return JSON.stringify({ hiddenAttr, shownAttr, plainHidden: plain.hidden === true });
+      })()
+    """))
+    assert report == {"hiddenAttr": True, "shownAttr": False, "plainHidden": True}
+
+
+def test_the_lab_shader_keeps_contrast_without_a_highlight() -> None:
+    """Detail without shine: the shade factor has a low floor and a grazing
+    darkening, and still no specular power term or rim colour."""
+    source = JS_SOURCES["js/medical.js"]
+    fragment = source[source.index("gl.FRAGMENT_SHADER"):source.index("if (!vertex || !fragment)")]
+    assert "grazing" in fragment and "0.20 + 0.62 * key" in fragment
+    assert "uRim" not in fragment and "specular" not in fragment.lower()
+    # The only pow() is the grazing term, which darkens; nothing is added to the colour.
+    assert fragment.count("pow(") == 1 and "pow(1.0 - facing" in fragment
+    assert "+ uRim" not in fragment and "gl_FragColor = vec4(uColor * shade, 1.0)" in fragment
+
+
+def test_a_card_renders_its_tables_with_the_first_cell_as_a_row_heading() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    html = context.eval("""
+      (() => {
+        const INFO = { innerHTML: "" };
+        const previous = $;
+        $ = (selector) => selector === "#lab-info" ? INFO : previous(selector);
+        Lab.bell = null;
+        Lab.highlight = [];
+        Lab.structure = {
+          structure_id: "neurocranium", canonical: "Neurocranium", turkish: "Beyin kutusu", english: "Braincase",
+          kind_label: "Bölge", region_label: "Baş ve boyun", landmarks: [], sections: [{ label: "Tanım", items: ["Sekiz kemik"] }],
+          tables: [{ title: "Delikler", columns: ["Delik", "Kemik", "Geçen"], rows: [["Foramen rotundum", "Os sphenoidale", "V2"], ["Foramen ovale", "Os sphenoidale", "V3"]] }],
+          relations: [], source: "",
+        };
+        Lab.renderInfo();
+        $ = previous;
+        return INFO.innerHTML;
+      })()
+    """)
+    assert "<table class=\"lab-table\">" in html and html.count("<tr>") == 3
+    assert "<th>Delik</th><th>Kemik</th><th>Geçen</th>" in html
+    assert "<th scope=\"row\">Foramen rotundum</th><td>Os sphenoidale</td><td>V2</td>" in html
+    assert html.index("Sekiz kemik") < html.index("<table"), "the prose sections come before the tables"
+
+
+def test_a_scene_with_a_palette_is_drawn_and_hidden_structure_by_structure() -> None:
+    """A skull is all bone: the chips are one per structure in the scene's own
+    colours, visibility follows the structure, and a scene item wears the
+    palette colour where it has one and its kind's colour where it does not."""
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    report = json.loads(context.eval("""
+      (() => {
+        const LAYERS = { innerHTML: "" };
+        const previous = $;
+        $ = (selector) => selector === "#lab-layers" ? LAYERS : previous(selector);
+        Lab.scenes = [{ scene_id: "skull", title: "Kafa" }];
+        const items = [
+          { structure_id: "os_frontale", kind: "bone", canonical: "Os frontale" },
+          { structure_id: "os_occipitale", kind: "bone", canonical: "Os occipitale" },
+        ];
+        Lab.scene = { scene_id: "skull", title: "Kafa", items, palette: { os_frontale: [1, 0.5, 0] }, visible: new Set(["os_frontale", "os_occipitale"]), note: "iki taraf" };
+        Lab.renderLayers();
+        const chips = LAYERS.innerHTML;
+        Lab.toggleLayer("os_frontale");
+        const afterToggle = { frontale: Lab.itemVisible(items[0]), occipitale: Lab.itemVisible(items[1]) };
+        const colours = { frontale: Lab.itemColour(items[0]), occipitale: Lab.itemColour(items[1]) };
+        Lab.scene = { scene_id: "arm", title: "Kol", items: [{ structure_id: "humerus", kind: "bone", canonical: "Humerus" }], palette: null, visible: new Set(["bone"]), note: "" };
+        Lab.renderLayers();
+        const kindChips = LAYERS.innerHTML;
+        $ = previous;
+        return JSON.stringify({ chips, afterToggle, colours, kindChips, bone: LAB_KIND_COLOURS.bone });
+      })()
+    """))
+    assert 'data-layer="os_frontale"' in report["chips"] and 'data-layer="os_occipitale"' in report["chips"]
+    assert "rgb(255,128,0)" in report["chips"] and "iki taraf" in report["chips"]
+    assert report["afterToggle"] == {"frontale": False, "occipitale": True}
+    assert report["colours"]["frontale"] == [1, 0.5, 0] and report["colours"]["occipitale"] == report["bone"]
+    assert 'data-layer="bone"' in report["kindChips"] and "sağ taraf" in report["kindChips"]

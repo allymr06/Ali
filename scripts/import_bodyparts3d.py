@@ -87,6 +87,34 @@ UPPER_LIMB_RIGHT: dict[str, list[tuple[str, str, list[str]]]] = {
     "v_basilica": [("FMA22909", "right basilic vein", ["FJ2270"])],
 }
 
+# The neurocranium: the eight bones of the braincase. Paired bones (parietal,
+# temporal) are one card and one mesh each, merged from both sides' element
+# files, so the card's text is not written twice and a layer chip hides both.
+NEUROCRANIUM: dict[str, list[tuple[str, str, list[str]]]] = {
+    "os_frontale": [("FMA52734", "frontal bone", ["FJ3200"])],
+    "os_parietale": [
+        ("FMA52788", "right parietal bone", ["FJ3380"]),
+        ("FMA52789", "left parietal bone", ["FJ3274"]),
+    ],
+    "os_temporale": [
+        ("FMA52738", "right temporal bone", ["FJ3386"]),
+        ("FMA52739", "left temporal bone", ["FJ3281"]),
+    ],
+    "os_occipitale": [("FMA52735", "occipital bone", ["FJ3309"])],
+    "os_sphenoidale": [("FMA52736", "sphenoid bone", ["FJ3394"])],
+    "os_ethmoidale": [("FMA52740", "ethmoid", ["FJ3199"])],
+}
+# The atlas convention for a skull: one colour per bone, since every mesh is
+# bone and the kind colour would paint the whole vault the same ivory.
+NEUROCRANIUM_PALETTE: dict[str, list[float]] = {
+    "os_frontale": [0.96, 0.78, 0.30],
+    "os_parietale": [0.42, 0.74, 0.96],
+    "os_temporale": [0.55, 0.86, 0.42],
+    "os_occipitale": [0.92, 0.42, 0.38],
+    "os_sphenoidale": [0.80, 0.52, 0.92],
+    "os_ethmoidale": [0.36, 0.90, 0.84],
+}
+
 # Pins derived from the mesh's own geometry. BodyParts3D 4.0 ships no bony
 # landmarks as parts, so a pin can only be put where the shape itself says it
 # is: the most proximal point of a bone is its head, the most distal medial
@@ -145,6 +173,66 @@ LANDMARK_RULES: dict[str, dict[str, list[tuple]]] = {
         "caput_ulnae": [("z", "min", 0.06)],
         "processus_styloideus_ulnae": [("z", "min", 0.03), ("y", "max", 0.25)],
     },
+    # Skull bones in the same body frame: z up, -y anterior, and x growing
+    # towards the body's left, so "x min" is the right side of a paired mesh.
+    # A hole (a foramen, a meatus) has no surface of its own and gets no rule;
+    # the pins here sit on rims, tips, plates and the most prominent points.
+    "os_frontale": {
+        "glabella": [("y", "min", 0.05), ("x", "band", 0.40, 0.60)],
+        "squama_frontalis": [("z", "max", 0.30), ("y", "min", 0.35)],
+        "tuber_frontale": [("z", "band", 0.55, 0.85), ("y", "min", 0.25), ("x", "min", 0.25)],
+        "arcus_superciliaris": [("z", "band", 0.20, 0.35), ("y", "min", 0.12), ("x", "min", 0.45)],
+        "margo_supraorbitalis": [("z", "band", 0.15, 0.30), ("y", "min", 0.10), ("x", "band", 0.05, 0.45)],
+        "processus_zygomaticus": [("z", "min", 0.25), ("x", "min", 0.06)],
+        "pars_orbitalis": [("z", "min", 0.12), ("y", "max", 0.60), ("x", "min", 0.45)],
+    },
+    "os_parietale": {
+        "margo_sagittalis": [("z", "max", 0.04)],
+        "tuber_parietale": [("x", "min", 0.05)],
+        "angulus_frontalis": [("y", "min", 0.06), ("x", "band", 0.40, 0.60)],
+        "angulus_occipitalis": [("y", "max", 0.06), ("x", "band", 0.40, 0.60)],
+        "angulus_sphenoidalis": [("z", "min", 0.15), ("y", "min", 0.15), ("x", "min", 0.30)],
+        "angulus_mastoideus": [("z", "min", 0.15), ("y", "max", 0.15), ("x", "min", 0.30)],
+        "margo_squamosus": [("z", "min", 0.06), ("x", "min", 0.40)],
+        "linea_temporalis_superior": [("z", "band", 0.35, 0.55), ("x", "min", 0.15)],
+    },
+    "os_occipitale": {
+        "foramen_magnum": [("z", "min", 0.12)],
+        "condylus_occipitalis": [("z", "min", 0.06), ("x", "min", 0.50)],
+        "pars_basilaris": [("y", "min", 0.08)],
+        "clivus": [("y", "min", 0.15), ("z", "band", 0.15, 0.45)],
+        "squama_occipitalis": [("y", "max", 0.30), ("z", "max", 0.30)],
+        "protuberantia_occipitalis_externa": [("y", "max", 0.05)],
+        "linea_nuchalis_superior": [("y", "max", 0.15), ("z", "band", 0.35, 0.50), ("x", "min", 0.35)],
+        "linea_nuchalis_inferior": [("y", "max", 0.20), ("z", "band", 0.15, 0.30), ("x", "min", 0.40)],
+    },
+    "os_temporale": {
+        "pars_squamosa": [("x", "min", 0.50), ("z", "max", 0.15)],
+        "processus_zygomaticus": [("x", "min", 0.50), ("y", "min", 0.06)],
+        "processus_mastoideus": [("x", "min", 0.50), ("z", "min", 0.10), ("y", "max", 0.30)],
+        "processus_styloideus": [("x", "min", 0.50), ("z", "min", 0.05), ("y", "min", 0.50)],
+        "porus_acusticus_externus": [("x", "min", 0.06), ("z", "band", 0.35, 0.55)],
+        "fossa_mandibularis": [("x", "min", 0.50), ("y", "min", 0.15), ("z", "band", 0.30, 0.50)],
+        "pars_petrosa": [("x", "band", 0.30, 0.50), ("z", "band", 0.20, 0.50)],
+    },
+    "os_sphenoidale": {
+        "sella_turcica": [("x", "band", 0.44, 0.56), ("z", "max", 0.12)],
+        "dorsum_sellae": [("x", "band", 0.44, 0.56), ("z", "max", 0.10), ("y", "max", 0.50)],
+        "corpus": [("x", "band", 0.42, 0.58), ("z", "band", 0.35, 0.65)],
+        "ala_minor": [("y", "min", 0.25), ("z", "max", 0.30), ("x", "min", 0.30)],
+        "ala_major": [("x", "min", 0.12)],
+        "processus_pterygoideus": [("z", "min", 0.15), ("x", "min", 0.50)],
+        "hamulus_pterygoideus": [("z", "min", 0.04), ("x", "min", 0.50)],
+        "processus_clinoideus_anterior": [("z", "max", 0.12), ("x", "band", 0.30, 0.44)],
+    },
+    "os_ethmoidale": {
+        "crista_galli": [("z", "max", 0.06), ("x", "band", 0.40, 0.60)],
+        "lamina_cribrosa": [("z", "band", 0.72, 0.88), ("x", "band", 0.40, 0.60)],
+        "lamina_perpendicularis": [("x", "band", 0.46, 0.54), ("z", "min", 0.50)],
+        "labyrinthus_ethmoidalis": [("x", "min", 0.35), ("z", "band", 0.20, 0.80)],
+        "lamina_orbitalis": [("x", "min", 0.06)],
+        "concha_nasalis_media": [("x", "band", 0.25, 0.45), ("z", "min", 0.15)],
+    },
 }
 AXES = {"x": 0, "y": 1, "z": 2}
 MIN_PIN_VERTICES = 4
@@ -190,11 +278,29 @@ def derive_landmarks(structure_id: str, positions: list[float]) -> dict[str, dic
     return pins
 
 
+# A scene: which mapping it draws from, which side the meshes are, the card it
+# opens on (a region's explanation for the skull, the first bone otherwise),
+# an optional colour per structure, and the note the layer strip shows.
 SCENES = {
     "upper_limb_right": {
         "title": "Üst ekstremite (sağ) · kemik, kas, arter, ven",
         "region": "upper_limb",
+        "mapping": UPPER_LIMB_RIGHT,
         "structure_ids": list(UPPER_LIMB_RIGHT),
+        "side": "right",
+        "card": "",
+        "palette": {},
+        "note": "sağ taraf",
+    },
+    "neurocranium": {
+        "title": "Nörokranyum · kafa tabanı ve kubbe",
+        "region": "head_neck",
+        "mapping": NEUROCRANIUM,
+        "structure_ids": list(NEUROCRANIUM),
+        "side": "both",
+        "card": "neurocranium",
+        "palette": NEUROCRANIUM_PALETTE,
+        "note": "iki taraf · kemikleri tek tek kapat",
     },
 }
 
@@ -241,7 +347,7 @@ def merge_obj(parts: list[str], *, comment: str) -> str:
 
 def import_archive(archive: Path, assets: Path, scene_id: str) -> dict:
     scene = SCENES[scene_id]
-    mapping = {structure_id: UPPER_LIMB_RIGHT[structure_id] for structure_id in scene["structure_ids"]}
+    mapping = {structure_id: scene["mapping"][structure_id] for structure_id in scene["structure_ids"]}
     assets.mkdir(parents=True, exist_ok=True)
     manifest_path = assets / "manifest.json"
     manifest = {"assets": [], "scenes": []}
@@ -286,7 +392,7 @@ def import_archive(archive: Path, assets: Path, scene_id: str) -> dict:
                 "license": LICENSE,
                 "source": SOURCE_URL,
                 "attribution": ATTRIBUTION,
-                "side": "right",
+                "side": scene.get("side", "right"),
                 # BodyParts3D's body frame is z-up (the limb's long axis is z); the
                 # viewer is y-up and turns the mesh, its bounds and its anchors alike.
                 "up_axis": "z",
@@ -315,6 +421,9 @@ def import_archive(archive: Path, assets: Path, scene_id: str) -> dict:
         "title": scene["title"],
         "region": scene["region"],
         "structure_ids": [structure_id for structure_id in scene["structure_ids"] if structure_id in existing],
+        "card": scene.get("card", ""),
+        "palette": {structure_id: colour for structure_id, colour in scene.get("palette", {}).items() if structure_id in existing},
+        "note": scene.get("note", ""),
     }
     manifest["scenes"] = list(scenes.values())
     manifest["note"] = (

@@ -97,6 +97,26 @@
               "title_tr": "Baş ve boyun kasları",
               "title_en": "Head and neck muscles",
               "keywords": ["boyun", "sternocleidomastoideus", "mimik", "çiğneme", "masseter"]
+            },
+            {
+              "id": "skull",
+              "title_tr": "Kafatası (cranium)",
+              "title_en": "Skull (cranium)",
+              "keywords": ["kafatası", "cranium", "skull", "kafa kemikleri"],
+              "topics": [
+                {
+                  "id": "neurocranium",
+                  "title_tr": "Nörokranyum: kubbe, kafa tabanı, fossalar ve delikler",
+                  "title_en": "Neurocranium: vault, base, cranial fossae and foramina",
+                  "keywords": ["nörokranyum", "neurocranium", "kafa tabanı", "fossa cranii", "foramen magnum", "calvaria", "sutura", "sütür", "sella turcica", "pterion"]
+                },
+                {
+                  "id": "viscerocranium",
+                  "title_tr": "Viscerocranium: yüz iskeleti",
+                  "title_en": "Viscerocranium: facial skeleton",
+                  "keywords": ["viscerocranium", "yüz iskeleti", "maxilla", "mandibula", "os zygomaticum"]
+                }
+              ]
             }
           ]
         }

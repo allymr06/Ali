@@ -134,7 +134,7 @@ rendered PDF page beside its text, the exam runner with flagging and a timer,
 and the results screen with per-topic breakdowns and source links back to the
 lecture page. Settings: `JARVIS_MEDICAL_*` (`docs/CONFIGURATION.md`).
 
-**What the test pass changed.** 537 tests were added for the layers the first
+**What the test pass changed.** 234 tests were added for the layers the first
 round left thin (pipelines, exams, the tutor and the facade), and they found
 three real defects, all now fixed with regression tests.
 

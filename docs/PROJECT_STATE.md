@@ -50,8 +50,20 @@ Last verified: 6 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2256 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 2257 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Lower-limb vessels (7 September 2026)
+
+The lower limb gains its vasculature, mirroring the upper limb (both now carry
+four arteries and two veins). An overview card (vasa_membri_inferioris) carries
+the arterial line from external iliac through femoral, popliteal and the tibial
+arteries with each name change at its landmark, and the femoral-triangle
+contents lateral to medial (NAVEL: nerve, artery, vein, empty canal,
+lymphatics), with the pulse points and the great saphenous vein's constant
+landmark in front of the medial malleolus. Cards were added for the femoral,
+popliteal and anterior and posterior tibial arteries and the femoral and great
+saphenous veins. The anatomy data is 127 structures.
 
 ## Head and neck vessels (7 September 2026)
 

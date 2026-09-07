@@ -661,10 +661,77 @@ class AnatomyLab:
                         "explanation": f"{landmark.latin} — {landmark.turkish}" + (f" · {landmark.note}" if landmark.note else ""),
                     }
                 )
+        # A card's curated tables are recall material of their own; a region
+        # card (the cranial-nerve overview, the skull base) has no landmarks
+        # but every table row is a fact worth asking.
+        if len(items) < count:
+            items.extend(self._table_quiz(structure, rng, count - len(items), option_count))
         # The fact questions are drawn once: a second pass over the same facts
         # walks the same fields again and asks what the first pass already asked.
         if len(items) < count:
             items.extend(self._fact_quiz(structure, rng, count - len(items), option_count))
+        return items[:count]
+
+    # Cells longer than this read as prose, not an option; a table column of
+    # sentences (a fossa's boundaries, a foramen's whole contents list) is left
+    # out of the quiz and only the short, list-like columns are asked.
+    _TABLE_CELL_MAX = 52
+
+    def _table_quiz(self, structure: AnatomyStructure, rng: random.Random, count: int, option_count: int) -> list[dict[str, Any]]:
+        """Recall questions from a card's tables: subject → another column's
+        value. A verbose cell (a fossa's boundaries, a foramen's whole contents
+        sentence) is skipped row by row rather than dropping its whole column,
+        so a column that is short for most rows is still asked. Candidates from
+        every column and row are pooled and shuffled, so one quiz spreads across
+        exits, functions and lesions instead of exhausting the first column."""
+        keys = "ABCDEF"
+        candidates: list[tuple[str, str, str, list[str]]] = []
+        for table in self.tables(structure):
+            columns = table["columns"]
+            if len(columns) < 2:
+                continue
+            for col in range(1, len(columns)):
+                header = columns[col].strip()
+                if header.lower() in {"no", "numara"}:
+                    continue  # a nerve's roman numeral is trivial and reads oddly
+                pairs = [
+                    (row[0], row[col])
+                    for row in table["rows"]
+                    if col < len(row) and row[0].strip() and row[col].strip()
+                    and len(row[0]) <= self._TABLE_CELL_MAX and len(row[col]) <= self._TABLE_CELL_MAX
+                ]
+                pool = [answer for _subject, answer in pairs]
+                # Enough short rows, and enough distinct answers to build honest
+                # distractors from the column's own values.
+                if len(pairs) < 4 or len({normalize(answer) for answer in pool}) < 4:
+                    continue
+                for subject, answer in pairs:
+                    candidates.append((subject, header, answer, pool))
+        rng.shuffle(candidates)
+        items: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for subject, header, answer, pool in candidates:
+            stem = f"{subject} — {header} nedir?"
+            if stem in seen:
+                continue
+            distractors = _distinct_distractors(answer, (value for value in pool if value != answer))
+            if len(distractors) < 2:
+                continue
+            seen.add(stem)
+            choices = [answer, *distractors[: option_count - 1]]
+            rng.shuffle(choices)
+            items.append(
+                {
+                    "kind": "table_recall",
+                    "structure_id": structure.structure_id,
+                    "stem": stem,
+                    "options": [{"key": keys[index], "text": choice} for index, choice in enumerate(choices)],
+                    "correct_key": keys[choices.index(answer)],
+                    "explanation": f"{subject}: {header} — {answer}",
+                }
+            )
+            if len(items) >= count:
+                break
         return items[:count]
 
     def _fact_quiz(self, structure: AnatomyStructure, rng: random.Random, count: int, option_count: int) -> list[dict[str, Any]]:

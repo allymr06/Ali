@@ -118,6 +118,24 @@ VISCEROCRANIUM: dict[str, list[tuple[str, str, list[str]]]] = {
     "vomer": [("FMA9710", "vomer", ["FJ3395"])],
 }
 CRANIUM: dict[str, list[tuple[str, str, list[str]]]] = {**NEUROCRANIUM, **VISCEROCRANIUM}
+
+# The vertebral column, region by region. Each typical-vertebra card is one
+# mesh merged from its whole run of vertebrae (T1-T12 into one "thoracic"
+# group), so a continuous spine is drawn in a handful of coloured groups
+# without a card for every single bone.
+VERTEBRAL_COLUMN: dict[str, list[tuple[str, str, list[str]]]] = {
+    "atlas": [("FMA12519", "atlas", ["FJ3176"])],
+    "axis": [("FMA12520", "axis", ["FJ3177"])],
+    "vertebra_cervicalis": [("FMA12521", "cervical vertebrae C3-C7", ["FJ3161", "FJ3164", "FJ3167", "FJ3170", "FJ3172"])],
+    "vertebra_thoracica": [("FMA9165", "thoracic vertebrae T1-T12", ["FJ3158", "FJ3160", "FJ3163", "FJ3166", "FJ3169", "FJ3171", "FJ3173", "FJ3174", "FJ3175", "FJ3154", "FJ3155", "FJ3156"])],
+    "vertebra_lumbalis": [("FMA13072", "lumbar vertebrae L1-L5", ["FJ3157", "FJ3159", "FJ3162", "FJ3165", "FJ3168"])],
+    "os_sacrum": [("FMA16202", "sacrum", ["FJ3393"])],
+}
+VERTEBRAL_COLUMN_PALETTE: dict[str, list[float]] = {
+    "atlas": [0.96, 0.78, 0.30], "axis": [0.42, 0.74, 0.96],
+    "vertebra_cervicalis": [0.55, 0.86, 0.42], "vertebra_thoracica": [0.92, 0.52, 0.66],
+    "vertebra_lumbalis": [0.80, 0.52, 0.92], "os_sacrum": [0.36, 0.90, 0.84],
+}
 CRANIUM_PALETTE: dict[str, list[float]] = {
     "os_frontale": [0.96, 0.78, 0.30], "os_parietale": [0.42, 0.74, 0.96],
     "os_temporale": [0.55, 0.86, 0.42], "os_occipitale": [0.92, 0.42, 0.38],
@@ -280,6 +298,22 @@ LANDMARK_RULES: dict[str, dict[str, list[tuple]]] = {
         "ala_vomeris": [("z", "max", 0.10)],
         "margo_posterior": [("y", "max", 0.15)],
     },
+    "atlas": {
+        "arcus_anterior": [("y", "min", 0.15)],
+        "arcus_posterior": [("y", "max", 0.15)],
+        "massa_lateralis": [("x", "min", 0.15)],
+    },
+    "axis": {
+        "dens_axis": [("z", "max", 0.12), ("y", "min", 0.5)],
+        "processus_spinosus": [("y", "max", 0.12)],
+        "corpus_vertebrae": [("z", "min", 0.25), ("y", "min", 0.3)],
+    },
+    "os_sacrum": {
+        "promontorium": [("z", "max", 0.06), ("y", "min", 0.3)],
+        "basis_ossis_sacri": [("z", "max", 0.10)],
+        "canalis_sacralis": [("z", "max", 0.12), ("y", "max", 0.3)],
+        "facies_auricularis_sacri": [("z", "band", 0.6, 0.9), ("x", "min", 0.15)],
+    },
 }
 AXES = {"x": 0, "y": 1, "z": 2}
 MIN_PIN_VERTICES = 4
@@ -358,6 +392,16 @@ SCENES = {
         "card": "neurocranium",
         "palette": CRANIUM_PALETTE,
         "note": "tüm kafatası · kemikleri tek tek kapat",
+    },
+    "vertebral_column": {
+        "title": "Omurga · servikal → sakrum",
+        "region": "trunk",
+        "mapping": VERTEBRAL_COLUMN,
+        "structure_ids": list(VERTEBRAL_COLUMN),
+        "side": "both",
+        "card": "columna_vertebralis",
+        "palette": VERTEBRAL_COLUMN_PALETTE,
+        "note": "bölgeleri tek tek kapat · eğrilikleri gör",
     },
 }
 

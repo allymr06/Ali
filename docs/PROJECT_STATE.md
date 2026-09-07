@@ -50,8 +50,35 @@ Last verified: 6 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2245 tests passing, 5 skipped (`scripts/verify.py`)
+- Automated verification: 2251 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Vertebral column (7 September 2026)
+
+The spine, the next foundational block of the axial skeleton. An overview card
+carries the regional-count table (each region with the one feature that
+identifies it) and the curvature table (primary vs secondary), and cards were
+added for the atypical atlas and axis and the typical cervical, thoracic and
+lumbar vertebra plus the coccyx — the sacrum card already shipped, half-built,
+so the column is now whole. The importer's vertebral_column scene draws a
+continuous spine by merging each region's run of vertebrae into one coloured
+group (T1-T12 as one mesh), so the whole column renders in six colours and its
+regions hide one at a time to show the curvatures; the single bones (atlas,
+axis, sacrum) carry derived pins, the merged groups do not. The anatomy data is
+102 structures. Curriculum leaf anatomy.musculoskeletal.trunk.vertebral_column,
+already present. Curated from the standard texts.
+
+## Quiz from the reference tables (7 September 2026)
+
+The new region cards — the cranial-nerve overview, the skull base, the orbit
+and sinus tables — carry their knowledge as tables, not landmarks, so the
+landmark quiz left them silent. The Anatomy Lab quiz now also draws on a card's
+tables: given a row's subject it asks another column's value (a nerve's skull
+exit, a foramen's bone, a sinus's meatus) with the other rows' values as
+distractors. A verbose cell is skipped row by row rather than dropping its
+whole column, candidates are pooled and shuffled across columns, and the
+catalogue-wide property test was extended to prove no table distractor is a
+second true answer.
 
 ## The full skull: viscerocranium (7 September 2026)
 
@@ -64,7 +91,6 @@ neurocranium card — so the whole skull turns and comes apart layer by layer.
 Curriculum leaf `anatomy.musculoskeletal.skull.viscerocranium`, which the skull
 topic already carried. The anatomy data is now 95 structures.
 
-## Cranial nerves (7 September 2026)
 ## Cranial nerves (7 September 2026)
 
 After the neurocranium, the coverage audit's top gap was the cranial nerves —
@@ -80,7 +106,6 @@ unchanged. Curriculum node `anatomy.neuroanatomy.cranial_nerves`. All curated
 from the standard texts; the cards are schematic because no licensed nerve
 mesh exists.
 
-## One consistent voice (7 September 2026)
 ## One consistent voice (7 September 2026)
 
 The student reported the spoken answers were unstable and hard to understand,

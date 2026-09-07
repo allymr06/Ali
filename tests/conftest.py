@@ -29,6 +29,8 @@ def isolate_runtime_memory_database(monkeypatch, tmp_path) -> None:
         "JARVIS_CONVERSATION_DATABASE_PATH",
         str(tmp_path / "runtime-conversations.sqlite3"),
     )
+    # No test may drive the real PowerPoint through COM.
+    monkeypatch.setenv("JARVIS_MEDICAL_OFFICE_CONVERSION", "false")
     monkeypatch.setenv(
         "JARVIS_MEMORY_DATABASE_PATH",
         str(tmp_path / "runtime-memory.sqlite3"),

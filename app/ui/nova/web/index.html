@@ -372,6 +372,32 @@
           <div id="med-session-chips" class="med-session-chips"></div>
         </header>
         <nav id="med-tabs" class="med-tabs" aria-label="Tıp Akademisi bölümleri"></nav>
+        <!-- Sesli anlatım: the lecture being read aloud, wherever the student is in the academy -->
+        <section id="med-narration" class="panel med-narration" hidden aria-live="polite">
+          <div class="mn-head">
+            <span class="kicker">Sesli anlatım</span>
+            <span id="med-nar-status" class="chip accent"></span>
+            <span id="med-nar-progress" class="faint"></span>
+            <span id="med-nar-voice" class="faint"></span>
+          </div>
+          <h2 id="med-nar-title"></h2>
+          <div id="med-nar-segment" class="mn-segment"></div>
+          <p id="med-nar-text" class="mn-text"></p>
+          <div id="med-nar-qa" class="mn-qa"></div>
+          <div id="med-nar-notes" class="settings-note"></div>
+          <form id="med-nar-ask-form" class="mn-ask" autocomplete="off">
+            <input id="med-nar-question" type="text" maxlength="400" placeholder="Anlamadığın yeri yaz, anlatım durup yanıtlar…" aria-label="Soru">
+            <button id="med-nar-ask" class="btn btn-primary small" type="submit">Sor</button>
+            <button id="med-nar-mic" class="btn btn-ghost small" type="button" title="Mikrofonla sor: anlatım durur, birkaç saniye dinler">Sesle sor</button>
+          </form>
+          <div class="btn-row mn-controls">
+            <button id="med-nar-prev" class="btn btn-ghost small" type="button" title="Önceki bölüm">◀ Önceki</button>
+            <button id="med-nar-toggle" class="btn btn-primary small" type="button">Duraklat</button>
+            <button id="med-nar-next" class="btn btn-ghost small" type="button" title="Sonraki bölüm">Sonraki ▶</button>
+            <label class="switch-row small" title="Birkaç bölümde bir JARVIS durup soru olup olmadığını sorar ve dinler"><span>Ara ara sor</span><input id="med-nar-checkpoints" class="switch" type="checkbox" checked></label>
+            <button id="med-nar-stop" class="btn btn-ghost small" type="button">Bitir</button>
+          </div>
+        </section>
         <div id="med-unavailable" class="panel med-unavailable" hidden></div>
         <div id="med-body" class="med-body">
 
@@ -428,8 +454,11 @@
                 <div class="panel-title"><span class="kicker">Belgeler</span><span id="med-doc-count" class="faint"></span></div>
                 <div class="btn-row" style="justify-content:flex-start">
                   <button id="med-import" class="btn btn-primary small" type="button">Belge ekle</button>
+                  <button id="med-import-folder" class="btn btn-ghost small" type="button" title="Bir klasördeki tüm ders dosyalarını (PDF, PPT, PPTX, metin) tek ders seti olarak ekler">Klasör ekle</button>
                   <button id="med-doc-refresh" class="icon-btn small" type="button" title="Yenile"></button>
                 </div>
+                <div id="med-set-list" class="med-set-list"></div>
+                <label class="search med-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l6 6"/></svg><input id="med-doc-search" type="text" placeholder="Belge ara…" spellcheck="false"></label>
                 <div id="med-doc-list" class="med-list"></div>
               </aside>
               <div id="med-doc-detail" class="med-doc-detail"></div>
@@ -519,6 +548,10 @@
                     <button id="med-prof-add" class="btn btn-ghost small" type="submit">Ekle</button>
                   </div>
                 </form>
+                <div class="btn-row" style="justify-content:flex-start">
+                  <button id="med-prof-mine" class="btn btn-ghost small" type="button" title="Kütüphanedeki her belgenin başlık sayfasındaki hoca adını okur, belgeyi o hocaya bağlar ve içindeki numaralı soruları hocanın profiline ekler">Belgelerden hocaları ayır</button>
+                </div>
+                <div id="med-prof-report" class="med-set-list"></div>
                 <div id="med-prof-list" class="med-list"></div>
               </aside>
               <div id="med-prof-detail" class="med-prof-detail"></div>

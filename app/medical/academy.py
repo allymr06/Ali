@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import threading
+from collections import Counter
 from collections.abc import Callable, Coroutine, Iterable
 from datetime import timedelta
 from pathlib import Path
@@ -31,8 +32,10 @@ from app.medical.learning import LearningEngine
 from app.medical.model import MedicalModelClient, MedicalModelError
 from app.medical.models import (
     COMPARISON_LABELS_TR,
+    DocumentPage,
     DocumentStatus,
     ExamConfig,
+    ProfessorProfile,
     KnowledgePriority,
     Question,
     QuestionOrigin,
@@ -43,7 +46,22 @@ from app.medical.models import (
     SUPPORT_LABELS_TR,
     new_id,
 )
-from app.medical.professor import QuestionImportParser, StyleProfiler, imported_question
+from app.medical.professor import (
+    MENTION_PAGES,
+    ProfessorMention,
+    QuestionImportParser,
+    StyleProfiler,
+    imported_question,
+    fuller_name,
+    looks_like_question_paper,
+    professor_from_title,
+    professor_key,
+    professor_mentions,
+    same_person,
+    split_by_professor,
+)
+from app.medical.convert import OFFICE_SUFFIXES, OfficeConverter
+from app.medical.narration import NarrationError, NarrationService
 from app.medical.prompts import (
     PIPELINE_SYSTEM,
     comparison_prompt,
@@ -70,7 +88,7 @@ from app.medical.schemas import (
 )
 from app.medical.store import MedicalStore
 from app.medical.terminology import TerminologyIndex, load_anatomy_data
-from app.medical.text import excerpt
+from app.medical.text import excerpt, fold
 from app.medical.tutor import MEDICAL_TOOLS, MedicalTutor
 
 EventCallback = Callable[[dict[str, Any]], None]
@@ -80,6 +98,31 @@ COMPARE_MAX_CHARS = 14_000
 NOTES_MAX_CHARS = 12_000
 PAGE_IMAGE_SCALE = 1.5
 BANK_LIST_LIMIT = 200
+LECTURE_SET_PREFIX = "lecture_set:"
+# Folder or file names that name an academy subject. Order matters where one
+# alias contains another ("mikrobiyoloji" before "biyoloji").
+SUBJECT_FOLDER_ALIASES: tuple[tuple[str, str], ...] = (
+    ("anatomi", "anatomy"),
+    ("histoloji", "histology"),
+    ("embriyoloji", "histology"),
+    ("mikrobiyoloji", "microbiology"),
+    ("parazitoloji", "microbiology"),
+    ("biyokimya", "biochemistry"),
+    ("biyofizik", "biophysics"),
+    ("fizyoloji", "physiology"),
+    ("biyoloji", "biology"),
+    ("genetik", "biology"),
+)
+
+
+def folder_subject(parts: Iterable[str]) -> str | None:
+    """The subject a path names, judged from its innermost part outwards."""
+    for part in reversed([str(item) for item in parts]):
+        folded = fold(part)
+        for alias, subject in SUBJECT_FOLDER_ALIASES:
+            if fold(alias) in folded:
+                return subject
+    return None
 
 
 class DocumentJobs:
@@ -108,6 +151,8 @@ class MedicalAcademy:
         model: MedicalModelClient,
         diagnostics: Any | None = None,
         source_note: str = "",
+        narration_voice: str = "local",
+        narration_checkpoint_every: int = 3,
     ) -> None:
         self.store = store
         self.curriculum = curriculum
@@ -130,6 +175,7 @@ class MedicalAcademy:
         self._background: set[asyncio.Task[Any]] = set()
         self._jobs: dict[str, dict[str, Any]] = {}
         self._comparisons: dict[str, dict[str, Any]] = {}
+        self.narration = NarrationService(store=store, model=model, emit=self._emit, checkpoint_every=narration_checkpoint_every, prefer_cloud=narration_voice == "cloud")
         self.tutor = MedicalTutor(
             store=store,
             curriculum=curriculum,
@@ -343,6 +389,8 @@ class MedicalAcademy:
             ],
             "professors": [self.profiler.to_dict(profile) for profile in self.store.list_professors()],
             "jobs": list(self._jobs.values()),
+            "lecture_sets": self.lecture_sets(),
+            "presentations": self.pipeline.converts_presentations,
         }
 
     def session_state(self) -> dict[str, Any]:
@@ -510,6 +558,7 @@ class MedicalAcademy:
     def delete_document(self, document_id: str) -> bool:
         removed = self.pipeline.delete(document_id)
         self._comparisons.pop(document_id, None)
+        self.narration.builder.forget(document_id)
         self._jobs.pop(document_id, None)
         session = self.sessions.get()
         if document_id in session.document_ids:
@@ -528,8 +577,12 @@ class MedicalAcademy:
                 self._jobs[document_id] = entry
         self._emit({"kind": "document_status", **entry})
 
-    async def process_document(self, document_id: str, *, vision: bool = True, analysis: bool = True) -> dict[str, Any]:
-        """Extract, index, look at the figures, summarise; report every stage."""
+    async def process_document(self, document_id: str, *, vision: bool = True, analysis: bool = True, quiet: bool = False) -> dict[str, Any]:
+        """Extract, index, look at the figures, summarise; report every stage.
+
+        ``quiet`` marks the completion event as part of a batch, so the shell
+        shows one notification for the batch instead of one per document.
+        """
         document = await asyncio.to_thread(self.pipeline.process, document_id, progress=lambda stage, detail: self._job(document_id, str(stage), detail))
         if document.status != DocumentStatus.READY:
             self._job(document_id, "failed", document.status_detail, done=True, error=document.error)
@@ -543,8 +596,199 @@ class MedicalAcademy:
                 self._record("document.analysis_failed", str(exc), level="warning", document_id=document_id)
         document = self.store.get_document(document_id) or document
         self._job(document_id, "ready", document.status_detail, done=True)
-        self._emit({"kind": "document_ready", "document_id": document_id, "title": document.title, "page_count": document.page_count})
+        self._emit({"kind": "document_ready", "document_id": document_id, "title": document.title, "page_count": document.page_count, "quiet": quiet})
         return self.pipeline.payload(document)
+
+    # ------------------------------------------------------------------
+    # lecture sets: a folder of course material imported as one unit
+    # ------------------------------------------------------------------
+
+    def lecture_sets(self) -> list[dict[str, Any]]:
+        """Every imported folder with live counts of what its documents became."""
+        documents = {document.document_id: document for document in self.store.list_documents()}
+        payloads = []
+        for key in self.store.meta_keys(LECTURE_SET_PREFIX):
+            record = self.store.get_meta(key)
+            if isinstance(record, dict):
+                payloads.append(self._lecture_set_payload(record, documents))
+        payloads.sort(key=lambda item: item.get("imported_at") or "", reverse=True)
+        return payloads
+
+    def lecture_set(self, set_id: str) -> dict[str, Any] | None:
+        record = self.store.get_meta(LECTURE_SET_PREFIX + str(set_id or ""))
+        if not isinstance(record, dict):
+            return None
+        documents = {document.document_id: document for document in self.store.list_documents()}
+        payload = self._lecture_set_payload(record, documents)
+        payload["documents"] = [self.pipeline.payload(documents[document_id]) for document_id in record.get("document_ids", []) if document_id in documents]
+        return payload
+
+    def _lecture_set_payload(self, record: dict[str, Any], documents: dict[str, StudyDocument]) -> dict[str, Any]:
+        members = [documents[document_id] for document_id in record.get("document_ids", []) if document_id in documents]
+        statuses = Counter(document.status for document in members)
+        subjects = Counter(document.subject for document in members if document.subject)
+        return {
+            "set_id": record.get("set_id"),
+            "name": record.get("name"),
+            "root": record.get("root"),
+            "source": record.get("source") or "",
+            "imported_at": record.get("imported_at"),
+            "processed_at": record.get("processed_at"),
+            "counts": dict(record.get("counts") or {}),
+            "documents_total": len(members),
+            "ready": statuses.get(DocumentStatus.READY, 0),
+            "pending": sum(count for status, count in statuses.items() if status not in {DocumentStatus.READY, DocumentStatus.FAILED}),
+            "failed": statuses.get(DocumentStatus.FAILED, 0),
+            "visual_pending": sum(document.visual_pages_pending for document in members),
+            "visual_analyzed": sum(document.visual_pages_analyzed for document in members),
+            "subjects": [{"subject": subject, "label": SUBJECT_LABELS_TR.get(subject, subject), "count": count} for subject, count in subjects.most_common()],
+            "skipped": list(record.get("skipped") or [])[:50],
+            "failures": list(record.get("failed") or [])[:50],
+            "mined": record.get("mined"),
+        }
+
+    def _save_lecture_set(self, record: dict[str, Any]) -> None:
+        self.store.set_meta(LECTURE_SET_PREFIX + str(record["set_id"]), record)
+
+    def delete_lecture_set(self, set_id: str) -> bool:
+        """Forget the folder as a unit; its documents stay in the library."""
+        removed = self.store.delete_meta(LECTURE_SET_PREFIX + str(set_id or ""))
+        if removed:
+            self._emit({"kind": "lecture_set_deleted", "set_id": set_id})
+        return removed
+
+    def import_folder(self, path: str, *, name: str | None = None, source: str | None = None, progress: Callable[[int, int, str], None] | None = None) -> dict[str, Any]:
+        """File every supported document below ``path`` as one lecture set.
+
+        Folder names become tags, and the nearest folder (or the file name)
+        that names a subject sets the document's subject. Nothing is
+        processed here: the caller runs :meth:`process_lecture_set`, which
+        needs the loop and possibly the model.
+        """
+        root = Path(str(path or "")).expanduser()
+        if not root.is_dir():
+            raise DocumentError("Klasör bulunamadı.")
+        set_name = (name or root.name).strip()[:80] or root.name
+        files = sorted(item for item in root.rglob("*") if item.is_file() and not item.name.startswith(".") and not item.name.endswith(".part"))
+        document_ids: list[str] = []
+        imported: list[str] = []
+        duplicates: list[str] = []
+        skipped: list[dict[str, str]] = []
+        failed: list[dict[str, str]] = []
+        for index, file in enumerate(files, start=1):
+            relative = file.relative_to(root)
+            folders = [part for part in relative.parts[:-1] if part.strip()]
+            if progress is not None and (index % 5 == 0 or index == len(files)):
+                progress(index, len(files), str(relative))
+            if not self.pipeline.accepts(file):
+                reason = "sunum için PowerPoint gerekli" if file.suffix.lower() in OFFICE_SUFFIXES else "desteklenmeyen tür"
+                skipped.append({"path": str(relative), "reason": reason})
+                continue
+            subject = folder_subject([*folders, file.stem])
+            tags = list(dict.fromkeys([set_name, *folders]))
+            try:
+                document, created = self.pipeline.import_file(file, subject=subject, tags=tags)
+            except DocumentError as exc:
+                failed.append({"path": str(relative), "error": str(exc)})
+                continue
+            except Exception as exc:  # a converter or disk failure must not stop the folder
+                failed.append({"path": str(relative), "error": f"{type(exc).__name__}"})
+                continue
+            if created:
+                imported.append(document.document_id)
+            else:
+                duplicates.append(document.document_id)
+                changed = False
+                for tag in tags:
+                    if tag not in document.tags and len(document.tags) < 20:
+                        document.tags.append(tag)
+                        changed = True
+                if subject and not document.subject:
+                    document.subject = subject
+                    changed = True
+                if changed:
+                    self.store.save_document(document)
+            if document.document_id not in document_ids:
+                document_ids.append(document.document_id)
+        record = {
+            "set_id": new_id("set"),
+            "name": set_name,
+            "root": str(root),
+            "source": str(source or "").strip()[:300],
+            "imported_at": utc_now().isoformat(),
+            "processed_at": None,
+            "document_ids": document_ids,
+            "counts": {"files": len(files), "imported": len(imported), "duplicates": len(duplicates), "skipped": len(skipped), "failed": len(failed)},
+            "skipped": skipped[:200],
+            "failed": failed[:200],
+        }
+        self._save_lecture_set(record)
+        self._record("lecture_set.imported", "Lecture set imported.", set_id=record["set_id"], files=len(files), imported=len(imported), duplicates=len(duplicates), failed=len(failed))
+        self._emit({"kind": "lecture_set_imported", "set_id": record["set_id"], "name": set_name, "imported": len(imported), "duplicates": len(duplicates), "skipped": len(skipped), "failed": len(failed)})
+        return {**record, "imported_ids": imported}
+
+    async def process_lecture_set(self, set_id: str, *, vision: bool = True, analysis: bool = True, retry_failed: bool = False) -> dict[str, Any]:
+        """Process the set's unprocessed documents one after another.
+
+        Each document reports its own stages as usual; the set reports where
+        it is in the queue and one notification at the end instead of one
+        per document.
+        """
+        record = self.store.get_meta(LECTURE_SET_PREFIX + str(set_id or ""))
+        if not isinstance(record, dict):
+            raise DocumentError("Ders seti bulunamadı.")
+        queue: list[StudyDocument] = []
+        for document_id in record.get("document_ids", []):
+            document = self.store.get_document(document_id)
+            if document is None:
+                continue
+            if document.status == DocumentStatus.READY:
+                continue
+            if document.status == DocumentStatus.FAILED and not retry_failed:
+                continue
+            queue.append(document)
+        processed: list[str] = []
+        failures: list[dict[str, str]] = []
+        for index, document in enumerate(queue, start=1):
+            self._emit({"kind": "lecture_set_progress", "set_id": set_id, "name": record.get("name"), "done": index - 1, "total": len(queue), "current": document.title, "document_id": document.document_id})
+            try:
+                payload = await self.process_document(document.document_id, vision=vision, analysis=analysis, quiet=True)
+            except Exception as exc:
+                failures.append({"document_id": document.document_id, "title": document.title, "error": f"{type(exc).__name__}"})
+                continue
+            if payload.get("status") == DocumentStatus.READY:
+                processed.append(document.document_id)
+            else:
+                failures.append({"document_id": document.document_id, "title": document.title, "error": str(payload.get("error") or payload.get("status_detail") or "işlenemedi")})
+        record["processed_at"] = utc_now().isoformat()
+        self._save_lecture_set(record)
+        report = {"set_id": set_id, "name": record.get("name"), "queued": len(queue), "processed": len(processed), "failed": len(failures), "failures": failures[:50]}
+        self._record("lecture_set.processed", "Lecture set processed.", set_id=set_id, processed=len(processed), failed=len(failures))
+        self._emit({"kind": "lecture_set_processed", **report})
+        return report
+
+    async def import_folder_job(self, path: str, *, name: str | None = None, source: str | None = None, vision: bool = True, analysis: bool = True) -> dict[str, Any]:
+        """Import a folder off the loop, then process what it brought."""
+        loop = asyncio.get_running_loop()
+
+        def progress(done: int, total: int, current: str) -> None:
+            loop.call_soon_threadsafe(self._emit, {"kind": "lecture_set_progress", "set_id": None, "name": name or Path(str(path)).name, "stage": "importing", "done": done, "total": total, "current": current})
+
+        record = await asyncio.to_thread(self.import_folder, path, name=name, source=source, progress=progress)
+        processed = await self.process_lecture_set(record["set_id"], vision=vision, analysis=analysis)
+        counts = dict(record.get("counts") or {})
+        notes: list[str] = []
+        if counts.get("skipped"):
+            reasons = Counter(item.get("reason", "") for item in record.get("skipped", []))
+            notes.append("Atlanan dosyalar: " + ", ".join(f"{count} × {reason}" for reason, count in reasons.most_common()) + ".")
+        if counts.get("failed"):
+            notes.append("İçe aktarılamayan dosyalar: " + "; ".join(f"{item['path']} ({item['error']})" for item in record.get("failed", [])[:5]) + ("…" if counts["failed"] > 5 else ""))
+        if processed.get("failed"):
+            notes.append("İşlenemeyen belgeler: " + "; ".join(f"{item['title']} ({item['error']})" for item in processed.get("failures", [])[:5]) + ("…" if processed["failed"] > 5 else ""))
+        return {
+            "set_id": record["set_id"],
+            "folder_import": {"name": record["name"], **counts, "processed": processed.get("processed", 0), "process_failed": processed.get("failed", 0), "notes": notes},
+        }
 
     async def _vision_pass(self, document: StudyDocument) -> int:
         pending = self.pipeline.pages_needing_vision(document.document_id)
@@ -834,9 +1078,20 @@ class MedicalAcademy:
 
     async def generate_exam(self, fields: dict[str, Any]) -> dict[str, Any]:
         config = self.exam_config(fields)
+        notes: list[str] = []
+        if config.professor_id:
+            # A professor's own lectures are the best evidence for a paper in
+            # their style; they are used unless the student picked documents.
+            profile = self.store.get_professor(config.professor_id)
+            if profile is not None and profile.subject and not config.subjects and not config.topic_ids:
+                config.subjects = [profile.subject]
+            if not fields.get("document_ids") and not config.document_ids:
+                owned = [document.document_id for document in self.store.list_documents() if document.professor_id == config.professor_id and document.status == DocumentStatus.READY]
+                if owned:
+                    config.document_ids = owned[:12]
+                    notes.append(f"Kaynak: hocanın kendi ders notları ({len(config.document_ids)} belge).")
         if not config.subjects and not config.topic_ids:
             raise GenerationError("Ders ya da konu seçilmedi.")
-        notes: list[str] = []
         if config.wrong_only:
             questions = self.generator.from_bank(config, wrong_question_ids=self.tutor._wrong_question_ids(), only_wrong=True)
             if not questions:
@@ -848,7 +1103,8 @@ class MedicalAcademy:
                 raise GenerationError("Soru bankasında bu ölçütlere uyan soru yok.")
             notes.append("Soru bankasından seçildi.")
         else:
-            questions, notes = await self.generator.generate(config)
+            questions, generated_notes = await self.generator.generate(config)
+            notes.extend(generated_notes)
         exam = self.exam_builder.build(config, questions, notes=notes)
         session = self.sessions.get()
         session.active_exam_id = exam.exam_id
@@ -1069,6 +1325,7 @@ class MedicalAcademy:
         payload = self.profiler.to_dict(profile)
         payload["directive"] = StyleProfiler.directive(profile)
         payload["questions"] = [question_payload(question, reveal=True, include_explanation=False, curriculum=self.curriculum) for question in self.store.get_questions(profile.question_ids)]
+        payload["documents"] = self.professor_documents(profile.profile_id)
         return payload
 
     def _rebuild_profile(self, profile_id: str, name: str, subject: str | None, question_ids: list[str], *, notes: str = "") -> dict[str, Any]:
@@ -1187,6 +1444,207 @@ class MedicalAcademy:
             raise DocumentError("Görsel çok büyük.")
         return await self.model.text("image_questions", "Transcribe every exam question, option letter and any answer line in this image exactly as written, in reading order. Output plain text only; do not add answers that are not shown.", system_prompt=PIPELINE_SYSTEM, images=[{"data": data, "mime_type": mime, "detail": "high"}], task_type="vision")
 
+    # ------------------------------------------------------------------
+    # professors from the material: who wrote a lecture, and their questions
+    # ------------------------------------------------------------------
+
+    def professor_for_document(self, document: StudyDocument) -> ProfessorMention | None:
+        """The lecturer a document names: its opening pages first, then its file name."""
+        mentions = professor_mentions(self.store.get_pages(document.document_id, page_from=1, page_to=MENTION_PAGES))
+        complete = [mention for mention in mentions if mention.complete]
+        if complete:
+            return complete[0]
+        from_title = professor_from_title(document.title) or professor_from_title(Path(document.file_name).stem)
+        if from_title is not None:
+            return from_title
+        if document.page_count > MENTION_PAGES:
+            # Some lecturers sign the closing slide instead of the first.
+            closing = professor_mentions(self.store.get_pages(document.document_id, page_from=max(MENTION_PAGES + 1, document.page_count - 1), page_to=document.page_count), limit_pages=None)
+            signed = [mention for mention in closing if mention.complete]
+            if signed:
+                return signed[0]
+        return mentions[0] if mentions else None
+
+    def _profile_for_mention(self, mention: ProfessorMention, subject: str | None) -> tuple[ProfessorProfile, bool]:
+        """The profile this person already has, else a new one; never two for one lecturer."""
+        for profile in self.store.list_professors():
+            if same_person(professor_key(profile.name), mention.key):
+                # Keep the fuller spelling: a title and a whole first name beat an initial.
+                if mention.complete and fuller_name(mention.name, profile.name):
+                    profile.name = mention.name
+                    self.store.save_professor(profile)
+                if subject and not profile.subject:
+                    profile.subject = subject
+                    self.store.save_professor(profile)
+                return profile, False
+        profile = self.profiler.profile(mention.name, [], subject=subject)
+        self.store.save_professor(profile)
+        return profile, True
+
+    def _mining_scope(self, *, set_id: str | None, document_ids: list[str] | None) -> list[StudyDocument]:
+        if set_id:
+            record = self.store.get_meta(LECTURE_SET_PREFIX + str(set_id))
+            if not isinstance(record, dict):
+                raise DocumentError("Ders seti bulunamadı.")
+            wanted = list(record.get("document_ids", []))
+        elif document_ids:
+            wanted = [str(item) for item in document_ids]
+        else:
+            wanted = [document.document_id for document in self.store.list_documents()]
+        documents = []
+        for document_id in wanted:
+            document = self.store.get_document(document_id)
+            if document is not None and document.status == DocumentStatus.READY:
+                documents.append(document)
+        return documents
+
+    def mine_questions(self, *, set_id: str | None = None, document_ids: list[str] | None = None, progress: Callable[[int, int, str], None] | None = None) -> dict[str, Any]:
+        """Attribute each lecture to the professor it names and file the questions it carries.
+
+        Deterministic only: the parser reads numbered stems with lettered
+        options, a key is stored only when the material states it, and a
+        question found on a page with a picture keeps that page as its
+        figure. A lecturer named with a single token ("Dr. Hasan") is kept
+        but reported as incomplete rather than guessed at.
+        """
+        documents = self._mining_scope(set_id=set_id, document_ids=document_ids)
+        parser = QuestionImportParser()
+        existing_stems = {fold(question.stem) for question in self.store.query_questions(limit=100_000)}
+        per_professor: dict[str, dict[str, Any]] = {}
+        # Question ids gathered per profile; the profile is re-read at the end so
+        # a fuller name learned from a later lecture is what gets rebuilt.
+        touched: dict[str, list[str]] = {}
+        unattributed: list[str] = []
+        incomplete: list[str] = []
+        added_total = 0
+        skipped = 0
+        without_key = 0
+        with_image = 0
+        documents_with_questions = 0
+        for index, document in enumerate(documents, start=1):
+            if progress is not None and (index % 10 == 0 or index == len(documents)):
+                progress(index, len(documents), document.title)
+            pages = self.store.get_pages(document.document_id)
+            mention = self.professor_for_document(document)
+            profile: ProfessorProfile | None = None
+            if mention is not None:
+                profile, created = self._profile_for_mention(mention, document.subject)
+                if created and not mention.complete and mention.name not in incomplete:
+                    # A broken spelling that merged into a known lecturer needs no fixing.
+                    incomplete.append(mention.name)
+                entry = per_professor.setdefault(profile.profile_id, {"profile_id": profile.profile_id, "name": profile.name, "documents": 0, "questions_added": 0})
+                entry["name"] = profile.name  # a fuller spelling may have arrived with this lecture
+                entry["documents"] += 1
+                if document.professor_id != profile.profile_id:
+                    document.professor_id = profile.profile_id
+                    self.store.save_document(document)
+                touched.setdefault(profile.profile_id, [])
+            else:
+                unattributed.append(document.title)
+            text = "\n\n".join(page.text for page in pages)
+            # A lecture keeps every question under its lecturer; only a compiled
+            # paper is cut at the headings that name one.
+            probe = parser.parse(text)
+            sections = split_by_professor(text) if looks_like_question_paper(text, len(probe.questions)) else [(None, text)]
+            added_here = 0
+            for section_mention, section_text in sections:
+                owner = profile
+                if section_mention is not None and section_mention.source == "heading":
+                    owner, _created = self._profile_for_mention(section_mention, document.subject)
+                    touched.setdefault(owner.profile_id, [])
+                    per_professor.setdefault(owner.profile_id, {"profile_id": owner.profile_id, "name": owner.name, "documents": 0, "questions_added": 0})
+                parsed = parser.parse(section_text)
+                for item in parsed.questions:
+                    folded = fold(item.stem)
+                    if not folded or folded in existing_stems:
+                        skipped += 1
+                        continue
+                    existing_stems.add(folded)
+                    page_number = self._page_of(pages, item.stem)
+                    page = next((page for page in pages if page.page_number == page_number), None) if page_number else None
+                    image_ref = f"{document.document_id}|{page_number}" if item.has_image and page is not None and page.image_count else None
+                    question = imported_question(
+                        item,
+                        subject=document.subject or (owner.subject if owner else None) or "anatomy",
+                        professor_id=owner.profile_id if owner else None,
+                        document_id=document.document_id,
+                        origin=QuestionOrigin.LECTURE_DERIVED,
+                        page_number=page_number,
+                        image_ref=image_ref,
+                        tags=["ders notundan", document.title[:60]],
+                    )
+                    self.store.save_question(question)
+                    added_here += 1
+                    if not question.has_answer_key:
+                        without_key += 1
+                    if image_ref:
+                        with_image += 1
+                    if owner is not None:
+                        per_professor[owner.profile_id]["questions_added"] += 1
+                        touched.setdefault(owner.profile_id, []).append(question.question_id)
+            if added_here:
+                documents_with_questions += 1
+                added_total += added_here
+        for profile_id, new_ids in touched.items():
+            profile = self.store.get_professor(profile_id)
+            if profile is None:
+                continue
+            notes = profile.notes or ("Sorular ders notlarındaki örnek/tekrar sorularından çıkarıldı; gerçek sınav kâğıdı yüklenince tarz kesinleşir." if new_ids else "")
+            self._rebuild_profile(profile.profile_id, profile.name, profile.subject, list(dict.fromkeys(profile.question_ids + new_ids)), notes=notes)
+        report = {
+            "documents": len(documents),
+            "attributed": sum(entry["documents"] for entry in per_professor.values()),
+            "documents_with_questions": documents_with_questions,
+            "questions_added": added_total,
+            "skipped": skipped,
+            "without_key": without_key,
+            "with_image": with_image,
+            "professors": sorted(per_professor.values(), key=lambda entry: (-entry["documents"], entry["name"])),
+            "unattributed": unattributed[:60],
+            "incomplete": incomplete[:20],
+            "notes": [],
+            "mined_at": utc_now().isoformat(),
+        }
+        if unattributed:
+            report["notes"].append(f"{len(unattributed)} belgede hoca adı bulunamadı; bu belgeler hocasız kaldı.")
+        if incomplete:
+            report["notes"].append("Adı eksik okunan hocalar: " + ", ".join(incomplete) + ". Profil adını Hoca tarzı ekranından düzeltebilirsin.")
+        if added_total == 0:
+            report["notes"].append("Belgelerde numaralı, şıklı soru bloğu bulunamadı: bu dosyalar ders notu, sınav kâğıdı değil. Çıkmış soruları “Sınav dosyası yükle” ile ekleyince hoca tarzı oluşur.")
+        if without_key:
+            report["notes"].append(f"{without_key} sorunun cevap anahtarı metinde yoktu; anahtar asla tahmin edilmez.")
+        if set_id:
+            record = self.store.get_meta(LECTURE_SET_PREFIX + str(set_id))
+            if isinstance(record, dict):
+                record["mined"] = {key: value for key, value in report.items() if key not in {"unattributed", "professors"}}
+                record["mined"]["professors"] = len(per_professor)
+                self._save_lecture_set(record)
+        self._record("professor.mined", "Lectures attributed and their questions mined.", documents=len(documents), professors=len(per_professor), questions=added_total)
+        self._emit({"kind": "professors_mined", "set_id": set_id, "documents": len(documents), "professors": len(per_professor), "questions": added_total})
+        return report
+
+    @staticmethod
+    def _page_of(pages: list[DocumentPage], stem: str) -> int | None:
+        needle = " ".join(fold(stem).split())[:40]
+        if len(needle) < 12:
+            return None
+        for page in pages:
+            if needle in " ".join(fold(page.text).split()):
+                return page.page_number
+        return None
+
+    async def mine_questions_job(self, *, set_id: str | None = None, document_ids: list[str] | None = None) -> dict[str, Any]:
+        loop = asyncio.get_running_loop()
+
+        def progress(done: int, total: int, current: str) -> None:
+            loop.call_soon_threadsafe(self._emit, {"kind": "lecture_set_progress", "set_id": set_id, "stage": "mining", "done": done, "total": total, "current": current})
+
+        report = await asyncio.to_thread(self.mine_questions, set_id=set_id, document_ids=document_ids, progress=progress)
+        return {"mine": report}
+
+    def professor_documents(self, profile_id: str) -> list[dict[str, Any]]:
+        return [self.pipeline.payload(document) for document in self.store.list_documents() if document.professor_id == profile_id]
+
     def reset_professor(self, profile_id: str) -> dict[str, Any] | None:
         profile = self.store.get_professor(profile_id)
         if profile is None:
@@ -1270,18 +1728,33 @@ def create_medical_academy(
     concepts = default_concept_graph(structures)
     terminology = TerminologyIndex(structures, terms, concepts.all())
     anatomy = AnatomyLab(structures, curriculum, assets_directory=(directory / "anatomy_assets") if directory else None, source_note=source_note)
+    converter = OfficeConverter(directory / "converted" if directory else None, detect=bool(getattr(settings, "medical_office_conversion", True)))
     pipeline = DocumentPipeline(
         store,
         directory=directory,
-        max_pages=int(getattr(settings, "medical_max_document_pages", 400) or 400),
+        max_pages=int(getattr(settings, "medical_max_document_pages", 800) or 800),
         max_bytes=int(getattr(settings, "medical_max_document_bytes", 60 * 1024 * 1024) or 60 * 1024 * 1024),
         vision_pages_per_document=int(getattr(settings, "medical_vision_pages_per_document", 12) or 0),
+        converter=converter.to_pdf if converter.available else None,
     )
     model = MedicalModelClient(provider_gateway, model=getattr(settings, "medical_model", "") or None, diagnostics=diagnostics)
-    academy = MedicalAcademy(store=store, curriculum=curriculum, terminology=terminology, concepts=concepts, anatomy=anatomy, pipeline=pipeline, model=model, diagnostics=diagnostics, source_note=source_note)
+    academy = MedicalAcademy(
+        store=store,
+        curriculum=curriculum,
+        terminology=terminology,
+        concepts=concepts,
+        anatomy=anatomy,
+        pipeline=pipeline,
+        model=model,
+        diagnostics=diagnostics,
+        source_note=source_note,
+        narration_voice=str(getattr(settings, "medical_narration_voice", "local") or "local"),
+        narration_checkpoint_every=int(getattr(settings, "medical_narration_checkpoint_every", 3) or 0),
+    )
+    academy.converter = converter
     if tool_executor is not None:
         academy.register_tools(tool_executor)
     return academy
 
 
-__all__ = ["MedicalAcademy", "create_medical_academy", "MEDICAL_TOOLS", "GenerationError", "MedicalModelError", "DocumentError", "timedelta"]
+__all__ = ["MedicalAcademy", "create_medical_academy", "MEDICAL_TOOLS", "GenerationError", "MedicalModelError", "DocumentError", "NarrationError", "timedelta"]

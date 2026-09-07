@@ -132,6 +132,26 @@ button.med-row:hover { background: rgba(var(--accent-rgb), 0.05); }
 .med-crumb { font-family: var(--font-mono); font-size: 0.66rem; color: var(--ink-4); letter-spacing: 0.03em; }
 .med-topic h2 { font-family: var(--font-display); font-size: var(--text-lg); font-weight: 300; letter-spacing: 0.02em; }
 .med-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.med-set-list { display: flex; flex-direction: column; gap: 0.45rem; }
+.med-narration { margin: 0 0 0.9rem; padding: 0.9rem 1.1rem; display: flex; flex-direction: column; gap: 0.5rem; border-color: rgba(var(--accent-rgb), 0.45); }
+.med-narration .mn-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.med-narration h2 { font-size: var(--text-lg); margin: 0; }
+.med-narration .mn-segment { font-family: var(--font-mono); font-size: 0.68rem; color: var(--accent-2); letter-spacing: 0.08em; }
+.med-narration .mn-text { margin: 0; color: var(--ink-2); font-size: var(--text-md); line-height: 1.65; max-height: 9.5rem; overflow: auto; }
+.med-narration .mn-qa { display: flex; flex-direction: column; gap: 0.35rem; }
+.med-narration .mn-qa .mn-q { color: var(--ink-1); font-size: var(--text-sm); }
+.med-narration .mn-qa .mn-a { color: var(--ink-2); font-size: var(--text-sm); padding-left: 0.8rem; border-left: 2px solid rgba(var(--accent-rgb), 0.5); line-height: 1.55; }
+.med-narration .mn-ask { display: flex; gap: 0.4rem; align-items: center; }
+.med-narration .mn-ask input { flex: 1; min-width: 0; }
+.med-narration .mn-controls { justify-content: flex-start; align-items: center; gap: 0.5rem; }
+.med-narration.listening { border-color: rgba(var(--warn-rgb, 240, 180, 60), 0.7); }
+.med-set { padding: 0.6rem 0.75rem; border-radius: var(--radius-2); border: 1px solid var(--line-1); background: var(--surface-1); display: flex; flex-direction: column; gap: 0.4rem; }
+.med-set.active { border-color: rgba(var(--accent-rgb), 0.55); }
+.med-set .ms-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+.med-set .ms-name { font-size: var(--text-md); color: var(--ink-1); overflow-wrap: anywhere; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font: inherit; }
+.med-set .ms-name:hover { color: var(--accent-2); }
+.med-set .ms-side { font-family: var(--font-mono); font-size: 0.64rem; color: var(--ink-4); white-space: nowrap; }
+.med-set .ms-progress { font-family: var(--font-mono); font-size: 0.64rem; color: var(--accent-2); }
 .med-structures { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.5rem; }
 .med-structure {
   display: flex; flex-direction: column; gap: 0.15rem;

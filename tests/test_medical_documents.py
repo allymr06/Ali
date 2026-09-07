@@ -528,3 +528,94 @@ def test_a_drawn_diagram_joins_the_vision_pass_behind_the_pictured_pages(tmp_pat
     pipeline._mark_visual_pages(pages)
 
     assert [page.visual_status for page in pages] == ["not_needed", "skipped", "pending", "pending", "not_needed"]
+
+
+# ---------------------------------------------------------------------------
+# presentations
+# ---------------------------------------------------------------------------
+
+
+def fake_converter(pages: list[tuple[str, bool]], calls: list[Path]):
+    """Stands in for PowerPoint: any deck becomes the given PDF."""
+
+    def convert(source: Path) -> Path:
+        calls.append(Path(source))
+        target = source.with_suffix(".converted.pdf")
+        target.write_bytes(make_pdf(pages))
+        return target
+
+    return convert
+
+
+def test_a_presentation_is_stored_as_the_pdf_made_from_it_and_dedupes_by_the_deck(tmp_path) -> None:
+    calls: list[Path] = []
+    store = MedicalStore()
+    pipeline = DocumentPipeline(store, directory=tmp_path / "academy", converter=fake_converter([("NEUROCRANIUM", False), ("Os sphenoidale", True)], calls))
+    deck = tmp_path / "Anatomi 7 - Neurocranium.pptx"
+    deck.write_bytes(b"PK\x03\x04 a deck")
+
+    assert pipeline.converts_presentations is True
+    assert pipeline.accepts(deck) and pipeline.accepts(tmp_path / "x.PPT") and not pipeline.accepts(tmp_path / "x.docx")
+    document, created = pipeline.import_file(deck, subject="anatomy", tags=["Komite 4"])
+    assert created is True
+    assert document.kind == "pdf" and document.source_format == "pptx"
+    assert document.file_name == "Anatomi 7 - Neurocranium.pptx" and document.title == "Anatomi 7 - Neurocranium"
+    stored = tmp_path / "academy" / "documents" / f"{document.document_id}.pdf"
+    assert stored.is_file() and stored.read_bytes().startswith(b"%PDF")
+    assert pipeline.payload(document)["source_format"] == "pptx"
+
+    processed = pipeline.process(document.document_id)
+    assert processed.status == DocumentStatus.READY and processed.page_count == 2
+    assert pipeline.render_page(document.document_id, 1).startswith(b"\x89PNG")
+
+    # The deck's own bytes identify it: a second copy converts nothing.
+    twin = tmp_path / "kopya.ppt"
+    twin.write_bytes(deck.read_bytes())
+    again, created_again = pipeline.import_file(twin)
+    assert created_again is False and again.document_id == document.document_id
+    assert calls == [deck]
+
+
+def test_a_presentation_is_refused_plainly_when_nothing_can_convert_it(tmp_path) -> None:
+    pipeline = DocumentPipeline(MedicalStore(), directory=tmp_path / "academy")
+    deck = tmp_path / "ders.pptx"
+    deck.write_bytes(b"PK\x03\x04")
+    assert pipeline.converts_presentations is False and not pipeline.accepts(deck)
+    with pytest.raises(DocumentError, match="PowerPoint gerekli"):
+        pipeline.import_file(deck)
+
+    def broken(source: Path) -> Path:
+        raise RuntimeError("COM exploded")
+
+    with pytest.raises(DocumentError, match="Sunum PDF'e çevrilemedi \\(RuntimeError\\)"):
+        DocumentPipeline(MedicalStore(), directory=tmp_path / "b", converter=broken).import_file(deck)
+
+    def not_a_pdf(source: Path) -> Path:
+        target = source.with_suffix(".pdf")
+        target.write_bytes(b"hello")
+        return target
+
+    with pytest.raises(DocumentError, match="geçersiz çıktı"):
+        DocumentPipeline(MedicalStore(), directory=tmp_path / "c", converter=not_a_pdf).import_file(deck)
+
+
+def test_a_numbered_or_default_title_is_replaced_by_the_first_heading(tmp_path) -> None:
+    store = MedicalStore()
+    pipeline = DocumentPipeline(store, directory=tmp_path / "academy")
+    source = tmp_path / "3.pdf"
+    source.write_bytes(make_pdf([("HUCRE ORGANELLERI", False), ("Mitokondri hucrenin enerji santralidir; ATP uretimi burada gerceklesir.", False)]))
+    document, _ = pipeline.import_file(source)
+    assert document.title == "3"
+    processed = pipeline.process(document.document_id)
+    assert processed.status == DocumentStatus.READY
+    assert processed.title == "HUCRE ORGANELLERI"
+
+    # A real title is left alone even when it is short.
+    named = tmp_path / "Enzimler.pdf"
+    named.write_bytes(make_pdf([("ENZIM KINETIGI: Michaelis-Menten denklemi ve hiz sabitleri.", False)]))
+    kept, _ = pipeline.import_file(named)
+    assert pipeline.process(kept.document_id).title == "Enzimler"
+    from app.medical.documents import weak_title
+
+    assert weak_title("PowerPoint Sunusu") and weak_title("Sunu1") and weak_title("12") and weak_title("1 - 2")
+    assert not weak_title("Anatomi 1 - Terminoloji") and not weak_title("Scapula")

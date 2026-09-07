@@ -211,6 +211,33 @@ class MedicalStore:
         return json.loads(row["body"])
 
     # ------------------------------------------------------------------
+    # meta: small named records (lecture sets, narration scripts)
+    # ------------------------------------------------------------------
+
+    def get_meta(self, key: str) -> Any | None:
+        row = self._row("SELECT value FROM meta WHERE key = ?", (key,))
+        if row is None:
+            return None
+        try:
+            return json.loads(row["value"])
+        except (TypeError, ValueError):
+            return row["value"]
+
+    def set_meta(self, key: str, value: Any) -> None:
+        self._write(
+            "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, json.dumps(value, ensure_ascii=False)),
+            indexed=False,
+        )
+
+    def delete_meta(self, key: str) -> bool:
+        return self._write("DELETE FROM meta WHERE key = ?", (key,), indexed=False) > 0
+
+    def meta_keys(self, prefix: str) -> list[str]:
+        rows = self._rows("SELECT key FROM meta WHERE key LIKE ? ESCAPE '\\' ORDER BY key", (_like_prefix(prefix),))
+        return [str(row["key"]) for row in rows]
+
+    # ------------------------------------------------------------------
     # documents, pages, chunks
     # ------------------------------------------------------------------
 

@@ -409,7 +409,7 @@ def test_medical_settings_read_their_environment_variables(monkeypatch, tmp_path
     assert defaults.medical_enabled is True
     assert defaults.medical_directory.endswith("medical")
     assert defaults.medical_model == ""
-    assert defaults.medical_max_document_pages == 400
+    assert defaults.medical_max_document_pages == 800
     assert defaults.medical_max_document_bytes == 60 * 1024 * 1024
     assert defaults.medical_vision_pages_per_document == 12
 

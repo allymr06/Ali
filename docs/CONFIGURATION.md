@@ -22,9 +22,12 @@ JARVIS untouched.
 | `JARVIS_MEDICAL_ENABLED` | `true` | Enables the study layer. |
 | `JARVIS_MEDICAL_DIRECTORY` | `%LOCALAPPDATA%\JARVIS\medical` | Study store, imported document copies, rendered pages and `anatomy_assets/`. |
 | `JARVIS_MEDICAL_MODEL` | unset | Model override for the academy's structured pipelines; empty uses the routed default. |
-| `JARVIS_MEDICAL_MAX_DOCUMENT_PAGES` | `400` | Refuses a larger PDF instead of stalling on it. |
+| `JARVIS_MEDICAL_MAX_DOCUMENT_PAGES` | `800` | Refuses a larger PDF instead of stalling on it. |
 | `JARVIS_MEDICAL_MAX_DOCUMENT_BYTES` | `62914560` | 60 MiB import limit (1 MiB to 512 MiB). |
 | `JARVIS_MEDICAL_VISION_PAGES_PER_DOCUMENT` | `12` | How many figure-heavy pages per document are read with vision. `0` disables the visual pass. |
+| `JARVIS_MEDICAL_NARRATION_VOICE` | `local` | Voice that reads a lecture aloud in *sesli anlatım*: `local` (the Windows Turkish voice, no quota, one voice for the whole lecture) or `cloud` (the Gemini voice; falls back to local when it fails or the daily quota runs out, and says so). |
+| `JARVIS_MEDICAL_NARRATION_CHECKPOINT_EVERY` | `3` | After every N narration segments JARVIS asks whether anything was unclear and listens for a few seconds; `0` never asks (questions can still be typed or spoken with the button). |
+| `JARVIS_MEDICAL_OFFICE_CONVERSION` | `true` | Export `.ppt`/`.pptx` lectures to PDF through the installed PowerPoint (COM automation, read-only, cached under `converted/`). `false` refuses presentations at import. |
 
 Licensed 3D anatomy assets are registered by hand in
 `<medical directory>/anatomy_assets/manifest.json`; an entry without a licence

@@ -108,6 +108,38 @@ points at a chunk that exists**. `Retriever` never returns a page the store
 does not hold, and a generated question keeps a source reference only when
 the model's stated page matches a supplied one.
 
+### Lecture sets and presentations
+
+A whole semester arrives as a folder, so `import_folder` files everything
+below it as one **lecture set**: the folder names become tags, the nearest
+folder (or the file name) that names an academy subject sets the subject
+(`folder_subject`: *Anatomi* → anatomy, *Tıbbi Biyoloji* → biology,
+*Histoloji ve Embriyoloji* → histology, *Mikrobiyoloji* before *Biyoloji*
+where one word contains the other), and the set record (`meta` table,
+`lecture_set:<id>`) remembers what it took, what it skipped and why. The
+counts a set shows in the library are computed from its documents every time
+(`ready`, `pending`, `failed`, figure pages still waiting), never from what the
+import hoped for. `process_lecture_set` walks the pending documents one after
+another; each document reports its own stages, but its completion event is
+marked `quiet` so the shell publishes one notification for the set instead of
+two hundred. A failed document is retried only when asked.
+
+Presentations (`.ppt`, `.pptx`) are accepted when PowerPoint is installed:
+`OfficeConverter` exports the deck to PDF through PowerPoint's COM interface
+from a PowerShell script (read-only, no window, alerts off) and caches the PDF
+under `<medical directory>/converted/<sha256 of the deck>.pdf`, so the same
+deck never converts twice. The document keeps its original file name and
+records `source_format`; what is stored and read is the PDF. Without
+PowerPoint the import says so (`JARVIS_MEDICAL_OFFICE_CONVERSION=false` says it
+on purpose) and nothing is guessed. A file named `.pdf` whose bytes start with
+the zip or OLE signature is treated as the deck it is.
+
+Titles are the file's own name unless that name says nothing (`3.pptx`,
+`Sunu1`): only then the PDF's Title field is consulted — and a Title that is a
+person or a tool default is not a title — and after that the first heading of
+the opening pages, skipping lines that name a lecturer. An empty text file is
+refused instead of becoming a "ready" document with nothing in it.
+
 ### Comparing lecture material with standard knowledge
 
 `compare_document` classifies substantive statements as consistent,
@@ -210,6 +242,39 @@ length, distractor similarity, option count) and reports each as
 under 10 questions it is *sınırlı* and the profile says so in plain Turkish.
 The generation directive repeats **only ratios that were actually observed**.
 
+### Professors from the material
+
+Lecturers write their name on the title slide, and sometimes into the file
+name (`Mikrobiyoloji Ülker Çuhacı 2 - Mantarlar`). `mine_questions` reads
+both: `professor_mentions` looks at the opening pages (and, failing those,
+the closing ones) for a line that *starts with an academic rank* in any of its
+spellings (`Prof. Dr.`, `PROF.DR.`, `Yrd.Doç.Dr.`, `Doktor Öğretim Üyesi`,
+`Öğr. Gör.`, `Uzm. Dr.`) followed by one to four name tokens; a bare
+abbreviation that opens an ordinary sentence (`Arş. Geliştirme…`, `Öğr.
+Elemanları…`) is not a rank, a job after the rank (`Dr. Halk Sağlığı Uzmanı`)
+is not a person, and a name cut by a line break (`Dr. Hasan` / `OZAN`) is
+joined. Spellings of the same person are merged by `same_person`: titles
+dropped, letters folded, an initial agreeing with the first name, and a
+surname the text layer broke apart (`Kürkçüo lu ğ`) matched by letter
+similarity. One profile per lecturer; the fuller spelling wins.
+
+Each lecture is stamped with its lecturer (`document.professor_id`), and the
+numbered, lettered questions inside it — the review questions many slide
+decks end with — are filed under that lecturer with the `lecture_derived`
+origin, the page they were found on, and the page as their figure when it
+carries a picture. Keys are never guessed. A lecture is never cut at a name
+mentioned inside it (`Dr. Refik Saydam` in a history lecture is content); only
+a file that *looks like a compiled paper* (`looks_like_question_paper`: at
+least five questions and most lines question-shaped) is split at the headings
+that name a lecturer, each section going to the heading above it.
+
+The report says what happened: lecturers found with their lecture counts,
+questions filed, lectures with no name anywhere, names read incompletely, and
+that the profiles built from review questions are limited until a real exam
+paper is uploaded. "Bu tarzda sınav" for a lecturer whose lectures are in the
+library draws its evidence from those lectures (up to twelve) and takes the
+lecturer's subject when none was chosen.
+
 ## Learning model
 
 `LearningEngine` is deliberately interpretable:
@@ -231,6 +296,45 @@ actual confusion ("Scapula sorularında 2 kez fossa supraspinata seçeneğine
 kaydın") instead of a generic encouragement. The wording follows the count: one
 observation is reported as one, not as a tendency, and two distractors picked
 equally often are both named rather than one of them chosen arbitrarily.
+
+## Sesli anlatım
+
+A lecture can be read aloud, and the student can stop it anywhere to ask what
+they did not understand. `app/medical/narration.py` has three parts.
+
+**The script.** `NarrationBuilder` turns the document's pages into spoken
+segments: the model receives up to six pages at a time and writes 70–170-word
+segments in natural spoken Turkish (Latin terms said in full, no lists or
+markdown) that say what the pages say, each with a title and the pages it
+covers — a page the batch did not contain is clamped to the batch. Without a
+model, or for a batch the model could not narrate, the pages are read as they
+stand (`material_segments`) and the script's notes say so. Scripts are cached
+in the store (`narration:<document id>`) and forgotten with the document.
+
+**The player.** `NarrationPlayer` speaks a segment in sentence groups of about
+two hundred characters, so a command lands within a sentence or two: pause,
+resume, next, previous, stop, a typed question, a microphone question, and
+the checkpoint switch. Commands come from the bridge thread and are applied on
+the player's loop, which reads them between chunks — the state machine is
+single-threaded. A question pauses the reading, is answered by the model from
+the segment being narrated and the pages around it (four spoken sentences at
+most; without a model the player says so aloud), the answer is spoken, and
+the reading resumes at the same chunk. With checkpoints on and a microphone
+available, every N segments (`JARVIS_MEDICAL_NARRATION_CHECKPOINT_EVERY`)
+JARVIS asks *"Buraya kadar sorun var mı?"* and listens for a few seconds;
+silence or a *yok / devam* continues, anything else is answered. Every state
+change is pushed to the page as `narration_state`, and the last dozen
+questions and answers travel with it.
+
+**The voice.** `NarrationSpeaker` uses the local Windows voice by default
+(`JARVIS_MEDICAL_NARRATION_VOICE=local`): it has no daily quota and never
+changes voice in the middle of a lecture. With `cloud` the Gemini voice reads
+until it fails or its quota runs out, and the rest of the lecture continues
+locally with a note that says why. Narration and the voice session share one
+microphone and one speaker, so each refuses to start while the other is
+active. The page shows the narration panel above the academy tabs wherever
+the student is: title, segment and pages, the text being read, the last
+answers, a question box, and the controls (Space pauses and resumes).
 
 ## Anatomy Lab
 
@@ -586,3 +690,9 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
 - Movement animation is deliberately absent: without proper anatomical
   rigging it would be a plausible lie. The lab shows the plane, the axis and
   the muscles instead.
+- The narration does not listen while it speaks: interrupting by voice would
+  mean the microphone hearing the speakers. The student pauses with a button,
+  a typed question, Space, or at the checkpoints where JARVIS listens on
+  purpose.
+- Presentations are read only through the installed PowerPoint; there is no
+  bundled renderer, so a machine without Office keeps its decks as PDFs.

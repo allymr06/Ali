@@ -126,6 +126,24 @@ class VoiceService:
                 results[name] = False
         return results
 
+    # The adapters, read-only, for features that speak or listen outside a
+    # voice turn (the academy's narration): one microphone, one speaker.
+    @property
+    def audio_input(self) -> AudioInput:
+        return self._audio_input
+
+    @property
+    def audio_output(self) -> AudioOutput:
+        return self._audio_output
+
+    @property
+    def recognizer(self) -> SpeechRecognizer | None:
+        return self._recognizer
+
+    @property
+    def synthesizer(self) -> SpeechSynthesizer | None:
+        return self._synthesizer
+
     @property
     def stt_provider(self) -> str | None:
         return self._stt_provider

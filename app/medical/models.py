@@ -377,6 +377,9 @@ class StudyDocument:
     error: str | None = None
     stored_path: str | None = None
     professor_id: str | None = None
+    # The format the file arrived in when it is not what is stored:
+    # a presentation is kept as the PDF PowerPoint exported from it.
+    source_format: str = ""
     visual_pages_analyzed: int = 0
     visual_pages_pending: int = 0
     chunk_count: int = 0

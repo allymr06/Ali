@@ -1,6 +1,6 @@
 # JARVIS Project State
 
-Last verified: 6 September 2026
+Last verified: 8 September 2026
 
 ## Current status
 
@@ -53,12 +53,83 @@ Last verified: 6 September 2026
   the reference tables turned into recall questions, 7 September 2026
 - Completed fix: one consistent cloud voice, with the free-tier speech quota
   named to the user when it runs out, 7 September 2026
+- Completed feature milestone: the semester's lecture folder as one lecture
+  set (presentations through PowerPoint, lecturers read from the title slides
+  and their review questions filed under them, a professor-style paper drawn
+  from that lecturer's own lectures) and sesli anlatım — a lecture read aloud
+  with questions answered in between, 8 September 2026
 - Next action: plugin process isolation; code signing and a user-attended
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2257 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 2295 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## The semester's lectures, their lecturers and sesli anlatım (8 September 2026)
+
+Ali shared the term's Google Drive folder (HUP, KDT, Komite 1–5: 236 files,
+1.42 GB) and asked for the lectures to be separated for JARVIS, figure
+questions from them, a voiced narration mode with questions in between, the
+past questions split by the lecturer named in the heading, an audit of the
+result, and a push.
+
+- **Lecture sets.** A folder imports as one unit (`import_folder`,
+  `process_lecture_set`, `import_folder_job`): folder names become tags, the
+  nearest folder or file name that names a subject sets the subject, the set
+  record lives in the store's `meta` table, counts are computed from the
+  documents, and a batch member's completion is `quiet` so the set notifies
+  once. The library screen gained "Klasör ekle", the set cards with their
+  counts and actions, and a document search box.
+- **Presentations.** 56 of the files were `.ppt`/`.pptx`. `OfficeConverter`
+  exports a deck to PDF through the installed PowerPoint 2013 (COM from a
+  PowerShell script, read-only, cached by the deck's SHA-256 under
+  `converted/`); `JARVIS_MEDICAL_OFFICE_CONVERSION` turns it off; tests never
+  drive PowerPoint (`conftest.py`). A `.pdf` that is really a deck is sniffed.
+  Titles: the file's own name unless it says nothing, the PDF Title only when
+  it is not a person or a tool default, then the first heading; an empty text
+  file is refused; the page limit default rose to 800 (one public-health deck
+  had 560 pages).
+- **Professors from the material.** The folder holds lectures, not exam
+  papers: a scan of every imported page found no compiled question file, only
+  review questions inside some decks. So `mine_questions` reads the lecturer
+  from the title slide or the file name (`professor_mentions`,
+  `professor_from_title`, `same_person`, `fuller_name`), stamps each lecture,
+  files its questions under the lecturer (`lecture_derived`, page-anchored,
+  figure page when pictured, keys never guessed) and reports the rest. A
+  professor-style paper now draws on that lecturer's own lectures.
+- **The audit.** The first real run was wrong in two ways and both are fixed
+  with tests: a bare abbreviation opening a sentence (`Arş. Geliştirme…`,
+  `Öğr. Elemanları…`, `Yrd. Üreme…`) had become a lecturer, and lectures were
+  being cut at every name mentioned inside them (history lectures produced
+  `Dr. Refik Saydam`). Now only a real rank names a person and only a file
+  that looks like a compiled paper is split. The false profiles and their
+  questions were removed from the store and the set was mined again.
+- **Result on the real set.** 233 documents imported, 233 ready (the 560-page
+  deck and a `.pdf` that was a `.pptx` fixed in the second pass); 162 lectures
+  attributed to 25 lecturers (the largest: Müge Öçal-Demirtaş 25, Ayşe
+  Gülnihal Canseven Kurşun 21, Ayla Kürkçüoğlu 13, Şeyma Aliye Kara 11, Şükrü
+  Oğuz Özdamar 11, Rabet Gözil 10); 179 review questions filed, none with a
+  stated key, four anchored to a pictured page; 71 lectures name nobody
+  (Komite 2 biochemistry, Komite 3 microbiology, several anatomy lab
+  handouts) and are reported as such. The figure pass and the analysis
+  (model calls, free-tier quota) were not run in this session: figure
+  questions come from the figure pages once the vision pass has described
+  them.
+- **Sesli anlatım.** `app/medical/narration.py`: script built by the model in
+  six-page batches (or the pages read as they stand, and the script says so),
+  a chunked player with pause/resume/next/prev/stop, typed and spoken
+  questions answered from the segment and its pages and the reading resumed
+  at the same chunk, checkpoints every three segments, the local Windows
+  voice by default and the cloud voice on request with a fallback that names
+  the quota. Narration and the voice session exclude each other. The page
+  shows the narration panel above the academy tabs; a document's "Sesli anlat"
+  starts it.
+- **Left as is.** The Drive folder was downloaded to
+  `%LOCALAPPDATA%\JARVIS\medical\imports\drive_dersler` and its documents are
+  copied into the academy directory; the download can be deleted once the
+  library is trusted. Two files not part of this work were found in the
+  working tree (`app/voice/chatterbox_worker.py`, `app/voice/profiles.py`, a
+  `.gitignore` line for voice profiles) and left uncommitted.
 
 ## Lower-limb vessels (7 September 2026)
 

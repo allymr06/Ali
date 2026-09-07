@@ -334,6 +334,10 @@ const DemoBridge = {
       search: () => ({ ok: true, query, terms: [], topics: [], structures: [], hits: [] }),
       term: () => ({ ok: true, query, entries: [] }),
       documents: () => ({ ok: true, documents: [DEMO_MEDICAL_DOCUMENT] }),
+      lecture_sets: () => ({ ok: true, lecture_sets: [] }),
+      narration: () => ({ ok: true, narration: { active: false, status: "idle" } }),
+      narration_script: () => ({ ok: true, script: null }),
+      narration_command: () => ({ ok: false, error: "Demo modu: anlatım yok.", narration: { active: false, status: "idle" } }),
       document: () => ({ ok: true, document: Object.assign({}, DEMO_MEDICAL_DOCUMENT, {
         pages: [{ page_number: 1, headings: ["DEMO"], char_count: 900, image_count: 1, visual_status: "done", has_visual_summary: true }],
         topics: [], comparison: null, questions: 2, job: null }) }),

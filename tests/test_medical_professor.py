@@ -715,3 +715,106 @@ def test_to_dict_exposes_the_evidence_behind_every_feature() -> None:
 
     # An unset subject degrades to a label instead of an empty string.
     assert StyleProfiler.to_dict(StyleProfiler().profile("Hoca", []))["subject_label"] == "Belirsiz"
+
+
+# ---------------------------------------------------------------------------
+# who wrote it: mentions on title pages, in file names, in headings
+# ---------------------------------------------------------------------------
+
+
+def test_a_title_line_is_read_in_every_spelling_and_role_lines_are_not() -> None:
+    from app.medical.professor import academic_title_and_name, professor_key
+
+    assert academic_title_and_name("Prof. Dr. RABET GÖZİL") == ("Prof. Dr.", "Rabet Gözil")
+    assert academic_title_and_name("PROF.DR.RABET GÖZİL") == ("Prof. Dr.", "Rabet Gözil")
+    assert academic_title_and_name("Dr.Ragıba Zağyapan") == ("Dr.", "Ragıba Zağyapan")
+    assert academic_title_and_name("YRD.DOÇ.DR. ÇAĞLA ZÜBEYDE KÖPRÜ") == ("Yrd. Doç. Dr.", "Çağla Zübeyde Köprü")
+    assert academic_title_and_name("Doktor Öğretim Üyesi Pınar ŞAHİN") == ("Dr. Öğr. Üyesi", "Pınar Şahin")
+    assert academic_title_and_name("Dr. Öğr. Üyesi Müge Öçal-Demirtaş") == ("Dr. Öğr. Üyesi", "Müge Öçal-Demirtaş")
+    assert academic_title_and_name("• Dr. Öğr. Üyesi Çağla Zübeyde KÖPRÜ (Anabilim Dalı Başkanı)") == ("Dr. Öğr. Üyesi", "Çağla Zübeyde Köprü")
+    assert academic_title_and_name("PROF. DR. A. KÜRKÇÜOĞLU") == ("Prof. Dr.", "A. Kürkçüoğlu")
+    assert academic_title_and_name("Prof. Dr. Ayla Kürkçüoğlu soruları") == ("Prof. Dr.", "Ayla Kürkçüoğlu")
+    assert academic_title_and_name("Prof. Dr. Recep AKDUR'un sınav soruları") == ("Prof. Dr.", "Recep Akdur")
+    # Not people: a heading that starts like a title, a job, a structure.
+    assert academic_title_and_name("Öğrenim Hedefleri") is None
+    assert academic_title_and_name("Halk Sağlığı Uzmanı, Epidemiyolog") is None
+    assert academic_title_and_name("A. profunda femoris") is None
+    assert academic_title_and_name("2025-2026 Eğitim Öğretim Yılı") is None
+    assert academic_title_and_name("Görkem Cengiz") is None, "no title, no mention"
+    assert professor_key("PROF.DR.RABET GÖZİL") == professor_key("Prof. Dr. Rabet Gözil") == "rabet gozil"
+    assert professor_key("Dr. Görkem CENGİZ") == "gorkem cengiz"
+
+
+def test_the_same_person_is_recognised_across_initials_but_not_across_people() -> None:
+    from app.medical.professor import professor_key, same_person
+
+    assert same_person(professor_key("A. KÜRKÇÜOĞLU"), professor_key("Ayla Kürkçüoğlu"))
+    assert same_person(professor_key("Ayşe G. Canseven Kurşun"), professor_key("Ayşe Gülnihal Canseven Kurşun"))
+    assert not same_person(professor_key("Noyan Can Akdur"), professor_key("Recep Akdur"))
+    assert not same_person("hasan", "hasan ozan"), "a lone first name matches nobody"
+    assert not same_person("", "ayla kurkcuoglu")
+
+
+def test_mentions_come_from_the_opening_pages_and_a_split_name_is_joined() -> None:
+    from types import SimpleNamespace
+
+    from app.medical.professor import professor_from_title, professor_mentions
+
+    pages = [
+        SimpleNamespace(page_number=1, text="KAS KLİNİĞİ\nDr. Hasan\nOZAN\nFascia profunda’nın verdiği uzantılar,"),
+        SimpleNamespace(page_number=2, text="Prof. Dr. Ayla KÜRKÇÜOĞLU\nÖğrenim Hedefleri"),
+        SimpleNamespace(page_number=9, text="Doç. Dr. Gamze GÜVEN"),
+    ]
+    mentions = professor_mentions(pages)
+    assert [mention.name for mention in mentions] == ["Dr. Hasan Ozan", "Prof. Dr. Ayla Kürkçüoğlu"], "page 9 is past the title pages"
+    assert mentions[0].complete and mentions[0].page_number == 1 and mentions[0].source == "page"
+    lone = professor_mentions([SimpleNamespace(page_number=1, text="Dr. Hasan\nFascia profunda ekstremitelerde")])
+    assert lone[0].name == "Dr. Hasan" and lone[0].complete is False
+
+    assert professor_from_title("Mikrobiyoloji Ülker Çuhacı 2 - Mantarların Yapısı").name == "Ülker Çuhacı"
+    assert professor_from_title("Halk Sağlığı Şeyma Kara 1 - ÇOCUK VE SAĞLIK").key == "seyma kara"
+    assert professor_from_title("Mikrobiyoloji Görkem Cengiz 1 - Parazitoloji TR").key == "gorkem cengiz"
+    assert professor_from_title("Anatomi 1 - Terminoloji") is None
+    assert professor_from_title("Biyokimya 10 (Lipidler)") is None
+    assert professor_from_title("Fizyoloji 2 - Vücut sıvıları") is None
+
+
+def test_a_compiled_question_file_is_cut_at_the_headings_that_name_a_lecturer() -> None:
+    from app.medical.professor import QuestionImportParser, split_by_professor
+
+    text = (
+        "2024 Anatomi vize soruları\n"
+        "Prof. Dr. Ayla Kürkçüoğlu soruları\n"
+        "1. Scapula'nın lateral açısında hangi yapı bulunur?\nA) Cavitas glenoidalis\nB) Spina scapulae\n"
+        "2. Dr. Hasan Ozan'ın anlattığı kompartman sendromu belirtisi hangisidir?\nA) Pain\nB) Pallor\n"
+        "Doç. Dr. Gamze Güven\n"
+        "1. Kanıta dayalı tıp nedir?\nA) x\nB) y\n"
+    )
+    sections = split_by_professor(text)
+    assert [mention.name if mention else None for mention, _ in sections] == [None, "Prof. Dr. Ayla Kürkçüoğlu", "Doç. Dr. Gamze Güven"]
+    parsed = [QuestionImportParser().parse(body).questions for _mention, body in sections]
+    assert [len(items) for items in parsed] == [0, 2, 1], "a name inside a question stem does not cut the section"
+
+
+def test_only_a_real_rank_names_a_person_and_a_garbled_surname_still_merges() -> None:
+    from app.medical.professor import academic_title_and_name, garbled_name, looks_like_question_paper, professor_key, same_person
+
+    # Sentences that open with a bare abbreviation are prose, not people.
+    assert academic_title_and_name("Arş. Geliştirme Çalışmaları") is None
+    assert academic_title_and_name("Öğr. Elemanları İçin") is None
+    assert academic_title_and_name("Yrd. Üreme Teknikleri") is None
+    assert academic_title_and_name("Uzm. Hekimlik İlk Kez Görüldü") is None
+    # The pairs that only mean a rank still do.
+    assert academic_title_and_name("Arş. Gör. Pınar Tarıkahya") == ("Arş. Gör.", "Pınar Tarıkahya")
+    assert academic_title_and_name("Öğr. Gör. Cansu ÖZTÜRK") == ("Öğr. Gör.", "Cansu Öztürk")
+    assert academic_title_and_name("Uzm. Dr. Yavuzalp SOLAK") == ("Uzm. Dr.", "Yavuzalp Solak")
+    assert academic_title_and_name("Yrd. Doç. Dr. M. Esin Ocaktan") == ("Yrd. Doç. Dr.", "M. Esin Ocaktan")
+
+    assert garbled_name("Ayla Kürkçüo Lu Ğ") and not garbled_name("Ayla Kürkçüoğlu") and not garbled_name("M. Esin Ocaktan")
+    assert same_person(professor_key("Ayla Kürkçüo lu ğ"), professor_key("Ayla Kürkçüoğlu"))
+    assert not same_person(professor_key("Ayla Yılmaz"), professor_key("Ayla Kürkçüoğlu"))
+
+    paper = "1. Soru?\nA) x\nB) y\n" * 6
+    lecture = "Uzun bir ders notu satırı.\n" * 40 + paper
+    assert looks_like_question_paper(paper, 6) and not looks_like_question_paper(lecture, 6)
+    assert not looks_like_question_paper(paper, 3), "fewer than five questions is a lecture with review items"

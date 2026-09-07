@@ -475,9 +475,11 @@ const Medical = {
   /* ── library ───────────────────────────────────────────────────── */
 
   async loadDocuments() {
-    const result = await this.request("documents");
+    const [result, sets] = await Promise.all([this.request("documents"), this.request("lecture_sets")]);
     if (result.ok === false) { toast(result.error || "Belgeler okunamadı.", true); return; }
     this.documents = result.documents || [];
+    if (sets.ok !== false) this.lectureSets = sets.lecture_sets || [];
+    this.renderLectureSets();
     this.renderDocuments();
     if (this.document) {
       const still = this.documents.find((item) => item.document_id === this.document.document_id);
@@ -486,19 +488,110 @@ const Medical = {
     } else this.renderDocument();
   },
 
+  /* A lecture set is a folder imported as one unit: its counts come from
+     the documents themselves, so a set never claims more than the library
+     holds. Selecting one narrows the document list to its members. */
+  renderLectureSets() {
+    const host = $("#med-set-list");
+    if (!host) return;
+    const sets = this.lectureSets || [];
+    if (!sets.length) { host.innerHTML = ""; return; }
+    host.innerHTML = sets.map((set) => {
+      const progress = this.setProgress && this.setProgress.set_id === set.set_id ? this.setProgress : null;
+      return `<div class="med-set ${this.setFilter === set.set_id ? "active" : ""}">
+        <div class="ms-head"><button type="button" class="ms-name" data-set-open="${esc(set.set_id)}" title="Bu setin belgelerini listele">${esc(set.name)}</button><span class="ms-side">${set.documents_total} belge</span></div>
+        <div class="med-chips">
+          <span class="chip ok">${set.ready} hazır</span>
+          ${set.pending ? `<span class="chip warn">${set.pending} bekliyor</span>` : ""}
+          ${set.failed ? `<span class="chip bad">${set.failed} başarısız</span>` : ""}
+          ${set.visual_pending ? `<span class="chip violet">${set.visual_pending} şekil bekliyor</span>` : ""}
+          ${(set.subjects || []).slice(0, 4).map((item) => `<span class="chip">${esc(item.label)} · ${item.count}</span>`).join("")}
+        </div>
+        ${progress ? `<div class="ms-progress">${esc(progress.stage === "importing" ? "Ekleniyor" : "İşleniyor")} · ${progress.done} / ${progress.total} · ${esc(progress.current || "")}</div>` : ""}
+        <div class="btn-row" style="justify-content:flex-start">
+          ${set.pending || set.failed ? `<button type="button" class="btn btn-ghost small" data-set-act="process" data-set="${esc(set.set_id)}">${set.pending ? "Bekleyenleri işle" : "Başarısızları yeniden dene"}</button>` : ""}
+          <button type="button" class="btn btn-ghost small" data-set-act="mine" data-set="${esc(set.set_id)}" title="Bu setin belgelerini başlık sayfalarındaki hocalara bağlar ve içlerindeki soruları çıkarır">Hocaları ayır</button>
+          <button type="button" class="btn btn-ghost small" data-set-act="remove" data-set="${esc(set.set_id)}">Seti kaldır</button>
+        </div></div>`;
+    }).join("");
+    $$("[data-set-open]", host).forEach((node) => node.addEventListener("click", () => {
+      this.setFilter = this.setFilter === node.dataset.setOpen ? null : node.dataset.setOpen;
+      this.renderLectureSets();
+      this.renderDocuments();
+    }));
+    $$("[data-set-act]", host).forEach((node) => node.addEventListener("click", () => this.setAction(node.dataset.setAct, node.dataset.set)));
+  },
+
+  async setAction(action, setId) {
+    const set = (this.lectureSets || []).find((item) => item.set_id === setId);
+    if (!set) return;
+    if (action === "mine") {
+      const result = await this.request("mine_questions", { set_id: setId });
+      if (result.ok === false) { toast(result.error || "İşlem başlatılamadı.", true); return; }
+      toast(result.message || "Başlatıldı.", "ok");
+      return;
+    }
+    if (action === "process") {
+      const result = await this.request("process_lecture_set", { set_id: setId, retry_failed: !set.pending && set.failed > 0 });
+      if (result.ok === false) { toast(result.error || "İşlem başlatılamadı.", true); return; }
+      toast(result.message || "Başlatıldı.", "ok");
+      return;
+    }
+    if (action === "remove") {
+      const ok = await confirmDialog({
+        title: "Ders seti kaldırılsın mı?",
+        body: `“${set.name}” seti listeden kaldırılacak; belgeleri kütüphanede kalır.`,
+        confirmLabel: "KALDIR", danger: true,
+      });
+      if (!ok) return;
+      const result = await this.request("delete_lecture_set", { set_id: setId, confirmed: true });
+      if (result.ok === false) { toast(result.error || "Set kaldırılamadı.", true); return; }
+      this.lectureSets = result.lecture_sets || [];
+      if (this.setFilter === setId) this.setFilter = null;
+      this.renderLectureSets();
+      this.renderDocuments();
+      toast("Ders seti kaldırıldı.", "ok");
+    }
+  },
+
+  visibleDocuments() {
+    const query = String(($("#med-doc-search") || {}).value || "").trim().toLocaleLowerCase("tr");
+    const set = this.setFilter ? (this.lectureSets || []).find((item) => item.set_id === this.setFilter) : null;
+    return this.documents.filter((item) => {
+      if (set && !(item.tags || []).includes(set.name)) return false;
+      if (!query) return true;
+      const haystack = [item.title, item.file_name, item.subject, ...(item.tags || [])].join(" ").toLocaleLowerCase("tr");
+      return haystack.includes(query);
+    });
+  },
+
   renderDocuments() {
     const host = $("#med-doc-list");
     const count = $("#med-doc-count");
-    if (count) count.textContent = this.documents.length ? `${this.documents.length} belge` : "";
+    const shown = this.visibleDocuments();
+    if (count) count.textContent = this.documents.length ? (shown.length === this.documents.length ? `${this.documents.length} belge` : `${shown.length} / ${this.documents.length} belge`) : "";
     if (!host) return;
     if (!this.documents.length) {
-      host.innerHTML = medEmpty("Belge yok", "Ders PDF'lerini ya da not dosyalarını ekle: sayfa numaralarıyla birlikte dizinlenir.");
+      host.innerHTML = medEmpty("Belge yok", "Ders PDF'lerini, sunumlarını ya da not dosyalarını ekle: sayfa numaralarıyla birlikte dizinlenir. “Klasör ekle” bir dönemin tüm derslerini tek seferde alır.");
       return;
     }
-    host.innerHTML = this.documents.map((item) => `<button type="button" class="med-row ${this.document && this.document.document_id === item.document_id ? "active" : ""}" data-doc="${esc(item.document_id)}">
+    if (!shown.length) {
+      host.innerHTML = medEmpty("Eşleşen belge yok", "Aramayı ya da set filtresini değiştir.");
+      return;
+    }
+    host.innerHTML = shown.map((item) => `<button type="button" class="med-row ${this.document && this.document.document_id === item.document_id ? "active" : ""}" data-doc="${esc(item.document_id)}">
       <span class="med-row-title">${esc(item.title)}</span><span class="med-row-side">${item.page_count || 0} s.</span>
-      <span class="med-row-meta"><span class="chip ${MED_STATUS_TONE[item.status] || ""}">${esc(item.status_label)}</span>${item.subject ? esc(item.subject) : ""}</span></button>`).join("");
+      <span class="med-row-meta"><span class="chip ${MED_STATUS_TONE[item.status] || ""}">${esc(item.status_label)}</span>${item.subject ? esc(item.subject) : ""}${item.source_format ? `<span class="chip">${esc(item.source_format.toUpperCase())}</span>` : ""}${(item.tags || []).slice(1, 3).map((tag) => esc(tag)).join(" · ")}</span></button>`).join("");
     $$("[data-doc]", host).forEach((node) => node.addEventListener("click", () => this.openDocument(node.dataset.doc)));
+  },
+
+  async importFolder() {
+    const picked = await call("medical_pick_file", "folder");
+    if (picked.ok === false) { toast(picked.error || "Klasör seçilemedi.", true); return; }
+    if (!picked.path) return;
+    const result = await this.request("import_folder", { path: picked.path });
+    if (result.ok === false) { toast(result.error || "Klasör eklenemedi.", true); return; }
+    toast(result.message || "Klasör içe aktarılıyor.", "ok");
   },
 
   async importDocument() {
@@ -547,6 +640,7 @@ const Medical = {
         ${doc.error ? `<div class="med-explain" style="border-color: rgba(var(--bad-rgb),.5)">${esc(doc.error)}</div>` : ""}
         <div class="med-chips">
           ${doc.subject ? `<span class="chip accent">${esc(doc.subject)}</span>` : ""}
+          ${doc.source_format ? `<span class="chip" title="Sunum PowerPoint ile PDF'e çevrildi">${esc(doc.source_format.toUpperCase())} sunumu</span>` : ""}
           <span class="chip">${doc.page_count} sayfa</span>
           <span class="chip">${doc.chunk_count} parça</span>
           ${doc.visual_pages_analyzed ? `<span class="chip violet">${doc.visual_pages_analyzed} şekil incelendi</span>` : ""}
@@ -561,6 +655,7 @@ const Medical = {
           <button type="button" class="btn btn-ghost small" data-act="compare">Bilgiyle karşılaştır</button>
           <button type="button" class="btn btn-ghost small" data-act="notes">Not çıkar</button>
           <button type="button" class="btn btn-ghost small" data-act="exam">Soru üret</button>
+          <button type="button" class="btn btn-ghost small" data-act="narrate" title="Dersi sesli anlatır; istediğin yerde durdurup soru sorabilirsin">Sesli anlat</button>
           <button type="button" class="btn btn-ghost small" data-act="process">Yeniden işle</button>
           <button type="button" class="btn btn-ghost small" data-act="delete">Sil</button>
         </div>
@@ -613,6 +708,7 @@ const Medical = {
       return;
     }
     if (action === "notes") { this.show("notes"); const select = $("#med-note-document"); if (select) select.value = doc.document_id; return; }
+    if (action === "narrate") { if (!doc.ready) { toast("Belge henüz işlenmedi.", true); return; } Narration.start(doc.document_id); return; }
     if (action === "exam") {
       this.show("exam");
       const select = $("#med-exam-document");
@@ -1175,6 +1271,7 @@ const Medical = {
     if (result.ok === false) { toast(result.error || "Hoca profilleri okunamadı.", true); return; }
     this.professors = result.professors || [];
     this.renderProfessors();
+    this.renderMineReport();
     if (this.professor) this.openProfessor(this.professor.profile_id);
     else this.renderProfessor();
   },
@@ -1190,6 +1287,29 @@ const Medical = {
       <span class="med-row-title">${esc(item.name)}</span><span class="med-row-side">${item.sample_size} soru</span>
       <span class="med-row-meta"><span class="chip">${esc(item.subject_label)}</span><span class="chip ${item.confidence === "high" ? "ok" : item.confidence === "none" ? "" : "warn"}">${esc(item.confidence_label)}</span></span></button>`).join("");
     $$("[data-prof]", host).forEach((node) => node.addEventListener("click", () => this.openProfessor(node.dataset.prof)));
+  },
+
+  async mineProfessors() {
+    const result = await this.request("mine_questions", {});
+    if (result.ok === false) { toast(result.error || "İşlem başlatılamadı.", true); return; }
+    toast(result.message || "Başlatıldı.", "ok");
+  },
+
+  /* The mining job's own account: which lecturers it found on the title
+     pages, how many lectures each got, what it could not read. */
+  renderMineReport() {
+    const host = $("#med-prof-report");
+    if (!host) return;
+    const report = this.mineReport;
+    if (!report) { host.innerHTML = ""; return; }
+    const professors = Array.isArray(report.professors) ? report.professors : [];
+    const notes = Array.isArray(report.notes) ? report.notes : [];
+    host.innerHTML = `<div class="med-set">
+      <div class="ms-head"><span class="ms-name">Son ayırma</span><span class="ms-side">${Number(report.documents) || 0} belge</span></div>
+      <div class="med-chips"><span class="chip ok">${Number(report.attributed) || 0} hocaya bağlandı</span><span class="chip">${professors.length} hoca</span><span class="chip">${Number(report.questions_added) || 0} soru</span>${report.with_image ? `<span class="chip violet">${report.with_image} görselli</span>` : ""}${(report.unattributed || []).length ? `<span class="chip warn">${report.unattributed.length} hocasız</span>` : ""}</div>
+      ${professors.slice(0, 12).map((item) => `<div class="med-row-sub">${esc(item.name)} · ${item.documents} belge${item.questions_added ? ` · ${item.questions_added} soru` : ""}</div>`).join("")}
+      ${notes.map((note) => `<div class="settings-note">${esc(note)}</div>`).join("")}
+    </div>`;
   },
 
   async addProfessor(event) {
@@ -1230,6 +1350,7 @@ const Medical = {
         <div class="med-evidence">${esc(profile.basis)}</div>
         <div class="med-chips">
           <span class="chip">${profile.sample_size} soru</span>
+          ${(profile.documents || []).length ? `<span class="chip accent">${profile.documents.length} ders notu</span>` : ""}
           <span class="chip">ortalama ${profile.average_options} şık</span>
           <span class="chip">ortalama ${profile.average_stem_words} kelime</span>
           ${Object.keys(distribution).length ? `<span class="chip" title="${esc(Object.entries(distribution).map(([key, value]) => key + ": " + value).join(", "))}">cevap dağılımı</span>` : ""}
@@ -1253,6 +1374,8 @@ const Medical = {
           ? report.notes.map((note) => `<div class="med-row"><span class="med-row-sub">${esc(note)}</span></div>`).join("")
           : '<p class="settings-note">Ayrıştırma not bırakmadı.</p>'}
       </div>` : ""}
+      ${(profile.documents || []).length ? `<div class="panel med-card"><div class="panel-title"><span class="kicker">Hocanın ders notları</span><span class="faint">“Bu tarzda sınav” bunlardan sorar</span></div>
+        <div class="med-list">${profile.documents.slice(0, 40).map((item) => `<button type="button" class="med-row" data-prof-doc="${esc(item.document_id)}"><span class="med-row-title">${esc(item.title)}</span><span class="med-row-side">${item.page_count || 0} s.</span></button>`).join("")}</div></div>` : ""}
       <div class="panel med-card">
         <div class="panel-title"><span class="kicker">Gözlemlenen özellikler</span><span class="faint">oran = gözlem / örneklem</span></div>
         ${features.length ? features.map((feature) => `<div class="med-feature">
@@ -1269,6 +1392,7 @@ const Medical = {
           <div class="mb-options">${(question.options || []).map((option) => `<span class="${option.key === question.correct_key ? "ok" : ""}">${esc(option.key)}) ${esc(option.text)}</span>`).join("")}</div>
         </div>`).join("")}</div></div>` : ""}`;
     $$("[data-prof-act]", host).forEach((node) => node.addEventListener("click", () => this.professorAction(node.dataset.profAct)));
+    $$("[data-prof-doc]", host).forEach((node) => node.addEventListener("click", () => { this.show("library"); this.openDocument(node.dataset.profDoc); }));
   },
 
   async professorAction(action) {
@@ -1395,6 +1519,21 @@ const Medical = {
       if (State.screen === "medical" && this.view === "library") this.loadDocuments();
       return;
     }
+    if (kind === "lecture_set_progress") {
+      this.setProgress = payload;
+      if (State.screen === "medical" && this.view === "library") this.renderLectureSets();
+      return;
+    }
+    if (kind === "lecture_set_imported" || kind === "lecture_set_processed" || kind === "lecture_set_deleted") {
+      this.setProgress = null;
+      if (State.screen === "medical" && this.view === "library") this.loadDocuments();
+      return;
+    }
+    if (kind === "narration_state") { Narration.apply(payload); return; }
+    if (kind === "professors_mined") {
+      if (State.screen === "medical" && (this.view === "professor" || this.view === "library")) this.loadView(this.view);
+      return;
+    }
     if (kind === "exam_ready" || kind === "exam_finished") {
       if (kind === "exam_ready" && payload.exam_id && payload.open) {
         // The student asked for a paper, from chat or from the form: put it in
@@ -1435,6 +1574,26 @@ const Medical = {
      and has nowhere else to appear. A five-second toast is not a record,
      so it is kept with the profile it belongs to and rendered there. */
   onJobReport(payload) {
+    if (String(payload.job) === "mine") {
+      this.mineReport = payload;
+      const parts = [`${Number(payload.attributed) || 0} / ${Number(payload.documents) || 0} belge hocaya bağlandı`, `${(payload.professors || []).length} hoca`, `${Number(payload.questions_added) || 0} soru`];
+      toast(`Hocalar ayrıldı: ${parts.join(", ")}.`, "ok");
+      this.renderMineReport();
+      if (State.screen === "medical" && this.view === "professor") this.loadProfessors();
+      return;
+    }
+    if (String(payload.job) === "narration_script") { toast("Anlatım metni hazır.", "ok"); return; }
+    if (String(payload.job) === "folder_import") {
+      const parts = [`${Number(payload.imported) || 0} belge eklendi`];
+      if (payload.duplicates) parts.push(`${payload.duplicates} zaten kayıtlıydı`);
+      if (payload.skipped) parts.push(`${payload.skipped} atlandı`);
+      if (payload.failed) parts.push(`${payload.failed} eklenemedi`);
+      parts.push(`${Number(payload.processed) || 0} işlendi`);
+      if (payload.process_failed) parts.push(`${payload.process_failed} işlenemedi`);
+      const notes = Array.isArray(payload.notes) ? payload.notes.map((note) => String(note)) : [];
+      toast(`Klasör bitti (${payload.name || "ders seti"}): ${parts.join(", ")}.${notes.length ? " " + notes.join(" ") : ""}`, payload.failed || payload.process_failed ? "" : "ok");
+      return;
+    }
     if (String(payload.job) !== "import") return;
     const notes = Array.isArray(payload.notes) ? payload.notes.map((note) => String(note)) : [];
     const report = {
@@ -1451,6 +1610,105 @@ const Medical = {
     toast(`İçe aktarma bitti: ${parts.join(", ")}.${notes.length ? " Notlar “Hoca tarzı” ekranında." : ""}`,
       notes.length ? "" : "ok");
     if (this.professor && this.professor.profile_id === report.profile_id) this.renderProfessor();
+  },
+};
+
+/* ── Sesli anlatım ────────────────────────────────────────────────
+   The lecture being read aloud. Every field here is the player's own
+   state, pushed from Python as `narration_state`; the page never guesses
+   where the narration is. Commands go back through one bridge action. */
+const Narration = {
+  state: { active: false, status: "idle" },
+
+  async start(documentId) {
+    const checkpoints = $("#med-nar-checkpoints");
+    const result = await Medical.request("narration_start", { document_id: documentId, checkpoints: checkpoints ? checkpoints.checked : true });
+    if (result.ok === false) { toast(result.error || "Anlatım başlatılamadı.", true); return; }
+    toast(result.message || "Sesli anlatım başlıyor.", "ok");
+    this.apply({ active: true, status: "preparing", document_id: documentId });
+  },
+
+  async command(name, payload) {
+    const params = { command: name };
+    if (name === "ask") params.text = payload; else if (payload !== undefined) params.value = payload;
+    const result = await Medical.request("narration_command", params);
+    if (result.ok === false) { toast(result.error || "Komut uygulanamadı.", true); }
+    if (result.narration) this.apply(result.narration);
+    return result;
+  },
+
+  async ask(event) {
+    if (event) event.preventDefault();
+    const input = $("#med-nar-question");
+    const text = String((input && input.value) || "").trim();
+    if (!text) { toast("Önce soruyu yaz.", true); return; }
+    const result = await this.command("ask", text);
+    if (result.ok !== false && input) input.value = "";
+  },
+
+  apply(state) {
+    this.state = state || { active: false, status: "idle" };
+    this.render();
+  },
+
+  statusLabel(status) {
+    return { preparing: "Hazırlanıyor", speaking: "Anlatıyor", paused: "Duraklatıldı", listening: "Dinliyor", answering: "Yanıtlıyor", finished: "Bitti", stopped: "Durduruldu", idle: "" }[status] || status;
+  },
+
+  render() {
+    const host = $("#med-narration");
+    if (!host) return;
+    const state = this.state;
+    const active = !!state.active;
+    setHidden(host, !active && state.status !== "finished");
+    host.classList.toggle("listening", state.status === "listening");
+    const chip = $("#med-nar-status");
+    if (chip) { chip.textContent = this.statusLabel(state.status); chip.className = `chip ${state.status === "listening" ? "warn" : state.status === "finished" || state.status === "stopped" ? "" : "accent"}`; }
+    const progress = $("#med-nar-progress");
+    if (progress) progress.textContent = state.segment_total ? `${(state.segment_index || 0) + 1} / ${state.segment_total}` : "";
+    const voice = $("#med-nar-voice");
+    if (voice) voice.textContent = state.voice ? (state.voice === "cloud" ? "bulut sesi" : "yerel ses") : "";
+    const title = $("#med-nar-title");
+    if (title) title.textContent = state.title || "";
+    const segment = $("#med-nar-segment");
+    if (segment) segment.textContent = state.segment_title ? `${state.segment_title}${state.page_from ? ` · s. ${state.page_from}${state.page_to && state.page_to !== state.page_from ? "–" + state.page_to : ""}` : ""}` : (state.status === "preparing" ? "Anlatım metni hazırlanıyor…" : "");
+    const text = $("#med-nar-text");
+    if (text) text.textContent = state.segment_text || "";
+    const qa = $("#med-nar-qa");
+    if (qa) {
+      const log = Array.isArray(state.log) ? state.log.slice(-3) : [];
+      const pending = state.status === "answering" && state.question && !log.some((item) => item.question === state.question && item.answer === state.answer);
+      qa.innerHTML = log.map((item) => `<div class="mn-q">Soru: ${esc(item.question)}</div><div class="mn-a">${esc(item.answer)}</div>`).join("")
+        + (pending ? `<div class="mn-q">Soru: ${esc(state.question)}</div><div class="mn-a faint">yanıt hazırlanıyor…</div>` : "")
+        + (state.status === "listening" ? `<div class="mn-a faint">${esc(state.heard ? "Duyulan: " + state.heard : "Mikrofon açık: sorunu söyle ya da sessiz kal, devam edeyim.")}</div>` : "");
+    }
+    const notes = $("#med-nar-notes");
+    if (notes) notes.textContent = [...(state.notes || []), ...(state.voice_notes || []), state.error || ""].filter(Boolean).join(" ");
+    const toggle = $("#med-nar-toggle");
+    if (toggle) { toggle.textContent = state.status === "paused" ? "Devam" : "Duraklat"; toggle.disabled = !active || state.status === "preparing"; }
+    ["med-nar-prev", "med-nar-next", "med-nar-stop", "med-nar-ask", "med-nar-mic"].forEach((id) => { const node = $("#" + id); if (node) node.disabled = !active; });
+    const checkpoints = $("#med-nar-checkpoints");
+    if (checkpoints && typeof state.checkpoints === "boolean" && active) checkpoints.checked = state.checkpoints;
+  },
+
+  bind() {
+    const on = (id, handler) => { const node = $("#" + id); if (node) node.addEventListener("click", handler); };
+    on("med-nar-toggle", () => this.command(this.state.status === "paused" ? "resume" : "pause"));
+    on("med-nar-prev", () => this.command("prev"));
+    on("med-nar-next", () => this.command("next"));
+    on("med-nar-stop", () => this.command("stop"));
+    on("med-nar-mic", () => this.command("listen"));
+    const form = $("#med-nar-ask-form");
+    if (form) form.addEventListener("submit", (event) => this.ask(event));
+    const checkpoints = $("#med-nar-checkpoints");
+    if (checkpoints) checkpoints.addEventListener("change", () => { if (this.state.active) this.command("checkpoints", checkpoints.checked); });
+    document.addEventListener("keydown", (event) => {
+      if (event.code !== "Space" || !this.state.active || State.screen !== "medical") return;
+      const target = event.target;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      event.preventDefault();
+      this.command(this.state.status === "paused" ? "resume" : "pause");
+    });
   },
 };
 
@@ -2661,6 +2919,10 @@ function bindMedical() {
   if (search) search.addEventListener("input", () => Medical.renderTree(search.value));
   const importBtn = $("#med-import");
   if (importBtn) importBtn.addEventListener("click", () => Medical.importDocument());
+  const importFolderBtn = $("#med-import-folder");
+  if (importFolderBtn) importFolderBtn.addEventListener("click", () => Medical.importFolder());
+  const docSearch = $("#med-doc-search");
+  if (docSearch) docSearch.addEventListener("input", () => Medical.renderDocuments());
   const docRefresh = $("#med-doc-refresh");
   if (docRefresh) { docRefresh.innerHTML = icon("refresh"); docRefresh.addEventListener("click", () => Medical.loadDocuments()); }
   const noteForm = $("#med-note-form");
@@ -2682,6 +2944,9 @@ function bindMedical() {
   }
   const profForm = $("#med-prof-form");
   if (profForm) profForm.addEventListener("submit", (event) => Medical.addProfessor(event));
+  const mine = $("#med-prof-mine");
+  if (mine) mine.addEventListener("click", () => Medical.mineProfessors());
+  Narration.bind();
   const labSearch = $("#lab-search");
   if (labSearch) labSearch.addEventListener("input", () => Lab.renderList(labSearch.value));
   const labels = $("#lab-labels");

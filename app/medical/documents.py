@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 
 from app.core.time import utc_now
+from app.medical.convert import OFFICE_SUFFIXES, ConversionError
+from app.medical.professor import academic_title_and_name
 from app.medical.models import (
     DOCUMENT_STATUS_LABELS_TR,
     DocumentChunk,
@@ -32,6 +34,9 @@ from app.medical.text import chunk_text, clean_lines, is_heading
 from app.vision.models import PixelImage
 
 SUPPORTED_SUFFIXES = {".pdf", ".txt", ".md", ".text"}
+# Titles PowerPoint or a scanner leave behind, which say nothing about the
+# lecture; the first slide's heading is used instead.
+_GENERIC_TITLES = ("powerpoint", "sunu", "sunum", "slayt", "slide", "presentation", "untitled", "adsiz", "adsız", "microsoft", "yeni", "belge", "document")
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 TEXT_PAGE_CHARS = 2800
 VISUAL_MIN_IMAGE_RATIO = 0.18
@@ -226,6 +231,36 @@ def split_text_pages(text: str, *, page_chars: int = TEXT_PAGE_CHARS) -> list[st
     return [page for page in pages if page.strip()] or [""]
 
 
+def weak_title(title: str) -> bool:
+    """A title that names nothing: digits, one short token, or a tool's default."""
+    text = str(title or "").strip()
+    if len(text) < 3:
+        return True
+    bare = text.replace("_", " ").replace("-", " ").strip()
+    if all(part.isdigit() for part in bare.split()):
+        return True
+    lowered = bare.casefold()
+    return any(lowered.startswith(word) or lowered == word for word in _GENERIC_TITLES)
+
+
+def first_heading(pages: list[DocumentPage], *, limit: int = 3) -> str | None:
+    """The first heading of the opening pages, else the first line that could be one."""
+    def usable(candidate: str) -> bool:
+        return 4 <= len(candidate) <= 120 and not weak_title(candidate) and academic_title_and_name(candidate) is None
+
+    for page in pages[:limit]:
+        for heading in page.headings:
+            candidate = heading.strip()
+            if usable(candidate):
+                return candidate
+    for page in pages[:limit]:
+        for line in clean_lines(page.text)[:6]:
+            candidate = line.strip()
+            if usable(candidate) and not candidate.endswith((".", ",", ";")):
+                return candidate
+    return None
+
+
 def page_headings(text: str) -> list[str]:
     lines = clean_lines(text)
     headings: list[str] = []
@@ -248,8 +283,12 @@ class DocumentPipeline:
         max_bytes: int = 60 * 1024 * 1024,
         vision_pages_per_document: int = 12,
         render_scale: float = DEFAULT_RENDER_SCALE,
+        converter: Callable[[Path], Path] | None = None,
     ) -> None:
         self._store = store
+        # Turns a presentation into the PDF that is stored; None means the
+        # pipeline refuses .ppt/.pptx with a message rather than a guess.
+        self._converter = converter
         self._directory = directory
         self._max_pages = max(1, int(max_pages))
         self._max_bytes = max(1024, int(max_bytes))
@@ -260,6 +299,15 @@ class DocumentPipeline:
     @property
     def directory(self) -> Path | None:
         return self._directory
+
+    @property
+    def converts_presentations(self) -> bool:
+        return self._converter is not None
+
+    def accepts(self, path: str | Path) -> bool:
+        """Whether ``import_file`` would take this file by its suffix."""
+        suffix = Path(path).suffix.lower()
+        return suffix in SUPPORTED_SUFFIXES or (suffix in OFFICE_SUFFIXES and self._converter is not None)
 
     # ------------------------------------------------------------------
     # import
@@ -281,28 +329,37 @@ class DocumentPipeline:
         source = Path(path)
         if not source.is_file():
             raise DocumentError("Dosya bulunamadı.")
-        suffix = source.suffix.lower()
-        if suffix not in SUPPORTED_SUFFIXES:
-            raise DocumentError("Desteklenen türler: PDF ve düz metin (.txt, .md).")
+        suffix = self._sniffed_suffix(source)
+        presentation = suffix in OFFICE_SUFFIXES
+        if presentation and self._converter is None:
+            raise DocumentError("Sunum dosyaları (.ppt, .pptx) için PowerPoint gerekli ama bulunamadı; sunumu PDF olarak kaydedip ekle.")
+        if not presentation and suffix not in SUPPORTED_SUFFIXES:
+            raise DocumentError("Desteklenen türler: PDF, sunum (.ppt, .pptx) ve düz metin (.txt, .md).")
         size = source.stat().st_size
-        if size > self._max_bytes:
+        if size > self._max_bytes and not presentation:
             raise DocumentError(f"Dosya çok büyük ({human_size(size)}); sınır {human_size(self._max_bytes)}.")
         data = source.read_bytes()
+        # The original bytes identify the document, so the same deck imported
+        # twice dedupes even though what is stored is the PDF made from it.
         digest = sha256_of(data)
         existing = self._store.find_document_by_sha(digest)
         if existing is not None:
-            return existing, self._repair_missing_copy(existing, data, suffix)
+            if not self._copy_is_missing(existing):
+                return existing, False
+            stored, stored_suffix = self._storable(source, data, suffix)
+            return existing, self._repair_missing_copy(existing, stored, stored_suffix)
+        stored, stored_suffix = self._storable(source, data, suffix)
         document_id = new_id("doc")
-        kind = "pdf" if suffix == ".pdf" else "text"
+        kind = "pdf" if stored_suffix == ".pdf" else "text"
         stored_path: str | None = None
         if self._directory is not None:
             target_dir = self._directory / "documents"
             target_dir.mkdir(parents=True, exist_ok=True)
-            target = target_dir / f"{document_id}{suffix}"
-            shutil.copyfile(source, target)
+            target = target_dir / f"{document_id}{stored_suffix}"
+            target.write_bytes(stored)
             stored_path = str(target)
         else:
-            self._memory_files[document_id] = data
+            self._memory_files[document_id] = stored
         document = StudyDocument(
             document_id=document_id,
             title=(title or source.stem).strip()[:200] or source.stem,
@@ -315,9 +372,56 @@ class DocumentPipeline:
             status_detail=DOCUMENT_STATUS_LABELS_TR[DocumentStatus.PENDING],
             stored_path=stored_path,
             professor_id=professor_id,
+            source_format=suffix.lstrip(".") if presentation else "",
         )
         self._store.save_document(document)
         return document, True
+
+    @staticmethod
+    def _sniffed_suffix(source: Path) -> str:
+        """The suffix the bytes say, when the name lies about a PDF.
+
+        A deck saved as 'ders.pdf' (a Drive rename, a browser download) starts
+        with the zip signature, not '%PDF'; treating it as the presentation it
+        is beats failing later with 'PDF açılamadı'.
+        """
+        suffix = source.suffix.lower()
+        if suffix != ".pdf":
+            return suffix
+        try:
+            with source.open("rb") as handle:
+                head = handle.read(8)
+        except OSError:
+            return suffix
+        if head.startswith(b"PK"):
+            return ".pptx"
+        if head.startswith(bytes.fromhex("d0cf11e0")):  # OLE compound file: a legacy .ppt
+            return ".ppt"
+        return suffix
+
+    def _storable(self, source: Path, data: bytes, suffix: str) -> tuple[bytes, str]:
+        """The bytes that go into the academy directory and their suffix.
+
+        A presentation is converted first; the size limit then applies to
+        the PDF that is actually read, not to the deck's embedded media.
+        """
+        if suffix not in OFFICE_SUFFIXES:
+            return data, suffix
+        assert self._converter is not None
+        try:
+            pdf_path = Path(self._converter(source))
+        except ConversionError as exc:
+            raise DocumentError(str(exc)) from exc
+        except Exception as exc:
+            raise DocumentError(f"Sunum PDF'e çevrilemedi ({type(exc).__name__}).") from exc
+        if not pdf_path.is_file():
+            raise DocumentError("Sunum PDF'e çevrilemedi (çıktı yok).")
+        pdf = pdf_path.read_bytes()
+        if len(pdf) > self._max_bytes:
+            raise DocumentError(f"Sunumdan çıkan PDF çok büyük ({human_size(len(pdf))}); sınır {human_size(self._max_bytes)}.")
+        if not pdf.startswith(b"%PDF"):
+            raise DocumentError("Sunum PDF'e çevrilemedi (geçersiz çıktı).")
+        return pdf, ".pdf"
 
     def import_text(
         self,
@@ -500,8 +604,13 @@ class DocumentPipeline:
             if count > self._max_pages:
                 raise DocumentError(f"PDF {count} sayfa; sınır {self._max_pages} sayfa.")
             metadata = reader.metadata()
-            if metadata.get("Title") and document.title == Path(document.file_name).stem:
-                document.title = metadata["Title"].strip()[:200] or document.title
+            # The file's own name is what the student calls the lecture; the
+            # PDF's Title field is consulted only when that name says nothing
+            # ("3.pdf"), and a Title that is a person or a tool default is not
+            # a title either.
+            stated = str(metadata.get("Title") or "").strip()
+            if stated and weak_title(document.title) and not weak_title(stated) and academic_title_and_name(stated) is None:
+                document.title = stated[:200]
             outline = {page: title for _level, title, page in reader.outline()}
             self._set_status(document, DocumentStatus.EXTRACTING, detail=f"Sayfalar çıkarılıyor · 0 / {count}", progress=progress)
             pages: list[DocumentPage] = []
@@ -529,6 +638,12 @@ class DocumentPipeline:
                     )
             self._mark_visual_pages(pages)
             self._store.save_pages(pages)
+            if weak_title(document.title):
+                # "3.pptx" or PowerPoint's "Sunu1" names nothing; the first
+                # slide's heading is what the student calls the lecture.
+                heading = first_heading(pages)
+                if heading:
+                    document.title = heading[:200]
             total_chars = sum(page.char_count for page in pages)
             if total_chars < 40 and not any(page.visual_status == "pending" for page in pages):
                 raise DocumentError("PDF'den metin çıkarılamadı (taranmış belge olabilir) ve görsel inceleme için sayfa seçilemedi.")
@@ -539,6 +654,9 @@ class DocumentPipeline:
             text = data.decode("utf-8")
         except UnicodeDecodeError:
             text = data.decode("cp1254", errors="replace")
+        if not text.strip():
+            # An empty file must not become a "ready" document with nothing in it.
+            raise DocumentError("Metin dosyası boş.")
         parts = split_text_pages(text)
         if len(parts) > self._max_pages:
             raise DocumentError(f"Metin {len(parts)} sayfaya bölündü; sınır {self._max_pages}.")
@@ -702,6 +820,7 @@ class DocumentPipeline:
             "status_detail": document.status_detail,
             "error": document.error,
             "professor_id": document.professor_id,
+            "source_format": document.source_format,
             "visual_pages_analyzed": document.visual_pages_analyzed,
             "visual_pages_pending": document.visual_pages_pending,
             "chunk_count": document.chunk_count,

@@ -237,9 +237,16 @@ class Settings:
     medical_enabled: bool = True
     medical_directory: str | None = None
     medical_model: str = ""
-    medical_max_document_pages: int = 400
+    medical_max_document_pages: int = 800
     medical_max_document_bytes: int = 60 * 1024 * 1024
     medical_vision_pages_per_document: int = 12
+    # Presentations (.ppt/.pptx) are exported to PDF through the installed
+    # PowerPoint; off means such files are refused at import instead.
+    medical_office_conversion: bool = True
+    # Voiced narration ("sesli anlatım"): which voice reads a lecture and how
+    # often JARVIS pauses to ask whether anything was unclear (0 = never).
+    medical_narration_voice: str = "local"
+    medical_narration_checkpoint_every: int = 3
 
     spotify_client_id: str | None = None
     whatsapp_contacts_path: str | None = None
@@ -482,6 +489,10 @@ class Settings:
             raise ValueError(
                 "medical_max_document_bytes must be between 1 MiB and 512 MiB."
             )
+        if self.medical_narration_voice not in {"local", "cloud"}:
+            raise ValueError("medical_narration_voice must be 'local' or 'cloud'.")
+        if not 0 <= self.medical_narration_checkpoint_every <= 50:
+            raise ValueError("medical_narration_checkpoint_every must be between 0 and 50.")
         if not 0 <= self.medical_vision_pages_per_document <= 200:
             raise ValueError(
                 "medical_vision_pages_per_document must be between 0 and 200."
@@ -748,13 +759,16 @@ class Settings:
                 "gemini-3.5-flash-lite",
             ),
             medical_enabled=_get_bool("JARVIS_MEDICAL_ENABLED", True),
+            medical_office_conversion=_get_bool("JARVIS_MEDICAL_OFFICE_CONVERSION", True),
+            medical_narration_voice=os.getenv("JARVIS_MEDICAL_NARRATION_VOICE", "local").strip().lower() or "local",
+            medical_narration_checkpoint_every=_get_non_negative_int("JARVIS_MEDICAL_NARRATION_CHECKPOINT_EVERY", 3),
             medical_directory=os.getenv(
                 "JARVIS_MEDICAL_DIRECTORY",
                 default_state_path("medical"),
             ),
             medical_model=os.getenv("JARVIS_MEDICAL_MODEL", "").strip(),
             medical_max_document_pages=_get_positive_int(
-                "JARVIS_MEDICAL_MAX_DOCUMENT_PAGES", 400
+                "JARVIS_MEDICAL_MAX_DOCUMENT_PAGES", 800
             ),
             medical_max_document_bytes=_get_positive_int(
                 "JARVIS_MEDICAL_MAX_DOCUMENT_BYTES", 60 * 1024 * 1024

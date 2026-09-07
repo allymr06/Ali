@@ -576,4 +576,33 @@ The Medical Academy regression coverage (`tests/test_medical_*.py`) includes:
   and subject tree over real data, document analysis and comparison including
   a model-stated page the material never had, note citations, question-bank
   filters, professor import and re-import, and the lab reporting a missing 3D
-  model rather than drawing one.
+  model rather than drawing one;
+- lecture sets and presentations (`test_medical_library.py`,
+  `test_medical_convert.py`, `test_medical_documents.py`): folder names to
+  subjects and tags, the set's counts computed from its documents, batch
+  processing that notifies once and retries a failure only when asked, the
+  folder job's honest report; the converter cached by the deck's bytes, loud
+  about an empty export, refusing what it should and admitting PowerPoint's
+  absence; a deck stored as the PDF made from it and deduplicated by the deck,
+  a numbered file name replaced by the first heading, an empty text file
+  refused;
+- professors from the material (`test_medical_professor.py`,
+  `test_medical_library.py`): every spelling of a rank, the lines that are not
+  people, the same person across initials and a broken surname, a split name
+  joined, the lecturer in a file name, a compiled paper cut at its headings
+  while a lecture that quotes a doctor is not, lectures stamped with their
+  lecturer and their review questions filed under them without a key, and the
+  professor-style paper drawing on that lecturer's own lectures;
+- sesli anlatım (`test_medical_narration.py`): the script from the model
+  validated and clamped to the pages it was given, the material read as it
+  stands without a model, a failed batch falling back with a note; the player
+  speaking every chunk in order, pause/resume/next/prev/stop landing between
+  chunks, a question answered and the same chunk resumed, checkpoints that
+  continue on silence and answer a question, a broken speaker stopping the
+  narration with a named error; the speaker's local default and its fallback
+  from a spent cloud quota; the service refusing a second narration and
+  answering honestly without a model;
+- the shell side of all three (`test_ui_nova.py`): the folder picker, the
+  background folder import with its report and the quiet batch notification,
+  the pause gate, mining reported to the page, narration state and commands,
+  and the voice session and the narration refusing to open over each other.

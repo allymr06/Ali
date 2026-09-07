@@ -2269,3 +2269,179 @@ def test_a_failed_background_job_reaches_the_notification_centre(booted) -> None
     assert listing["total"] == before + 1
     assert "tamamlanamadı" in listing["items"][0]["title"]
     assert "Model beklenen biçimde" in listing["items"][0]["body"]
+
+
+# ---------------------------------------------------------------------------
+# lecture sets: a folder imported as one unit
+# ---------------------------------------------------------------------------
+
+
+def test_the_medical_picker_can_choose_a_folder(booted) -> None:
+    calls: list[tuple] = []
+
+    class DialogWindow(FakeWindow):
+        native = None
+        answer: object = ("C:/Users/Ali/Dersler",)
+
+        def create_file_dialog(self, kind, directory="", **options):
+            calls.append((kind, directory, options))
+            return self.answer
+
+    window = DialogWindow()
+    booted.bridge._attach(window)
+    assert booted.bridge.medical_pick_file("folder") == {"ok": True, "path": "C:/Users/Ali/Dersler"}
+    assert calls[-1][0] == shell.webview.FOLDER_DIALOG and "file_types" not in calls[-1][2]
+    booted.bridge.medical_pick_file("document")
+    assert calls[-1][0] == shell.webview.OPEN_DIALOG
+    assert "*.pptx" in calls[-1][2]["file_types"][0], "the document picker offers presentations"
+
+    def explode(kind, directory="", **options):
+        raise RuntimeError("no dialog")
+
+    window.create_file_dialog = explode
+    assert booted.bridge.medical_pick_file("folder") == {"ok": False, "error": "Klasör seçici açılamadı (RuntimeError)."}
+
+
+def test_a_folder_import_runs_in_the_background_and_reports_to_the_page(booted, tmp_path) -> None:
+    folder = tmp_path / "Komite 4"
+    (folder / "Anatomi").mkdir(parents=True)
+    (folder / "Anatomi" / "Anatomi 1 - Terminoloji.txt").write_text("Terminologia Anatomica: planum sagittale, planum frontale.\n" * 12, encoding="utf-8")
+    (folder / "okunmaz.docx").write_bytes(b"x")
+
+    assert booted.bridge.medical_call("import_folder", {"path": str(tmp_path / "yok")}) == {"ok": False, "error": "Klasör bulunamadı."}
+    result = booted.bridge.medical_call("import_folder", {"path": str(folder)})
+    assert result == {"ok": True, "started": True, "message": "Klasör içe aktarılıyor; belgeler sırayla işlenecek."}
+
+    def reports() -> list[dict]:
+        return [payload for payload in booted.window.payloads("medical") if payload.get("kind") == "job_report"]
+
+    wait_until(lambda: reports() != [])
+    report = reports()[-1]
+    assert report["job"] == "folder_import" and report["name"] == "Komite 4"
+    assert report["imported"] == 1 and report["skipped"] == 1 and report["failed"] == 0 and report["processed"] == 1
+    assert any("desteklenmeyen tür" in note for note in report["notes"])
+
+    sets = booted.bridge.medical_call("lecture_sets")["lecture_sets"]
+    assert len(sets) == 1 and sets[0]["name"] == "Komite 4" and sets[0]["ready"] == 1 and sets[0]["pending"] == 0
+    detail = booted.bridge.medical_call("lecture_set", {"set_id": sets[0]["set_id"]})["lecture_set"]
+    assert detail["documents"][0]["subject"] == "anatomy" and detail["documents"][0]["tags"] == ["Komite 4", "Anatomi"]
+
+    # A batch member's completion is not a notification of its own; the set's is.
+    kinds = [payload.get("kind") for payload in booted.window.payloads("medical")]
+    assert "lecture_set_processed" in kinds and "document_ready" in kinds
+    titles = [item["title"] for item in booted.bridge.list_notifications()["items"]]
+    assert any("Ders seti işlendi" in title for title in titles)
+    assert not any(title.endswith("Belge hazır") for title in titles)
+
+    # Forgetting the set is destructive to the listing, so it asks for the flag.
+    assert booted.bridge.medical_call("delete_lecture_set", {"set_id": sets[0]["set_id"]}) == {"ok": False, "error": "Bu işlem onaylanmadı."}
+    removed = booted.bridge.medical_call("delete_lecture_set", {"set_id": sets[0]["set_id"], "confirmed": True})
+    assert removed["ok"] is True and removed["lecture_sets"] == []
+    assert len(booted.bridge.medical_call("documents")["documents"]) == 1, "the documents stay"
+
+
+def test_a_folder_import_honours_the_pause_gate(booted, tmp_path) -> None:
+    booted.controller.set_paused(True)
+    assert booted.bridge.medical_call("import_folder", {"path": str(tmp_path)}) == {"ok": False, "error": shell.PAUSED_MESSAGE}
+    assert booted.bridge.medical_call("process_lecture_set", {"set_id": "x"}) == {"ok": False, "error": shell.PAUSED_MESSAGE}
+    booted.controller.set_paused(False)
+    assert booted.bridge.medical_call("process_lecture_set", {"set_id": "x"}) == {"ok": False, "error": "Ders seti bulunamadı."}
+
+
+
+# ---------------------------------------------------------------------------
+# professors from the material and voiced narration, through the bridge
+# ---------------------------------------------------------------------------
+
+
+def test_mining_professors_runs_in_the_background_and_reports_to_the_page(booted, tmp_path) -> None:
+    folder = tmp_path / "Komite 5"
+    (folder / "Anatomi").mkdir(parents=True)
+    (folder / "Anatomi" / "Anatomi 9 - Omuz kasları.txt").write_text("OMUZ KASLARI\nProf. Dr. RABET GÖZİL\n" + "Musculus deltoideus omuzun ana abduktor kasıdır.\n" * 8, encoding="utf-8")
+    assert booted.bridge.medical_call("mine_questions", {"set_id": "nope"}) == {"ok": False, "error": "Ders seti bulunamadı."}
+    booted.bridge.medical_call("import_folder", {"path": str(folder)})
+
+    def reports(job: str) -> list[dict]:
+        return [payload for payload in booted.window.payloads("medical") if payload.get("kind") == "job_report" and payload.get("job") == job]
+
+    wait_until(lambda: reports("folder_import") != [])
+    result = booted.bridge.medical_call("mine_questions", {})
+    assert result == {"ok": True, "started": True, "message": "Belgeler hocalara ayrılıyor, sorular çıkarılıyor."}
+    wait_until(lambda: reports("mine") != [])
+    report = reports("mine")[-1]
+    assert report["documents"] == 1 and report["attributed"] == 1
+    assert report["professors"][0]["name"] == "Prof. Dr. Rabet Gözil"
+    professors = booted.bridge.medical_call("professors")["professors"]
+    assert [item["name"] for item in professors] == ["Prof. Dr. Rabet Gözil"]
+    detail = booted.bridge.medical_call("professor", {"profile_id": professors[0]["profile_id"]})["professor"]
+    assert [item["title"] for item in detail["documents"]] == ["Anatomi 9 - Omuz kasları"]
+    titles = [item["title"] for item in booted.bridge.list_notifications()["items"]]
+    assert any("Hocalar ayrıldı" in title for title in titles)
+
+
+def test_narration_state_commands_and_the_voice_session_exclusion(booted, tmp_path) -> None:
+    assert booted.bridge.medical_call("narration") == {"ok": True, "narration": {"active": False, "status": "idle"}}
+    assert booted.bridge.medical_call("narration_command", {"command": "pause"}) == {
+        "ok": False,
+        "error": "Açık bir anlatım yok.",
+        "narration": {"active": False, "status": "idle"},
+    }
+    assert booted.bridge.medical_call("narration_start", {"document_id": "nope"}) == {"ok": False, "error": "Belge bulunamadı."}
+    assert booted.bridge.medical_call("prepare_narration", {"document_id": "nope"}) == {"ok": False, "error": "Belge bulunamadı."}
+    assert booted.bridge.medical_call("narration_script", {"document_id": "nope"}) == {"ok": True, "script": None}
+
+    lecture = tmp_path / "ders.txt"
+    lecture.write_text("Scapula omuz kuşağının yassı üçgen kemiğidir; cavitas glenoidalis humerus başı ile eklem yapar.\n" * 10, encoding="utf-8")
+    academy = booted.app.medical
+    document, _ = academy.import_document(str(lecture), subject="anatomy")
+    academy.pipeline.process(document.document_id)
+
+    # A narration that is already running refuses a second one, and the voice
+    # session refuses to open over it: one microphone, one speaker.
+    class FakePlayer:
+        active = True
+
+        def state(self):
+            return {"active": True, "status": "speaking"}
+
+        def command(self, name, payload=None):
+            self.last = (name, payload)
+            return True
+
+        _listener = None
+
+    academy.narration._player = FakePlayer()
+    try:
+        assert booted.bridge.medical_call("narration_start", {"document_id": document.document_id}) == {"ok": False, "error": "Zaten açık bir anlatım var; önce onu durdur."}
+        paused = booted.bridge.medical_call("narration_command", {"command": "pause"})
+        assert paused["ok"] is True and academy.narration._player.last == ("pause", None)
+        asked = booted.bridge.medical_call("narration_command", {"command": "ask", "text": "Acromion nedir?"})
+        assert asked["ok"] is True and academy.narration._player.last == ("ask", "Acromion nedir?")
+        assert booted.bridge.medical_call("narration_command", {"command": "listen"})["error"] == "Mikrofonla soru için sesli iletişim ayarlanmış olmalı."
+        if booted.app.voice is not None:
+            assert booted.bridge.start_voice()["error"].startswith("Sesli anlatım açıkken")
+    finally:
+        academy.narration._player = None
+
+    # With nothing running the start is accepted and the page hears the state.
+    # No real speaker in a test: the narration must never play audio here.
+    class SilentSpeaker:
+        source = "local"
+        notes: list[str] = []
+        spoken: list[str] = []
+
+        async def speak(self, text, *, cancel_event):
+            self.spoken.append(text)
+
+    silent = SilentSpeaker()
+    academy.narration._speaker_for = lambda voice, prefer_cloud: silent
+    started = booted.bridge.medical_call("narration_start", {"document_id": document.document_id, "checkpoints": False})
+    assert started["ok"] is True and started["message"] == "Sesli anlatım başlıyor."
+    def narration_states() -> list[dict]:
+        return [payload for payload in booted.window.payloads("medical") if payload.get("kind") == "narration_state"]
+
+    wait_until(lambda: any(state.get("status") in {"finished", "stopped"} for state in narration_states()), timeout=20)
+    states = narration_states()
+    assert states[0]["status"] == "preparing" and states[0]["document_id"] == document.document_id
+    assert states[-1]["status"] in {"finished", "stopped"}
+    assert silent.spoken, "the narration spoke through the injected speaker"

@@ -383,6 +383,61 @@ def question_generation_prompt(
     return "\n\n".join(parts)
 
 
+def narration_prompt(title: str, subject: str | None, page_texts: list[tuple[int, str]], previous_titles: list[str]) -> str:
+    """Pages → spoken narration segments that say what the pages say."""
+    label = SUBJECT_LABELS_TR.get(subject or "", subject or "tıp")
+    parts = [
+        f"Lecture: '{title}' ({label}). Turn the pages below into a spoken narration for a first-year medical student, "
+        "as a good teacher reading the lecture aloud would.",
+        "Rules: natural spoken Turkish, Latin anatomical terms kept in Latin and said in full (never 'm.' or 'a.'); "
+        "no bullet points, headings, markdown or numbering inside the text; one idea per segment, 70–170 words each; "
+        "a short title per segment. Follow the order of the pages. Explain what a slide says and, when its own words are "
+        "too terse, add at most one connecting sentence that a standard first-year textbook would also say — never a "
+        "fact the pages do not support. When a page only describes a figure, narrate what the figure shows. Skip pages "
+        "that carry nothing to teach (title page, thanks, references, learning-objective lists). Set page_from and "
+        "page_to to the pages the segment covers; only pages listed below exist.",
+    ]
+    if previous_titles:
+        parts.append("Segments already narrated before these pages: " + " · ".join(previous_titles[-4:]) + ". Continue from there without repeating them.")
+    for page_number, text in page_texts:
+        parts.append(f"--- Page {page_number} ---")
+        parts.append(text.strip())
+    return "\n\n".join(parts)
+
+
+def narration_answer_system(subject: str | None) -> str:
+    blocks = [TUTOR_ROLE, LEVEL_RULES, LANGUAGE_RULES]
+    if subject in SUBJECT_GUIDANCE:
+        blocks.append(SUBJECT_GUIDANCE[subject])
+    blocks.append(
+        "This is a spoken answer given in the middle of a voiced lecture narration: at most four short natural "
+        "sentences, no lists, tables, headings or Latin abbreviations; say 'musculus' in full. Answer from the lecture "
+        "pages you are given; when they do not cover the question, say so in one clause and then give the standard "
+        "first-year explanation briefly, marked as general knowledge ('genel bilgi olarak'). Do not offer to continue: "
+        "the narration resumes by itself."
+    )
+    blocks.append(HONESTY_RULES)
+    blocks.append(SAFETY_RULES)
+    return "\n\n".join(block.strip() for block in blocks)
+
+
+def narration_answer_prompt(title: str, segment_title: str, segment_text: str, question: str, page_texts: list[tuple[int, str]]) -> str:
+    parts = [
+        f"The student is listening to the narration of '{title}' and stopped it at the part '{segment_title}' to ask:",
+        question.strip(),
+        "",
+        "The part being narrated:",
+        segment_text.strip(),
+    ]
+    if page_texts:
+        parts.append("")
+        parts.append("The lecture pages around it:")
+        for page_number, text in page_texts:
+            parts.append(f"--- Page {page_number} ---")
+            parts.append(text.strip())
+    return "\n".join(parts)
+
+
 def question_extraction_prompt(text: str) -> str:
     return (
         "The text below contains exam questions written by a professor (possibly OCR/PDF extracted, possibly messy). "

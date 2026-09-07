@@ -108,6 +108,13 @@ ROUTINE_POLL_SECONDS = 30.0
 ROUTINE_DEFER_SECONDS = 90.0
 ROUTINE_UNAVAILABLE = "Rutinler bu ortamda kullanılamıyor."
 MEDICAL_UNAVAILABLE = "Tıp Akademisi bu ortamda kullanılamıyor."
+
+
+def _narration_error() -> type[Exception]:
+    from app.medical.narration import NarrationError
+
+    return NarrationError
+
 # Study-layer operations that run long enough (model calls, PDF work) to
 # belong on the async runner; the page hears the outcome as a push.
 MEDICAL_BACKGROUND_ACTIONS: frozenset[str] = frozenset(
@@ -118,6 +125,11 @@ MEDICAL_BACKGROUND_ACTIONS: frozenset[str] = frozenset(
         "create_note",
         "create_exam",
         "import_questions",
+        "import_folder",
+        "process_lecture_set",
+        "mine_questions",
+        "narration_start",
+        "prepare_narration",
     }
 )
 # Destructive study-layer operations; the page must pass confirmed=True.
@@ -129,9 +141,10 @@ MEDICAL_CONFIRMED_ACTIONS: frozenset[str] = frozenset(
         "delete_question",
         "delete_professor",
         "reset_professor",
+        "delete_lecture_set",
     }
 )
-MEDICAL_DOCUMENT_TYPES = ("Ders materyali (*.pdf;*.txt;*.md)", "Tüm dosyalar (*.*)")
+MEDICAL_DOCUMENT_TYPES = ("Ders materyali (*.pdf;*.ppt;*.pptx;*.txt;*.md)", "Tüm dosyalar (*.*)")
 MEDICAL_QUESTION_TYPES = (
     "Sınav dosyası (*.pdf;*.txt;*.md;*.png;*.jpg;*.jpeg;*.webp)",
     "Tüm dosyalar (*.*)",
@@ -1066,6 +1079,9 @@ class NovaBridge:
         payload = dict(event)
         self._push("medical", payload)
         kind = str(payload.get("kind", ""))
+        if payload.get("quiet"):
+            # One document of a batch: the batch notifies once when it ends.
+            return
         titles = {
             "document_ready": ("Belge hazır", "{title} işlendi ve dizinlendi."),
             "document_analyzed": ("Belge analiz edildi", "{title}: konular ve terimler çıkarıldı."),
@@ -1078,13 +1094,16 @@ class NovaBridge:
             # alone would leave the quiz waiting for an answer to an unseen question.
             "quiz_ready": ("Quiz hazır", "{question}"),
             "job_failed": ("İş tamamlanamadı", "{message}"),
+            "lecture_set_imported": ("Ders seti içe aktarıldı", "{name}: {imported} belge eklendi, {duplicates} zaten kayıtlıydı, {failed} eklenemedi."),
+            "lecture_set_processed": ("Ders seti işlendi", "{name}: {processed} belge hazır, {failed} işlenemedi."),
+            "professors_mined": ("Hocalar ayrıldı", "{documents} belge {professors} hocaya ayrıldı; {questions} soru çıkarıldı."),
         }
         entry = titles.get(kind)
         if entry is None:
             return
         title, template = entry
         try:
-            body = _plain_text(template.format(**{key: payload.get(key, "") for key in ("title", "findings", "count", "percent", "question", "message")}))
+            body = _plain_text(template.format(**{key: payload.get(key, "") for key in ("title", "findings", "count", "percent", "question", "message", "name", "imported", "duplicates", "failed", "processed", "documents", "professors", "questions")}))
         except (KeyError, IndexError):
             body = str(payload.get("title", ""))
         self._publish(
@@ -1107,20 +1126,29 @@ class NovaBridge:
             return {"available": False, "reason": f"Tıp Akademisi okunamadı ({type(exc).__name__})."}
 
     def medical_pick_file(self, kind: str = "document") -> dict[str, Any]:
-        """Open the native picker for a lecture document or an exam file."""
+        """Open the native picker for a lecture document, an exam file or a
+        folder of course material (``kind="folder"``)."""
         window = self._window
         if window is None:
             return {"ok": False, "error": "Pencere hazır değil."}
         if self._medical() is None:
             return {"ok": False, "error": MEDICAL_UNAVAILABLE}
+        wanted = str(kind or "").strip()
         file_types = (
             MEDICAL_QUESTION_TYPES
-            if str(kind or "").strip() == "questions"
+            if wanted == "questions"
             else MEDICAL_DOCUMENT_TYPES
         )
         selection: list[Any] = []
 
         def choose() -> None:
+            if wanted == "folder":
+                selection.append(
+                    window.create_file_dialog(
+                        webview.FOLDER_DIALOG, directory=str(Path.home())
+                    )
+                )
+                return
             selection.append(
                 window.create_file_dialog(
                     webview.OPEN_DIALOG,
@@ -1133,7 +1161,8 @@ class NovaBridge:
         try:
             _run_on_ui_thread(window, choose)
         except Exception as exc:
-            return {"ok": False, "error": f"Dosya seçici açılamadı ({type(exc).__name__})."}
+            noun = "Klasör" if wanted == "folder" else "Dosya"
+            return {"ok": False, "error": f"{noun} seçici açılamadı ({type(exc).__name__})."}
         chosen = selection[0] if selection else None
         if isinstance(chosen, (list, tuple)):
             chosen = chosen[0] if chosen else None
@@ -1253,6 +1282,28 @@ class NovaBridge:
         if name == "delete_document":
             removed = academy.delete_document(text("document_id"))
             return {"ok": removed, "documents": _jsonable(academy.documents()), "error": None if removed else "Belge bulunamadı."}
+        if name == "lecture_sets":
+            return {"ok": True, "lecture_sets": _jsonable(academy.lecture_sets())}
+        if name == "narration":
+            return {"ok": True, "narration": _jsonable(academy.narration.state())}
+        if name == "narration_script":
+            return {"ok": True, "script": _jsonable(academy.narration.cached_script(text("document_id")))}
+        if name == "narration_command":
+            command = text("command")
+            argument = payload.get("text") if command == "ask" else payload.get("value")
+            try:
+                state = academy.narration.command(command, argument)
+            except _narration_error() as exc:
+                return {"ok": False, "error": str(exc), "narration": _jsonable(academy.narration.state())}
+            return {"ok": True, "narration": _jsonable(state)}
+        if name == "lecture_set":
+            record = academy.lecture_set(text("set_id"))
+            if record is None:
+                return {"ok": False, "error": "Ders seti bulunamadı."}
+            return {"ok": True, "lecture_set": _jsonable(record)}
+        if name == "delete_lecture_set":
+            removed = academy.delete_lecture_set(text("set_id"))
+            return {"ok": removed, "lecture_sets": _jsonable(academy.lecture_sets()), "error": None if removed else "Ders seti bulunamadı."}
         if name == "comparison":
             return {"ok": True, "comparison": _jsonable(academy.comparison(text("document_id")))}
         if name == "analysis":
@@ -1430,6 +1481,61 @@ class NovaBridge:
             )
             message = "Sorular içe aktarılıyor."
             report = "import"
+        elif name == "import_folder":
+            folder = text("path")
+            if not folder or not Path(folder).is_dir():
+                return {"ok": False, "error": "Klasör bulunamadı."}
+            operation = academy.import_folder_job(
+                folder,
+                name=text("name") or None,
+                source=text("source") or None,
+                vision=payload.get("vision") is not False,
+                analysis=payload.get("analysis") is not False,
+            )
+            message = "Klasör içe aktarılıyor; belgeler sırayla işlenecek."
+            report = "folder_import"
+        elif name == "process_lecture_set":
+            if academy.lecture_set(text("set_id")) is None:
+                return {"ok": False, "error": "Ders seti bulunamadı."}
+            operation = academy.process_lecture_set(
+                text("set_id"),
+                vision=payload.get("vision") is not False,
+                analysis=payload.get("analysis") is not False,
+                retry_failed=payload.get("retry_failed") is True,
+            )
+            message = "Ders setindeki bekleyen belgeler işleniyor."
+        elif name == "mine_questions":
+            set_id = text("set_id") or None
+            if set_id and academy.lecture_set(set_id) is None:
+                return {"ok": False, "error": "Ders seti bulunamadı."}
+            document_ids = [str(item) for item in (payload.get("document_ids") or [])] or None
+            operation = academy.mine_questions_job(set_id=set_id, document_ids=document_ids)
+            message = "Belgeler hocalara ayrılıyor, sorular çıkarılıyor."
+            report = "mine"
+        elif name == "prepare_narration":
+            if academy.store.get_document(text("document_id")) is None:
+                return {"ok": False, "error": "Belge bulunamadı."}
+            operation = academy.narration.script(text("document_id"), rebuild=payload.get("rebuild") is True)
+            message = "Anlatım metni hazırlanıyor."
+            report = "narration_script"
+        elif name == "narration_start":
+            document_id = text("document_id")
+            if academy.store.get_document(document_id) is None:
+                return {"ok": False, "error": "Belge bulunamadı."}
+            with self._lock:
+                voice_busy = _active(self._voice_future)
+            if voice_busy:
+                return {"ok": False, "error": "Sesli oturum açıkken anlatım başlatılamaz; önce oturumu durdur."}
+            if academy.narration.active:
+                return {"ok": False, "error": "Zaten açık bir anlatım var; önce onu durdur."}
+            operation = academy.narration.play(
+                document_id,
+                voice=self.controller.application.voice,
+                from_segment=number("segment"),
+                checkpoints=payload.get("checkpoints") is not False,
+                prefer_cloud=(True if payload.get("voice") == "cloud" else False if payload.get("voice") == "local" else None),
+            )
+            message = "Sesli anlatım başlıyor."
         else:  # pragma: no cover - guarded by MEDICAL_BACKGROUND_ACTIONS
             return {"ok": False, "error": f"Bilinmeyen işlem: {name}"}
         if not self._medical_start(operation, report=report):
@@ -1725,6 +1831,11 @@ class NovaBridge:
             return {"ok": False, "error": "Sesli iletişim ayarlanmamış."}
         if self.controller.paused:
             return {"ok": False, "error": PAUSED_MESSAGE}
+        academy = self._medical()
+        if academy is not None and getattr(getattr(academy, "narration", None), "active", False):
+            # One microphone and one speaker: a lecture being narrated would
+            # talk over the session and hear itself.
+            return {"ok": False, "error": "Sesli anlatım açıkken sesli oturum başlatılamaz; önce anlatımı bitir."}
 
         def deliver(message: Any) -> None:
             self._push("voice_message", message)

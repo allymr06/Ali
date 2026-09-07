@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import statistics
+from difflib import SequenceMatcher
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -292,7 +293,271 @@ class QuestionImportParser:
         return stem, options
 
 
-def imported_question(parsed: ParsedQuestion, *, subject: str, professor_id: str | None, topic_id: str | None = None, document_id: str | None = None) -> Question:
+# ---------------------------------------------------------------------------
+# who wrote it: professor mentions on title pages, in file names, in headings
+# ---------------------------------------------------------------------------
+
+# Academic titles as they appear on Turkish lecture title pages, in any of
+# their spellings ("Prof. Dr.", "PROF.DR.", "Yrd.Doç.Dr.", "Dr. Öğr. Üyesi",
+# "Doktor Öğretim Üyesi", "Öğr. Gör.", "Uzm. Dr."). A line is a mention only
+# when it STARTS with one of these; "Öğrenim Hedefleri" starts with none.
+_TITLE_WORDS = (
+    "prof", "profesör", "profesor", "doç", "doc", "doçent", "docent", "dr", "doktor", "yrd", "yard", "yardımcı", "yardimci",
+    "uzm", "uzman", "arş", "ars", "araştırma", "arastirma", "öğr", "ogr", "öğretim", "ogretim", "gör", "gor", "görevlisi",
+    "gorevlisi", "üyesi", "uyesi", "md", "phd", "op",
+)
+# Longest spellings first and a boundary after each token, so "Öğr" never
+# eats the start of "Öğretim" and "Gör" never the start of "Görkem".
+_TITLE_PATTERN = re.compile(
+    r"^(?:(?:" + "|".join(re.escape(word) for word in sorted(_TITLE_WORDS, key=len, reverse=True)) + r")(?:\.|(?=\s)|$)[.\s]*)+",
+    re.IGNORECASE,
+)
+_ROLE_WORDS = frozenset({
+    "uzmanı", "uzmani", "epidemiyolog", "başkanı", "baskani", "anabilim", "dalı", "dali", "bölümü", "bolumu", "fakültesi",
+    "fakultesi", "üniversitesi", "universitesi", "hastanesi", "kliniği", "klinigi", "hedefleri", "hedefler", "ve", "tıp",
+    "tip", "fakülte", "fakulte", "öğrenim", "ogrenim", "ders", "dersi", "kurulu", "komite", "yılı", "yili", "eğitim", "egitim",
+})
+_NAME_TOKEN = re.compile(r"^[A-Za-zÇĞİÖŞÜçğıöşüÂâÎîÛû]+(?:-[A-Za-zÇĞİÖŞÜçğıöşüÂâÎîÛû]+)?\.?$")
+_BULLET = re.compile(r"^[\s•·\-–—*\u2022\uf0b7\uf09e]+")
+# What follows a name in a heading without being part of it.
+_TRAILING_WORDS = frozenset({"soruları", "sorulari", "sınavı", "sinavi", "sınav", "sinav", "vize", "final", "hoca", "hocanın", "hocanin", "notları", "notlari", "dersi", "ders"})
+_PARENTHETICAL = re.compile(r"\s*[\(\[][^\)\]]*[\)\]]\s*$")
+# "<Subject words> <Name Surname> <n> - <topic>": the lecturer written into the file name.
+_TITLE_NAME = re.compile(r"^(?P<lead>[^\d]+?)\s+\d{1,2}\s*[-–]")
+_SUBJECT_WORDS = frozenset({
+    "anatomi", "anatomy", "histoloji", "embriyoloji", "fizyoloji", "biyokimya", "biyofizik", "biyoloji", "mikrobiyoloji",
+    "parazitoloji", "halk", "sağlığı", "sagligi", "tıbbi", "tibbi", "tıp", "tip", "tarihi", "etik", "biyoistatistik",
+    "kanıta", "kanita", "dayalı", "dayali", "eleştirel", "elestirel", "düşünme", "dusunme", "sanat", "iletişim", "iletisim",
+    "becerileri", "insan", "bilimleri", "laboratuvar", "lab", "uygulama", "kdt", "hup", "ve",
+})
+_TITLE_DISPLAY = {
+    "prof": "Prof.", "profesör": "Prof.", "profesor": "Prof.", "doç": "Doç.", "doc": "Doç.", "doçent": "Doç.", "docent": "Doç.",
+    "dr": "Dr.", "doktor": "Dr.", "yrd": "Yrd.", "yard": "Yrd.", "yardımcı": "Yrd.", "yardimci": "Yrd.", "uzm": "Uzm.",
+    "uzman": "Uzm.", "arş": "Arş.", "ars": "Arş.", "araştırma": "Arş.", "arastirma": "Arş.", "öğr": "Öğr.", "ogr": "Öğr.",
+    "öğretim": "Öğr.", "ogretim": "Öğr.", "gör": "Gör.", "gor": "Gör.", "görevlisi": "Gör.", "gorevlisi": "Gör.",
+    "üyesi": "Üyesi", "uyesi": "Üyesi", "md": "MD", "phd": "PhD", "op": "Op.",
+}
+_TURKISH_LOWER = str.maketrans({"I": "ı", "İ": "i"})
+_TURKISH_UPPER = str.maketrans({"i": "İ", "ı": "I"})
+MENTION_PAGES = 3
+
+
+@dataclass(slots=True)
+class ProfessorMention:
+    """A lecturer named in the material, with the key that identifies them."""
+
+    name: str
+    key: str
+    line: str
+    page_number: int = 0
+    source: str = "page"
+    complete: bool = True
+
+
+def turkish_title(word: str) -> str:
+    """Title-case one name token with Turkish letters ("AYŞE" → "Ayşe", "ıSMAİL" stays sane)."""
+    if not word:
+        return word
+    if "-" in word:
+        return "-".join(turkish_title(part) for part in word.split("-"))
+    lowered = word.translate(_TURKISH_LOWER).lower()
+    return lowered[0].translate(_TURKISH_UPPER).upper() + lowered[1:]
+
+
+# A rank on its own ("Prof.", "Dr.") or a pair that only makes sense as one
+# ("Öğr. Gör.", "Arş. Gör.", "Öğr. Üyesi", "Uzm. Dr."). A bare abbreviation
+# such as "Arş." (araştırma) or "Yrd." (yardımcı) opens ordinary sentences.
+_RANK_WORDS = frozenset({"prof", "profesör", "profesor", "doç", "doc", "doçent", "docent", "dr", "doktor", "md", "phd", "op"})
+_RANK_PAIRS = (("öğr", "gör"), ("ogr", "gor"), ("öğretim", "görevlisi"), ("ogretim", "gorevlisi"), ("arş", "gör"), ("ars", "gor"), ("araştırma", "görevlisi"), ("arastirma", "gorevlisi"), ("öğr", "üyesi"), ("ogr", "uyesi"), ("öğretim", "üyesi"), ("ogretim", "uyesi"), ("uzm", "dr"), ("uzman", "dr"))
+
+
+def _is_rank(titles: list[str]) -> bool:
+    if any(token in _RANK_WORDS for token in titles):
+        return True
+    return any(first in titles and second in titles for first, second in _RANK_PAIRS)
+
+
+def _split_title(line: str) -> tuple[list[str], str] | None:
+    """(title tokens, remainder) when the line starts with an academic rank."""
+    stripped = _PARENTHETICAL.sub("", _BULLET.sub("", line).strip()).strip()
+    match = _TITLE_PATTERN.match(stripped)
+    if not match:
+        return None
+    titles = [token.strip(".").casefold() for token in re.split(r"[.\s]+", match.group(0)) if token.strip(".")]
+    if not _is_rank(titles):
+        return None
+    return titles, stripped[match.end() :].strip(" .:,;-–")
+
+
+def academic_title_and_name(line: str) -> tuple[str, str] | None:
+    """("Prof. Dr.", "Ayla Kürkçüoğlu") when the line is a person with a title.
+
+    One to four name tokens, letters only (an initial like "A." counts), no
+    role words: "Halk Sağlığı Uzmanı" after "Dr." names a job, not a person.
+    """
+    parts = _split_title(line)
+    if parts is None:
+        return None
+    titles, remainder = parts
+    tokens = [re.sub(r"['’].*$", "", token) for token in remainder.replace(",", " ").split() if token]
+    tokens = [token for token in tokens if token]
+    while tokens and tokens[-1].casefold().translate(_TURKISH_LOWER).strip(":'’") in _TRAILING_WORDS:
+        tokens.pop()
+    if not 1 <= len(tokens) <= 4:
+        return None
+    for token in tokens:
+        if not _NAME_TOKEN.match(token) or token.rstrip(".").casefold().translate(_TURKISH_LOWER) in _ROLE_WORDS:
+            return None
+    if any(char.isdigit() for char in remainder):
+        return None
+    title = " ".join(dict.fromkeys(_TITLE_DISPLAY.get(token, token.capitalize() + ".") for token in titles))
+    name = " ".join(token if (len(token) == 2 and token.endswith(".")) else turkish_title(token.rstrip(".")) for token in tokens)
+    return title, name
+
+
+def professor_key(name: str) -> str:
+    """The identity behind the spellings: titles dropped, letters folded."""
+    parts = _split_title(name)
+    remainder = parts[1] if parts is not None else name
+    tokens = [token.strip(".").strip() for token in fold(remainder).replace("-", " ").split()]
+    return " ".join(token for token in tokens if token)
+
+
+def same_person(key_a: str, key_b: str) -> bool:
+    """Same surname and a first name that agrees, an initial counting as agreement.
+
+    A surname the PDF text layer broke apart ("Kürkçüo lu ğ") still names the
+    same person: with the same first name, the letters of the rest have to
+    agree almost entirely. A lone first name matches nobody.
+    """
+    first_a, first_b = key_a.split(), key_b.split()
+    if not first_a or not first_b:
+        return False
+    if key_a == key_b:
+        return True
+    if len(first_a) == 1 or len(first_b) == 1:
+        return False
+    a, b = first_a[0], first_b[0]
+    first_agrees = a == b or (len(a) == 1 and b.startswith(a)) or (len(b) == 1 and a.startswith(b))
+    if first_a[-1] == first_b[-1]:
+        return first_agrees
+    if a != b:
+        return False
+    rest_a, rest_b = "".join(first_a[1:]), "".join(first_b[1:])
+    return len(rest_a) >= 6 and len(rest_b) >= 6 and SequenceMatcher(None, rest_a, rest_b).ratio() >= 0.9
+
+
+def garbled_name(name: str) -> bool:
+    """A name the text layer broke: a fragment of one or two letters that is not an initial."""
+    tokens = name.split()
+    return len(tokens) >= 3 and any(len(token) <= 2 and not token.endswith(".") for token in tokens[1:])
+
+
+def looks_like_question_paper(text: str, question_count: int) -> bool:
+    """A compiled paper, not a lecture with a few review questions at the end.
+
+    Only a paper is cut at the lecturer headings inside it: in a lecture a line
+    such as "Dr. Refik Saydam" is history, not the author of what follows.
+    """
+    if question_count < 5:
+        return False
+    lines = [line for line in str(text or "").splitlines() if line.strip()]
+    if not lines:
+        return False
+    question_like = sum(1 for line in lines if _QUESTION_START.match(line) or _OPTION_LINE.match(line))
+    return question_like / len(lines) >= 0.35
+
+
+def professor_mentions(pages: Iterable[Any], *, limit_pages: int | None = MENTION_PAGES) -> list[ProfessorMention]:
+    """Lecturers named on the opening pages, first mention first.
+
+    ``limit_pages=None`` reads every page handed in (the closing pages, where
+    a lecturer sometimes signs off).
+
+    A name cut by a line break ("Dr. Hasan" / "OZAN") is joined when the next
+    line is a bare surname; a name that stays a single token is kept but
+    marked incomplete so the report can say so.
+    """
+    mentions: list[ProfessorMention] = []
+    seen: set[str] = set()
+    for page in list(pages)[: limit_pages or None]:
+        number = int(getattr(page, "page_number", 0) or 0)
+        if limit_pages and number > limit_pages:
+            continue  # a later page handed in by position is still a later page
+        lines = [line.strip() for line in str(getattr(page, "text", "")).splitlines()]
+        for index, line in enumerate(lines):
+            if not line or len(line) > 90:
+                continue
+            found = academic_title_and_name(line)
+            if found is None:
+                continue
+            title, name = found
+            complete = len(name.split()) >= 2
+            if not complete:
+                nxt = lines[index + 1].strip() if index + 1 < len(lines) else ""
+                tokens = nxt.split()
+                if 1 <= len(tokens) <= 2 and all(_NAME_TOKEN.match(token) and token.casefold().translate(_TURKISH_LOWER) not in _ROLE_WORDS for token in tokens) and not academic_title_and_name(nxt):
+                    name = name + " " + " ".join(turkish_title(token) for token in tokens)
+                    complete = True
+            key = professor_key(name)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            if garbled_name(name):
+                complete = False
+            mentions.append(ProfessorMention(name=f"{title} {name}".strip(), key=key, line=line, page_number=int(getattr(page, "page_number", 0) or 0), source="page", complete=complete))
+    return mentions
+
+
+def fuller_name(candidate: str, current: str) -> bool:
+    """Whether ``candidate`` says more about the person than ``current``:
+    fewer initials first, then more tokens (a title counts)."""
+
+    def initials(name: str) -> int:
+        return sum(1 for token in name.split() if len(token.rstrip(".")) == 1)
+
+    new_tokens, old_tokens = candidate.split(), current.split()
+    if initials(candidate) != initials(current):
+        return initials(candidate) < initials(current)
+    return len(new_tokens) > len(old_tokens)
+
+
+def professor_from_title(title: str) -> ProfessorMention | None:
+    """The lecturer written into a file name such as "Mikrobiyoloji Ülker Çuhacı 2 - Mantarlar"."""
+    match = _TITLE_NAME.match(str(title or "").strip())
+    if not match:
+        return None
+    tokens = [token for token in match.group("lead").replace("_", " ").split() if token]
+    while tokens and fold(tokens[0]) in _SUBJECT_WORDS:
+        tokens.pop(0)
+    if not 2 <= len(tokens) <= 4:
+        return None
+    if any(not _NAME_TOKEN.match(token) or not token[0].isupper() or fold(token) in _SUBJECT_WORDS for token in tokens):
+        return None
+    name = " ".join(turkish_title(token) for token in tokens)
+    return ProfessorMention(name=name, key=professor_key(name), line=title, page_number=0, source="title")
+
+
+def split_by_professor(text: str) -> list[tuple[ProfessorMention | None, str]]:
+    """Cut a compiled question file at the headings that name a lecturer.
+
+    Each section is attributed to the heading above it; text before the first
+    heading has no lecturer. A heading is a short line that is nothing but a
+    title and a name, so a name mentioned inside a question does not cut it.
+    """
+    sections: list[tuple[ProfessorMention | None, list[str]]] = [(None, [])]
+    for line in str(text or "").replace("\r\n", "\n").split("\n"):
+        stripped = line.strip()
+        found = academic_title_and_name(stripped) if 0 < len(stripped) <= 80 and not _QUESTION_START.match(stripped) else None
+        if found is not None and len(found[1].split()) >= 2:
+            title, name = found
+            sections.append((ProfessorMention(name=f"{title} {name}", key=professor_key(name), line=stripped, source="heading"), []))
+            continue
+        sections[-1][1].append(line)
+    return [(mention, "\n".join(lines)) for mention, lines in sections if "\n".join(lines).strip() or mention is not None]
+
+
+def imported_question(parsed: ParsedQuestion, *, subject: str, professor_id: str | None, topic_id: str | None = None, document_id: str | None = None, origin: str = QuestionOrigin.IMPORTED_EXAM, page_number: int | None = None, image_ref: str | None = None, tags: Iterable[str] = ()) -> Question:
     question = Question(
         question_id=new_id("q"),
         subject=subject,
@@ -300,10 +565,11 @@ def imported_question(parsed: ParsedQuestion, *, subject: str, professor_id: str
         options=[QuestionOption(key=key, text=text) for key, text in parsed.options],
         correct_key=parsed.answer_key,
         topic_id=topic_id,
-        origin=QuestionOrigin.IMPORTED_EXAM,
+        origin=origin,
         professor_id=professor_id,
-        tags=["imported"],
-        metadata={"number": parsed.number, "has_image": parsed.has_image, "source_document_id": document_id},
+        image_ref=image_ref,
+        tags=list(dict.fromkeys(["imported", *tags]))[:20],
+        metadata={"number": parsed.number, "has_image": parsed.has_image, "source_document_id": document_id, **({"page_number": page_number} if page_number else {})},
     )
     return question
 

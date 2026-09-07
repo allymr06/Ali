@@ -106,7 +106,7 @@ def table_quiz_pairs(structure: AnatomyStructure) -> list[tuple[str, str, str, l
             pairs = [
                 (row[0], row[col])
                 for row in table["rows"]
-                if col < len(row) and row[0].strip() and row[col].strip()
+                if col < len(row) and row[0].strip() and normalize(row[col]).strip()
                 and len(row[0]) <= maximum and len(row[col]) <= maximum
             ]
             pool = [answer for _subject, answer in pairs]
@@ -1003,7 +1003,7 @@ def test_every_scene_mapping_names_structures_the_data_knows() -> None:
 
     structures, _terms, _source = load_anatomy_data()
     known = {structure.structure_id for structure in structures}
-    assert set(SCENES) == {"upper_limb_right", "neurocranium", "cranium", "vertebral_column"}
+    assert set(SCENES) == {"upper_limb_right", "neurocranium", "cranium", "vertebral_column", "thoracic_cage"}
     for scene_id, scene in SCENES.items():
         mapping = scene["mapping"]
         assert set(scene["structure_ids"]) == set(mapping), scene_id
@@ -1334,3 +1334,51 @@ def test_the_craniovertebral_and_jaw_joints_tie_the_skull_to_spine() -> None:
     assert {r["structure_id"] for r in tmj["relations"] if r["relation"] == "articulates"} == {"os_temporale", "mandibula"}
     # The TMJ card names its articular disc — the feature that splits it in two.
     assert any("discus" in fact.lower() for section in tmj["sections"] for fact in section["items"])
+
+
+def test_the_thoracic_cage_classifies_the_ribs_and_builds_a_rib_cage() -> None:
+    """The thorax: an overview whose table sorts the ribs into true, false and
+    floating, cards for the typical rib, the atypical first rib and the floating
+    ribs, and a rib-cage scene of ribs, sternum and thoracic spine together."""
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=None)
+
+    overview = lab.describe("cavea_thoracis")
+    assert overview is not None and overview["kind"] == "region" and overview["region"] == "trunk"
+    classes = next(t for t in overview["tables"] if "sınıf" in t["title"].lower())
+    by_group = {row[0]: row for row in classes["rows"]}
+    assert "1-7" in by_group["Gerçek (verae)"][1]
+    assert "11-12" in by_group["Yüzen (fluctuantes)"][1]
+    contained = {r["structure_id"] for r in overview["relations"] if r["relation"] == "contains"}
+    assert contained == {"costa", "costa_prima", "costae_fluctuantes", "sternum", "vertebra_thoracica"}
+
+    for rib in ["costa", "costa_prima", "costae_fluctuantes"]:
+        card = lab.describe(rib)
+        assert card is not None and card["kind"] == "bone" and card["region"] == "trunk", rib
+        assert "Yüksek verim" in [s["label"] for s in card["sections"]], rib
+    # The first rib is the atypical one that carries the subclavian grooves.
+    first = lab.describe("costa_prima")
+    assert any("subclavia" in landmark["latin"].lower() for landmark in first["landmarks"])
+
+
+def test_the_rib_cage_scene_draws_ribs_sternum_and_spine_together() -> None:
+    from scripts.import_bodyparts3d import THORACIC_CAGE, SCENES, THORACIC_CAGE_PALETTE
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    known = {s.structure_id for s in structures}
+
+    scene = SCENES["thoracic_cage"]
+    assert set(scene["structure_ids"]) == set(THORACIC_CAGE) and scene["card"] == "cavea_thoracis"
+    assert set(THORACIC_CAGE_PALETTE) == set(THORACIC_CAGE)
+    assert [sid for sid in THORACIC_CAGE if sid not in known] == []
+    # The rib cage is ribs plus the sternum and the thoracic spine.
+    assert {"costa", "costa_prima", "costae_fluctuantes", "sternum", "vertebra_thoracica"} == set(THORACIC_CAGE)
+    # The typical-rib group merges the whole run of typical ribs, both sides.
+    assert len(THORACIC_CAGE["costa"][0][2]) == 16  # ribs 3-10, left and right
+    # The sternum is its three parts merged into one mesh.
+    assert len(THORACIC_CAGE["sternum"][0][2]) == 3

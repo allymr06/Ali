@@ -455,6 +455,16 @@ joints — the 'yes' of nodding at the occipital condyles and the 'no' of rotati
 around the dens, held by the transverse ligament of the atlas. Each is a curated
 joint card with the documented joint fields and is quizzed on its type.
 
+### Thoracic cage
+
+The rib cage completes the trunk. An overview card (cavea_thoracis) sorts the
+ribs into true (1-7), false (8-10) and floating (11-12) and lays out a typical
+rib's parts and the costal groove that hides the neurovascular bundle, with
+cards for the typical rib, the atypical first rib (scalene tubercle, subclavian
+grooves) and the floating ribs; the sternum card already shipped. The
+importer's thoracic_cage scene draws the ribs, the three-part sternum and the
+thoracic spine together as a rib cage.
+
 ### Cranial nerves
 
 The twelve cranial nerves have a section of their own, tied to the skull
@@ -533,8 +543,7 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
   someone who knows confirms them by hand.
 - The head and neck have the full skull, the twelve cranial nerves and the
   craniovertebral and jaw joints, but no head-and-neck vessel cards; the trunk
-  has the vertebral column but the thoracic cage is only the sternum (no ribs)
-  and there are no
+  has the vertebral column and the thoracic cage now, but no
   abdominal-wall muscles and the lower limb no vessels. The coverage audit in
   `docs/PROJECT_STATE.md` lists the gaps in priority order.
 - Image-based question *generation* needs an image whose provenance is known;

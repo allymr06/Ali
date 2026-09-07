@@ -50,8 +50,26 @@ Last verified: 6 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2252 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 2254 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## The thoracic cage (7 September 2026)
+
+The rib cage completes the trunk skeleton the vertebral column started. An
+overview card (cavea_thoracis) sorts the ribs into true, false and floating in
+one table and lays out a typical rib's parts (head, neck, tubercle, body,
+costal groove) in another, with the clinical high-yield (the neurovascular
+bundle in the costal groove, the subclavian structures over the first rib, the
+sternal angle as the counting landmark). Cards were added for the typical rib,
+the atypical first rib (its scalene tubercle and subclavian grooves) and the
+floating ribs; the sternum card already shipped and now gains its mesh. The
+importer's thoracic_cage scene draws a rib cage — the ribs in grouped colours,
+the three-part sternum and the thoracic spine together. The anatomy data is 109
+structures.
+
+The table-recall quiz gained a small correctness fix found here: a reference
+table cell that is a dash placeholder ("—", meaning none) is no longer offered
+as a quiz answer, since an empty answer makes every distractor trivially match.
 
 ## Craniovertebral and jaw joints (7 September 2026)
 

@@ -543,7 +543,9 @@ The Medical Academy regression coverage (`tests/test_medical_*.py`) includes:
   atlas and axis and the typical vertebra cards, and the continuous six-group
   spine scene, and the craniovertebral and jaw joints — the temporomandibular,
   atlanto-occipital and atlanto-axial cards with their disc, movements and the
-  bones they connect) (`test_medical_anatomy.py`);
+  bones they connect, and the thoracic cage — the rib-classification and
+  rib-parts tables, the typical/first/floating rib cards, and the rib-cage
+  scene of ribs, sternum and spine) (`test_medical_anatomy.py`);
 - the academy facade, its four tools, the tutor's decisions and question
   generation against a fake model client;
 - the core engine's augmentation hook: prompt replacement, tool narrowing,

@@ -136,6 +136,21 @@ VERTEBRAL_COLUMN_PALETTE: dict[str, list[float]] = {
     "vertebra_cervicalis": [0.55, 0.86, 0.42], "vertebra_thoracica": [0.92, 0.52, 0.66],
     "vertebra_lumbalis": [0.80, 0.52, 0.92], "os_sacrum": [0.36, 0.90, 0.84],
 }
+
+# The thoracic cage: ribs (grouped), the three-part sternum and the thoracic
+# spine drawn together as a rib cage. Grouped and paired meshes carry no pins.
+THORACIC_CAGE: dict[str, list[tuple[str, str, list[str]]]] = {
+    "costa_prima": [("FMA7597", "first rib (both sides)", ["FJ3228", "FJ3334"])],
+    "costa": [("FMA7638", "typical ribs 3-10 (both sides)", ["FJ3230", "FJ3338", "FJ3231", "FJ3340", "FJ3232", "FJ3342", "FJ3233", "FJ3344", "FJ3234", "FJ3346", "FJ3235", "FJ3347", "FJ3236", "FJ3348", "FJ3225", "FJ3330"])],
+    "costae_fluctuantes": [("FMA8499", "floating ribs 11-12 (both sides)", ["FJ3226", "FJ3331", "FJ3227", "FJ3332"])],
+    "sternum": [("FMA7486", "sternum (manubrium+body+xiphoid)", ["FJ3290", "FJ3178", "FJ3153"])],
+    "vertebra_thoracica": [("FMA9165", "thoracic vertebrae T1-T12", ["FJ3158", "FJ3160", "FJ3163", "FJ3166", "FJ3169", "FJ3171", "FJ3173", "FJ3174", "FJ3175", "FJ3154", "FJ3155", "FJ3156"])],
+}
+THORACIC_CAGE_PALETTE: dict[str, list[float]] = {
+    "costa_prima": [0.96, 0.78, 0.30], "costa": [0.55, 0.86, 0.42],
+    "costae_fluctuantes": [0.92, 0.52, 0.66], "sternum": [0.42, 0.74, 0.96],
+    "vertebra_thoracica": [0.80, 0.52, 0.92],
+}
 CRANIUM_PALETTE: dict[str, list[float]] = {
     "os_frontale": [0.96, 0.78, 0.30], "os_parietale": [0.42, 0.74, 0.96],
     "os_temporale": [0.55, 0.86, 0.42], "os_occipitale": [0.92, 0.42, 0.38],
@@ -402,6 +417,16 @@ SCENES = {
         "card": "columna_vertebralis",
         "palette": VERTEBRAL_COLUMN_PALETTE,
         "note": "bölgeleri tek tek kapat · eğrilikleri gör",
+    },
+    "thoracic_cage": {
+        "title": "Göğüs kafesi · kaburgalar + sternum + torakal omurga",
+        "region": "trunk",
+        "mapping": THORACIC_CAGE,
+        "structure_ids": list(THORACIC_CAGE),
+        "side": "both",
+        "card": "cavea_thoracis",
+        "palette": THORACIC_CAGE_PALETTE,
+        "note": "kaburga gruplarını tek tek kapat",
     },
 }
 

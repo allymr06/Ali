@@ -104,6 +104,30 @@ NEUROCRANIUM: dict[str, list[tuple[str, str, list[str]]]] = {
     "os_sphenoidale": [("FMA52736", "sphenoid bone", ["FJ3394"])],
     "os_ethmoidale": [("FMA52740", "ethmoid", ["FJ3199"])],
 }
+# The facial skeleton. Whole-bone FMA ids carry both sides in one mesh, so a
+# paired bone is one card and one mesh; mandibula and vomer are single midline
+# bones. Together with NEUROCRANIUM these form the full-skull scene "cranium".
+VISCEROCRANIUM: dict[str, list[tuple[str, str, list[str]]]] = {
+    "maxilla": [("FMA9711", "maxilla", ["FJ3269", "FJ3375"])],
+    "mandibula": [("FMA52748", "mandible", ["FJ3289"])],
+    "os_zygomaticum": [("FMA52747", "zygomatic bone", ["FJ3287", "FJ3392"])],
+    "os_nasale": [("FMA52745", "nasal bone", ["FJ3272", "FJ3378"])],
+    "os_lacrimale": [("FMA52741", "lacrimal bone", ["FJ3265", "FJ3371"])],
+    "os_palatinum": [("FMA52746", "palatine bone", ["FJ3273", "FJ3379"])],
+    "concha_nasalis_inferior": [("FMA54736", "inferior nasal concha", ["FJ3263", "FJ3369"])],
+    "vomer": [("FMA9710", "vomer", ["FJ3395"])],
+}
+CRANIUM: dict[str, list[tuple[str, str, list[str]]]] = {**NEUROCRANIUM, **VISCEROCRANIUM}
+CRANIUM_PALETTE: dict[str, list[float]] = {
+    "os_frontale": [0.96, 0.78, 0.30], "os_parietale": [0.42, 0.74, 0.96],
+    "os_temporale": [0.55, 0.86, 0.42], "os_occipitale": [0.92, 0.42, 0.38],
+    "os_sphenoidale": [0.80, 0.52, 0.92], "os_ethmoidale": [0.36, 0.90, 0.84],
+    "maxilla": [0.96, 0.66, 0.42], "mandibula": [0.60, 0.80, 0.96],
+    "os_zygomaticum": [0.92, 0.52, 0.66], "os_nasale": [0.70, 0.72, 0.40],
+    "os_lacrimale": [0.50, 0.90, 0.70], "os_palatinum": [0.86, 0.60, 0.90],
+    "concha_nasalis_inferior": [0.60, 0.86, 0.88], "vomer": [0.88, 0.80, 0.52],
+}
+
 # The atlas convention for a skull: one colour per bone, since every mesh is
 # bone and the kind colour would paint the whole vault the same ivory.
 NEUROCRANIUM_PALETTE: dict[str, list[float]] = {
@@ -233,6 +257,29 @@ LANDMARK_RULES: dict[str, dict[str, list[tuple]]] = {
         "lamina_orbitalis": [("x", "min", 0.06)],
         "concha_nasalis_media": [("x", "band", 0.25, 0.45), ("z", "min", 0.15)],
     },
+    "maxilla": {
+        "processus_frontalis": [("z", "max", 0.10), ("y", "min", 0.30)],
+        "processus_alveolaris": [("z", "min", 0.12)],
+        "processus_palatinus": [("z", "min", 0.20), ("y", "min", 0.35), ("x", "band", 0.35, 0.65)],
+        "facies_orbitalis": [("z", "max", 0.20), ("y", "max", 0.30)],
+        "corpus_maxillae": [("z", "band", 0.35, 0.65)],
+    },
+    "mandibula": {
+        "protuberantia_mentalis": [("y", "min", 0.06), ("x", "band", 0.40, 0.60)],
+        "angulus_mandibulae": [("z", "min", 0.20), ("x", "min", 0.15), ("y", "max", 0.30)],
+        "caput_mandibulae": [("z", "max", 0.08), ("x", "min", 0.20)],
+        "processus_coronoideus": [("z", "max", 0.10), ("y", "min", 0.25)],
+        "corpus_mandibulae": [("z", "band", 0.20, 0.45), ("y", "min", 0.30)],
+    },
+    "os_zygomaticum": {
+        "processus_frontalis": [("z", "max", 0.15), ("x", "min", 0.30)],
+        "processus_temporalis": [("y", "max", 0.25), ("x", "min", 0.30)],
+        "facies_orbitalis": [("y", "max", 0.25), ("z", "band", 0.40, 0.70)],
+    },
+    "vomer": {
+        "ala_vomeris": [("z", "max", 0.10)],
+        "margo_posterior": [("y", "max", 0.15)],
+    },
 }
 AXES = {"x": 0, "y": 1, "z": 2}
 MIN_PIN_VERTICES = 4
@@ -301,6 +348,16 @@ SCENES = {
         "card": "neurocranium",
         "palette": NEUROCRANIUM_PALETTE,
         "note": "iki taraf · kemikleri tek tek kapat",
+    },
+    "cranium": {
+        "title": "Kafatası · nörokranyum + yüz iskeleti",
+        "region": "head_neck",
+        "mapping": CRANIUM,
+        "structure_ids": list(CRANIUM),
+        "side": "both",
+        "card": "neurocranium",
+        "palette": CRANIUM_PALETTE,
+        "note": "tüm kafatası · kemikleri tek tek kapat",
     },
 }
 

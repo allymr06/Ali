@@ -5479,6 +5479,745 @@
         ]
       },
       "relations": []
+    },
+    {
+      "structure_id": "viscerocranium",
+      "canonical": "Viscerocranium",
+      "kind": "region",
+      "region": "head_neck",
+      "turkish": "Viscerocranium (yüz iskeleti)",
+      "english": "Viscerocranium (facial skeleton)",
+      "synonyms": [
+        "viscerocranium",
+        "yuz iskeleti",
+        "yüz iskeleti",
+        "facial skeleton",
+        "splanchnocranium"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.viscerocranium",
+      "facts": {
+        "location": "Yüzü, orbita'nın büyük bölümünü, burun boşluğunu, damağı ve çeneyi yapan kemikler. Klasik olarak 14 kemik: çift maxilla, os zygomaticum, os nasale, os lacrimale, os palatinum ve concha nasalis inferior, tek vomer ve mandibula. Bunlardan yalnız mandibula hareketlidir (art. temporomandibularis).",
+        "parts": [
+          "Çift: maxilla, os zygomaticum, os nasale, os lacrimale, os palatinum, concha nasalis inferior",
+          "Tek: vomer (septum), mandibula (alt çene)",
+          "Os hyoideum yüz iskeletine dahil edilmez; hiçbir kemikle eklemleşmeyen tek kemiktir"
+        ],
+        "high_yield": [
+          "Os nasale en sık kırılan yüz kemiğidir; os lacrimale en küçük yüz kemiğidir.",
+          "Maxilla sinus maxillaris'i (en büyük paranazal sinüs) taşır ve sert damağın ön 3/4'ünü (processus palatinus) yapar; arka 1/4 os palatinum'dur.",
+          "Ductus nasolacrimalis meatus nasi inferior'a açılır; diğer tüm paranazal sinüsler (sphenoid hariç) meatus medius'a açılır.",
+          "Fossa pterygopalatina yüz iskeletinin kavşağıdır: foramen sphenopalatinum (burun), fissura orbitalis inferior (orbita), foramen rotundum (kafa), canalis pterygoideus ve canalis palatinus major buraya açılır; V2 ve ganglion pterygopalatinum buradadır."
+        ],
+        "study_notes": [
+          "Önce iki tabloyu ezberle: orbita'nın dört duvarını yapan kemikler ve her paranazal sinüsün açıldığı meatus. İkisi de sınavın klasik sorusudur.",
+          "Orbitayı bir piramit gibi düşün: tavan-taban-medial-lateral; medial duvar en incedir (lamina papyracea) ve etmoiditte kırılır.",
+          "Burun yan duvarında üç concha ve altlarındaki üç meatus'u sırala; hangi boşluğun nereye aktığını meatus'la eşle.",
+          "Mandibula ve maxilla'yı diş hekimliği gözüyle çalış: alveolar çıkıntılar, foramen mandibulae→mentale (V3) ve foramen infraorbitale (V2) enjeksiyon/duyu noktalarıdır."
+        ],
+        "tables": [
+          {
+            "title": "Orbita duvarları ve kemikleri",
+            "columns": [
+              "Duvar",
+              "Kemikler",
+              "Önemli oluşum"
+            ],
+            "rows": [
+              [
+                "Tavan (paries superior)",
+                "Os frontale (pars orbitalis), os sphenoidale (ala minor)",
+                "Fossa glandulae lacrimalis; fovea trochlearis"
+              ],
+              [
+                "Taban (paries inferior)",
+                "Maxilla, os zygomaticum, os palatinum (processus orbitalis)",
+                "Sulcus/canalis infraorbitalis (V2); blow-out kırığı zemini"
+              ],
+              [
+                "Medial duvar (paries medialis)",
+                "Os ethmoidale (lamina orbitalis), os lacrimale, maxilla (processus frontalis), os sphenoidale (corpus)",
+                "Fossa sacci lacrimalis; lamina papyracea (en ince, etmoidit yolu)"
+              ],
+              [
+                "Lateral duvar (paries lateralis)",
+                "Os zygomaticum, os sphenoidale (ala major)",
+                "En kalın duvar; fissura orbitalis superior ve inferior'u sınırlar"
+              ]
+            ]
+          },
+          {
+            "title": "Paranazal sinüsler ve açıldıkları yer",
+            "columns": [
+              "Boşluk",
+              "Bulunduğu kemik",
+              "Açıldığı yer"
+            ],
+            "rows": [
+              [
+                "Sinus frontalis",
+                "Os frontale",
+                "Meatus nasi medius (infundibulum/hiatus semilunaris)"
+              ],
+              [
+                "Cellulae ethmoidales anteriores",
+                "Os ethmoidale",
+                "Meatus nasi medius"
+              ],
+              [
+                "Cellulae ethmoidales mediae",
+                "Os ethmoidale",
+                "Meatus nasi medius (bulla ethmoidalis)"
+              ],
+              [
+                "Cellulae ethmoidales posteriores",
+                "Os ethmoidale",
+                "Meatus nasi superior"
+              ],
+              [
+                "Sinus maxillaris",
+                "Maxilla",
+                "Meatus nasi medius (hiatus semilunaris)"
+              ],
+              [
+                "Sinus sphenoidalis",
+                "Os sphenoidale",
+                "Recessus sphenoethmoidalis"
+              ],
+              [
+                "Ductus nasolacrimalis",
+                "Canalis nasolacrimalis (maxilla-lacrimale)",
+                "Meatus nasi inferior"
+              ]
+            ]
+          }
+        ]
+      },
+      "relations": [
+        {
+          "relation": "contains",
+          "target": "maxilla"
+        },
+        {
+          "relation": "contains",
+          "target": "mandibula"
+        },
+        {
+          "relation": "contains",
+          "target": "os_zygomaticum"
+        },
+        {
+          "relation": "contains",
+          "target": "os_nasale"
+        },
+        {
+          "relation": "contains",
+          "target": "os_lacrimale"
+        },
+        {
+          "relation": "contains",
+          "target": "os_palatinum"
+        },
+        {
+          "relation": "contains",
+          "target": "concha_nasalis_inferior"
+        },
+        {
+          "relation": "contains",
+          "target": "vomer"
+        }
+      ]
+    },
+    {
+      "structure_id": "maxilla",
+      "canonical": "Maxilla",
+      "kind": "bone",
+      "region": "head_neck",
+      "turkish": "Üst çene kemiği",
+      "english": "Maxilla (upper jaw)",
+      "synonyms": [
+        "maxilla",
+        "ust cene",
+        "üst çene",
+        "upper jaw",
+        "maksilla"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.viscerocranium",
+      "landmarks": [
+        {
+          "landmark_id": "corpus_maxillae",
+          "latin": "Corpus maxillae",
+          "turkish": "İçinde sinus maxillaris'i taşıyan gövde; dört yüzü var"
+        },
+        {
+          "landmark_id": "sinus_maxillaris",
+          "latin": "Sinus maxillaris",
+          "turkish": "En büyük paranazal sinüs; meatus nasi medius'a açılır (tabanı diş köklerine komşu)"
+        },
+        {
+          "landmark_id": "processus_frontalis",
+          "latin": "Processus frontalis",
+          "turkish": "Yukarı çıkıp os frontale ile eklemleşen çıkıntı; medial orbita duvarına katılır"
+        },
+        {
+          "landmark_id": "processus_zygomaticus",
+          "latin": "Processus zygomaticus",
+          "turkish": "Os zygomaticum ile eklemleşen lateral çıkıntı"
+        },
+        {
+          "landmark_id": "processus_alveolaris",
+          "latin": "Processus alveolaris",
+          "turkish": "Üst dişleri taşıyan alveol yayı"
+        },
+        {
+          "landmark_id": "processus_palatinus",
+          "latin": "Processus palatinus",
+          "turkish": "Sert damağın ön 3/4'ünü yapan yatay plak",
+          "note": "sert damak"
+        },
+        {
+          "landmark_id": "foramen_infraorbitale",
+          "latin": "Foramen infraorbitale",
+          "turkish": "Orbita altında; n. ve a. infraorbitalis (V2) çıkar"
+        },
+        {
+          "landmark_id": "facies_orbitalis",
+          "latin": "Facies orbitalis",
+          "turkish": "Orbita tabanının büyük bölümü; sulcus/canalis infraorbitalis"
+        }
+      ],
+      "facts": {
+        "location": "Yüzün ortasını yapan çift kemik; orta hatta birleşir. Orbita tabanı, burun boşluğunun yan duvarı ve tabanı, sert damağın ön bölümü ve üst diş yayı ondan oluşur. İçinde en büyük paranazal sinüs (sinus maxillaris) vardır.",
+        "parts": [
+          "Corpus maxillae (sinus maxillaris)",
+          "Processus frontalis, zygomaticus, alveolaris, palatinus"
+        ],
+        "articulations": [
+          "Os frontale, os ethmoidale, os lacrimale, os nasale, os zygomaticum, vomer, concha nasalis inferior, os palatinum, karşı maxilla"
+        ],
+        "high_yield": [
+          "Sinus maxillaris meatus nasi medius'a açılır ama tabanı ostiumdan alçakta olduğundan drenaj yer çekimine karşıdır: sinüzite yatkın.",
+          "Foramen infraorbitale V2'nin (n. infraorbitalis) çıkışıdır; infraorbital blok noktası.",
+          "Le Fort I/II/III kırıkları maxilla'yı yüz iskeletinden ayıran klasik hatlardır.",
+          "Sinus maxillaris tabanı üst molar/premolar köklerine komşudur: diş enfeksiyonu sinüzit, diş çekimi oroantral fistül yapabilir."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "os_frontale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_ethmoidale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_zygomaticum"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_palatinum"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_nasale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_lacrimale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "vomer"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "concha_nasalis_inferior"
+        }
+      ]
+    },
+    {
+      "structure_id": "mandibula",
+      "canonical": "Mandibula",
+      "kind": "bone",
+      "region": "head_neck",
+      "turkish": "Alt çene kemiği",
+      "english": "Mandible (lower jaw)",
+      "synonyms": [
+        "mandibula",
+        "alt cene",
+        "alt çene",
+        "lower jaw",
+        "çene kemiği",
+        "cene kemigi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.viscerocranium",
+      "landmarks": [
+        {
+          "landmark_id": "corpus_mandibulae",
+          "latin": "Corpus mandibulae",
+          "turkish": "Yatay gövde; üstte alveol yayı, altta basis"
+        },
+        {
+          "landmark_id": "ramus_mandibulae",
+          "latin": "Ramus mandibulae",
+          "turkish": "Yukarı çıkan dikey kol; iki çıkıntıyla biter"
+        },
+        {
+          "landmark_id": "angulus_mandibulae",
+          "latin": "Angulus mandibulae",
+          "turkish": "Gövde ile ramus'un buluştuğu köşe; m. masseter ve m. pterygoideus medialis tutunur"
+        },
+        {
+          "landmark_id": "caput_mandibulae",
+          "latin": "Caput mandibulae (processus condylaris)",
+          "turkish": "Fossa mandibularis ile art. temporomandibularis'i yapan baş",
+          "note": "TMJ"
+        },
+        {
+          "landmark_id": "processus_coronoideus",
+          "latin": "Processus coronoideus",
+          "turkish": "Öndeki üçgen çıkıntı; m. temporalis tutunur"
+        },
+        {
+          "landmark_id": "incisura_mandibulae",
+          "latin": "Incisura mandibulae",
+          "turkish": "İki çıkıntı arasındaki çentik; a./n. massetericus geçer"
+        },
+        {
+          "landmark_id": "foramen_mandibulae",
+          "latin": "Foramen mandibulae",
+          "turkish": "Ramus iç yüzünde; n. alveolaris inferior (V3) ve damar girer (lingula önünde)"
+        },
+        {
+          "landmark_id": "foramen_mentale",
+          "latin": "Foramen mentale",
+          "turkish": "2. premolar altında; n. mentalis (V3) çıkar"
+        },
+        {
+          "landmark_id": "linea_mylohyoidea",
+          "latin": "Linea mylohyoidea",
+          "turkish": "İç yüzde eğik çizgi; m. mylohyoideus tutunur, ağız tabanını sınırlar"
+        },
+        {
+          "landmark_id": "protuberantia_mentalis",
+          "latin": "Protuberantia mentalis",
+          "turkish": "Çene ucu çıkıntısı (insana özgü)"
+        }
+      ],
+      "facts": {
+        "location": "Yüz iskeletinin tek hareketli kemiği; alt dişleri taşır ve os temporale ile art. temporomandibularis'i yapar. At nalı biçiminde gövde (corpus) ve iki dikey kol (ramus).",
+        "parts": [
+          "Corpus mandibulae (basis, pars alveolaris, protuberantia mentalis)",
+          "Ramus mandibulae (angulus, processus condylaris, processus coronoideus)"
+        ],
+        "articulations": [
+          "Os temporale (art. temporomandibularis: caput mandibulae – fossa mandibularis ve tuberculum articulare)"
+        ],
+        "muscle_attachments": [
+          "Dış yüz: m. masseter (angulus, tuberositas masseterica), m. buccinator (crista buccinatoria)",
+          "İç yüz: m. pterygoideus medialis (tuberositas pterygoidea), m. mylohyoideus (linea mylohyoidea), m. geniohyoideus/genioglossus (spina mentalis)",
+          "Processus coronoideus: m. temporalis; processus condylaris (fovea pterygoidea): m. pterygoideus lateralis"
+        ],
+        "high_yield": [
+          "N. alveolaris inferior (V3) foramen mandibulae'den girer, kanalda ilerler, n. mentalis olarak foramen mentale'den çıkar: alt diş anestezisi bu girişte yapılır.",
+          "Kırık en sık collum mandibulae ve angulus'ta olur; genelde iki yerden (halka kemik).",
+          "Yaşla dişler dökülünce alveol yayı erir, foramen mentale kemik üst kenarına yaklaşır (protez basısı)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "os_temporale"
+        }
+      ]
+    },
+    {
+      "structure_id": "os_zygomaticum",
+      "canonical": "Os zygomaticum",
+      "kind": "bone",
+      "region": "head_neck",
+      "turkish": "Elmacık kemiği (çift)",
+      "english": "Zygomatic bone (paired)",
+      "synonyms": [
+        "os zygomaticum",
+        "elmacik kemigi",
+        "elmacık kemiği",
+        "zygomatic bone",
+        "yanak kemigi",
+        "malar"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.viscerocranium",
+      "landmarks": [
+        {
+          "landmark_id": "processus_frontalis",
+          "latin": "Processus frontalis",
+          "turkish": "Yukarı çıkıp os frontale ile eklemleşen çıkıntı; orbita lateral kenarı"
+        },
+        {
+          "landmark_id": "processus_temporalis",
+          "latin": "Processus temporalis",
+          "turkish": "Os temporale ile arcus zygomaticus'u yapan çıkıntı"
+        },
+        {
+          "landmark_id": "processus_maxillaris",
+          "latin": "Processus maxillaris",
+          "turkish": "Maxilla ile eklemleşen alt-iç bölüm"
+        },
+        {
+          "landmark_id": "foramen_zygomaticofaciale",
+          "latin": "Foramen zygomaticofaciale",
+          "turkish": "Yüz yüzünde; V2'nin duyu dalı"
+        },
+        {
+          "landmark_id": "facies_orbitalis",
+          "latin": "Facies orbitalis",
+          "turkish": "Orbita lateral duvarına katılan yüz"
+        }
+      ],
+      "facts": {
+        "location": "Yanağın çıkıntısını (elmacık) yapan çift kemik. Orbita'nın lateral duvarı ve kenarı ile arcus zygomaticus'un ön bölümü ondan oluşur; dört kemikle eklemleşir.",
+        "parts": [
+          "Processus frontalis, temporalis, maxillaris",
+          "Facies lateralis, orbitalis, temporalis"
+        ],
+        "articulations": [
+          "Os frontale, os temporale (arcus zygomaticus), maxilla, os sphenoidale (ala major)"
+        ],
+        "high_yield": [
+          "Arcus zygomaticus = processus temporalis ossis zygomatici + processus zygomaticus ossis temporalis; m. masseter buraya tutunur.",
+          "'Tripod' (zygomaticomaxiller kompleks) kırığı: frontozigomatik sutur, arcus ve infraorbital kenar birlikte kırılır; orbita tabanını ve V2'yi etkiler."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "os_frontale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_temporale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "maxilla"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_sphenoidale"
+        }
+      ]
+    },
+    {
+      "structure_id": "os_nasale",
+      "canonical": "Os nasale",
+      "kind": "bone",
+      "region": "head_neck",
+      "turkish": "Burun kemiği (çift)",
+      "english": "Nasal bone (paired)",
+      "synonyms": [
+        "os nasale",
+        "burun kemigi",
+        "burun kemiği",
+        "nasal bone"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.viscerocranium",
+      "landmarks": [
+        {
+          "landmark_id": "margo_superior",
+          "latin": "Margo superior",
+          "turkish": "Os frontale ile eklemleşen üst kenar"
+        },
+        {
+          "landmark_id": "margo_lateralis",
+          "latin": "Margo lateralis",
+          "turkish": "Maxilla'nın processus frontalis'i ile eklemleşen yan kenar"
+        }
+      ],
+      "facts": {
+        "location": "Burun sırtının üst kemik bölümünü yapan küçük, dikdörtgen çift kemik; alt kısım kıkırdaktır.",
+        "parts": [
+          "İki os nasale orta hatta birleşir; altta septum ve kıkırdaklarla devam eder"
+        ],
+        "articulations": [
+          "Os frontale, maxilla (processus frontalis), karşı os nasale, os ethmoidale (lamina perpendicularis)"
+        ],
+        "high_yield": [
+          "En sık kırılan yüz kemiğidir (yüze gelen künt travma).",
+          "Kemik burun yalnız üst 1/3'tür; alt 2/3 kıkırdak (septal ve alar kıkırdaklar)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "os_frontale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "maxilla"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_ethmoidale"
+        }
+      ]
+    },
+    {
+      "structure_id": "os_lacrimale",
+      "canonical": "Os lacrimale",
+      "kind": "bone",
+      "region": "head_neck",
+      "turkish": "Gözyaşı kemiği (çift)",
+      "english": "Lacrimal bone (paired)",
+      "synonyms": [
+        "os lacrimale",
+        "gozyasi kemigi",
+        "gözyaşı kemiği",
+        "lacrimal bone"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.viscerocranium",
+      "landmarks": [
+        {
+          "landmark_id": "sulcus_lacrimalis",
+          "latin": "Sulcus lacrimalis",
+          "turkish": "Maxilla ile birlikte fossa sacci lacrimalis'i yapan oluk"
+        },
+        {
+          "landmark_id": "crista_lacrimalis_posterior",
+          "latin": "Crista lacrimalis posterior",
+          "turkish": "Fossa'nın arka kenarı; septum orbitale tutunur"
+        },
+        {
+          "landmark_id": "hamulus_lacrimalis",
+          "latin": "Hamulus lacrimalis",
+          "turkish": "Aşağıdaki küçük çengel; canalis nasolacrimalis'e katılır"
+        }
+      ],
+      "facts": {
+        "location": "Yüz iskeletinin en küçük ve en kırılgan kemiği; orbita'nın medial duvarının ön bölümünde, maxilla ile ethmoidale arasında yer alır.",
+        "parts": [
+          "Fossa sacci lacrimalis'i (gözyaşı kesesi çukuru) maxilla ile birlikte yapar"
+        ],
+        "articulations": [
+          "Os frontale, os ethmoidale, maxilla, concha nasalis inferior"
+        ],
+        "high_yield": [
+          "Fossa sacci lacrimalis saccus lacrimalis'i barındırır; buradan canalis nasolacrimalis meatus nasi inferior'a iner.",
+          "En küçük yüz kemiği; medial duvarın parçası olduğundan blow-out ve etmoid patolojilerinde etkilenir."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "os_frontale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_ethmoidale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "maxilla"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "concha_nasalis_inferior"
+        }
+      ]
+    },
+    {
+      "structure_id": "os_palatinum",
+      "canonical": "Os palatinum",
+      "kind": "bone",
+      "region": "head_neck",
+      "turkish": "Damak kemiği (çift)",
+      "english": "Palatine bone (paired)",
+      "synonyms": [
+        "os palatinum",
+        "damak kemigi",
+        "damak kemiği",
+        "palatine bone"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.viscerocranium",
+      "landmarks": [
+        {
+          "landmark_id": "lamina_horizontalis",
+          "latin": "Lamina horizontalis",
+          "turkish": "Sert damağın arka 1/4'ünü yapan yatay plak"
+        },
+        {
+          "landmark_id": "lamina_perpendicularis",
+          "latin": "Lamina perpendicularis",
+          "turkish": "Burun yan duvarının arka bölümünü yapan dikey plak"
+        },
+        {
+          "landmark_id": "foramen_palatinum_majus",
+          "latin": "Foramen palatinum majus",
+          "turkish": "Sert damağın arka-yanında; n. palatinus major (V2)"
+        },
+        {
+          "landmark_id": "processus_pyramidalis",
+          "latin": "Processus pyramidalis",
+          "turkish": "Fossa pterygoidea'ya oturan çıkıntı; foramina palatina minora"
+        },
+        {
+          "landmark_id": "processus_orbitalis",
+          "latin": "Processus orbitalis",
+          "turkish": "Orbita tabanına küçük bir katkı"
+        }
+      ],
+      "facts": {
+        "location": "Burun boşluğunun arkasında, maxilla ile os sphenoidale arasında sıkışmış L biçimli çift kemik. Sert damağın arka bölümünü, burun yan duvarının arkasını ve fossa pterygopalatina'nın bir bölümünü yapar.",
+        "parts": [
+          "Lamina horizontalis (damak)",
+          "Lamina perpendicularis (burun yan duvarı)",
+          "Processus pyramidalis, orbitalis, sphenoidalis"
+        ],
+        "articulations": [
+          "Maxilla, os sphenoidale, os ethmoidale, concha nasalis inferior, vomer, karşı os palatinum"
+        ],
+        "high_yield": [
+          "Foramen palatinum majus'tan n. palatinus major (V2) geçer: arka sert damak anestezisi noktası.",
+          "Lamina perpendicularis fossa pterygopalatina'nın iç duvarını yapar; foramen sphenopalatinum buradadır (a. sphenopalatina — arka burun kanamasının kaynağı)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "maxilla"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_sphenoidale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_ethmoidale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "vomer"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "concha_nasalis_inferior"
+        }
+      ]
+    },
+    {
+      "structure_id": "concha_nasalis_inferior",
+      "canonical": "Concha nasalis inferior",
+      "kind": "bone",
+      "region": "head_neck",
+      "turkish": "Alt burun boynuzu (çift)",
+      "english": "Inferior nasal concha (paired)",
+      "synonyms": [
+        "concha nasalis inferior",
+        "alt konka",
+        "inferior nasal concha",
+        "alt burun boynuzu"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.viscerocranium",
+      "landmarks": [
+        {
+          "landmark_id": "processus_lacrimalis",
+          "latin": "Processus lacrimalis",
+          "turkish": "Os lacrimale'ye uzanıp canalis nasolacrimalis'e katılan çıkıntı"
+        },
+        {
+          "landmark_id": "processus_maxillaris",
+          "latin": "Processus maxillaris",
+          "turkish": "Sinus maxillaris'in açıklığını daraltan çıkıntı"
+        }
+      ],
+      "facts": {
+        "location": "Burun yan duvarından boşluğa doğru kıvrılan, ayrı bir kemik olan alt konka (üst ve orta konka os ethmoidale'ye aittir). Altında meatus nasi inferior yer alır.",
+        "parts": [
+          "Kıvrık gövde; processus lacrimalis, maxillaris, ethmoidalis"
+        ],
+        "articulations": [
+          "Maxilla, os lacrimale, os ethmoidale, os palatinum"
+        ],
+        "high_yield": [
+          "Altındaki meatus nasi inferior'a ductus nasolacrimalis açılır (tek oraya açılan yapı).",
+          "Konka hipertrofisi burun tıkanıklığının sık nedenidir; üst-orta konka ayrı kemik değildir (ethmoid)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "maxilla"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_lacrimale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_ethmoidale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_palatinum"
+        }
+      ]
+    },
+    {
+      "structure_id": "vomer",
+      "canonical": "Vomer",
+      "kind": "bone",
+      "region": "head_neck",
+      "turkish": "Saban kemiği",
+      "english": "Vomer",
+      "synonyms": [
+        "vomer",
+        "saban kemigi",
+        "saban kemiği"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull.viscerocranium",
+      "landmarks": [
+        {
+          "landmark_id": "ala_vomeris",
+          "latin": "Ala vomeris",
+          "turkish": "Üstte os sphenoidale'ye oturan iki kanat"
+        },
+        {
+          "landmark_id": "margo_posterior",
+          "latin": "Margo posterior",
+          "turkish": "İki koananın (choanae) arasındaki serbest arka kenar"
+        }
+      ],
+      "facts": {
+        "location": "Burun septumunun arka-alt kemik bölümünü yapan tek, orta hat kemiği. Yukarıda os ethmoidale'nin lamina perpendicularis'i septumu tamamlar; önde septal kıkırdak vardır.",
+        "parts": [
+          "İnce, saban (pulluk) biçimli tek plak; üstte ala vomeris"
+        ],
+        "articulations": [
+          "Os sphenoidale, os ethmoidale (lamina perpendicularis), maxillae ve ossa palatina (crista nasalis), septal kıkırdak"
+        ],
+        "high_yield": [
+          "Vomer + lamina perpendicularis ossis ethmoidalis + septal kıkırdak = septum nasi.",
+          "Septum deviasyonu sıklıkla kıkırdak-vomer bileşkesindedir; arka kenar iki choana'yı ayırır."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "os_sphenoidale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_ethmoidale"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "maxilla"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_palatinum"
+        }
+      ]
     }
   ],
   "terms": [

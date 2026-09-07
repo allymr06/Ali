@@ -1088,6 +1088,12 @@ def test_the_cranial_nerves_have_an_overview_and_a_card_each() -> None:
         assert "Kafatası çıkışı" in labels and "Yüksek verim" in labels, nerve_id
         assert card["topic_path"] == overview["topic_path"], nerve_id
 
+    # The accessory nerve's lesion sign is stated in the right direction: the
+    # sternocleidomastoid turns the head to the opposite side, so a one-sided
+    # palsy weakens turning AWAY from the lesion, never towards it.
+    xi = " ".join(fact for section in lab.describe("cn_xi_accessorius")["sections"] for fact in section["items"]).lower()
+    assert "karşı tarafına çevirmekte zorlanır" in xi and "yaralı tarafa dönmekte" not in xi
+
 
 def test_the_overview_exits_agree_with_the_skull_foramina() -> None:
     """A cranial nerve's exit in the overview must be a foramen the

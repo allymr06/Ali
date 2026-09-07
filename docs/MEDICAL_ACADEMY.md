@@ -124,6 +124,18 @@ another; each document reports its own stages, but its completion event is
 marked `quiet` so the shell publishes one notification for the set instead of
 two hundred. A failed document is retried only when asked.
 
+The figure pass is paced for a free-tier provider: a short breath between
+pages, a long wait after a refusal, and after two refusals in a row the pass
+stops for that document (`looks_like_outage`: unavailable, rate-limited,
+timed out, quota) with the remaining pages left *pending* — an outage is not
+a verdict on a page, so nothing is marked failed by it — and the document's
+status says so. `continue_processing` picks the work up later: for a set, a
+document or the whole library it describes the pending figure pages and runs
+the missing analyses one document after another, stopping at the first
+outage. The set card's "Şekilleri incele" and the document's button of the
+same name start it; the report says how many figures were described, how
+many documents analysed, and why it stopped if it did.
+
 Presentations (`.ppt`, `.pptx`) are accepted when PowerPoint is installed:
 `OfficeConverter` exports the deck to PDF through PowerPoint's COM interface
 from a PowerShell script (read-only, no window, alerts off) and caches the PDF

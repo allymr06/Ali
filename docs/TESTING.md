@@ -602,6 +602,10 @@ The Medical Academy regression coverage (`tests/test_medical_*.py`) includes:
   narration with a named error; the speaker's local default and its fallback
   from a spent cloud quota; the service refusing a second narration and
   answering honestly without a model;
+- the vision pass under a spent quota (`test_medical_library.py`): two
+  refusals end the pass with the pages left pending and the reason recorded,
+  nonsense from the model fails only that page, and resuming later describes
+  the pending pages and reports an empty run honestly;
 - the shell side of all three (`test_ui_nova.py`): the folder picker, the
   background folder import with its report and the quiet batch notification,
   the pause gate, mining reported to the page, narration state and commands,

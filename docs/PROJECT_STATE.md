@@ -62,7 +62,7 @@ Last verified: 8 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2295 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 2297 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
 
 ## The semester's lectures, their lecturers and sesli anlatım (8 September 2026)
@@ -111,10 +111,15 @@ result, and a push.
   Oğuz Özdamar 11, Rabet Gözil 10); 179 review questions filed, none with a
   stated key, four anchored to a pictured page; 71 lectures name nobody
   (Komite 2 biochemistry, Komite 3 microbiology, several anatomy lab
-  handouts) and are reported as such. The figure pass and the analysis
-  (model calls, free-tier quota) were not run in this session: figure
-  questions come from the figure pages once the vision pass has described
-  them.
+  handouts) and are reported as such.
+- **The figure pass.** Run against the real provider on the anatomy lectures
+  first (57 documents, up to twelve figure pages each): the free tier refused
+  a burst of calls within two minutes, so the pass now paces itself, waits
+  after a refusal, stops a document after two refusals with its pages left
+  pending, and `continue_processing` ("Şekilleri incele" on a set or a
+  document) resumes the pending figures and missing analyses later. Figure
+  questions are generated from the pages the pass described; the other
+  subjects' figure pages wait for quota.
 - **Sesli anlatım.** `app/medical/narration.py`: script built by the model in
   six-page batches (or the pages read as they stand, and the script says so),
   a chunked player with pause/resume/next/prev/stop, typed and spoken

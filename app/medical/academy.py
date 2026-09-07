@@ -99,6 +99,19 @@ NOTES_MAX_CHARS = 12_000
 PAGE_IMAGE_SCALE = 1.5
 BANK_LIST_LIMIT = 200
 LECTURE_SET_PREFIX = "lecture_set:"
+# The vision pass against a free-tier provider: a breath between pages, one
+# long wait after a refusal, and a stop after two refusals in a row so the
+# remaining pages stay pending instead of being marked failed by an outage.
+VISION_PACE_SECONDS = 1.0
+VISION_RETRY_WAIT_SECONDS = 20.0
+VISION_OUTAGE_LIMIT = 2
+_OUTAGE_MARKERS = ("ProviderUnavailableError", "ProviderRateLimitError", "ProviderTimeoutError", "zaman aşımı", "429", "quota", "RESOURCE_EXHAUSTED")
+
+
+def looks_like_outage(error: Exception) -> bool:
+    """A refusal that says nothing about the page: the provider is busy, gone or out of quota."""
+    text = str(error)
+    return any(marker in text for marker in _OUTAGE_MARKERS)
 # Folder or file names that name an academy subject. Order matters where one
 # alias contains another ("mikrobiyoloji" before "biyoloji").
 SUBJECT_FOLDER_ALIASES: tuple[tuple[str, str], ...] = (
@@ -175,6 +188,9 @@ class MedicalAcademy:
         self._background: set[asyncio.Task[Any]] = set()
         self._jobs: dict[str, dict[str, Any]] = {}
         self._comparisons: dict[str, dict[str, Any]] = {}
+        # What the last vision pass met: an outage leaves pages pending and is
+        # reported, so the student can resume later instead of reprocessing.
+        self.vision_state: dict[str, Any] = {"outage": False, "detail": "", "at": None}
         self.narration = NarrationService(store=store, model=model, emit=self._emit, checkpoint_every=narration_checkpoint_every, prefer_cloud=narration_voice == "cloud")
         self.tutor = MedicalTutor(
             store=store,
@@ -767,6 +783,60 @@ class MedicalAcademy:
         self._emit({"kind": "lecture_set_processed", **report})
         return report
 
+    async def continue_processing(self, *, set_id: str | None = None, document_id: str | None = None, vision: bool = True, analysis: bool = True) -> dict[str, Any]:
+        """Pick up what the model left: pending figure pages, missing analyses.
+
+        Ready documents keep their pages and chunks; only the model work that
+        was refused or never run is done, one document after another, and the
+        walk stops at the first outage so the rest can wait for the quota.
+        """
+        if not self.model.available:
+            raise MedicalModelError("Şekil incelemesi ve analiz için model sağlayıcısı gerekli.")
+        if document_id:
+            document = self.store.get_document(document_id)
+            if document is None:
+                raise DocumentError("Belge bulunamadı.")
+            candidates = [document]
+        elif set_id:
+            record = self.store.get_meta(LECTURE_SET_PREFIX + str(set_id))
+            if not isinstance(record, dict):
+                raise DocumentError("Ders seti bulunamadı.")
+            candidates = [item for item in (self.store.get_document(identifier) for identifier in record.get("document_ids", [])) if item is not None]
+        else:
+            candidates = self.store.list_documents()
+        queue = [item for item in candidates if item.status == DocumentStatus.READY and ((vision and item.visual_pages_pending) or (analysis and "analiz edildi" not in item.tags))]
+        described = 0
+        analysed = 0
+        touched = 0
+        stopped: str | None = None
+        for index, document in enumerate(queue, start=1):
+            self._emit({"kind": "lecture_set_progress", "set_id": set_id, "stage": "vision", "done": index - 1, "total": len(queue), "current": document.title, "document_id": document.document_id})
+            touched += 1
+            if vision and document.visual_pages_pending:
+                described += await self._vision_pass(document)
+                if self.vision_state.get("outage"):
+                    stopped = str(self.vision_state.get("detail") or "model yanıt vermiyor")
+                    self._job(document.document_id, "ready", (self.store.get_document(document.document_id) or document).status_detail, done=True)
+                    break
+            if analysis and "analiz edildi" not in document.tags:
+                try:
+                    await self.analyze_document(document.document_id, emit_done=False)
+                    analysed += 1
+                except MedicalModelError as exc:
+                    self._record("document.analysis_failed", str(exc), level="warning", document_id=document.document_id)
+                    if looks_like_outage(exc):
+                        stopped = "Analiz durdu: model şu an yanıt vermiyor (kota dolmuş olabilir)."
+                        self._job(document.document_id, "ready", document.status_detail, done=True)
+                        break
+                except DocumentError:
+                    pass
+            refreshed = self.store.get_document(document.document_id) or document
+            self._job(document.document_id, "ready", refreshed.status_detail, done=True)
+        report = {"set_id": set_id, "document_id": document_id, "queued": len(queue), "documents": touched, "described": described, "analysed": analysed, "stopped": stopped}
+        self._record("lecture_set.continued", "Pending model work continued.", **{key: value for key, value in report.items() if key != "stopped"}, stopped=bool(stopped))
+        self._emit({"kind": "vision_resumed", **report})
+        return {"continue": report}
+
     async def import_folder_job(self, path: str, *, name: str | None = None, source: str | None = None, vision: bool = True, analysis: bool = True) -> dict[str, Any]:
         """Import a folder off the loop, then process what it brought."""
         loop = asyncio.get_running_loop()
@@ -790,10 +860,23 @@ class MedicalAcademy:
             "folder_import": {"name": record["name"], **counts, "processed": processed.get("processed", 0), "process_failed": processed.get("failed", 0), "notes": notes},
         }
 
-    async def _vision_pass(self, document: StudyDocument) -> int:
+    async def _vision_pass(self, document: StudyDocument, *, pace_seconds: float | None = None, retry_wait_seconds: float | None = None) -> int:
+        """Describe the document's pending figure pages, one model call each.
+
+        A page the model cannot read is marked so; a page the provider refused
+        to look at (busy, gone, out of quota) stays pending, and after two such
+        refusals in a row the pass stops and says why, so a free-tier quota
+        pauses the work instead of writing 'failed' on every remaining page.
+        """
         pending = self.pipeline.pages_needing_vision(document.document_id)
         analysed = 0
+        outages = 0
+        pace = VISION_PACE_SECONDS if pace_seconds is None else float(pace_seconds)
+        retry_wait = VISION_RETRY_WAIT_SECONDS if retry_wait_seconds is None else float(retry_wait_seconds)
+        self.vision_state = {"outage": False, "detail": "", "at": None}
         for index, page in enumerate(pending, start=1):
+            if index > 1 and pace > 0:
+                await asyncio.sleep(pace)
             self._job(document.document_id, "analyzing_visuals", f"Şekiller inceleniyor · {index} / {len(pending)} (s. {page.page_number})")
             try:
                 png = await asyncio.to_thread(self.pipeline.render_page, document.document_id, page.page_number, scale=PAGE_IMAGE_SCALE)
@@ -805,10 +888,26 @@ class MedicalAcademy:
                     images=[{"data": png, "mime_type": "image/png", "detail": "high"}],
                     task_type="vision",
                 )
-            except (MedicalModelError, DocumentError) as exc:
+            except MedicalModelError as exc:
+                if looks_like_outage(exc):
+                    outages += 1
+                    self._record("document.vision_paused", str(exc), level="warning", document_id=document.document_id, page=page.page_number)
+                    if outages >= VISION_OUTAGE_LIMIT:
+                        detail = f"Şekil incelemesi durdu: model şu an yanıt vermiyor (kota dolmuş olabilir); {len(pending) - index + 1} sayfa bekliyor, sonra sürdürülebilir."
+                        self.vision_state = {"outage": True, "detail": detail, "at": utc_now().isoformat()}
+                        self._job(document.document_id, "analyzing_visuals", detail)
+                        break
+                    if retry_wait > 0:
+                        await asyncio.sleep(retry_wait)
+                    continue
                 self.pipeline.attach_visual_summary(document.document_id, page.page_number, summary="", labels=[], status="failed")
                 self._record("document.vision_failed", str(exc), level="warning", document_id=document.document_id, page=page.page_number)
                 continue
+            except DocumentError as exc:
+                self.pipeline.attach_visual_summary(document.document_id, page.page_number, summary="", labels=[], status="failed")
+                self._record("document.vision_failed", str(exc), level="warning", document_id=document.document_id, page=page.page_number)
+                continue
+            outages = 0
             if not data.get("has_educational_figure") or data.get("legibility") == "unreadable":
                 self.pipeline.attach_visual_summary(document.document_id, page.page_number, summary="", labels=[], status="none" if not data.get("has_educational_figure") else "unreadable")
                 continue

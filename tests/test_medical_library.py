@@ -268,3 +268,80 @@ def test_a_lecture_that_quotes_a_doctor_is_not_cut_at_that_name(academy, tmp_pat
     names = [profile.name for profile in academy.store.list_professors()]
     assert names == ["Prof. Dr. Şükrü Oğuz Özdamar"], "the historical doctors are content, not lecturers"
     assert report["professors"][0]["questions_added"] == 1
+
+
+
+# ---------------------------------------------------------------------------
+# the vision pass against a provider that stops answering
+# ---------------------------------------------------------------------------
+
+
+class TogglingGateway:
+    """Answers, refuses like a spent quota, or talks nonsense — as told."""
+
+    def __init__(self) -> None:
+        self.mode = "ok"
+        self.calls = 0
+
+    async def generate(self, request, context, **kwargs):
+        from app.providers.base import ProviderUnavailableError
+
+        self.calls += 1
+        if self.mode == "outage":
+            raise ProviderUnavailableError("429 RESOURCE_EXHAUSTED")
+        if self.mode == "nonsense":
+            return SimpleNamespace(text="not json")
+        return SimpleNamespace(text='{"has_educational_figure": true, "legibility": "clear", "figure_type": "anatomy_diagram", "description": "Scapula arkadan.", "labels": ["spina scapulae"], "structures": ["scapula"], "educational_points": ["Spina scapulae iki fossayi ayirir."]}')
+
+
+def figure_document(academy, tmp_path):
+    from tests.test_medical_documents import make_pdf
+
+    source = tmp_path / "sekiller.pdf"
+    source.write_bytes(make_pdf([("Scapula posterior", True), ("Scapula anterior", True), ("Clavicula", True)]))
+    document, _ = academy.import_document(str(source), subject="anatomy")
+    processed = academy.pipeline.process(document.document_id)
+    assert processed.status == DocumentStatus.READY and processed.visual_pages_pending == 3
+    return processed
+
+
+def test_a_quota_outage_leaves_the_figure_pages_pending_and_the_pass_can_be_resumed(tmp_path) -> None:
+    gateway = TogglingGateway()
+    academy = create_medical_academy(settings=SimpleNamespace(medical_directory=str(tmp_path / "m"), medical_office_conversion=False), provider_gateway=gateway)
+    try:
+        document = figure_document(academy, tmp_path)
+        events: list[dict] = []
+        academy.subscribe(events.append)
+
+        gateway.mode = "outage"
+        described = asyncio.run(academy._vision_pass(document, pace_seconds=0, retry_wait_seconds=0))
+        assert described == 0 and gateway.calls == 2, "two refusals in a row end the pass"
+        assert academy.vision_state["outage"] is True and "kota" in academy.vision_state["detail"]
+        pages = academy.store.get_pages(document.document_id)
+        assert [page.visual_status for page in pages] == ["pending", "pending", "pending"], "an outage is not a verdict on the page"
+        assert any("Şekil incelemesi durdu" in event.get("detail", "") for event in events if event["kind"] == "document_status")
+
+        # A page the model reads as nonsense is a failure of that page, not an outage.
+        gateway.mode = "nonsense"
+        asyncio.run(academy._vision_pass(document, pace_seconds=0, retry_wait_seconds=0))
+        assert academy.vision_state["outage"] is False
+        assert {page.visual_status for page in academy.store.get_pages(document.document_id)} == {"failed"}
+
+        # Resuming later describes what is still pending and analyses the document.
+        for page in academy.store.get_pages(document.document_id):
+            academy.pipeline.attach_visual_summary(document.document_id, page.page_number, summary="", labels=[], status="pending")
+        gateway.mode = "ok"
+        outcome = asyncio.run(academy.continue_processing(document_id=document.document_id, analysis=False))
+        report = outcome["continue"]
+        assert report["described"] == 3 and report["stopped"] is None and report["queued"] == 1
+        refreshed = academy.store.get_document(document.document_id)
+        assert refreshed.visual_pages_pending == 0 and refreshed.visual_pages_analyzed == 3
+        assert events[-1]["kind"] == "vision_resumed" and events[-1]["described"] == 3
+        # Nothing left: an honest empty report, and unknown ids are refused.
+        assert asyncio.run(academy.continue_processing(document_id=document.document_id, analysis=False))["continue"]["queued"] == 0
+        with pytest.raises(DocumentError, match="Belge bulunamadı"):
+            asyncio.run(academy.continue_processing(document_id="nope"))
+        with pytest.raises(DocumentError, match="Ders seti bulunamadı"):
+            asyncio.run(academy.continue_processing(set_id="nope"))
+    finally:
+        academy.close()

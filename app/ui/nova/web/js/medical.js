@@ -511,6 +511,7 @@ const Medical = {
         <div class="btn-row" style="justify-content:flex-start">
           ${set.pending || set.failed ? `<button type="button" class="btn btn-ghost small" data-set-act="process" data-set="${esc(set.set_id)}">${set.pending ? "Bekleyenleri işle" : "Başarısızları yeniden dene"}</button>` : ""}
           <button type="button" class="btn btn-ghost small" data-set-act="mine" data-set="${esc(set.set_id)}" title="Bu setin belgelerini başlık sayfalarındaki hocalara bağlar ve içlerindeki soruları çıkarır">Hocaları ayır</button>
+          ${set.visual_pending ? `<button type="button" class="btn btn-ghost small" data-set-act="continue" data-set="${esc(set.set_id)}" title="Bekleyen şekil sayfalarını modele betimletir ve eksik analizleri tamamlar; ücretsiz kota durursa kaldığı yerde bekler">Şekilleri incele</button>` : ""}
           <button type="button" class="btn btn-ghost small" data-set-act="remove" data-set="${esc(set.set_id)}">Seti kaldır</button>
         </div></div>`;
     }).join("");
@@ -525,6 +526,12 @@ const Medical = {
   async setAction(action, setId) {
     const set = (this.lectureSets || []).find((item) => item.set_id === setId);
     if (!set) return;
+    if (action === "continue") {
+      const result = await this.request("continue_processing", { set_id: setId });
+      if (result.ok === false) { toast(result.error || "İşlem başlatılamadı.", true); return; }
+      toast(result.message || "Başlatıldı.", "ok");
+      return;
+    }
     if (action === "mine") {
       const result = await this.request("mine_questions", { set_id: setId });
       if (result.ok === false) { toast(result.error || "İşlem başlatılamadı.", true); return; }
@@ -656,6 +663,7 @@ const Medical = {
           <button type="button" class="btn btn-ghost small" data-act="notes">Not çıkar</button>
           <button type="button" class="btn btn-ghost small" data-act="exam">Soru üret</button>
           <button type="button" class="btn btn-ghost small" data-act="narrate" title="Dersi sesli anlatır; istediğin yerde durdurup soru sorabilirsin">Sesli anlat</button>
+          ${doc.visual_pages_pending ? `<button type="button" class="btn btn-ghost small" data-act="continue" title="Bekleyen şekil sayfalarını betimletir">Şekilleri incele</button>` : ""}
           <button type="button" class="btn btn-ghost small" data-act="process">Yeniden işle</button>
           <button type="button" class="btn btn-ghost small" data-act="delete">Sil</button>
         </div>
@@ -713,6 +721,12 @@ const Medical = {
       this.show("exam");
       const select = $("#med-exam-document");
       if (select) select.value = doc.document_id;
+      return;
+    }
+    if (action === "continue") {
+      const result = await this.request("continue_processing", { document_id: doc.document_id });
+      if (result.ok === false) { toast(result.error || "İşlem başlatılamadı.", true); return; }
+      toast(result.message || "Başlatıldı.", "ok");
       return;
     }
     const map = { analyze: "analyze_document", compare: "compare_document", process: "process_document" };
@@ -1530,6 +1544,11 @@ const Medical = {
       return;
     }
     if (kind === "narration_state") { Narration.apply(payload); return; }
+    if (kind === "vision_resumed") {
+      this.setProgress = null;
+      if (State.screen === "medical" && this.view === "library") this.loadDocuments();
+      return;
+    }
     if (kind === "professors_mined") {
       if (State.screen === "medical" && (this.view === "professor" || this.view === "library")) this.loadView(this.view);
       return;
@@ -1583,6 +1602,11 @@ const Medical = {
       return;
     }
     if (String(payload.job) === "narration_script") { toast("Anlatım metni hazır.", "ok"); return; }
+    if (String(payload.job) === "continue") {
+      const parts = [`${Number(payload.described) || 0} şekil betimlendi`, `${Number(payload.analysed) || 0} belge analiz edildi`];
+      toast(`Sürdürme bitti: ${parts.join(", ")}.${payload.stopped ? " " + payload.stopped : ""}`, payload.stopped ? "" : "ok");
+      return;
+    }
     if (String(payload.job) === "folder_import") {
       const parts = [`${Number(payload.imported) || 0} belge eklendi`];
       if (payload.duplicates) parts.push(`${payload.duplicates} zaten kayıtlıydı`);

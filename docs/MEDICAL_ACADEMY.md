@@ -446,6 +446,15 @@ every single bone, and the regions can be hidden one at a time to see the
 curvatures. Atlas, axis and sacrum carry derived pins; the merged groups do
 not, since a pin would fall in the empty centre of a stack.
 
+### Craniovertebral and jaw joints
+
+Three joint cards tie the skull to the jaw and the spine: the temporomandibular
+joint (articular disc, gliding and hinging compartments, the muscles that open
+and close it, anterior dislocation) and the atlanto-occipital and atlanto-axial
+joints — the 'yes' of nodding at the occipital condyles and the 'no' of rotating
+around the dens, held by the transverse ligament of the atlas. Each is a curated
+joint card with the documented joint fields and is quizzed on its type.
+
 ### Cranial nerves
 
 The twelve cranial nerves have a section of their own, tied to the skull
@@ -522,9 +531,10 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
 - Peripheral nerves have no mesh in BodyParts3D 4.0, so nerve cards keep the
   schematic map, and pins derived from the shape stay marked approximate until
   someone who knows confirms them by hand.
-- The head and neck have the full skull and the twelve cranial nerves but no
-  vessel or joint cards; the trunk now has the vertebral column but the
-  thoracic cage is only the sternum (no ribs) and there are no
+- The head and neck have the full skull, the twelve cranial nerves and the
+  craniovertebral and jaw joints, but no head-and-neck vessel cards; the trunk
+  has the vertebral column but the thoracic cage is only the sternum (no ribs)
+  and there are no
   abdominal-wall muscles and the lower limb no vessels. The coverage audit in
   `docs/PROJECT_STATE.md` lists the gaps in priority order.
 - Image-based question *generation* needs an image whose provenance is known;

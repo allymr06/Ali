@@ -6781,6 +6781,172 @@
         ]
       },
       "relations": []
+    },
+    {
+      "structure_id": "articulatio_temporomandibularis",
+      "canonical": "Articulatio temporomandibularis",
+      "kind": "joint",
+      "region": "head_neck",
+      "turkish": "Çene eklemi (TME)",
+      "english": "Temporomandibular joint",
+      "synonyms": [
+        "çene eklemi",
+        "cene eklemi",
+        "tme",
+        "temporomandibular joint",
+        "tmj",
+        "articulatio temporomandibularis"
+      ],
+      "topic_id": "anatomy.musculoskeletal.skull",
+      "facts": {
+        "joint_type": "Sinovyal, discus articularis ile ikiye bölünmüş bileşik eklem: üst bölme kayma (art. plana), alt bölme menteşe (ginglymus) hareketi yapar.",
+        "articulating_surfaces": [
+          "Fossa mandibularis ve tuberculum articulare ossis temporalis",
+          "Caput mandibulae",
+          "Discus articularis: eklemi iki ayrı sinovyal bölmeye ayırır"
+        ],
+        "capsule": "Yukarıda fossa mandibularis ve tuberculum articulare çevresine, aşağıda collum mandibulae'ye tutunur; discus kenarlarına yapışır. Gevşektir (geniş açılmaya izin verir).",
+        "ligaments": [
+          "Lig. laterale (temporomandibulare): kapsülün dış kalınlaşması, esas destek; aşırı retrüzyon ve yana kaymayı sınırlar",
+          "Lig. sphenomandibulare: spina ossis sphenoidalis – lingula mandibulae (birincil askı bağı, aksesuar)",
+          "Lig. stylomandibulare: processus styloideus – angulus mandibulae (aksesuar)"
+        ],
+        "movements": [
+          "Depresyon (ağız açma) – elevasyon (kapama)",
+          "Protrüzyon – retrüzyon (öne-arkaya kayma; üst bölme)",
+          "Lateral deviasyon (çiğneme öğütmesi)"
+        ],
+        "muscles": [
+          "Kapama (elevasyon): m. masseter, m. temporalis, m. pterygoideus medialis",
+          "Açma (depresyon): m. pterygoideus lateralis (başlatır), suprahyoid kaslar (m. digastricus, mylohyoideus, geniohyoideus)",
+          "Protrüzyon: m. pterygoideus lateralis + medialis; retrüzyon: m. temporalis'in arka lifleri"
+        ],
+        "axes_planes": [
+          "Ağız açma-kapama transvers eksen etrafında; kayma ve öğütme çok yönlü"
+        ],
+        "high_yield": [
+          "Ağız açarken caput mandibulae + discus öne, tuberculum articulare üzerine kayar; m. pterygoideus lateralis hem açmayı başlatır hem discus'u öne çeker.",
+          "Ön çıkık (dislokasyon): caput tuberculum articulare'nin önüne geçip kilitlenir (esneme, geniş açma); m. pterygoideus lateralis spazmı ile ağız kapanamaz.",
+          "Discus deplasmanı → açarken 'klik' sesi; TME disfonksiyonu yaygındır.",
+          "N. auriculotemporalis (V3) ekleme duyu verir; kulak ağrısı ile karışabilir."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates",
+          "target": "os_temporale"
+        },
+        {
+          "relation": "articulates",
+          "target": "mandibula"
+        }
+      ]
+    },
+    {
+      "structure_id": "articulatio_atlantooccipitalis",
+      "canonical": "Articulatio atlantooccipitalis",
+      "kind": "joint",
+      "region": "head_neck",
+      "turkish": "Atlantooksipital eklem",
+      "english": "Atlanto-occipital joint",
+      "synonyms": [
+        "atlantooksipital eklem",
+        "atlanto-occipital joint",
+        "articulatio atlantooccipitalis",
+        "evet eklemi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.vertebral_column",
+      "facts": {
+        "joint_type": "Sinovyal, iki taraflı ellipsoid (art. ellipsoidea) eklem; birlikte kondiler çalışır.",
+        "articulating_surfaces": [
+          "Condyli occipitales (konveks)",
+          "Fovea articularis superior atlantis (konkav)"
+        ],
+        "capsule": "Her iki condylus–massa lateralis çifti için ayrı, gevşek kapsül.",
+        "ligaments": [
+          "Membrana atlantooccipitalis anterior (ön ark – foramen magnum ön kenarı; lig. longitudinale anterius devamı)",
+          "Membrana atlantooccipitalis posterior (arka ark – foramen magnum arka kenarı; a. vertebralis ve C1 siniri delerek geçer)"
+        ],
+        "movements": [
+          "Fleksiyon – ekstansiyon: baş 'evet' hareketi (asıl hareket)",
+          "Hafif lateral fleksiyon; rotasyon yoktur"
+        ],
+        "axes_planes": [
+          "Fleksiyon-ekstansiyon transvers eksen, sagittal düzlem"
+        ],
+        "muscles": [
+          "Fleksiyon: m. longus capitis, m. rectus capitis anterior",
+          "Ekstansiyon: suboksipital kaslar (m. rectus capitis posterior major/minor, m. obliquus capitis superior), m. semispinalis capitis"
+        ],
+        "high_yield": [
+          "Başın 'evet' (baş sallama) hareketinin eklemidir; rotasyon burada değil atlantoaksiyal eklemdedir.",
+          "Membrana atlantooccipitalis posterior'u a. vertebralis ve n. suboccipitalis (C1) deler.",
+          "Atlantooksipital dislokasyon ağır travmada sık ölümcüldür (beyin sapı-üst kord)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates",
+          "target": "os_occipitale"
+        },
+        {
+          "relation": "articulates",
+          "target": "atlas"
+        }
+      ]
+    },
+    {
+      "structure_id": "articulatio_atlantoaxialis",
+      "canonical": "Articulatio atlantoaxialis",
+      "kind": "joint",
+      "region": "head_neck",
+      "turkish": "Atlantoaksiyal eklem",
+      "english": "Atlanto-axial joint",
+      "synonyms": [
+        "atlantoaksiyal eklem",
+        "atlanto-axial joint",
+        "articulatio atlantoaxialis",
+        "hayır eklemi"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.vertebral_column",
+      "facts": {
+        "joint_type": "Üç sinovyal eklemden oluşur: ortada art. atlantoaxialis mediana (art. trochoidea/pivot: dens), iki yanda art. atlantoaxialis lateralis (art. plana).",
+        "articulating_surfaces": [
+          "Dens axis – arcus anterior atlantis (fovea dentis) ve lig. transversum atlantis (mediana)",
+          "Facies articularis inferior atlantis – facies articularis superior axis (lateralis)"
+        ],
+        "capsule": "Lateral eklemler için gevşek kapsüller; mediana eklem dens çevresinde.",
+        "ligaments": [
+          "Lig. transversum atlantis: dens'i arcus anterior'a bastırır (lig. cruciforme atlantis'in yatay kolu) — en önemli stabilizatör",
+          "Ligg. alaria: dens tepesi – condyli occipitales; aşırı rotasyonu sınırlar",
+          "Lig. apicis dentis: dens tepesi – foramen magnum ön kenarı",
+          "Membrana tectoria: lig. longitudinale posterius'un devamı, dens ve bağların arkasını örter"
+        ],
+        "movements": [
+          "Rotasyon: baş 'hayır' hareketi (boyun rotasyonunun ~%50'si buradadır)"
+        ],
+        "axes_planes": [
+          "Rotasyon vertikal (longitudinal) eksen, transvers düzlem; dens mildir"
+        ],
+        "muscles": [
+          "Rotasyon: m. obliquus capitis inferior, m. rectus capitis posterior major (aynı taraf), karşı taraf m. sternocleidomastoideus ve m. splenius capitis"
+        ],
+        "high_yield": [
+          "Başın 'hayır' rotasyonunun eklemidir; dens etrafında döner.",
+          "Lig. transversum atlantis yırtılır ya da dens kırılırsa dens medulla spinalis'e kayar (atlantoaksiyal instabilite: romatoid artrit, Down sendromu, travma).",
+          "Erişkinde dens ile kord arasında Steel'in üçler kuralı: 1/3 dens, 1/3 kord, 1/3 boşluk."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates",
+          "target": "atlas"
+        },
+        {
+          "relation": "articulates",
+          "target": "axis"
+        }
+      ]
     }
   ],
   "terms": [

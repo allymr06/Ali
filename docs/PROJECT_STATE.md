@@ -50,8 +50,20 @@ Last verified: 6 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2251 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 2252 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Craniovertebral and jaw joints (7 September 2026)
+
+The capstone that ties the skull and the spine together: three joint cards.
+The temporomandibular joint (its articular disc splitting it into a gliding
+and a hinging compartment, the openers and closers, anterior dislocation), and
+the atlanto-occipital and atlanto-axial joints — the 'yes' of nodding and the
+'no' of rotation around the dens, with the transverse ligament that keeps the
+dens off the cord. Each is a curated joint card with the documented fields
+(type, surfaces, capsule, ligaments, movements with plane and axis, muscles)
+and is quizzed on its joint type; the cards name the bones they connect. No new
+geometry. The anatomy data is 105 structures.
 
 ## Vertebral column (7 September 2026)
 

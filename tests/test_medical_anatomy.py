@@ -1301,3 +1301,36 @@ def test_the_spine_scene_is_a_continuous_column_in_coloured_groups() -> None:
     assert len(VERTEBRAL_COLUMN["vertebra_thoracica"][0][2]) == 12  # T1-T12
     assert len(VERTEBRAL_COLUMN["vertebra_lumbalis"][0][2]) == 5    # L1-L5
     assert len(VERTEBRAL_COLUMN["atlas"][0][2]) == 1                # a single bone
+
+
+def test_the_craniovertebral_and_jaw_joints_tie_the_skull_to_spine() -> None:
+    """The three joints that connect the skull to the jaw and the spine: the
+    temporomandibular joint, and the atlanto-occipital ('yes') and atlanto-axial
+    ('no') joints, each a curated joint card with the documented fields."""
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=None)
+
+    for jid in ["articulatio_temporomandibularis", "articulatio_atlantooccipitalis", "articulatio_atlantoaxialis"]:
+        card = lab.describe(jid)
+        assert card is not None and card["kind"] == "joint" and card["region"] == "head_neck", jid
+        labels = [section["label"] for section in card["sections"]]
+        assert "Eklem tipi" in labels and "Hareketler" in labels, jid
+        # a joint card is quizzed on its type
+        assert any(item["kind"] == "joint_type" for item in lab.quiz(jid, count=3, seed="j")), jid
+        # the movement data resolves plane and axis
+        assert lab.movements(lab.get(jid)) is not None
+
+    # The two atlanto joints carry the 'yes'/'no' of the head, and each names
+    # the bones it connects.
+    ao = lab.describe("articulatio_atlantooccipitalis")
+    assert {r["structure_id"] for r in ao["relations"] if r["relation"] == "articulates"} == {"os_occipitale", "atlas"}
+    aa = lab.describe("articulatio_atlantoaxialis")
+    assert {r["structure_id"] for r in aa["relations"] if r["relation"] == "articulates"} == {"atlas", "axis"}
+    tmj = lab.describe("articulatio_temporomandibularis")
+    assert {r["structure_id"] for r in tmj["relations"] if r["relation"] == "articulates"} == {"os_temporale", "mandibula"}
+    # The TMJ card names its articular disc — the feature that splits it in two.
+    assert any("discus" in fact.lower() for section in tmj["sections"] for fact in section["items"])

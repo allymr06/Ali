@@ -50,9 +50,25 @@ Last verified: 6 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2241 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 2244 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
 
+## Cranial nerves (7 September 2026)
+
+After the neurocranium, the coverage audit's top gap was the cranial nerves —
+the highest-yield head-and-neck topic and the one that hangs off the skull
+foramina just added. The Academy now has an overview card whose table maps
+each of the twelve nerves to its number, type, skull exit, function and lesion
+sign, plus a card per nerve with components, nuclei, exit, course, motor and
+sensory fields, parasympathetic branch, bedside test and clinical signs. The
+exit on every card is one the skull base's foramen table already lists, and a
+test keeps the two in agreement. The nerve card's fact order gained the
+cranial-nerve fields as optional entries, so the limb nerve cards are
+unchanged. Curriculum node `anatomy.neuroanatomy.cranial_nerves`. All curated
+from the standard texts; the cards are schematic because no licensed nerve
+mesh exists.
+
+## One consistent voice (7 September 2026)
 ## One consistent voice (7 September 2026)
 
 The student reported the spoken answers were unstable and hard to understand,

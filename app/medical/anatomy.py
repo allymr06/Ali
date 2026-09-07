@@ -51,7 +51,12 @@ FACT_ORDER: dict[str, list[tuple[str, str]]] = {
         ("ligaments", "Bağlar"), ("movements", "Hareketler"), ("muscles", "Hareketi yapan kaslar"),
         ("axes_planes", "Eksen ve düzlemler"), ("relations", "Komşuluklar"), ("high_yield", "Yüksek verim"),
     ],
-    "nerve": [("origin", "Köken"), ("course", "Seyir"), ("motor", "Motor"), ("sensory", "Duyu"), ("high_yield", "Yüksek verim")],
+    "nerve": [
+        ("number", "Numara"), ("type", "Tip"), ("components", "Fonksiyonel bileşenler"),
+        ("nucleus", "Çekirdekler"), ("foramen", "Kafatası çıkışı"), ("origin", "Köken"),
+        ("course", "Seyir"), ("motor", "Motor"), ("sensory", "Duyu"),
+        ("parasympathetic", "Parasempatik"), ("examination", "Muayene"), ("high_yield", "Yüksek verim"),
+    ],
     "artery": [("origin", "Köken"), ("course", "Seyir"), ("branches", "Dallar"), ("supply", "Beslediği alan"), ("relations", "Komşuluklar"), ("high_yield", "Yüksek verim")],
     "vein": [("origin", "Başlangıç"), ("course", "Seyir"), ("tributaries", "Katılan venler"), ("drains_into", "Döküldüğü yer"), ("relations", "Komşuluklar"), ("high_yield", "Yüksek verim")],
     "region": [

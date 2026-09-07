@@ -998,3 +998,82 @@ def test_a_scene_carries_its_card_palette_and_note(tmp_path) -> None:
     assert scene["card"] == "neurocranium" and scene["note"] == "iki taraf"
     # A colour that is not three numbers, or names a structure outside the scene, is dropped.
     assert scene["palette"] == {"os_frontale": [0.9, 0.8, 0.3]}
+
+
+def test_the_cranial_nerves_have_an_overview_and_a_card_each() -> None:
+    """The twelve cranial nerves: an overview card whose table ties every
+    nerve to its skull exit and lesion, and one card per nerve carrying the
+    components, nuclei, exit, function and clinical test — all curated."""
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=None)
+
+    overview = lab.describe("cranial_nerves")
+    assert overview is not None and overview["kind"] == "region"
+    assert "nöroanatomi" in overview["topic_path"].lower()
+    table = next(t for t in overview["tables"] if "genel bakış" in t["title"].lower())
+    assert len(table["rows"]) == 12 and len(table["columns"]) == 6
+    numbers = [row[1] for row in table["rows"]]
+    assert numbers == ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
+
+    ids = [
+        "cn_i_olfactorius", "cn_ii_opticus", "cn_iii_oculomotorius", "cn_iv_trochlearis",
+        "cn_v_trigeminus", "cn_vi_abducens", "cn_vii_facialis", "cn_viii_vestibulocochlearis",
+        "cn_ix_glossopharyngeus", "cn_x_vagus", "cn_xi_accessorius", "cn_xii_hypoglossus",
+    ]
+    contained = {r["structure_id"] for r in overview["relations"] if r["relation"] == "contains"}
+    assert set(ids) == contained
+    for nerve_id in ids:
+        card = lab.describe(nerve_id)
+        assert card is not None and card["kind"] == "nerve" and card["region"] == "head_neck", nerve_id
+        labels = [s["label"] for s in card["sections"]]
+        assert "Kafatası çıkışı" in labels and "Yüksek verim" in labels, nerve_id
+        assert card["topic_path"] == overview["topic_path"], nerve_id
+
+
+def test_the_overview_exits_agree_with_the_skull_foramina() -> None:
+    """A cranial nerve's exit in the overview must be a foramen the
+    neurocranium's own foramen table names, so the two cards never disagree."""
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=None)
+
+    foramina_table = next(
+        t for t in lab.describe("neurocranium")["tables"] if "delik" in t["title"].lower()
+    )
+    known_foramina = " · ".join(row[0] for row in foramina_table["rows"]).lower()
+    # Each nerve names at least one exit that the skull base card also lists.
+    checks = {
+        "II": "canalis opticus",
+        "VII": "meatus acusticus internus",
+        "IX": "foramen jugulare",
+        "X": "foramen jugulare",
+        "XII": "canalis nervi hypoglossi",
+    }
+    overview = lab.describe("cranial_nerves")
+    rows = {row[1]: row[3].lower() for row in overview["tables"][0]["rows"]}
+    for number, foramen in checks.items():
+        assert foramen in rows[number], (number, rows[number])
+        assert foramen in known_foramina, f"{foramen} is not in the skull base foramen table"
+
+
+def test_cranial_nerve_fields_do_not_leak_into_peripheral_nerves() -> None:
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=None)
+
+    peripheral = lab.describe("n_axillaris")
+    labels = [s["label"] for s in peripheral["sections"]]
+    # A limb nerve has no skull exit, nucleus or number; those sections must
+    # simply be absent, not shown empty.
+    assert "Kafatası çıkışı" not in labels and "Çekirdekler" not in labels and "Numara" not in labels
+    assert labels[0] == "Köken"

@@ -1003,7 +1003,7 @@ def test_every_scene_mapping_names_structures_the_data_knows() -> None:
 
     structures, _terms, _source = load_anatomy_data()
     known = {structure.structure_id for structure in structures}
-    assert set(SCENES) == {"upper_limb_right", "neurocranium", "cranium"}
+    assert set(SCENES) == {"upper_limb_right", "neurocranium", "cranium", "vertebral_column"}
     for scene_id, scene in SCENES.items():
         mapping = scene["mapping"]
         assert set(scene["structure_ids"]) == set(mapping), scene_id
@@ -1248,3 +1248,56 @@ def test_a_card_without_tables_or_landmarks_is_not_quizzed_from_thin_air() -> No
     )
     lab._structures["x"] = lonely
     assert lab.quiz("x", count=5) == [], "a two-row table cannot supply two distractors"
+
+
+def test_the_vertebral_column_has_an_overview_and_the_key_vertebrae() -> None:
+    """The spine: an overview whose tables carry the regional counts with each
+    region's signature and the four curvatures, plus cards for the atypical
+    atlas and axis and the typical cervical, thoracic and lumbar vertebra."""
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=None)
+
+    overview = lab.describe("columna_vertebralis")
+    assert overview is not None and overview["kind"] == "region" and overview["region"] == "trunk"
+    assert "omurga" in overview["topic_path"].lower() or "vertebral" in overview["topic_path"].lower()
+    regions = next(t for t in overview["tables"] if "bölge" in t["title"].lower())
+    by_region = {row[0]: row for row in regions["rows"]}
+    assert "transversarium" in by_region["Servikal (cervicalis)"][2].lower()
+    assert "costalis" in by_region["Torakal (thoracica)"][2].lower()
+    curves = next(t for t in overview["tables"] if "eğrilik" in t["title"].lower())
+    assert len(curves["rows"]) == 4
+    contained = {r["structure_id"] for r in overview["relations"] if r["relation"] == "contains"}
+    assert contained == {"atlas", "axis", "vertebra_cervicalis", "vertebra_thoracica",
+                         "vertebra_lumbalis", "os_sacrum", "os_coccygis"}
+
+    for vid in ["atlas", "axis", "vertebra_cervicalis", "vertebra_thoracica", "vertebra_lumbalis"]:
+        card = lab.describe(vid)
+        assert card is not None and card["kind"] == "bone" and card["region"] == "trunk", vid
+        assert len(card["landmarks"]) >= 5, vid
+        assert lab.quiz(vid, count=3, seed="v"), vid  # a typical vertebra has landmarks to identify
+    # Atlas has no body; axis carries the dens — the two facts that define them.
+    assert any("gövde" in fact.lower() and "yok" in fact.lower()
+               for section in lab.describe("atlas")["sections"] for fact in section["items"])
+    assert any(landmark["landmark_id"] == "dens_axis" for landmark in lab.describe("axis")["landmarks"])
+
+
+def test_the_spine_scene_is_a_continuous_column_in_coloured_groups() -> None:
+    from scripts.import_bodyparts3d import VERTEBRAL_COLUMN, SCENES, VERTEBRAL_COLUMN_PALETTE
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    known = {s.structure_id for s in structures}
+
+    scene = SCENES["vertebral_column"]
+    assert set(scene["structure_ids"]) == set(VERTEBRAL_COLUMN) and scene["card"] == "columna_vertebralis"
+    assert set(VERTEBRAL_COLUMN_PALETTE) == set(VERTEBRAL_COLUMN)
+    assert [sid for sid in VERTEBRAL_COLUMN if sid not in known] == []
+    # A typical-vertebra group is one mesh merged from its whole run, so the
+    # column is continuous without a card per single bone.
+    assert len(VERTEBRAL_COLUMN["vertebra_thoracica"][0][2]) == 12  # T1-T12
+    assert len(VERTEBRAL_COLUMN["vertebra_lumbalis"][0][2]) == 5    # L1-L5
+    assert len(VERTEBRAL_COLUMN["atlas"][0][2]) == 1                # a single bone

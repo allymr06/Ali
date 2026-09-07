@@ -6218,6 +6218,569 @@
           "target": "os_palatinum"
         }
       ]
+    },
+    {
+      "structure_id": "columna_vertebralis",
+      "canonical": "Columna vertebralis",
+      "kind": "region",
+      "region": "trunk",
+      "turkish": "Omurga (vertebral kolon)",
+      "english": "Vertebral column",
+      "synonyms": [
+        "omurga",
+        "vertebral kolon",
+        "columna vertebralis",
+        "belkemiği",
+        "spine",
+        "vertebral column"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.vertebral_column",
+      "facts": {
+        "location": "Gövdenin eksenel iskeleti: 33 omur üst üste dizilir ve aralarında discus intervertebralis'ler bulunur. Kafatasını taşır, medulla spinalis'i canalis vertebralis içinde korur, kaburgalar ve pelvis ile eklemleşir. 24 presakral omur hareketlidir; sakral ve koksigeal omurlar kaynaşmıştır.",
+        "parts": [
+          "7 servikal (boyun), 12 torakal (sırt), 5 lumbar (bel) — hareketli",
+          "5 kaynaşmış sakral (os sacrum), 4 kaynaşmış koksigeal (os coccygis)",
+          "Discus intervertebralis: anulus fibrosus (dış lifli halka) + nucleus pulposus (jel çekirdek)"
+        ],
+        "articulations": [
+          "Cranium (art. atlantooccipitalis: atlas–condyli occipitales)",
+          "Kaburgalar (art. costovertebrales: torakal omurlar)",
+          "Pelvis (art. sacroiliaca: facies auricularis)",
+          "Komşu omurlar (symphysis intervertebralis + art. zygapophysiales/faset eklemler)"
+        ],
+        "high_yield": [
+          "Medulla spinalis erişkinde ~L1-L2'de biter (conus medullaris); altında cauda equina vardır — lomber ponksiyon L3-L4/L4-L5'ten yapılır (spinal kordu delmemek için).",
+          "Diskus herniasyonu genelde posterolateraldir (lig. longitudinale posterius orta hatta güçlü); en sık L4-L5 ve L5-S1, ALT omurun kök basısı.",
+          "İntervertebral foramen (foramen intervertebrale) spinal siniri geçirir; daralması radikülopati yapar."
+        ],
+        "study_notes": [
+          "Önce iki tabloyu ezberle: bölge/omur sayısı ve dört eğrilik (hangisi primer, hangisi sekonder). Sonra tipik omurun parçalarını (corpus, arcus, çıkıntılar, foramen).",
+          "Bölgeleri ayırt eden tek işareti öğren: servikal = foramen transversarium (çift delikli çıkıntı), torakal = fovea costalis (kaburga faseti), lumbar = büyük gövde + ne delik ne faset.",
+          "Atlas ve axis'i ayrı çalış: atlasın gövdesi yok, axisin dens'i var; 'evet' hareketi atlantooksipital, 'hayır' hareketi atlantoaksiyal.",
+          "3B sahnede bölgeleri tek tek kapatıp eğrilikleri gör: torakal kifoz ve sakral kifoz primer (doğuştan), servikal ve lomber lordoz sekonderdir."
+        ],
+        "tables": [
+          {
+            "title": "Omurga bölgeleri",
+            "columns": [
+              "Bölge",
+              "Omur",
+              "Ayırt edici işaret",
+              "Eğrilik"
+            ],
+            "rows": [
+              [
+                "Servikal (cervicalis)",
+                "C1-C7",
+                "Foramen transversarium; çatal (bifid) processus spinosus",
+                "Lordoz (sekonder)"
+              ],
+              [
+                "Torakal (thoracica)",
+                "T1-T12",
+                "Fovea costalis (kaburga faseti); uzun aşağı bakan spinöz",
+                "Kifoz (primer)"
+              ],
+              [
+                "Lumbar (lumbalis)",
+                "L1-L5",
+                "Büyük böbrek biçimli gövde; delik ve faset yok",
+                "Lordoz (sekonder)"
+              ],
+              [
+                "Sakral (sacralis)",
+                "S1-S5 kaynaşmış",
+                "Os sacrum: promontorium, foramina sacralia",
+                "Kifoz (primer)"
+              ],
+              [
+                "Koksigeal (coccygea)",
+                "Co1-Co4 kaynaşmış",
+                "Os coccygis: cornua coccygea",
+                "Kifoz (primer)"
+              ]
+            ]
+          },
+          {
+            "title": "Eğrilikler (curvaturae)",
+            "columns": [
+              "Eğrilik",
+              "Yön",
+              "Tip",
+              "Gelişme zamanı"
+            ],
+            "rows": [
+              [
+                "Kifoz torakalis",
+                "Arkaya dışbükey",
+                "Primer",
+                "Doğuştan var (fetal pozisyon)"
+              ],
+              [
+                "Kifoz sakralis",
+                "Arkaya dışbükey",
+                "Primer",
+                "Doğuştan var"
+              ],
+              [
+                "Lordoz servikalis",
+                "Öne dışbükey",
+                "Sekonder",
+                "Bebek başını tutunca (~3 ay)"
+              ],
+              [
+                "Lordoz lumbalis",
+                "Öne dışbükey",
+                "Sekonder",
+                "Çocuk yürümeye başlayınca (~1 yaş)"
+              ]
+            ]
+          }
+        ]
+      },
+      "relations": [
+        {
+          "relation": "contains",
+          "target": "atlas"
+        },
+        {
+          "relation": "contains",
+          "target": "axis"
+        },
+        {
+          "relation": "contains",
+          "target": "vertebra_cervicalis"
+        },
+        {
+          "relation": "contains",
+          "target": "vertebra_thoracica"
+        },
+        {
+          "relation": "contains",
+          "target": "vertebra_lumbalis"
+        },
+        {
+          "relation": "contains",
+          "target": "os_sacrum"
+        },
+        {
+          "relation": "contains",
+          "target": "os_coccygis"
+        }
+      ]
+    },
+    {
+      "structure_id": "atlas",
+      "canonical": "Atlas (C1)",
+      "kind": "bone",
+      "region": "trunk",
+      "turkish": "Atlas (1. boyun omuru)",
+      "english": "Atlas (C1)",
+      "synonyms": [
+        "atlas",
+        "birinci boyun omuru",
+        "c1",
+        "first cervical vertebra"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.vertebral_column",
+      "landmarks": [
+        {
+          "landmark_id": "arcus_anterior",
+          "latin": "Arcus anterior atlantis",
+          "turkish": "Öndeki kemer; ortada tuberculum anterius"
+        },
+        {
+          "landmark_id": "arcus_posterior",
+          "latin": "Arcus posterior atlantis",
+          "turkish": "Arkadaki kemer; tuberculum posterius (spinöz çıkıntı yerine)"
+        },
+        {
+          "landmark_id": "massa_lateralis",
+          "latin": "Massa lateralis",
+          "turkish": "İki yan kütle; üstte ve altta eklem yüzleri taşır"
+        },
+        {
+          "landmark_id": "fovea_articularis_superior",
+          "latin": "Fovea articularis superior",
+          "turkish": "Condylus occipitalis ile eklemleşir ('evet' hareketi)",
+          "note": "art. atlantooccipitalis"
+        },
+        {
+          "landmark_id": "fovea_dentis",
+          "latin": "Fovea dentis",
+          "turkish": "Arcus anterior iç yüzünde; axis'in dens'i ile eklemleşir"
+        },
+        {
+          "landmark_id": "foramen_transversarium",
+          "latin": "Foramen transversarium",
+          "turkish": "Processus transversus'ta; a. vertebralis geçer"
+        },
+        {
+          "landmark_id": "sulcus_arteriae_vertebralis",
+          "latin": "Sulcus arteriae vertebralis",
+          "turkish": "Arcus posterior üstünde; a. vertebralis oluğu"
+        }
+      ],
+      "facts": {
+        "location": "Birinci boyun omuru; kafatasını taşır (Atlas mitolojide gökyüzünü taşır). Gövdesi ve gerçek processus spinosus'u yoktur: bir halka biçiminde iki kemer ve iki yan kütleden oluşur.",
+        "parts": [
+          "Arcus anterior (tuberculum anterius, fovea dentis)",
+          "Arcus posterior (tuberculum posterius, sulcus a. vertebralis)",
+          "İki massa lateralis"
+        ],
+        "articulations": [
+          "Yukarıda condyli occipitales (art. atlantooccipitalis, 'evet')",
+          "Aşağıda axis (art. atlantoaxialis lateralis)",
+          "Dens axis (art. atlantoaxialis mediana)"
+        ],
+        "high_yield": [
+          "Gövdesi yoktur; embriyolojik gövdesi axis'e katılıp dens'i oluşturur.",
+          "Dens, lig. transversum atlantis ile fovea dentis'e bastırılır; bağ yırtılırsa dens medulla spinalis'e baskı yapar (atlantoaksiyal instabilite, ör. romatoid artrit, Down sendromu).",
+          "Jefferson kırığı: eksenel yüklenmede atlas halkasının patlama kırığı."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "axis"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "os_occipitale"
+        }
+      ]
+    },
+    {
+      "structure_id": "axis",
+      "canonical": "Axis (C2)",
+      "kind": "bone",
+      "region": "trunk",
+      "turkish": "Axis (2. boyun omuru)",
+      "english": "Axis (C2)",
+      "synonyms": [
+        "axis",
+        "ikinci boyun omuru",
+        "c2",
+        "epistropheus",
+        "second cervical vertebra"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.vertebral_column",
+      "landmarks": [
+        {
+          "landmark_id": "dens_axis",
+          "latin": "Dens axis",
+          "turkish": "Yukarı uzanan diş biçimli çıkıntı; atlasın döndüğü eksen ('hayır' hareketi)",
+          "note": "art. atlantoaxialis mediana"
+        },
+        {
+          "landmark_id": "facies_articularis_anterior",
+          "latin": "Facies articularis anterior",
+          "turkish": "Dens ön yüzünde; atlasın fovea dentis'i ile eklemleşir"
+        },
+        {
+          "landmark_id": "facies_articularis_superior",
+          "latin": "Facies articularis superior",
+          "turkish": "Atlas ile eklemleşen üst yüzler"
+        },
+        {
+          "landmark_id": "processus_spinosus",
+          "latin": "Processus spinosus",
+          "turkish": "Güçlü, çatal spinöz çıkıntı (birçok boyun kası)"
+        },
+        {
+          "landmark_id": "foramen_transversarium",
+          "latin": "Foramen transversarium",
+          "turkish": "A. vertebralis geçer"
+        }
+      ],
+      "facts": {
+        "location": "İkinci boyun omuru; başın 'hayır' rotasyonunun ekseni. Gövdesinden yukarı uzanan dens (odontoid çıkıntı) atlasın döndüğü mildir.",
+        "parts": [
+          "Dens axis (odontoid)",
+          "Corpus",
+          "İki processus transversus (foramen transversarium)",
+          "Güçlü processus spinosus"
+        ],
+        "articulations": [
+          "Atlas (art. atlantoaxialis mediana: dens–atlas; ve lateralis)",
+          "C3 (aşağıda)"
+        ],
+        "high_yield": [
+          "Dens, lig. transversum atlantis ile atlasa bağlanır; bu bağ 'hayır' rotasyonunda medulla spinalis'i korur.",
+          "Hangman kırığı: pars interarticularis'in iki taraflı kırığı (ani hiperekstansiyon, ör. asılma/trafik).",
+          "Dens kırığı yaşlıda düşme ile sık; kaynamama riski yüksektir."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "atlas"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "vertebra_cervicalis"
+        }
+      ]
+    },
+    {
+      "structure_id": "vertebra_cervicalis",
+      "canonical": "Vertebra cervicalis (tipik: C3-C6)",
+      "kind": "bone",
+      "region": "trunk",
+      "turkish": "Tipik boyun omuru",
+      "english": "Typical cervical vertebra",
+      "synonyms": [
+        "boyun omuru",
+        "servikal omur",
+        "cervical vertebra",
+        "vertebra cervicalis"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.vertebral_column",
+      "landmarks": [
+        {
+          "landmark_id": "corpus_vertebrae",
+          "latin": "Corpus vertebrae",
+          "turkish": "Küçük, geniş (enine oval) gövde; üst yüzde uncus"
+        },
+        {
+          "landmark_id": "foramen_transversarium",
+          "latin": "Foramen transversarium",
+          "turkish": "Processus transversus'taki delik; a./v. vertebralis (C7'de arter geçmez)"
+        },
+        {
+          "landmark_id": "processus_spinosus_bifidus",
+          "latin": "Processus spinosus bifidus",
+          "turkish": "Çatallı (ikiye ayrık) spinöz çıkıntı — servikale özgü"
+        },
+        {
+          "landmark_id": "uncus_corporis",
+          "latin": "Uncus corporis (processus uncinatus)",
+          "turkish": "Gövde üst-yan kenarındaki çıkıntı; art. uncovertebralis (Luschka)"
+        },
+        {
+          "landmark_id": "foramen_vertebrale",
+          "latin": "Foramen vertebrale",
+          "turkish": "Büyük, üçgen biçimli (medulla spinalis'in servikal genişlemesi)"
+        },
+        {
+          "landmark_id": "tuberculum_anterius_posterius",
+          "latin": "Tuberculum anterius/posterius",
+          "turkish": "Processus transversus uçları; C6 anterius = tuberculum caroticum"
+        }
+      ],
+      "facts": {
+        "location": "Boyun omurlarının tipik örneği (C3-C6). En küçük ama en hareketli gövdeli omurlar; a. vertebralis'i taşıyan foramen transversarium ile tanınır.",
+        "parts": [
+          "Küçük enine-oval corpus (uncus ile)",
+          "Foramen transversarium'lu processus transversus",
+          "Bifid processus spinosus",
+          "Üçgen foramen vertebrale"
+        ],
+        "articulations": [
+          "Komşu servikal omurlar (art. zygapophysiales + art. uncovertebrales)",
+          "C1-C2 yukarıda, T1 aşağıda"
+        ],
+        "high_yield": [
+          "Foramen transversarium boyun omurunun imzasıdır; a. vertebralis C6'dan C1'e kadar buradan geçer (C7'de foramen var ama arter yok, sadece ven).",
+          "C7 = vertebra prominens: uzun, çatal OLMAYAN spinöz çıkıntı, boyunda elle ilk hissedilen çıkıntı.",
+          "Art. uncovertebralis (Luschka) osteofiti foramen intervertebrale'yi daraltıp servikal radikülopati yapar."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "vertebra_thoracica"
+        }
+      ]
+    },
+    {
+      "structure_id": "vertebra_thoracica",
+      "canonical": "Vertebra thoracica (tipik: T2-T9)",
+      "kind": "bone",
+      "region": "trunk",
+      "turkish": "Tipik sırt omuru",
+      "english": "Typical thoracic vertebra",
+      "synonyms": [
+        "sırt omuru",
+        "torakal omur",
+        "thoracic vertebra",
+        "vertebra thoracica",
+        "gögüs omuru"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.vertebral_column",
+      "landmarks": [
+        {
+          "landmark_id": "corpus_vertebrae",
+          "latin": "Corpus vertebrae",
+          "turkish": "Kalp biçimli gövde; kaburga başı fasetleri taşır"
+        },
+        {
+          "landmark_id": "fovea_costalis_superior_inferior",
+          "latin": "Fovea costalis superior/inferior",
+          "turkish": "Gövde arka-yan köşesinde; kaburga başı ile eklem (caput costae)",
+          "note": "art. capitis costae"
+        },
+        {
+          "landmark_id": "fovea_costalis_processus_transversi",
+          "latin": "Fovea costalis processus transversi",
+          "turkish": "Processus transversus ucunda; kaburga tüberkülü ile eklem",
+          "note": "art. costotransversaria"
+        },
+        {
+          "landmark_id": "processus_spinosus",
+          "latin": "Processus spinosus",
+          "turkish": "Uzun, aşağı ve arkaya bakan, birbirine kiremit gibi binen spinöz"
+        },
+        {
+          "landmark_id": "foramen_vertebrale",
+          "latin": "Foramen vertebrale",
+          "turkish": "Küçük, yuvarlak (torakal kordon dar)"
+        },
+        {
+          "landmark_id": "processus_articularis",
+          "latin": "Processus articularis superior/inferior",
+          "turkish": "Frontal düzlemde yönlenmiş faset eklemler (rotasyona izin verir)"
+        }
+      ],
+      "facts": {
+        "location": "Sırt omurlarının tipik örneği (T2-T9). Kaburgalarla eklemleştikleri fovea costalis'ler ile tanınır; T1, T10-T12 geçiş özellikleri gösterir (atipik).",
+        "parts": [
+          "Kalp biçimli corpus (kostal fasetler)",
+          "Uzun aşağı bakan processus spinosus",
+          "Kostal fasetli processus transversus",
+          "Yuvarlak foramen vertebrale"
+        ],
+        "articulations": [
+          "Kaburgalar (art. capitis costae + art. costotransversaria)",
+          "Komşu torakal omurlar (faset eklemler frontal düzlemde)"
+        ],
+        "high_yield": [
+          "İki eklem takımı: caput costae gövdeye (fovea costalis sup/inf, çoğu kaburga iki omura biner), tuberculum costae processus transversus'a.",
+          "Uzun, aşağı sarkan spinöz çıkıntı ve frontal fasetler torakal bölgeye rotasyon verir ama fleksiyonu sınırlar.",
+          "Torakal foramen vertebrale dar olduğundan bu bölgede kord basısı belirti verir; kifoz burada primerdir."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "vertebra_lumbalis"
+        }
+      ]
+    },
+    {
+      "structure_id": "vertebra_lumbalis",
+      "canonical": "Vertebra lumbalis (tipik: L1-L5)",
+      "kind": "bone",
+      "region": "trunk",
+      "turkish": "Tipik bel omuru",
+      "english": "Typical lumbar vertebra",
+      "synonyms": [
+        "bel omuru",
+        "lumbar omur",
+        "lumbar vertebra",
+        "vertebra lumbalis"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.vertebral_column",
+      "landmarks": [
+        {
+          "landmark_id": "corpus_vertebrae",
+          "latin": "Corpus vertebrae",
+          "turkish": "Büyük, böbrek biçimli, ağır yük taşıyan gövde"
+        },
+        {
+          "landmark_id": "processus_spinosus",
+          "latin": "Processus spinosus",
+          "turkish": "Kısa, kalın, dörtgen, yatay arkaya uzanan spinöz (lomber ponksiyon aralığı)"
+        },
+        {
+          "landmark_id": "processus_costiformis",
+          "latin": "Processus costiformis (transversus)",
+          "turkish": "İnce yanlara uzanan çıkıntı (aslında kaburga kalıntısı)"
+        },
+        {
+          "landmark_id": "processus_mammillaris",
+          "latin": "Processus mammillaris",
+          "turkish": "Üst eklem çıkıntısı arkasındaki tümsek (m. multifidus)"
+        },
+        {
+          "landmark_id": "foramen_vertebrale",
+          "latin": "Foramen vertebrale",
+          "turkish": "Üçgen; içinde cauda equina (kord L1-L2'de biter)"
+        },
+        {
+          "landmark_id": "processus_articularis",
+          "latin": "Processus articularis superior/inferior",
+          "turkish": "Sagittal düzlemde yönlenmiş fasetler (rotasyonu engeller)"
+        }
+      ],
+      "facts": {
+        "location": "Bel omurlarının tipik örneği (L1-L5). En büyük gövdeli, en ağır yük taşıyan omurlar; foramen transversarium ve kostal faset YOKTUR — bu 'yokluk' onları tanıtır.",
+        "parts": [
+          "Büyük böbrek biçimli corpus",
+          "Kısa kalın dörtgen processus spinosus",
+          "İnce processus costiformis",
+          "Processus mammillaris ve accessorius",
+          "Üçgen foramen vertebrale"
+        ],
+        "articulations": [
+          "Komşu lomber omurlar (fasetler sagittal düzlemde → fleksiyon-ekstansiyon serbest, rotasyon kısıtlı)",
+          "L5–os sacrum (art. lumbosacralis)"
+        ],
+        "high_yield": [
+          "Lomber ponksiyon L3-L4 veya L4-L5 aralığından yapılır (crista iliaca hattı ~L4 spinözü); kord L1-L2'de bittiği için sadece cauda equina vardır.",
+          "Diskus herniasyonu en sık L4-L5 ve L5-S1'de; posterolateral fıtık ALTTAKİ kök basar (L4-L5 fıtığı L5 kökü).",
+          "Spondilolistezis (genelde L5-S1): pars interarticularis defekti ile üst omurun öne kayması."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "os_sacrum"
+        }
+      ]
+    },
+    {
+      "structure_id": "os_coccygis",
+      "canonical": "Os coccygis",
+      "kind": "bone",
+      "region": "trunk",
+      "turkish": "Kuyruk kemiği (koksiks)",
+      "english": "Coccyx",
+      "synonyms": [
+        "koksiks",
+        "os coccygis",
+        "kuyruk kemigi",
+        "coccyx",
+        "tailbone"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.vertebral_column",
+      "landmarks": [
+        {
+          "landmark_id": "cornu_coccygeum",
+          "latin": "Cornu coccygeum",
+          "turkish": "İlk koksigeal omurun yukarı çıkıntısı; cornu sacrale ile eklem"
+        },
+        {
+          "landmark_id": "basis_ossis_coccygis",
+          "latin": "Basis ossis coccygis",
+          "turkish": "Sakrum ile eklemleşen üst yüz"
+        }
+      ],
+      "facts": {
+        "location": "Genellikle 4 (3-5) rudimenter koksigeal omurun kaynaşmasıyla oluşan küçük üçgen kemik; omurganın en alt ucu. Sakrum ile art. sacrococcygea yapar. (BodyParts3D 4.0'da ayrı mesh yok; kart şematiktir.)",
+        "parts": [
+          "Basis (cornua coccygea ile)",
+          "Apex (alt uç)"
+        ],
+        "articulations": [
+          "Os sacrum (art. sacrococcygea)"
+        ],
+        "high_yield": [
+          "M. levator ani, m. coccygeus ve lig. anococcygeum tutunma yeridir (pelvik taban).",
+          "Koksidini (kuyruk sokumu ağrısı) düşme/doğum sonrası sık; oturmakla artar."
+        ]
+      },
+      "relations": []
     }
   ],
   "terms": [

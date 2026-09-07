@@ -430,6 +430,22 @@ apart layer by layer:
 python scripts/import_bodyparts3d.py isa_BP3D_4.0_obj_99.zip --scene cranium
 ```
 
+### Vertebral column
+
+The axial skeleton's backbone. An overview card (`columna_vertebralis`)
+carries two tables — the five regions with the single feature that tells each
+apart (the cervical transverse foramen, the thoracic costal facet, the large
+bodyless lumbar) and the four curvatures with which are primary and which
+secondary — plus a study guide. Cards follow for the two atypical vertebrae
+(the bodyless atlas and the dens-bearing axis) and the typical cervical,
+thoracic and lumbar vertebra, and the coccyx; the sacrum card already shipped.
+The importer's `vertebral_column` scene draws a continuous spine by merging
+each region's whole run of vertebrae into one coloured group (the twelve
+thoracic vertebrae are one mesh), so the column is complete without a card for
+every single bone, and the regions can be hidden one at a time to see the
+curvatures. Atlas, axis and sacrum carry derived pins; the merged groups do
+not, since a pin would fall in the empty centre of a stack.
+
 ### Cranial nerves
 
 The twelve cranial nerves have a section of their own, tied to the skull
@@ -506,9 +522,9 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
 - Peripheral nerves have no mesh in BodyParts3D 4.0, so nerve cards keep the
   schematic map, and pins derived from the shape stay marked approximate until
   someone who knows confirms them by hand.
-- The head and neck now have the full skull (braincase and face) and the
-  twelve cranial nerves, but no head-and-neck vessel cards and no joint cards
-  beyond the notes (temporomandibular, atlanto-occipital); the trunk has no
+- The head and neck have the full skull and the twelve cranial nerves but no
+  vessel or joint cards; the trunk now has the vertebral column but the
+  thoracic cage is only the sternum (no ribs) and there are no
   abdominal-wall muscles and the lower limb no vessels. The coverage audit in
   `docs/PROJECT_STATE.md` lists the gaps in priority order.
 - Image-based question *generation* needs an image whose provenance is known;

@@ -6947,6 +6947,328 @@
           "target": "axis"
         }
       ]
+    },
+    {
+      "structure_id": "cavea_thoracis",
+      "canonical": "Cavea thoracis (thorax)",
+      "kind": "region",
+      "region": "trunk",
+      "turkish": "Göğüs kafesi",
+      "english": "Thoracic cage",
+      "synonyms": [
+        "göğüs kafesi",
+        "gogus kafesi",
+        "toraks kafesi",
+        "cavea thoracis",
+        "thoracic cage",
+        "rib cage",
+        "thorax iskeleti"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.thoracic_cage",
+      "facts": {
+        "location": "Göğüs boşluğunu saran kemik-kıkırdak kafes: arkada 12 torakal omur, yanlarda 12 çift kaburga (costae) ve kıkırdakları, önde sternum. Kalp ve akciğerleri korur, solunum mekaniğinin iskeletidir.",
+        "parts": [
+          "12 torakal omur (arka duvar)",
+          "12 çift costa + cartilago costalis (yan duvar)",
+          "Sternum: manubrium + corpus + processus xiphoideus (ön duvar)",
+          "Açıklıklar: apertura thoracis superior (giriş) ve inferior (diaphragma kapatır)"
+        ],
+        "high_yield": [
+          "Angulus sterni (Louis açısı): manubrium-corpus bileşkesi, 2. kaburga kıkırdağının bağlandığı yer — kaburga saymanın başlangıç noktası ve T4-T5 disk hizası (arcus aortae başı-sonu, trachea bifurkasyonu).",
+          "Apertura thoracis superior'dan trachea, özofagus, büyük damarlar ve akciğer apeksi geçer; 1. kaburga üstünde a./v. subclavia ve plexus brachialis (toraks çıkış sendromu).",
+          "Kaburga kırığı en sık orta kaburgalarda (4-9), angulus costae'de; alt kaburga kırığı karaciğer/dalak, üst kaburga kırığı büyük damar yaralanması riski."
+        ],
+        "study_notes": [
+          "Önce kaburga sınıflamasını ezberle (gerçek/yalancı/yüzen), sonra tipik bir kaburganın parçalarını (caput-collum-tuberculum-corpus) ve iki eklemini.",
+          "1. kaburgayı ayrı çalış: en atipik, üstten geçen yapıların (subklavyen damarlar, plexus, m. scalenus anterior) haritası oradadır.",
+          "Angulus sterni'yi elinle bul: 2. kaburga oradadır; klinik muayenede kaburga/interkostal aralık saymanın başlangıcı budur."
+        ],
+        "tables": [
+          {
+            "title": "Kaburga sınıflaması",
+            "columns": [
+              "Grup",
+              "Kaburgalar",
+              "Ön bağlantı",
+              "Not"
+            ],
+            "rows": [
+              [
+                "Gerçek (verae)",
+                "1-7",
+                "Kendi kıkırdağıyla doğrudan sternum'a",
+                "Vertebrosternal"
+              ],
+              [
+                "Yalancı (spuriae)",
+                "8-10",
+                "Üstteki kaburganın kıkırdağına (arcus costalis)",
+                "Vertebrokondral"
+              ],
+              [
+                "Yüzen (fluctuantes)",
+                "11-12",
+                "Önde serbest (karın kasları içinde biter)",
+                "Vertebral; kısa, tüberkülsüz"
+              ]
+            ]
+          },
+          {
+            "title": "Tipik kaburganın parçaları",
+            "columns": [
+              "Parça",
+              "Özelliği",
+              "Eklem/işlev"
+            ],
+            "rows": [
+              [
+                "Caput costae",
+                "İki eklem yüzü (crista capitis)",
+                "Kendi ve üst omurun gövdesi (art. capitis costae)"
+              ],
+              [
+                "Collum costae",
+                "Baş ile tüberkül arası boyun",
+                "—"
+              ],
+              [
+                "Tuberculum costae",
+                "Eklem yüzlü çıkıntı",
+                "Kendi omurun processus transversus'u (art. costotransversaria)"
+              ],
+              [
+                "Corpus costae",
+                "Angulus costae'de keskin döner",
+                "Alt-iç kenarda sulcus costae"
+              ],
+              [
+                "Sulcus costae",
+                "Alt iç kenardaki oluk",
+                "İnterkostal ven-arter-sinir (VAN, yukarıdan aşağı)"
+              ]
+            ]
+          }
+        ]
+      },
+      "relations": [
+        {
+          "relation": "contains",
+          "target": "costa"
+        },
+        {
+          "relation": "contains",
+          "target": "costa_prima"
+        },
+        {
+          "relation": "contains",
+          "target": "costae_fluctuantes"
+        },
+        {
+          "relation": "contains",
+          "target": "sternum"
+        },
+        {
+          "relation": "contains",
+          "target": "vertebra_thoracica"
+        }
+      ]
+    },
+    {
+      "structure_id": "costa",
+      "canonical": "Costa (tipik: 3-9)",
+      "kind": "bone",
+      "region": "trunk",
+      "turkish": "Tipik kaburga",
+      "english": "Typical rib",
+      "synonyms": [
+        "kaburga",
+        "costa",
+        "typical rib",
+        "kosta"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.thoracic_cage",
+      "landmarks": [
+        {
+          "landmark_id": "caput_costae",
+          "latin": "Caput costae",
+          "turkish": "İki eklem yüzlü baş; kendi ve üst omurun gövdesiyle eklemleşir",
+          "note": "art. capitis costae"
+        },
+        {
+          "landmark_id": "collum_costae",
+          "latin": "Collum costae",
+          "turkish": "Baş ile tüberkül arasındaki boyun"
+        },
+        {
+          "landmark_id": "tuberculum_costae",
+          "latin": "Tuberculum costae",
+          "turkish": "Eklem yüzlü çıkıntı; omurun processus transversus'u ile eklem",
+          "note": "art. costotransversaria"
+        },
+        {
+          "landmark_id": "angulus_costae",
+          "latin": "Angulus costae",
+          "turkish": "Gövdenin en keskin döndüğü yer; kırıkların sık olduğu bölge"
+        },
+        {
+          "landmark_id": "corpus_costae",
+          "latin": "Corpus costae",
+          "turkish": "Yassı, eğri gövde"
+        },
+        {
+          "landmark_id": "sulcus_costae",
+          "latin": "Sulcus costae",
+          "turkish": "Alt-iç kenardaki oluk; interkostal damar-sinir (VAN) korunur"
+        }
+      ],
+      "facts": {
+        "location": "Göğüs yan duvarını yapan yassı, eğri kemik. Tipik kaburga (3-9) arkada iki eklemle omurga ile, önde kıkırdağıyla sternum sistemine bağlanır.",
+        "parts": [
+          "Caput (iki fasetli)",
+          "Collum",
+          "Tuberculum (fasetli)",
+          "Corpus (angulus, sulcus costae)"
+        ],
+        "articulations": [
+          "Arkada: kendi + üst torakal omur gövdesi (art. capitis costae) ve kendi omurun processus transversus'u (art. costotransversaria)",
+          "Önde: cartilago costalis üzerinden sternum (1-7) ya da üst kıkırdak (8-10)"
+        ],
+        "high_yield": [
+          "İnterkostal damar-sinir demeti sulcus costae'de, kaburganın ALT kenarı boyunca gizlidir: torasentez/göğüs tüpü kaburganın ÜST kenarından girer (demeti korumak için).",
+          "Sıra: ven-arter-sinir (VAN) yukarıdan aşağı; en alttaki sinir en açıktadır.",
+          "Caput iki gövdeye biner (kendi omuru + üstteki), bu yüzden çoğu kaburga iki omurla eklemleşir."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "vertebra_thoracica"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "sternum"
+        }
+      ]
+    },
+    {
+      "structure_id": "costa_prima",
+      "canonical": "Costa prima (1. kaburga)",
+      "kind": "bone",
+      "region": "trunk",
+      "turkish": "Birinci kaburga (atipik)",
+      "english": "First rib (atypical)",
+      "synonyms": [
+        "birinci kaburga",
+        "1. kaburga",
+        "costa prima",
+        "first rib"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.thoracic_cage",
+      "landmarks": [
+        {
+          "landmark_id": "tuberculum_musculi_scaleni_anterioris",
+          "latin": "Tuberculum m. scaleni anterioris",
+          "turkish": "Üst yüzdeki çıkıntı; m. scalenus anterior tutunur, iki oluğu ayırır"
+        },
+        {
+          "landmark_id": "sulcus_venae_subclaviae",
+          "latin": "Sulcus venae subclaviae",
+          "turkish": "Tüberkülün ÖNÜNDEKİ oluk; v. subclavia geçer"
+        },
+        {
+          "landmark_id": "sulcus_arteriae_subclaviae",
+          "latin": "Sulcus arteriae subclaviae",
+          "turkish": "Tüberkülün ARKASINDAKİ oluk; a. subclavia ve plexus brachialis'in alt kökü geçer"
+        },
+        {
+          "landmark_id": "caput_costae_primae",
+          "latin": "Caput",
+          "turkish": "Tek eklem yüzü (yalnız T1 gövdesiyle eklemleşir)"
+        },
+        {
+          "landmark_id": "tuberculum_costae_primae",
+          "latin": "Tuberculum",
+          "turkish": "T1 processus transversus'u ile eklem"
+        }
+      ],
+      "facts": {
+        "location": "En atipik kaburga: en kısa, en geniş ve en çok kıvrık olanı. Neredeyse yataydır; üst yüzünde boyun-kol yapıları için oluklar taşır.",
+        "parts": [
+          "Tek fasetli caput (yalnız T1)",
+          "Üst yüz: sulcus v. subclaviae, tuberculum m. scaleni anterioris, sulcus a. subclaviae",
+          "Tuberculum ve angulus aynı noktada"
+        ],
+        "articulations": [
+          "T1 gövdesi (tek faset) ve T1 processus transversus'u",
+          "Önde manubrium sterni (kıkırdakla)"
+        ],
+        "high_yield": [
+          "Üstünden geçen sıra ÖNDEN ARKAYA: v. subclavia → m. scalenus anterior (tuberculum) → a. subclavia + plexus brachialis. Anahtar: ven önde, arter+sinir arkada.",
+          "Toraks çıkış sendromu (thoracic outlet): 1. kaburga, klavikula ve skalen kaslar arasında nörovasküler sıkışma; servikal kaburga varsa artar.",
+          "Tek fasetli baş: 1., 10., 11., 12. kaburgalar tek omurla eklemleşir (atipik özellik)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "vertebra_thoracica"
+        },
+        {
+          "relation": "articulates_with",
+          "target": "sternum"
+        }
+      ]
+    },
+    {
+      "structure_id": "costae_fluctuantes",
+      "canonical": "Costae fluctuantes (11-12)",
+      "kind": "bone",
+      "region": "trunk",
+      "turkish": "Yüzen kaburgalar",
+      "english": "Floating ribs (11-12)",
+      "synonyms": [
+        "yüzen kaburga",
+        "yuzen kaburga",
+        "costae fluctuantes",
+        "floating ribs",
+        "11. kaburga",
+        "12. kaburga"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.thoracic_cage",
+      "landmarks": [
+        {
+          "landmark_id": "caput_costae",
+          "latin": "Caput costae",
+          "turkish": "Tek eklem yüzü (yalnız kendi omuruyla)"
+        },
+        {
+          "landmark_id": "apex_costae",
+          "latin": "Apex (ön uç)",
+          "turkish": "Serbest, sivri uç; karın kasları içinde biter (kıkırdak sternuma ulaşmaz)"
+        }
+      ],
+      "facts": {
+        "location": "11. ve 12. kaburgalar: önde hiçbir yapıya bağlanmaz ('yüzer'), uçları karın arka duvarı kaslarında serbest biter. Kısa, tüberkülsüz ve boyunsuzdur.",
+        "parts": [
+          "Tek fasetli caput (kendi omuru)",
+          "Tuberculum ve collum yok",
+          "Angulus ve sulcus costae belirsiz/yok"
+        ],
+        "articulations": [
+          "Yalnız kendi torakal omur gövdesi (art. capitis costae; costotransvers eklem YOK)"
+        ],
+        "high_yield": [
+          "Ön bağlantısı olmadığından hareketlidir; 12. kaburga böbrek cerrahisinde ve arka yaklaşımda önemli bir işarettir.",
+          "Tüberkül ve costotransvers eklem yokluğu onları tanıtır; caput tek fasetlidir.",
+          "M. quadratus lumborum ve diaphragma'nın arka lifleri 12. kaburgaya tutunur."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "articulates_with",
+          "target": "vertebra_thoracica"
+        }
+      ]
     }
   ],
   "terms": [

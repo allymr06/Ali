@@ -697,7 +697,7 @@ class AnatomyLab:
                 pairs = [
                     (row[0], row[col])
                     for row in table["rows"]
-                    if col < len(row) and row[0].strip() and row[col].strip()
+                    if col < len(row) and row[0].strip() and normalize(row[col]).strip()
                     and len(row[0]) <= self._TABLE_CELL_MAX and len(row[col]) <= self._TABLE_CELL_MAX
                 ]
                 pool = [answer for _subject, answer in pairs]

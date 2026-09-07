@@ -465,6 +465,16 @@ grooves) and the floating ribs; the sternum card already shipped. The
 importer's thoracic_cage scene draws the ribs, the three-part sternum and the
 thoracic spine together as a rib cage.
 
+### Abdominal wall
+
+The anterolateral abdominal wall completes the trunk. An overview card carries
+the rectus sheath (above and below the arcuate line) and the inguinal canal
+(its four walls, the deep and superficial rings, and the spermatic cord or
+round ligament) as tables, with the Hesselbach triangle and the hernia
+distinction. Cards were added for the three flat muscles (external and internal
+oblique, transversus abdominis) and rectus abdominis, each with the documented
+muscle fields. The sheets stay schematic (no 3D).
+
 ### Cranial nerves
 
 The twelve cranial nerves have a section of their own, tied to the skull
@@ -543,7 +553,8 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
   someone who knows confirms them by hand.
 - The head and neck have the full skull, the twelve cranial nerves and the
   craniovertebral and jaw joints, but no head-and-neck vessel cards; the trunk
-  has the vertebral column and the thoracic cage now, but no
+  is complete (vertebral column, thoracic cage, abdominal wall); still missing
+  are the
   abdominal-wall muscles and the lower limb no vessels. The coverage audit in
   `docs/PROJECT_STATE.md` lists the gaps in priority order.
 - Image-based question *generation* needs an image whose provenance is known;

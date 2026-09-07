@@ -7269,6 +7269,247 @@
           "target": "vertebra_thoracica"
         }
       ]
+    },
+    {
+      "structure_id": "paries_abdominis_anterior",
+      "canonical": "Paries anterolateralis abdominis",
+      "kind": "region",
+      "region": "trunk",
+      "turkish": "Karın ön-yan duvarı",
+      "english": "Anterolateral abdominal wall",
+      "synonyms": [
+        "karın duvarı",
+        "karin duvari",
+        "karın ön duvarı",
+        "anterolateral abdominal wall",
+        "paries abdominis"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.abdominal_wall",
+      "facts": {
+        "location": "Karın boşluğunu önden ve yandan saran kas-aponeuroz duvarı: üç yassı kas (m. obliquus externus/internus abdominis, m. transversus abdominis) yanlarda üst üste, önde orta hatta m. rectus abdominis vardır. Aponeurozları orta hatta linea alba'da birleşir; içeriyi periton ve fascia transversalis döşer.",
+        "parts": [
+          "Yassı kaslar (dıştan içe): m. obliquus externus, m. obliquus internus, m. transversus abdominis",
+          "Dikey kaslar: m. rectus abdominis (vagina musculi recti içinde), m. pyramidalis",
+          "Orta hat: linea alba; rektusun yan kenarı: linea semilunaris",
+          "Kanallar: canalis inguinalis (kasık kanalı)"
+        ],
+        "high_yield": [
+          "Linea arcuata (umbilicus ile symphysis arası) altında üç aponeurozun hepsi rektusun ÖNÜNE geçer; arka duvarda yalnız fascia transversalis kalır — cerrahi ve fıtık açısından zayıf hat.",
+          "Trigonum inguinale (Hesselbach): medialde m. rectus, lateralde a. epigastrica inferior, altta lig. inguinale ile sınırlı; direkt fıtık buradan çıkar.",
+          "Damar-sinir yassı kasların en iç ikisi (internus–transversus) arasında seyreder; kesi bu tabakadadır.",
+          "Dermatom işaretleri: T10 umbilicus, L1 kasık; karın refleksleri T8-T12."
+        ],
+        "study_notes": [
+          "Önce iki tabloyu ezberle: rektus kılıfının linea arcuata üstü/altı bileşimi ve inguinal kanalın dört duvarı + içeriği. İkisi de klasik sınav sorusudur.",
+          "Yassı kasların lif yönünü elinle göster: dış oblik 'cebe el sokar gibi' aşağı-içe, iç oblik dik açıyla yukarı-içe, transversus yatay — üç yön üç kas.",
+          "İnguinal kanalı iki halka arasında düşün: derin halka (fascia transversalis, a. epigastrica inferior'un lateralinde) → yüzeyel halka (m. obliquus externus aponeurozu). İndirekt fıtık lateralden (derin halka), direkt fıtık medialden (Hesselbach) girer."
+        ],
+        "tables": [
+          {
+            "title": "Rektus kılıfı (vagina musculi recti abdominis)",
+            "columns": [
+              "Bölge",
+              "Ön duvar",
+              "Arka duvar"
+            ],
+            "rows": [
+              [
+                "Linea arcuata ÜSTÜ",
+                "M. obliquus externus aponeurozu + m. obliquus internus'un ön yaprağı",
+                "M. obliquus internus'un arka yaprağı + m. transversus aponeurozu + fascia transversalis"
+              ],
+              [
+                "Linea arcuata ALTI",
+                "Üç kasın aponeurozunun hepsi (externus, internus, transversus)",
+                "Yalnız fascia transversalis (aponeuroz yok)"
+              ]
+            ]
+          },
+          {
+            "title": "Canalis inguinalis · duvarlar ve içerik",
+            "columns": [
+              "Yapı",
+              "Oluşturan"
+            ],
+            "rows": [
+              [
+                "Ön duvar",
+                "M. obliquus externus aponeurozu (lateralde m. obliquus internus lifleri)"
+              ],
+              [
+                "Arka duvar",
+                "Fascia transversalis (medialde tendo conjunctivus / falx inguinalis)"
+              ],
+              [
+                "Tavan",
+                "M. obliquus internus ve m. transversus'un kemer yapan lifleri"
+              ],
+              [
+                "Taban",
+                "Lig. inguinale (medialde lig. lacunare)"
+              ],
+              [
+                "Derin halka (anulus inguinalis profundus)",
+                "Fascia transversalis'te; a. epigastrica inferior'un lateralinde"
+              ],
+              [
+                "Yüzeyel halka (anulus inguinalis superficialis)",
+                "M. obliquus externus aponeurozunda; tuberculum pubicum üstünde"
+              ],
+              [
+                "İçerik (erkek)",
+                "Funiculus spermaticus (ductus deferens, a. testicularis, plexus pampiniformis) + n. ilioinguinalis"
+              ],
+              [
+                "İçerik (kadın)",
+                "Lig. teres uteri (round ligament) + n. ilioinguinalis"
+              ]
+            ]
+          }
+        ]
+      },
+      "relations": [
+        {
+          "relation": "contains",
+          "target": "m_obliquus_externus_abdominis"
+        },
+        {
+          "relation": "contains",
+          "target": "m_obliquus_internus_abdominis"
+        },
+        {
+          "relation": "contains",
+          "target": "m_transversus_abdominis"
+        },
+        {
+          "relation": "contains",
+          "target": "m_rectus_abdominis"
+        }
+      ]
+    },
+    {
+      "structure_id": "m_obliquus_externus_abdominis",
+      "canonical": "Musculus obliquus externus abdominis",
+      "kind": "muscle",
+      "region": "trunk",
+      "turkish": "Dış eğik karın kası",
+      "english": "External oblique",
+      "abbreviations": [],
+      "synonyms": [
+        "dış oblik",
+        "dis oblik",
+        "external oblique",
+        "musculus obliquus externus abdominis",
+        "eksternal oblik"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.abdominal_wall",
+      "facts": {
+        "group": "Karın ön-yan duvarının en yüzeyel yassı kası.",
+        "origin": "5.–12. kaburgaların dış yüzü (m. serratus anterior ve m. latissimus dorsi ile çaprazlaşarak).",
+        "insertion": "Linea alba, tuberculum pubicum, crista iliaca'nın ön yarısı; aponeurozunun alt kenarı lig. inguinale'yi (Poupart) yapar.",
+        "innervation": "Nn. intercostales T7–T11 ve n. subcostalis (T12).",
+        "arterial_supply": "Aa. intercostales posteriores, a. epigastrica inferior/superior, a. circumflexa iliaca profunda.",
+        "action": "Karın içi basıncını artırır (ıkınma, öksürük, ekspirasyon); gövde fleksiyonu ve KARŞI tarafa rotasyon.",
+        "relations": "Lifleri 'cebe el sokar gibi' yukarıdan-aşağı ve öne-içe iner; aponeurozu rektus kılıfının önüne katılır.",
+        "high_yield": [
+          "Aponeurozunun serbest alt kenarı lig. inguinale'yi; medialde lig. lacunare ve lig. reflexum'u yapar.",
+          "Yüzeyel inguinal halka bu kasın aponeurozundaki yarıktır."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "m_obliquus_internus_abdominis",
+      "canonical": "Musculus obliquus internus abdominis",
+      "kind": "muscle",
+      "region": "trunk",
+      "turkish": "İç eğik karın kası",
+      "english": "Internal oblique",
+      "abbreviations": [],
+      "synonyms": [
+        "iç oblik",
+        "ic oblik",
+        "internal oblique",
+        "musculus obliquus internus abdominis",
+        "internal oblik"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.abdominal_wall",
+      "facts": {
+        "group": "Yassı kasların ortadakisi; lifleri dış obliğe dik açıdadır.",
+        "origin": "Fascia thoracolumbalis, crista iliaca (linea intermedia), lig. inguinale'nin lateral 2/3'ü.",
+        "insertion": "10.–12. kaburga alt kenarları, linea alba, crista pubica ve pecten pubis (m. transversus ile tendo conjunctivus'u yaparak).",
+        "innervation": "Nn. intercostales T7–T12 ve n. iliohypogastricus, n. ilioinguinalis (L1).",
+        "arterial_supply": "Aa. intercostales, a. epigastrica inferior, a. circumflexa iliaca.",
+        "action": "Karın içi basıncı; gövde fleksiyonu ve AYNI tarafa rotasyon.",
+        "relations": "Lifleri aşağıdan-yukarı ve öne-içe (dış obliğe dik) uzanır; inguinal kanalın tavanına ve ön-arka duvarına katılır. M. cremaster onun devamıdır.",
+        "high_yield": [
+          "M. transversus ile birlikte tendo conjunctivus'u (falx inguinalis) yapar: inguinal kanalın arka duvarını medialde güçlendirir (direkt fıtığa direnç).",
+          "M. cremaster erkekte bu kasın lifleridir; kremaster refleksinin efferenti (n. genitofemoralis)."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "m_transversus_abdominis",
+      "canonical": "Musculus transversus abdominis",
+      "kind": "muscle",
+      "region": "trunk",
+      "turkish": "Enine karın kası",
+      "english": "Transversus abdominis",
+      "abbreviations": [],
+      "synonyms": [
+        "transversus abdominis",
+        "enine karın kası",
+        "transverse abdominal",
+        "transversus"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.abdominal_wall",
+      "facts": {
+        "group": "Yassı kasların en derini; lifleri yataydır.",
+        "origin": "7.–12. kaburga iç yüzü (diaphragma ile çaprazlaşır), fascia thoracolumbalis, crista iliaca, lig. inguinale'nin lateral 1/3'ü.",
+        "insertion": "Linea alba, crista pubica ve pecten pubis (tendo conjunctivus).",
+        "innervation": "Nn. intercostales T7–T12 ve n. iliohypogastricus, n. ilioinguinalis (L1).",
+        "arterial_supply": "Aa. intercostales, a. epigastrica inferior, a. circumflexa iliaca profunda.",
+        "action": "Esas karın sıkıştırıcısı ('korse kası'); iç organları içeri bastırır, bel stabilizasyonu.",
+        "relations": "Yatay lifleri karnı kuşak gibi sarar; iç yüzünü fascia transversalis döşer. Damar-sinir demeti bu kas ile iç oblik arasında seyreder.",
+        "high_yield": [
+          "Karın-sinir demeti (T7-L1) m. transversus ile m. obliquus internus arasındadır: insizyon ve TAP bloğu bu düzlemdedir.",
+          "Tendo conjunctivus'un ikinci kası; fascia transversalis derin inguinal halkayı yapar."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "m_rectus_abdominis",
+      "canonical": "Musculus rectus abdominis",
+      "kind": "muscle",
+      "region": "trunk",
+      "turkish": "Düz karın kası",
+      "english": "Rectus abdominis",
+      "abbreviations": [],
+      "synonyms": [
+        "rektus abdominis",
+        "rectus abdominis",
+        "düz karın kası",
+        "duz karin kasi",
+        "six pack"
+      ],
+      "topic_id": "anatomy.musculoskeletal.trunk.abdominal_wall",
+      "facts": {
+        "group": "Orta hattın iki yanında dikey seyreden şerit kas; rektus kılıfı içindedir.",
+        "origin": "Crista pubica ve symphysis pubica.",
+        "insertion": "Processus xiphoideus ve 5.–7. kaburga kıkırdakları.",
+        "innervation": "Nn. intercostales/thoracoabdominales T7–T12.",
+        "arterial_supply": "A. epigastrica superior (a. thoracica interna dalı) ve a. epigastrica inferior (a. iliaca externa dalı) — göbek çevresinde anastomoz yapar.",
+        "action": "Gövde (lomber omurga) fleksiyonu; karın içi basıncı artırır (ıkınma, ekspirasyon).",
+        "relations": "3–4 intersectio tendinea ile bölünür (six-pack görünümü); vagina musculi recti içinde, orta hatta linea alba, yanda linea semilunaris ile sınırlı.",
+        "high_yield": [
+          "A. epigastrica superior ↔ inferior anastomozu: aortokoroner köprüde ve kollateral dolaşımda kullanılır (a. thoracica interna alınır).",
+          "Linea arcuata altında arka kılıf yoktur; Pfannenstiel ve alt orta hat insizyonlarında önemlidir.",
+          "Intersectiones tendineae yalnız ön kılıfa yapışıktır (arkada serbest)."
+        ]
+      },
+      "relations": []
     }
   ],
   "terms": [

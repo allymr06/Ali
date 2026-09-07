@@ -519,39 +519,35 @@ The Medical Academy regression coverage (`tests/test_medical_*.py`) includes:
   against an injected clock;
 - exam import from messy text, and the style profiler's evidence-based
   features, confidence thresholds and never-guess-the-answer-key rule;
-- the Anatomy Lab's structure cards, movement axes, deterministic quizzes and
-  the asset registry that refuses an unlicensed or missing model, reads scenes
-  from the manifest (a scene naming an unregistered structure loses it, an
-  empty scene is reported), reports the up axis and both pin forms with their
-  confidence, and the BodyParts3D importer: the OBJ merge with index
-  re-basing, the pilot mapping checked against the curated data, derived pins
-  on a synthetic bone, no pin without a rule or enough vertices, and the
-  hand-placed pin that survives a re-import, the neurocranium card's fossae
-  and foramen tables with the nerves and vessels they must name, the fixed
-  table shape, every importer scene's mapping against the curated data, the
-  skull rules on a synthetic bone (foramen magnum low and midline, crista
-  galli high, no pin for a hole), and a scene's card, palette and note with
-  the malformed colours dropped, the twelve cranial nerves (an overview
-  table of the right shape, a card each with its skull exit and lesion, the
-  exits agreeing with the neurocranium foramen table, and the cranial-nerve
-  fields staying off the limb nerve cards, the viscerocranium (orbit-wall and
-  sinus-drainage tables, a card per facial bone) and the full fourteen-bone
-  cranium scene, the table-recall quiz that turns a region card's tables into
-  questions (short cells only, pooled and shuffled, and the catalogue-wide
-  guard proving no table distractor is a second true answer), and the
-  vertebral column — the overview's region and curvature tables, the atypical
-  atlas and axis and the typical vertebra cards, and the continuous six-group
-  spine scene, and the craniovertebral and jaw joints — the temporomandibular,
-  atlanto-occipital and atlanto-axial cards with their disc, movements and the
-  bones they connect, and the thoracic cage — the rib-classification and
-  rib-parts tables, the typical/first/floating rib cards, and the rib-cage
-  scene of ribs, sternum and spine, and the abdominal wall — the rectus-sheath
-  and inguinal-canal tables and the four muscle cards, and the head-and-neck
-  vessels — the external-carotid-branch and carotid-sheath tables and the
-  carotid, vertebral and jugular cards, and the lower-limb vessels — the
-  arterial-line and femoral-triangle tables and the femoral/popliteal/tibial
-  and saphenous cards, with both limbs holding four arteries and two veins)
-  (`test_medical_anatomy.py`);
+- the Anatomy Lab's structure cards, movement axes and deterministic quizzes,
+  and the asset registry that refuses an unlicensed or missing model, reads
+  scenes from the manifest (a scene naming an unregistered structure loses it,
+  an empty scene is reported), reports the up axis and both pin forms with
+  their confidence, and passes a scene's card, palette and note with malformed
+  colours dropped;
+- the BodyParts3D importer: the OBJ merge with index re-basing, every scene's
+  mapping checked against the curated data, derived pins on a synthetic bone
+  (no pin without a rule or enough vertices; the skull rules put the foramen
+  magnum low and midline and the crista galli high, and give a hole no pin),
+  and the hand-placed pin that survives a re-import;
+- the region cards and their tables: the neurocranium's fossae and foramen
+  tables with the nerves and vessels they must name and the fixed table shape;
+  the twelve cranial nerves (an overview table of the right shape, a card each
+  with its skull exit and lesion, exits agreeing with the foramen table, the
+  cranial-nerve fields staying off the limb nerve cards, the accessory nerve's
+  lesion sign in the right direction); the viscerocranium (orbit-wall and
+  sinus-drainage tables, a card per facial bone) and the fourteen-bone cranium
+  scene; the vertebral column (region and curvature tables, atlas, axis and the
+  typical vertebrae, the six-group spine scene); the craniovertebral and jaw
+  joints; the thoracic cage (rib classification and rib parts, the rib-cage
+  scene); the abdominal wall (rectus sheath and inguinal canal); and the
+  head-and-neck and lower-limb vessels (external-carotid branches, the carotid
+  sheath, the arterial line and the femoral triangle, both limbs holding four
+  arteries and two veins);
+- the table-recall quiz that turns a region card's tables into questions:
+  short cells only, a dash placeholder never offered as an answer, candidates
+  pooled and shuffled across columns, and the catalogue-wide guard proving no
+  table distractor is a second true answer (`test_medical_anatomy.py`);
 - the academy facade, its four tools, the tutor's decisions and question
   generation against a fake model client;
 - the core engine's augmentation hook: prompt replacement, tool narrowing,

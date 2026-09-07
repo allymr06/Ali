@@ -46,6 +46,13 @@ Last verified: 6 September 2026
 - Completed feature milestone: Anatomy Lab in 3D (BodyParts3D scene of the
   right upper limb, free navigation, detailed pins, bell-ringer exam),
   7 September 2026
+- Completed feature milestone: first-year gross-anatomy foundation across
+  every region — the skull, cranial nerves, craniovertebral and jaw joints and
+  carotid system; the vertebral column, thoracic cage and abdominal wall; both
+  limbs with their vessels — 127 curated structures, five importer scenes, and
+  the reference tables turned into recall questions, 7 September 2026
+- Completed fix: one consistent cloud voice, with the free-tier speech quota
+  named to the user when it runs out, 7 September 2026
 - Next action: plugin process isolation; code signing and a user-attended
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved

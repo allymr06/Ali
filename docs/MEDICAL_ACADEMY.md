@@ -567,16 +567,19 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
 
 - No 3D asset ships inside the repository. The BodyParts3D archive is
   downloaded by the student and imported with `scripts/import_bodyparts3d.py`;
-  until then the lab is schematic. The importer covers the right upper limb;
-  another region needs a mapping of its own.
+  until then the lab is schematic. The importer ships mappings for five scenes
+  (the right upper limb, the braincase, the full cranium, the vertebral column
+  and the thoracic cage); another region needs a mapping of its own.
 - Peripheral nerves have no mesh in BodyParts3D 4.0, so nerve cards keep the
   schematic map, and pins derived from the shape stay marked approximate until
   someone who knows confirms them by hand.
-- The head and neck are complete (skull, cranial nerves, joints, carotid
-  system), the trunk is complete (vertebral column, thoracic cage, abdominal
-  wall), and both limbs now carry vessels; still missing are the
-  abdominal-wall muscles and the lower limb no vessels. The coverage audit in
-  `docs/PROJECT_STATE.md` lists the gaps in priority order.
+- Covered: the head and neck (skull, cranial nerves, craniovertebral and jaw
+  joints, carotid system), the trunk (vertebral column, thoracic cage,
+  abdominal wall) and both limbs (bones, joints, muscles, nerves, vessels).
+  Not covered yet: the pelvis and perineum in detail, the visceral organs
+  (heart, lungs, abdominal viscera), the muscles of the face, and the
+  intrinsic muscles of the hand and foot. The dated entries in
+  `docs/PROJECT_STATE.md` record each region as it was added.
 - Image-based question *generation* needs an image whose provenance is known;
   imported image questions keep their picture reference but new items are
   written as text.

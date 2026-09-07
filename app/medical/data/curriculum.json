@@ -121,6 +121,20 @@
           ]
         },
         {
+          "id": "cardiovascular",
+          "title_tr": "Dolaşım sistemi",
+          "title_en": "Cardiovascular",
+          "keywords": ["dolaşım", "damar", "arter", "ven", "cardiovascular", "kalp"],
+          "topics": [
+            {
+              "id": "head_neck_vessels",
+              "title_tr": "Baş ve boyun damarları (karotis sistemi)",
+              "title_en": "Head and neck vessels (carotid system)",
+              "keywords": ["karotis", "carotid", "boyun damarları", "jugular", "vertebral arter", "carotid sheath", "vasa colli"]
+            }
+          ]
+        },
+        {
           "id": "neuroanatomy",
           "title_tr": "Nöroanatomi",
           "title_en": "Neuroanatomy",

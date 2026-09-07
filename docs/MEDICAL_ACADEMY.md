@@ -475,6 +475,17 @@ distinction. Cards were added for the three flat muscles (external and internal
 oblique, transversus abdominis) and rectus abdominis, each with the documented
 muscle fields. The sheets stay schematic (no 3D).
 
+### Head and neck vessels
+
+The carotid system completes the head and neck. An overview card (vasa_colli)
+carries the eight branches of the external carotid and the contents of the
+carotid sheath as tables, with the key rule that the internal carotid gives no
+branch in the neck and the carotid sinus and body sit at the bifurcation. Cards
+were added for the common, internal and external carotid arteries, the
+vertebral artery and the internal jugular vein. A new curriculum branch,
+anatomy.cardiovascular.head_neck_vessels, holds them; the cards are schematic
+(no 3D).
+
 ### Cranial nerves
 
 The twelve cranial nerves have a section of their own, tied to the skull
@@ -551,10 +562,9 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
 - Peripheral nerves have no mesh in BodyParts3D 4.0, so nerve cards keep the
   schematic map, and pins derived from the shape stay marked approximate until
   someone who knows confirms them by hand.
-- The head and neck have the full skull, the twelve cranial nerves and the
-  craniovertebral and jaw joints, but no head-and-neck vessel cards; the trunk
-  is complete (vertebral column, thoracic cage, abdominal wall); still missing
-  are the
+- The head and neck are complete (full skull, cranial nerves, joints and the
+  carotid system) and so is the trunk (vertebral column, thoracic cage,
+  abdominal wall); still missing are the
   abdominal-wall muscles and the lower limb no vessels. The coverage audit in
   `docs/PROJECT_STATE.md` lists the gaps in priority order.
 - Image-based question *generation* needs an image whose provenance is known;

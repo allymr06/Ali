@@ -489,6 +489,9 @@ def create_application(
             cloud_grace_seconds=(
                 active_settings.voice_cloud_grace_seconds
             ),
+            prefer_cloud_voice=(
+                active_settings.voice_prefer_cloud_voice
+            ),
         )
 
     vision = None

@@ -395,6 +395,15 @@ class DesktopController:
             # Only worth mentioning when the cloud voice actually
             # failed. The local voice simply winning the speed race is
             # normal operation, not something to apologize for.
+            if metadata.get("speech_error_reason") == "quota":
+                # The free-tier speech model runs out after a handful of
+                # calls a day; naming that spares the user hunting a bug
+                # that is really a plan limit.
+                return (
+                    "Bugünkü ücretsiz bulut ses kotası doldu; yanıtı "
+                    "yerel sesle okudum. Sürekli net ve tek ses için "
+                    "Gemini planını yükseltmen gerekiyor."
+                )
             return (
                 "Bulut sesi şu an kullanılamıyor; yerel Türkçe sesle "
                 "yanıtladım."

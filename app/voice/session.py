@@ -130,6 +130,7 @@ class VoiceSession:
         retain_audio: bool = False,
         event_capacity: int = 100,
         cloud_grace_seconds: float = 3.0,
+        prefer_cloud_voice: bool = True,
     ) -> None:
         if not 0 < max_recording_seconds <= 300:
             raise ValueError("Recording duration must be between 0 and 300 seconds.")
@@ -150,6 +151,7 @@ class VoiceSession:
         self._require_wake_word = require_wake_word
         self._retain_audio = retain_audio
         self._cloud_grace_seconds = max(0.0, cloud_grace_seconds)
+        self._prefer_cloud_voice = bool(prefer_cloud_voice)
         self._events: deque[VoiceSessionEvent] = deque(maxlen=event_capacity)
         # Optional observer for live state changes (e.g. the desktop
         # voice HUD). Set after construction; called on the session's
@@ -690,6 +692,34 @@ class VoiceSession:
             self._speech_source = "local"
             metadata["speech_fallback"] = "windows-local"
             return await local_speech()
+
+        if self._prefer_cloud_voice:
+            # One voice, every time. The clear cloud voice opens the reply
+            # and, because self._speech_source is set to "cloud", carries
+            # every sentence after it; the local voice is reached only if
+            # the cloud cannot produce this first chunk at all. No latency
+            # race, so the assistant never switches to the robotic voice
+            # just because the network was slow for a moment.
+            cloud_error: Exception | None = None
+            try:
+                speech = await self._cloud_first_chunk(text)
+            except (VoiceProviderError, VoiceConfigurationError) as exc:
+                speech = None
+                cloud_error = exc
+            if speech is not None:
+                self._speech_source = "cloud"
+                metadata["speech_race_winner"] = "cloud"
+                return speech
+            self._speech_source = "local"
+            metadata["speech_race_winner"] = "local_after_error"
+            metadata["speech_fallback"] = "windows-local"
+            metadata["speech_error"] = "provider"
+            if getattr(cloud_error, "quota", False):
+                # The daily free-tier speech quota is spent; the notice
+                # tells the user this is a plan limit, not a bug.
+                metadata["speech_error_reason"] = "quota"
+            data = await synthesize_local_turkish(text)
+            return self._wrap_local_speech(data, text) if data else None
 
         cloud = asyncio.create_task(self._cloud_first_chunk(text))
         local = asyncio.create_task(synthesize_local_turkish(text))

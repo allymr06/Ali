@@ -50,8 +50,36 @@ Last verified: 6 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2237 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 2241 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## One consistent voice (7 September 2026)
+
+The student reported the spoken answers were unstable and hard to understand,
+and wanted a single clear voice like ChatGPT's. The cause was a latency race:
+free-tier cloud synthesis takes four to six seconds, the cloud voice's grace
+window was three, so the instant but robotic local Windows voice usually won
+and then carried the whole reply — a different voice almost every turn.
+
+The voice now prefers the cloud neural voice: it always opens and carries the
+reply, and the local Windows voice is a failure parachute only, never a faster
+rival (`JARVIS_VOICE_PREFER_CLOUD_VOICE`, default on; set it off to restore the
+race for a slow or metered link). Streaming synthesis keeps first audio around
+one to two seconds, so consistency costs little latency.
+
+The deeper limit is an account one, found by probing the live provider: the
+free tier caps the speech-synthesis model at about ten calls a day
+(`429 RESOURCE_EXHAUSTED`, `GenerateRequestsPerDayPerProjectPerModel-FreeTier`,
+limit 10 for `gemini-3.1-flash-tts`). Once spent, cloud synthesis is refused
+for the rest of the day and the local voice speaks regardless of preference.
+JARVIS now names that case: the quota refusal is tagged, and the conversation
+shows "Bugünkü ücretsiz bulut ses kotası doldu… Gemini planını yükseltmen
+gerekiyor." rather than a generic error. A stable natural voice every turn
+needs billing enabled on the Gemini project; that is the user's to do.
+
+Recognition, the engine turn, the microphone capture and the speaker output
+were each verified working against the live provider; the instability was the
+race plus the quota, not a broken stage.
 
 ## Black stage, free turn and the neurocranium (7 September 2026)
 

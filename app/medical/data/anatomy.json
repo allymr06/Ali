@@ -7510,6 +7510,322 @@
         ]
       },
       "relations": []
+    },
+    {
+      "structure_id": "vasa_colli",
+      "canonical": "Vasa colli (baş-boyun damarları)",
+      "kind": "region",
+      "region": "head_neck",
+      "turkish": "Boyun damarları",
+      "english": "Vessels of the head and neck",
+      "synonyms": [
+        "boyun damarları",
+        "boyun damarlari",
+        "baş boyun damarları",
+        "vasa colli",
+        "neck vessels",
+        "carotid system",
+        "karotis sistemi"
+      ],
+      "topic_id": "anatomy.cardiovascular.head_neck_vessels",
+      "facts": {
+        "location": "Başı ve boynu besleyen ve boşaltan büyük damarlar. Ana atardamar a. carotis communis'tir; C3-C4 hizasında a. carotis interna (beyin, göz) ve externa (yüz, boyun, saçlı deri) olarak ikiye ayrılır. Beynin arka dolaşımını a. vertebralis (a. subclavia dalı) besler. Ana toplardamar v. jugularis interna'dır. Üçü (a. carotis + v. jugularis interna + n. vagus) vagina carotica (carotid sheath) içinde seyreder.",
+        "parts": [
+          "A. carotis communis → interna + externa (bifurkasyon C3-C4, cartilago thyroidea üst kenarı)",
+          "A. vertebralis (a. subclavia'dan; foramina transversaria'dan çıkar → a. basilaris)",
+          "V. jugularis interna (sinus sigmoideus'un devamı; foramen jugulare'den)",
+          "Vagina carotica: a. carotis (medial), v. jugularis interna (lateral), n. vagus (arada-arkada)"
+        ],
+        "high_yield": [
+          "Sinus caroticus (bifurkasyonda, a. carotis interna kökü): BARORESEPTÖR, afferent n. glossopharyngeus (IX) → kan basıncı refleksi. Glomus caroticum: KEMORESEPTÖR (O2/CO2/pH).",
+          "Beyin dolaşımı: ön dolaşım a. carotis interna (ACA+MCA), arka dolaşım a. vertebralis→a. basilaris (PCA). Circulus arteriosus (Willis) ikisini birleştirir.",
+          "A. carotis interna boyunda DAL VERMEZ; boyunda dal veren her arter externa'dandır — ayrımın anahtarı budur.",
+          "V. jugularis interna santral venöz kateter ve juguler venöz basınç muayenesinin damarıdır; a. carotis'in hemen lateralindedir."
+        ],
+        "study_notes": [
+          "Önce iki tabloyu ezberle: a. carotis externa'nın 8 dalı ve vagina carotica'nın içeriği. İkisi de klasik sınav sorusudur.",
+          "İnterna mı externa mı? Boyunda dal veriyorsa externa. İnterna doğrudan canalis caroticus'a girer, ilk dalını (a. ophthalmica) kafa içinde verir.",
+          "ECA dallarını bir mnemonic'le sırala (aşağıdan yukarı): a. thyroidea superior, a. pharyngea ascendens, a. lingualis, a. facialis, a. occipitalis, a. auricularis posterior, sonra iki uç dal a. maxillaris + a. temporalis superficialis."
+        ],
+        "tables": [
+          {
+            "title": "A. carotis externa · sekiz dalı",
+            "columns": [
+              "Dal",
+              "Beslediği alan"
+            ],
+            "rows": [
+              [
+                "A. thyroidea superior",
+                "Gl. thyroidea üstü, larinks (a. laryngea superior)"
+              ],
+              [
+                "A. pharyngea ascendens",
+                "Farinks, meninksler (ince, en derin dal)"
+              ],
+              [
+                "A. lingualis",
+                "Dil ve ağız tabanı"
+              ],
+              [
+                "A. facialis",
+                "Yüz (kıvrılarak mandibula kenarından yüze çıkar)"
+              ],
+              [
+                "A. occipitalis",
+                "Saçlı derinin arkası, arka boyun kasları"
+              ],
+              [
+                "A. auricularis posterior",
+                "Kulak arkası, saçlı deri"
+              ],
+              [
+                "A. maxillaris",
+                "Uç dal: çiğneme kasları, dişler, a. meningea media"
+              ],
+              [
+                "A. temporalis superficialis",
+                "Uç dal: saçlı derinin yan-ön bölümü (nabız şakakta)"
+              ]
+            ]
+          },
+          {
+            "title": "Vagina carotica (carotid sheath) · içerik",
+            "columns": [
+              "Yapı",
+              "Konum"
+            ],
+            "rows": [
+              [
+                "A. carotis communis / interna",
+                "Medialde"
+              ],
+              [
+                "V. jugularis interna",
+                "Lateralde"
+              ],
+              [
+                "N. vagus (X)",
+                "İkisinin arasında ve arkasında"
+              ],
+              [
+                "Ansa cervicalis",
+                "Kılıfın ön yüzüne gömülü (C1-C3)"
+              ],
+              [
+                "Nodi lymphoidei cervicales profundi",
+                "Kılıf boyunca"
+              ]
+            ]
+          }
+        ]
+      },
+      "relations": [
+        {
+          "relation": "contains",
+          "target": "a_carotis_communis"
+        },
+        {
+          "relation": "contains",
+          "target": "a_carotis_interna"
+        },
+        {
+          "relation": "contains",
+          "target": "a_carotis_externa"
+        },
+        {
+          "relation": "contains",
+          "target": "a_vertebralis"
+        },
+        {
+          "relation": "contains",
+          "target": "v_jugularis_interna"
+        }
+      ]
+    },
+    {
+      "structure_id": "a_carotis_communis",
+      "canonical": "Arteria carotis communis",
+      "kind": "artery",
+      "region": "head_neck",
+      "turkish": "Ana karotis arteri",
+      "english": "Common carotid artery",
+      "abbreviations": [],
+      "synonyms": [
+        "ana karotis",
+        "arteria carotis communis",
+        "common carotid",
+        "karotis kominis",
+        "ana boyun atardamarı"
+      ],
+      "topic_id": "anatomy.cardiovascular.head_neck_vessels",
+      "facts": {
+        "origin": "Sağ: truncus brachiocephalicus'tan (art. sternoclavicularis arkasında). Sol: doğrudan arcus aortae'den (bu yüzden sol daha uzun, torakal bir bölümü var).",
+        "course": "Vagina carotica içinde boyunda dik çıkar (v. jugularis interna lateralinde, n. vagus arada). Boyunda DAL VERMEZ.",
+        "branches": [
+          "Boyunda dalı yoktur; C3-C4 (cartilago thyroidea üst kenarı) hizasında a. carotis interna ve a. carotis externa olarak ikiye ayrılır."
+        ],
+        "supply": "Baş ve boynun ana kan kaynağı (uç dalları interna ve externa üzerinden).",
+        "relations": "Bifurkasyonda sinus caroticus (baroreseptör) ve glomus caroticum (kemoreseptör). Nabzı krikoid kıkırdak hizasında, m. sternocleidomastoideus ön kenarında alınır.",
+        "high_yield": [
+          "Bifurkasyon C3-C4'tedir; karotis endarterektomi ve Doppler bu düzeyde yapılır.",
+          "Sol a. carotis communis arcus aortae'nin ikinci dalıdır (truncus brachiocephalicus ile a. subclavia sinistra arasında)."
+        ]
+      },
+      "relations": [
+        {
+          "relation": "branch",
+          "target": "a_carotis_interna"
+        },
+        {
+          "relation": "branch",
+          "target": "a_carotis_externa"
+        }
+      ]
+    },
+    {
+      "structure_id": "a_carotis_interna",
+      "canonical": "Arteria carotis interna",
+      "kind": "artery",
+      "region": "head_neck",
+      "turkish": "İç karotis arteri",
+      "english": "Internal carotid artery",
+      "abbreviations": [],
+      "synonyms": [
+        "iç karotis",
+        "internal carotid",
+        "arteria carotis interna",
+        "ica",
+        "karotis interna"
+      ],
+      "topic_id": "anatomy.cardiovascular.head_neck_vessels",
+      "facts": {
+        "origin": "A. carotis communis'in bifurkasyonu (C3-C4).",
+        "course": "Boyunda dal vermeden çıkar (pars cervicalis) → canalis caroticus (os temporale) → sinus cavernosus içinde S kıvrımı (karotis sifonu) → dura'yı deler.",
+        "branches": [
+          "Boyunda dalı YOK",
+          "İlk dal a. ophthalmica (canalis opticus'tan orbita'ya)",
+          "Uç dalları: a. cerebri anterior ve a. cerebri media",
+          "a. communicans posterior, a. choroidea anterior"
+        ],
+        "supply": "Beynin ÖN dolaşımı (frontal-paryetal-temporal lob büyük bölümü), göz (a. ophthalmica), hipofiz.",
+        "relations": "Sinus cavernosus içinde CN III, IV, V1, V2, VI ve plexus caroticus (sempatik) ile komşu; burada anevrizma kavernöz sinüs sendromu yapar.",
+        "high_yield": [
+          "Boyunda dal vermez: bu, onu externa'dan ayıran anahtar bulgudur.",
+          "Circulus arteriosus'un (Willis) ön kaynağı; MCA embolisi en sık iskemik inme yeridir.",
+          "Retinal 'geçici körlük' (amaurosis fugax) internal karotis stenozunun uyarısıdır (a. ophthalmica)."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "a_carotis_externa",
+      "canonical": "Arteria carotis externa",
+      "kind": "artery",
+      "region": "head_neck",
+      "turkish": "Dış karotis arteri",
+      "english": "External carotid artery",
+      "abbreviations": [],
+      "synonyms": [
+        "dış karotis",
+        "external carotid",
+        "arteria carotis externa",
+        "eca",
+        "karotis externa"
+      ],
+      "topic_id": "anatomy.cardiovascular.head_neck_vessels",
+      "facts": {
+        "origin": "A. carotis communis'in bifurkasyonu (C3-C4); başlangıçta interna'nın ön-medialinde.",
+        "course": "Gl. parotidea içinde yükselir; collum mandibulae hizasında iki uç dalına ayrılır.",
+        "branches": [
+          "A. thyroidea superior",
+          "A. pharyngea ascendens",
+          "A. lingualis",
+          "A. facialis",
+          "A. occipitalis",
+          "A. auricularis posterior",
+          "Uç: a. maxillaris",
+          "Uç: a. temporalis superficialis"
+        ],
+        "supply": "Yüz, saçlı deri, boyun visserası (tiroid, larinks, farinks), ağız, çiğneme kasları, dura (a. meningea media).",
+        "relations": "Boyunda ve yüzde çok sayıda dal verir; a. maxillaris'in dalı a. meningea media foramen spinosum'dan kafaya girer.",
+        "high_yield": [
+          "Boyunda dal veren tek karotis dalıdır (interna dal vermez).",
+          "A. maxillaris'ten a. meningea media: pterion kırığında epidural hematomun kaynağı.",
+          "Ağır burun kanamasında (a. sphenopalatina) ve yüz kanamalarında externa dalları bağlanır/embolize edilir."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "a_vertebralis",
+      "canonical": "Arteria vertebralis",
+      "kind": "artery",
+      "region": "head_neck",
+      "turkish": "Vertebral arter",
+      "english": "Vertebral artery",
+      "abbreviations": [],
+      "synonyms": [
+        "vertebral arter",
+        "arteria vertebralis",
+        "vertebral artery",
+        "a. vertebralis"
+      ],
+      "topic_id": "anatomy.cardiovascular.head_neck_vessels",
+      "facts": {
+        "origin": "A. subclavia'nın ilk dalı.",
+        "course": "C6-C1 foramina transversaria'dan yukarı çıkar, atlas üstünde sulcus a. vertebralis'te kıvrılır, foramen magnum'dan kafaya girer; karşı tarafla birleşip a. basilaris'i yapar.",
+        "branches": [
+          "Rr. spinales ve musculares (boyunda)",
+          "A. spinalis anterior ve posterior",
+          "A. inferior posterior cerebelli (PICA)",
+          "Birleşip a. basilaris → a. cerebri posterior"
+        ],
+        "supply": "Beyin sapı, cerebellum, medulla spinalis üst bölümü, beynin ARKA dolaşımı (oksipital lob, PCA üzerinden).",
+        "relations": "C7 foramen transversarium'undan GEÇMEZ (yalnız C6-C1); ganglion cervicothoracicum (stellatum) ile komşu.",
+        "high_yield": [
+          "Arka dolaşımın kaynağı; tıkanması beyin sapı/serebellum inmesi (vertebrobaziler yetmezlik: baş dönmesi, diplopi, dizartri).",
+          "Boyun manipülasyonunda diseksiyon riski taşır (genç inmede araştırılır).",
+          "İki a. vertebralis birleşip tek a. basilaris'i yapar; PICA en sık lateral meduller (Wallenberg) sendromun damarıdır."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "v_jugularis_interna",
+      "canonical": "Vena jugularis interna",
+      "kind": "vein",
+      "region": "head_neck",
+      "turkish": "İç juguler ven",
+      "english": "Internal jugular vein",
+      "abbreviations": [],
+      "synonyms": [
+        "iç juguler ven",
+        "internal jugular vein",
+        "vena jugularis interna",
+        "ijv",
+        "juguler ven"
+      ],
+      "topic_id": "anatomy.cardiovascular.head_neck_vessels",
+      "facts": {
+        "origin": "Sinus sigmoideus'un devamı olarak foramen jugulare'den başlar (üstte bulbus superior).",
+        "course": "Vagina carotica içinde a. carotis'in lateralinde iner; klavikula arkasında v. subclavia ile birleşip v. brachiocephalica'yı yapar (altta bulbus inferior + kapak).",
+        "tributaries": [
+          "Sinus petrosus inferior",
+          "V. facialis",
+          "V. lingualis",
+          "V. pharyngea",
+          "V. thyroidea superior ve media"
+        ],
+        "drains_into": "V. brachiocephalica (v. subclavia ile birleşerek) → v. cava superior.",
+        "relations": "Foramen jugulare'de CN IX, X, XI ile komşu. m. sternocleidomastoideus'un iki başı arasında yüzeyel işaretlenir.",
+        "high_yield": [
+          "Santral venöz kateterizasyonun ana damarı; a. carotis'in hemen lateralinde.",
+          "Juguler venöz basınç (JVP) sağ kalp doluş basıncını yansıtır; sağ IJV tercih edilir (v. cava'ya düz yol).",
+          "Foramen jugulare tümörü (glomus jugulare) IJV ve CN IX-X-XI'i birlikte tutar."
+        ]
+      },
+      "relations": []
     }
   ],
   "terms": [

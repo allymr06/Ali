@@ -50,8 +50,22 @@ Last verified: 6 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2255 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 2256 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## Head and neck vessels (7 September 2026)
+
+The carotid system rounds out the head and neck, which already had its bones,
+joints, muscle and the twelve cranial nerves. An overview card (vasa_colli)
+carries two tables — the eight branches of the external carotid and the
+contents of the carotid sheath — with the high-yield distinction that the
+internal carotid gives no branch in the neck, the carotid sinus and body at the
+bifurcation, and the anterior (carotid) versus posterior (vertebrobasilar)
+brain circulation. Cards were added for the common, internal and external
+carotid arteries, the vertebral artery and the internal jugular vein, each with
+origin, course, branches or tributaries, territory and high-yield. A new
+curriculum branch, anatomy.cardiovascular.head_neck_vessels, holds them. The
+anatomy data is 120 structures.
 
 ## The abdominal wall (7 September 2026)
 

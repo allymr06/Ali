@@ -1420,3 +1420,43 @@ def test_the_abdominal_wall_carries_the_rectus_sheath_and_inguinal_canal() -> No
     rectus = lab.describe("m_rectus_abdominis")
     sections = {s["label"]: s["items"] for s in rectus["sections"]}
     assert any("xiphoideus" in item.lower() or "kaburga" in item.lower() for item in sections["Insertio"])
+
+
+def test_the_head_and_neck_vessels_carry_the_carotid_system() -> None:
+    """The neck vessels: the carotid system, the vertebral artery and the
+    internal jugular vein, with an overview whose tables carry the eight
+    branches of the external carotid and the contents of the carotid sheath."""
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=None)
+
+    overview = lab.describe("vasa_colli")
+    assert overview is not None and overview["kind"] == "region" and overview["region"] == "head_neck"
+    assert "dolaşım" in overview["topic_path"].lower()
+    eca = next(t for t in overview["tables"] if "externa" in t["title"].lower())
+    assert len(eca["rows"]) == 8  # the eight named branches
+    sheath = next(t for t in overview["tables"] if "carotica" in t["title"].lower())
+    sheath_rows = {row[0]: row[1] for row in sheath["rows"]}
+    assert "lateral" in sheath_rows["V. jugularis interna"].lower()
+    assert "vagus" in " ".join(sheath_rows).lower()
+
+    vessels = {"a_carotis_communis": "artery", "a_carotis_interna": "artery",
+               "a_carotis_externa": "artery", "a_vertebralis": "artery",
+               "v_jugularis_interna": "vein"}
+    contained = {r["structure_id"] for r in overview["relations"] if r["relation"] == "contains"}
+    assert contained == set(vessels)
+    for vid, kind in vessels.items():
+        card = lab.describe(vid)
+        assert card is not None and card["kind"] == kind and card["region"] == "head_neck", vid
+        assert "Yüksek verim" in [s["label"] for s in card["sections"]], vid
+    # The internal carotid gives no branch in the neck — the fact that tells it
+    # from the external carotid — and the external carotid lists its branches.
+    ica = lab.describe("a_carotis_interna")
+    assert any("dal" in fact.lower() and ("yok" in fact.lower() or "vermez" in fact.lower())
+               for section in ica["sections"] for fact in section["items"])
+    eca_card = lab.describe("a_carotis_externa")
+    branch_section = next(s for s in eca_card["sections"] if s["label"] == "Dallar")
+    assert len(branch_section["items"]) == 8

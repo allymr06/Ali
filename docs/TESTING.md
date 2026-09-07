@@ -541,7 +541,9 @@ The Medical Academy regression coverage (`tests/test_medical_*.py`) includes:
   guard proving no table distractor is a second true answer), and the
   vertebral column — the overview's region and curvature tables, the atypical
   atlas and axis and the typical vertebra cards, and the continuous six-group
-  spine scene) (`test_medical_anatomy.py`);
+  spine scene, and the craniovertebral and jaw joints — the temporomandibular,
+  atlanto-occipital and atlanto-axial cards with their disc, movements and the
+  bones they connect) (`test_medical_anatomy.py`);
 - the academy facade, its four tools, the tutor's decisions and question
   generation against a fake model client;
 - the core engine's augmentation hook: prompt replacement, tool narrowing,

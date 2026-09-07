@@ -108,6 +108,11 @@ def make_session(**overrides):
         "max_recording_seconds": 1,
         "operation_timeout_seconds": 1,
         "require_wake_word": True,
+        # These tests were written for the latency race; the app now
+        # prefers the cloud voice by default, so the race tests opt into
+        # the race explicitly and the cloud-primary behaviour has tests
+        # of its own below.
+        "prefer_cloud_voice": False,
     }
     components.update(overrides)
     return VoiceSession(**components), components
@@ -856,3 +861,121 @@ async def test_inputs_without_provisional_support_are_unchanged() -> None:
     result = await session.run_once(Context())
     assert result.state is VoiceSessionState.COMPLETED
     assert "transcription_provisional" not in result.metadata
+
+
+# ---------------------------------------------------------------------------
+# One consistent voice (prefer_cloud_voice, the default)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cloud_voice_is_used_every_turn_when_preferred(monkeypatch) -> None:
+    """The default: the clear cloud voice opens the reply even when the
+    instant local voice would have been faster, so the assistant never
+    drops to the robotic voice just because the cloud was a little slow."""
+
+    local_calls: list[str] = []
+
+    async def instant_local(text, **kwargs):
+        local_calls.append(text)
+        return b"RIFFlocal-wav"
+
+    monkeypatch.setattr("app.voice.audio.synthesize_local_turkish", instant_local)
+
+    # The cloud is slower than any grace window would allow, but it is
+    # preferred, so it still wins; the local voice is never synthesized.
+    session, parts = make_session(
+        synthesizer=SlowSynthesizer(delay=0.1),
+        cloud_grace_seconds=0.0,
+        prefer_cloud_voice=True,
+    )
+    result = await session.run_once()
+
+    assert result.state is VoiceSessionState.COMPLETED
+    assert result.metadata["speech_race_winner"] == "cloud"
+    assert parts["audio_output"].played[0].provider == "fake-tts"
+    assert local_calls == [], "the local voice must not run when the cloud voice carries the reply"
+    assert "speech_fallback" not in result.metadata
+
+
+@pytest.mark.asyncio
+async def test_preferred_cloud_voice_falls_back_to_local_only_on_failure(monkeypatch) -> None:
+    """When the cloud voice genuinely fails, the local voice still carries
+    the reply so the turn is never lost."""
+
+    spoken: list[str] = []
+
+    async def fake_local(text, **kwargs):
+        spoken.append(text)
+        return b"RIFFlocal-wav"
+
+    monkeypatch.setattr("app.voice.audio.synthesize_local_turkish", fake_local)
+
+    session, parts = make_session(
+        synthesizer=FailingSynthesizer(), prefer_cloud_voice=True
+    )
+    result = await session.run_once()
+
+    assert result.state is VoiceSessionState.COMPLETED
+    assert result.response_text == "All systems operational."
+    assert result.metadata["speech_race_winner"] == "local_after_error"
+    assert result.metadata["speech_fallback"] == "windows-local"
+    assert result.metadata["speech_error"] == "provider"
+    assert spoken == ["All systems operational."]
+
+
+@pytest.mark.asyncio
+async def test_preferred_cloud_voice_speaks_one_voice_across_sentences(monkeypatch) -> None:
+    """Every sentence of a multi-sentence reply uses the same cloud voice;
+    the reply never switches voices part-way through."""
+
+    async def instant_local(text, **kwargs):
+        return b"RIFFlocal-wav"
+
+    monkeypatch.setattr("app.voice.audio.synthesize_local_turkish", instant_local)
+
+    engine = StreamingEngine(
+        partials=["Birinci cümle.", "Birinci cümle. İkinci cümle burada."],
+        final="Birinci cümle. İkinci cümle burada.",
+        log=[],
+    )
+    session, parts = make_session(
+        engine=engine,
+        synthesizer=SlowSynthesizer(delay=0.05),
+        cloud_grace_seconds=0.0,
+        prefer_cloud_voice=True,
+    )
+    result = await session.run_once(Context())
+
+    assert result.state is VoiceSessionState.COMPLETED
+    providers = {speech.provider for speech in parts["audio_output"].played}
+    assert providers == {"fake-tts"}, "one cloud voice must carry every sentence"
+    assert len(parts["audio_output"].played) >= 2
+
+
+class QuotaSynthesizer:
+    """Cloud synthesis refused for the day: a 429 the wrapper marks quota."""
+
+    async def synthesize(self, text):
+        from app.voice.gemini import _provider_error
+
+        raise _provider_error(
+            "Gemini speech synthesis failed.",
+            RuntimeError("429 RESOURCE_EXHAUSTED: free tier daily limit"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_spent_daily_quota_is_named_as_a_quota_reason(monkeypatch) -> None:
+    async def fake_local(text, **kwargs):
+        return b"RIFFlocal-wav"
+
+    monkeypatch.setattr("app.voice.audio.synthesize_local_turkish", fake_local)
+
+    session, parts = make_session(synthesizer=QuotaSynthesizer(), prefer_cloud_voice=True)
+    result = await session.run_once()
+
+    assert result.state is VoiceSessionState.COMPLETED
+    assert result.response_text == "All systems operational."
+    assert result.metadata["speech_error_reason"] == "quota"
+    assert result.metadata["speech_fallback"] == "windows-local"

@@ -77,6 +77,10 @@ def _provider_error(
         marker in detail
         for marker in ("429", "RESOURCE_EXHAUSTED", "503", "502")
     )
+    # A quota/rate refusal is worth naming: on the free tier the speech
+    # model allows only a few calls a day, and when that runs out the
+    # assistant should tell the user it is a plan limit, not a fault.
+    error.quota = "429" in detail or "RESOURCE_EXHAUSTED" in detail
     return error
 
 

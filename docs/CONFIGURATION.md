@@ -213,13 +213,16 @@ settings documented above.
 | `JARVIS_VOICE_GEMINI_TTS_MODEL` | `gemini-3.1-flash-tts-preview` | Speech synthesis model. |
 | `JARVIS_VOICE_GEMINI_TTS_VOICE` | `Charon` | Speech synthesis voice (user-chosen; the single voice of JARVIS). |
 | `JARVIS_VOICE_TTS_INSTRUCTIONS` | JARVIS persona | Speaking-style instruction prepended to every synthesis. |
-| `JARVIS_VOICE_CLOUD_GRACE_SECONDS` | `3.0` | Head start the cloud voice gets before the local voice may speak; `0` restores the pure latency race. |
+| `JARVIS_VOICE_PREFER_CLOUD_VOICE` | `true` | Keeps one consistent voice: the clear cloud neural voice always carries the reply, and the local Windows voice is a failure fallback only. Set `false` for the latency race (local may pre-empt cloud on a slow link). |
+| `JARVIS_VOICE_CLOUD_GRACE_SECONDS` | `3.0` | Only used when `JARVIS_VOICE_PREFER_CLOUD_VOICE` is `false`: head start the cloud voice gets before the local voice may speak; `0` restores the pure latency race. |
 | `JARVIS_VOICE_TRAILING_SILENCE_SECONDS` | `1.5` | Silence that ends the user's turn. |
 | `JARVIS_MEMORY_AUTO_CAPTURE` | `true` | Post-turn model pass that stores durable personal facts automatically. |
 | `JARVIS_MEMORY_EXTRACTION_MODEL` | `gemini-3.5-flash-lite` | Model used by automatic memory capture. |
 | `JARVIS_VOICE_MAX_TTS_CHARACTERS` | `4000` | Maximum text length sent for synthesis. |
 | `JARVIS_VOICE_MAX_AUDIO_BYTES` | `20000000` | Maximum accepted synthesized audio response. |
 | `JARVIS_VOICE_RETAIN_LAST_AUDIO` | `false` | Retains the last raw capture in memory until explicitly cleared. |
+
+**Free-tier speech quota.** The Gemini free tier caps the speech-synthesis model at a small number of calls per day (about ten for `gemini-3.1-flash-tts`). Once that is spent, cloud synthesis returns `429 RESOURCE_EXHAUSTED` for the rest of the day, JARVIS speaks the reply with the local Windows voice, and the conversation shows a one-line notice saying the daily quota is spent. The recognition model (`gemini-3.5-flash-lite`) has a larger allowance. For a stable, natural voice every turn, enable billing on the Gemini API project or move to a paid plan; this is an account limit, not a JARVIS setting.
 
 Audio is never written to disk by the voice layer. Leave retention disabled
 unless an embedding application has a specific, disclosed need for the raw

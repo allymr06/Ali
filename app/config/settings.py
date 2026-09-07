@@ -182,6 +182,13 @@ class Settings:
     # first; past it, whichever source is ready speaks. 0 restores the
     # pure latency race.
     voice_cloud_grace_seconds: float = 3.0
+    # One consistent voice. When true (the default), the clear cloud
+    # neural voice always opens and carries the reply, and the robotic
+    # local Windows voice is a failure parachute only, never a faster
+    # rival that makes the assistant switch voices between turns. Set
+    # false to restore the latency race for a slow or metered link, where
+    # hearing something at once matters more than hearing the same voice.
+    voice_prefer_cloud_voice: bool = True
     voice_max_tts_characters: int = 4_000
     voice_max_audio_bytes: int = 20_000_000
     voice_retain_last_audio: bool = False
@@ -658,6 +665,10 @@ class Settings:
             voice_cloud_grace_seconds=_get_float(
                 "JARVIS_VOICE_CLOUD_GRACE_SECONDS",
                 3.0,
+            ),
+            voice_prefer_cloud_voice=_get_bool(
+                "JARVIS_VOICE_PREFER_CLOUD_VOICE",
+                True,
             ),
             voice_max_tts_characters=_get_positive_int(
                 "JARVIS_VOICE_MAX_TTS_CHARACTERS",

@@ -2445,3 +2445,19 @@ def test_narration_state_commands_and_the_voice_session_exclusion(booted, tmp_pa
     assert states[0]["status"] == "preparing" and states[0]["document_id"] == document.document_id
     assert states[-1]["status"] in {"finished", "stopped"}
     assert silent.spoken, "the narration spoke through the injected speaker"
+
+
+
+def test_continuing_pending_model_work_is_a_background_job_with_honest_refusals(booted) -> None:
+    assert "continue_processing" in shell.MEDICAL_BACKGROUND_ACTIONS
+    assert booted.bridge.medical_call("continue_processing", {"set_id": "nope"}) == {"ok": False, "error": "Ders seti bulunamadı."}
+    assert booted.bridge.medical_call("continue_processing", {"document_id": "nope"}) == {"ok": False, "error": "Belge bulunamadı."}
+    booted.controller.set_paused(True)
+    assert booted.bridge.medical_call("continue_processing", {}) == {"ok": False, "error": shell.PAUSED_MESSAGE}
+    booted.controller.set_paused(False)
+    # With nothing pending the job still reports back, honestly empty, instead of vanishing.
+    started = booted.bridge.medical_call("continue_processing", {})
+    assert started["ok"] is True and "kaldığı yerde bekler" in started["message"]
+    wait_until(lambda: any(payload.get("kind") == "job_report" and payload.get("job") == "continue" for payload in booted.window.payloads("medical")))
+    report = [payload for payload in booted.window.payloads("medical") if payload.get("kind") == "job_report" and payload.get("job") == "continue"][-1]
+    assert report["queued"] == 0 and report["described"] == 0 and report["analysed"] == 0 and report["stopped"] is None

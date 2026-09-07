@@ -402,6 +402,29 @@ no rule, no pin.
 python scripts/import_bodyparts3d.py isa_BP3D_4.0_obj_99.zip --scene neurocranium
 ```
 
+### Viscerocranium
+
+The facial skeleton completes the skull. An overview card (`viscerocranium`)
+carries the two tables first-years are always asked for — the bones of each
+orbital wall, and which meatus every paranasal sinus drains into (the
+maxillary sinus and all but the sphenoid to the middle meatus, the sphenoid to
+the sphenoethmoidal recess, the nasolacrimal duct to the inferior meatus) —
+with a study guide for the orbit, the nasal wall and the pterygopalatine
+fossa. Eight bone cards follow: maxilla and mandible in full detail (their
+processes, the infraorbital and mental foramina and the inferior alveolar
+canal, the temporomandibular joint), and os zygomaticum, os nasale, os
+lacrimale, os palatinum, concha nasalis inferior and vomer. Paired bones are
+one card each.
+
+The importer gained a `cranium` scene that draws all fourteen skull bones —
+the six braincase cards plus the eight facial bones — coloured one per bone,
+opening on the neurocranium card, so the whole skull can be turned and taken
+apart layer by layer:
+
+```
+python scripts/import_bodyparts3d.py isa_BP3D_4.0_obj_99.zip --scene cranium
+```
+
 ### Cranial nerves
 
 The twelve cranial nerves have a section of their own, tied to the skull
@@ -478,9 +501,9 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
 - Peripheral nerves have no mesh in BodyParts3D 4.0, so nerve cards keep the
   schematic map, and pins derived from the shape stay marked approximate until
   someone who knows confirms them by hand.
-- The viscerocranium topic exists in the curriculum but has no cards yet; the
-  head and neck have the twelve cranial nerves now but no vessel or joint
-  cards (temporomandibular, atlanto-occipital); the trunk has no
+- The head and neck now have the full skull (braincase and face) and the
+  twelve cranial nerves, but no head-and-neck vessel cards and no joint cards
+  beyond the notes (temporomandibular, atlanto-occipital); the trunk has no
   abdominal-wall muscles and the lower limb no vessels. The coverage audit in
   `docs/PROJECT_STATE.md` lists the gaps in priority order.
 - Image-based question *generation* needs an image whose provenance is known;

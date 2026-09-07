@@ -50,9 +50,21 @@ Last verified: 6 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2244 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 2245 tests passing, 5 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
 
+## The full skull: viscerocranium (7 September 2026)
+
+The facial skeleton finishes the skull. An overview card carries the orbit-wall
+and paranasal-sinus tables (which meatus each sinus drains into), and eight
+bone cards cover maxilla and mandible in full plus the six smaller facial
+bones. The importer gained a `cranium` scene that draws all fourteen skull
+bones together — braincase and face, one colour per bone, opening on the
+neurocranium card — so the whole skull turns and comes apart layer by layer.
+Curriculum leaf `anatomy.musculoskeletal.skull.viscerocranium`, which the skull
+topic already carried. The anatomy data is now 95 structures.
+
+## Cranial nerves (7 September 2026)
 ## Cranial nerves (7 September 2026)
 
 After the neurocranium, the coverage audit's top gap was the cranial nerves —

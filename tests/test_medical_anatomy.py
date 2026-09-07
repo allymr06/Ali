@@ -948,7 +948,7 @@ def test_every_scene_mapping_names_structures_the_data_knows() -> None:
 
     structures, _terms, _source = load_anatomy_data()
     known = {structure.structure_id for structure in structures}
-    assert set(SCENES) == {"upper_limb_right", "neurocranium"}
+    assert set(SCENES) == {"upper_limb_right", "neurocranium", "cranium"}
     for scene_id, scene in SCENES.items():
         mapping = scene["mapping"]
         assert set(scene["structure_ids"]) == set(mapping), scene_id
@@ -1077,3 +1077,61 @@ def test_cranial_nerve_fields_do_not_leak_into_peripheral_nerves() -> None:
     # simply be absent, not shown empty.
     assert "Kafatası çıkışı" not in labels and "Çekirdekler" not in labels and "Numara" not in labels
     assert labels[0] == "Köken"
+
+
+def test_the_viscerocranium_completes_the_skull() -> None:
+    """The facial skeleton: an overview whose tables carry the orbit walls and
+    the drainage of each paranasal sinus, plus a card per facial bone."""
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=None)
+
+    overview = lab.describe("viscerocranium")
+    assert overview is not None and overview["kind"] == "region"
+    assert "yüz" in overview["topic_path"].lower() or "viscerocranium" in overview["topic_path"].lower()
+    orbit = next(t for t in overview["tables"] if "orbita" in t["title"].lower())
+    assert [row[0] for row in orbit["rows"]][:2] == ["Tavan (paries superior)", "Taban (paries inferior)"]
+    sinuses = next(t for t in overview["tables"] if "sinüs" in t["title"].lower())
+    drain = {row[0]: row[2].lower() for row in sinuses["rows"]}
+    # The two facts students are always asked: the maxillary sinus drains to the
+    # middle meatus, the nasolacrimal duct to the inferior meatus.
+    assert "medius" in drain["Sinus maxillaris"]
+    assert "inferior" in drain["Ductus nasolacrimalis"]
+    assert "sphenoethmoidalis" in drain["Sinus sphenoidalis"]
+
+    facial = ["maxilla", "mandibula", "os_zygomaticum", "os_nasale", "os_lacrimale",
+              "os_palatinum", "concha_nasalis_inferior", "vomer"]
+    assert {r["structure_id"] for r in overview["relations"] if r["relation"] == "contains"} == set(facial)
+    for bone_id in facial:
+        card = lab.describe(bone_id)
+        assert card is not None and card["kind"] == "bone" and card["region"] == "head_neck", bone_id
+        assert card["landmarks"], bone_id
+        assert "Yüksek verim" in [s["label"] for s in card["sections"]], bone_id
+    # The whole skull is now cards: six braincase + eight facial bones.
+    bone_ids = {item["structure_id"] for region in lab.hierarchy() if region["region"] == "head_neck"
+                for kind in region["kinds"] if kind["kind"] == "bone" for item in kind["structures"]}
+    assert set(facial) <= bone_ids and len(bone_ids) == 14
+
+
+def test_the_full_cranium_scene_draws_braincase_and_face_together() -> None:
+    from scripts.import_bodyparts3d import CRANIUM, NEUROCRANIUM, VISCEROCRANIUM, SCENES, CRANIUM_PALETTE
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    known = {s.structure_id for s in structures}
+
+    assert set(CRANIUM) == set(NEUROCRANIUM) | set(VISCEROCRANIUM)
+    assert len(CRANIUM) == 14
+    scene = SCENES["cranium"]
+    assert set(scene["structure_ids"]) == set(CRANIUM)
+    assert scene["card"] == "neurocranium"
+    # Every bone is a card, every bone has a colour, and the whole skull is one side-agnostic scene.
+    unknown = [sid for sid in CRANIUM if sid not in known]
+    assert unknown == [], unknown
+    assert set(CRANIUM_PALETTE) == set(CRANIUM)
+    for fma_list in CRANIUM.values():
+        for fma, name, files in fma_list:
+            assert fma.startswith("FMA") and name and files

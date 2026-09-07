@@ -238,8 +238,13 @@ The lab shows a curated structure card (Latin name, parts, surfaces,
 borders, articulations, muscle and ligament attachments, landmarks,
 high-yield facts; for muscles origo/insertio/innervatio/functio; for joints
 type, surfaces, capsule, ligaments, movements with plane and axis), the
-relationship map, movement data and a deterministic landmark quiz. A quiz
-distractor is checked against the structure it is asked about: an option that is
+relationship map, movement data and a deterministic quiz. The quiz has two
+sources: landmarks to identify on a bone, and the curated tables — a region
+card such as the cranial-nerve overview or the skull base has no landmarks,
+but every table row is a fact, so it asks a nerve's exit or a foramen's bone
+with the other rows' values as distractors (short list-like cells only; a
+sentence-long cell is left out). A quiz distractor is checked against the
+structure it is asked about: an option that is
 also a true statement for that structure and that fact is never offered, so the
 student cannot be marked wrong for a correct answer.
 

@@ -18,6 +18,7 @@ from app.medical.anatomy import (
     MANIFEST_NAME,
     AnatomyAssetRegistry,
     AnatomyLab,
+    _distinct_distractors,
     parse_obj,
 )
 from app.medical.catalog import default_curriculum
@@ -88,6 +89,44 @@ def asked_field(structure: AnatomyStructure, item: dict) -> str:
     return asked[0]
 
 
+def table_quiz_pairs(structure: AnatomyStructure) -> list[tuple[str, str, str, list[str]]]:
+    """Every quizzable (header, subject, answer, column-pool) a card's tables
+    offer, mirroring ``_table_quiz``'s gates: a column keeps only its short
+    cells, and needs four short rows with four distinct answers."""
+    maximum = AnatomyLab._TABLE_CELL_MAX
+    out: list[tuple[str, str, str, list[str]]] = []
+    for table in AnatomyLab.tables(structure):
+        columns = table["columns"]
+        if len(columns) < 2:
+            continue
+        for col in range(1, len(columns)):
+            header = columns[col].strip()
+            if header.lower() in {"no", "numara"}:
+                continue
+            pairs = [
+                (row[0], row[col])
+                for row in table["rows"]
+                if col < len(row) and row[0].strip() and row[col].strip()
+                and len(row[0]) <= maximum and len(row[col]) <= maximum
+            ]
+            pool = [answer for _subject, answer in pairs]
+            if len(pairs) < 4 or len({normalize(answer) for answer in pool}) < 4:
+                continue
+            for subject, answer in pairs:
+                out.append((header, subject, answer, pool))
+    return out
+
+
+def table_capacity(structure: AnatomyStructure) -> int:
+    """How many table-recall questions the card can honestly ask: a pair counts
+    only when its column supplies two distinct distractors for the answer."""
+    return sum(
+        1
+        for _header, _subject, answer, pool in table_quiz_pairs(structure)
+        if len(_distinct_distractors(answer, [value for value in pool if value != answer])) >= 2
+    )
+
+
 def expected_item_count(structure: AnatomyStructure, count: int) -> int:
     """Every question the structure's data can carry, capped at ``count``.
 
@@ -99,7 +138,7 @@ def expected_item_count(structure: AnatomyStructure, count: int) -> int:
         facts = sum(1 for key, _label in FACT_QUIZ_FIELDS[structure.kind][2] if structure.facts.get(key))
     else:
         facts = 1 if structure.kind == "joint" and structure.facts.get("joint_type") else 0
-    return min(count, landmark_items + facts)
+    return min(count, landmark_items + table_capacity(structure) + facts)
 
 
 # ---------------------------------------------------------------------------
@@ -520,6 +559,7 @@ def test_no_option_but_the_key_is_a_true_answer_for_the_structure_it_asks_about(
     kinds_seen: set[str] = set()
     for structure in lab.all():
         latin = {landmark.landmark_id: landmark.latin for landmark in structure.landmarks}
+        table_pairs = table_quiz_pairs(structure)
         for seed in tuple(f"aq-{index}" for index in range(12)):
             items = lab.quiz(structure.structure_id, count=5, seed=seed)
             # Refusing an option must not cost a question: the guarantee is
@@ -539,6 +579,21 @@ def test_no_option_but_the_key_is_a_true_answer_for_the_structure_it_asks_about(
                 if item["kind"] == "landmark_identify":
                     assert answer == latin[item["landmark_id"]]
                     real = set(latin.values()) - {answer}  # real siblings of the same bone
+                elif item["kind"] == "table_recall":
+                    # The stem is "<subject> — <header> nedir?"; the answer is
+                    # that row's cell, and the honest alternatives are the other
+                    # rows' cells in the same column — all curated table data.
+                    body = item["stem"][: -len(" nedir?")]
+                    subject, header = body.rsplit(" — ", 1)
+                    assert answer == next(
+                        cell for cell_header, cell_subject, cell, _pool in table_pairs
+                        if cell_header == header and cell_subject == subject
+                    )
+                    real = {
+                        cell
+                        for cell_header, cell_subject, cell, _pool in table_pairs
+                        if cell_header == header and cell_subject != subject
+                    }
                 else:
                     field = asked_field(structure, item)
                     assert answer == str(structure.facts[field])  # the structure's own curated fact
@@ -556,7 +611,7 @@ def test_no_option_but_the_key_is_a_true_answer_for_the_structure_it_asks_about(
 
     assert invented == []  # every option is curated data, nothing is written for the quiz
     assert second_answers == []
-    assert kinds_seen == {"landmark_identify", "muscle_fact", "nerve_fact", "joint_type"}
+    assert kinds_seen == {"landmark_identify", "muscle_fact", "nerve_fact", "joint_type", "table_recall"}
     assert checked > 2000  # the whole catalogue, not a lucky sample
 
 
@@ -1135,3 +1190,61 @@ def test_the_full_cranium_scene_draws_braincase_and_face_together() -> None:
     for fma_list in CRANIUM.values():
         for fma, name, files in fma_list:
             assert fma.startswith("FMA") and name and files
+
+
+def test_a_region_card_is_quizzed_from_its_tables() -> None:
+    """The cranial-nerve overview has no landmarks, but its table rows are
+    facts: the quiz asks a nerve's exit, function or lesion with the other
+    nerves' values as distractors."""
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=None)
+
+    questions = lab.quiz("cranial_nerves", count=6, seed="t")
+    assert questions, "a table-only card must still produce a quiz"
+    assert all(q["kind"] == "table_recall" for q in questions)
+    for q in questions:
+        texts = [o["text"] for o in q["options"]]
+        assert len(texts) == len(set(texts)), "options must be distinct"
+        correct = next(o for o in q["options"] if o["key"] == q["correct_key"])
+        assert correct["text"] in texts and q["structure_id"] == "cranial_nerves"
+        # short, list-like answers only — never a sentence-long cell
+        assert all(len(t) <= 60 for t in texts), texts
+    # deterministic
+    assert lab.quiz("cranial_nerves", count=6, seed="t") == questions
+
+
+def test_the_skull_base_quiz_asks_the_bone_not_the_sentence() -> None:
+    """The foramen table's 'which bone' column is short and quizzable; its
+    'what passes through' column is a sentence and must never become an option."""
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=None)
+
+    questions = lab.quiz("neurocranium", count=8, seed="s")
+    assert questions and all(q["kind"] == "table_recall" for q in questions)
+    # No option is a long "geçen yapılar" sentence.
+    for q in questions:
+        assert all(len(o["text"]) <= 60 for o in q["options"])
+    # At least one question asks which bone carries a foramen.
+    assert any("kemik" in q["stem"].lower() for q in questions)
+
+
+def test_a_card_without_tables_or_landmarks_is_not_quizzed_from_thin_air() -> None:
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.models import AnatomyStructure
+    from app.medical.catalog import Curriculum
+
+    lab = AnatomyLab([], Curriculum(), assets_directory=None)
+    lonely = AnatomyStructure(
+        structure_id="x", canonical="X", kind="region", region="trunk", turkish="x", english="x",
+        facts={"tables": [{"title": "T", "columns": ["a", "b"], "rows": [["1", "2"], ["3", "4"]]}]},  # only 2 rows
+    )
+    lab._structures["x"] = lonely
+    assert lab.quiz("x", count=5) == [], "a two-row table cannot supply two distractors"

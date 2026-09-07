@@ -7826,6 +7826,328 @@
         ]
       },
       "relations": []
+    },
+    {
+      "structure_id": "vasa_membri_inferioris",
+      "canonical": "Vasa membri inferioris",
+      "kind": "region",
+      "region": "lower_limb",
+      "turkish": "Alt ekstremite damarları",
+      "english": "Vessels of the lower limb",
+      "synonyms": [
+        "alt ekstremite damarları",
+        "bacak damarları",
+        "vasa membri inferioris",
+        "lower limb vessels",
+        "alt uzuv damarları"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.lower_limb_nerves",
+      "facts": {
+        "location": "Bacağı besleyen ve boşaltan damarlar. Ana atardamar a. femoralis'tir (a. iliaca externa'nın lig. inguinale altındaki devamı); adductor kanalından geçip a. poplitea, sonra a. tibialis anterior ve posterior olur. Venler derin (arterlere eşlik eder) ve yüzeyel (v. saphena magna/parva) olarak ikiye ayrılır.",
+        "parts": [
+          "Arter hattı: a. iliaca externa → a. femoralis → a. poplitea → a. tibialis anterior + posterior → ayak",
+          "A. profunda femoris: uyluğun ana besleyicisi (aa. perforantes)",
+          "Yüzeyel venler: v. saphena magna (medial), v. saphena parva (arka-lateral)",
+          "Derin venler: v. femoralis, v. poplitea (arterlere eşlik eder)"
+        ],
+        "high_yield": [
+          "Trigonum femorale içeriği LATERALDEN MEDİALE (NAVEL): N. femoralis – Arteria femoralis – Vena femoralis – Empty space (canalis femoralis) – Lymphatics. Femoral kılıf yalnız arter+ven+kanalı sarar (sinir DIŞINDA).",
+          "V. saphena magna medial malleolus'un ÖNÜNDEN sabit geçer: acil venöz kesi (cutdown) ve koroner baypas grefti buradan alınır.",
+          "Nabız noktaları: a. femoralis mid-inguinal nokta, a. poplitea diz arkası (fossa poplitea, diz fleksiyonda), a. tibialis posterior medial malleolus arkası, a. dorsalis pedis ayak sırtı (1-2. metatars arası).",
+          "Femoral kanal (canalis femoralis) femoral fıtığın çıkış yolu; medialde lig. lacunare ile sınırlı, kadınlarda daha geniş."
+        ],
+        "study_notes": [
+          "Önce iki tabloyu ezberle: arter sırası (iliaca externa → dorsalis pedis) ve trigonum femorale içeriği (NAVEL). İkisi de klasik sorudur.",
+          "Arteri baştan sona tek çizgi gibi izle: her isim değişimi bir işaret noktasında olur (lig. inguinale, hiatus adductorius, m. popliteus alt kenarı, malleoller).",
+          "Yüzeyel-derin ven ayrımını varis ve DVT ile bağla: yüzeyel v. saphena magna varis, derin v. femoralis/poplitea tromboz (DVT) damarıdır."
+        ],
+        "tables": [
+          {
+            "title": "Ana arter hattı ve isim değişimleri",
+            "columns": [
+              "Arter",
+              "Nereden",
+              "Nerede biter / sonraki"
+            ],
+            "rows": [
+              [
+                "A. femoralis",
+                "A. iliaca externa (lig. inguinale altı)",
+                "Hiatus adductorius → a. poplitea"
+              ],
+              [
+                "A. profunda femoris",
+                "A. femoralis (uylukta)",
+                "Uyluğun ana besleyicisi; aa. perforantes"
+              ],
+              [
+                "A. poplitea",
+                "A. femoralis (hiatus adductorius)",
+                "M. popliteus alt kenarı → tibialis ant.+post."
+              ],
+              [
+                "A. tibialis anterior",
+                "A. poplitea",
+                "Ayak sırtında a. dorsalis pedis"
+              ],
+              [
+                "A. tibialis posterior",
+                "A. poplitea",
+                "Medial malleolus arkası → aa. plantares"
+              ]
+            ]
+          },
+          {
+            "title": "Trigonum femorale içeriği (lateral → medial: NAVEL)",
+            "columns": [
+              "Sıra",
+              "Yapı"
+            ],
+            "rows": [
+              [
+                "1 (en lateral)",
+                "N. femoralis (femoral kılıfın DIŞINDA)"
+              ],
+              [
+                "2",
+                "A. femoralis (femoral kılıfta)"
+              ],
+              [
+                "3",
+                "V. femoralis (femoral kılıfta)"
+              ],
+              [
+                "4",
+                "Canalis femoralis (boş; lenf + yağ) — femoral fıtık yolu"
+              ],
+              [
+                "5 (en medial)",
+                "Nodi lymphoidei inguinales profundi"
+              ]
+            ]
+          }
+        ]
+      },
+      "relations": [
+        {
+          "relation": "contains",
+          "target": "a_femoralis"
+        },
+        {
+          "relation": "contains",
+          "target": "a_poplitea"
+        },
+        {
+          "relation": "contains",
+          "target": "a_tibialis_anterior"
+        },
+        {
+          "relation": "contains",
+          "target": "a_tibialis_posterior"
+        },
+        {
+          "relation": "contains",
+          "target": "v_femoralis"
+        },
+        {
+          "relation": "contains",
+          "target": "v_saphena_magna"
+        }
+      ]
+    },
+    {
+      "structure_id": "a_femoralis",
+      "canonical": "Arteria femoralis",
+      "kind": "artery",
+      "region": "lower_limb",
+      "turkish": "Femoral arter",
+      "english": "Femoral artery",
+      "abbreviations": [],
+      "synonyms": [
+        "femoral arter",
+        "arteria femoralis",
+        "femoral artery",
+        "a. femoralis"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.lower_limb_nerves",
+      "facts": {
+        "origin": "A. iliaca externa'nın lig. inguinale altındaki devamı (mid-inguinal nokta).",
+        "course": "Trigonum femorale'de yüzeyel; sonra canalis adductorius'a (Hunter) girer, hiatus adductorius'tan geçip a. poplitea olur.",
+        "branches": [
+          "A. profunda femoris (uyluğun ana besleyicisi; a. circumflexa femoris medialis/lateralis, aa. perforantes)",
+          "A. epigastrica superficialis, a. circumflexa iliaca superficialis, aa. pudendae externae",
+          "A. descendens genus"
+        ],
+        "supply": "Alt ekstremitenin büyük bölümü (profunda femoris üzerinden uyluk, devamı üzerinden bacak-ayak).",
+        "relations": "Trigonum femorale'de v. femoralis'in lateralinde, n. femoralis'in medialinde; femoral kılıfın içindedir. Nabzı mid-inguinal noktada alınır; kateter girişi (anjiyografi) buradandır.",
+        "high_yield": [
+          "Perkütan koroner/periferik girişim ve anjiyografide standart giriş damarı (lig. inguinale ALTINDAN ponksiyon; üstü retroperitoneal kanama riski).",
+          "A. profunda femoris uyluğun asıl besleyicisidir; femoral tıkanmada kollateral yolu açar."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "a_poplitea",
+      "canonical": "Arteria poplitea",
+      "kind": "artery",
+      "region": "lower_limb",
+      "turkish": "Popliteal arter",
+      "english": "Popliteal artery",
+      "abbreviations": [],
+      "synonyms": [
+        "popliteal arter",
+        "arteria poplitea",
+        "popliteal artery",
+        "a. poplitea",
+        "diz arkası arteri"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.lower_limb_nerves",
+      "facts": {
+        "origin": "A. femoralis'in hiatus adductorius'tan sonraki devamı.",
+        "course": "Fossa poplitea'nın EN DERİN yapısı; m. popliteus'un alt kenarında a. tibialis anterior ve posterior olarak ikiye ayrılır.",
+        "branches": [
+          "Aa. genus (superior/media/inferior; genu çevresi anastomozu — rete articulare genus)",
+          "Uç dallar: a. tibialis anterior ve a. tibialis posterior"
+        ],
+        "supply": "Diz eklemi ve çevresi, bacak ve ayak (uç dallar üzerinden).",
+        "relations": "Fossa poplitea içinde en derinde (v. poplitea ve n. tibialis ondan yüzeyeldir). Diz arka çıkığında ve suprakondiler femur kırığında yaralanır.",
+        "high_yield": [
+          "Fossa poplitea'da yüzeyelden derine: n. tibialis → v. poplitea → a. poplitea (arter en derinde, kemiğe yakın).",
+          "Diz çıkığı/arka travmada popliteal arter yaralanması bacak iskemisi acilidir; nabız ve ABI bakılır.",
+          "Popliteal anevrizma en sık periferik anevrizmadır; pulsatil kitle olarak muayene edilir."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "a_tibialis_anterior",
+      "canonical": "Arteria tibialis anterior",
+      "kind": "artery",
+      "region": "lower_limb",
+      "turkish": "Ön tibial arter",
+      "english": "Anterior tibial artery",
+      "abbreviations": [],
+      "synonyms": [
+        "ön tibial arter",
+        "arteria tibialis anterior",
+        "anterior tibial artery",
+        "a. tibialis anterior"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.lower_limb_nerves",
+      "facts": {
+        "origin": "A. poplitea'nın uç dalı (m. popliteus alt kenarı).",
+        "course": "Membrana interossea'nın üstünden ön (ekstansör) loja geçer; ayak bileği önünde a. dorsalis pedis olarak devam eder.",
+        "branches": [
+          "Aa. recurrentes tibiales (diz anastomozu)",
+          "Aa. malleolares anteriores",
+          "Devamı: a. dorsalis pedis"
+        ],
+        "supply": "Bacağın ön (ekstansör) locası; ayak sırtı (a. dorsalis pedis).",
+        "relations": "Ön loja n. fibularis (peroneus) profundus ile birlikte iner (arterin lateralinde-önünde).",
+        "high_yield": [
+          "A. dorsalis pedis nabzı ayak sırtında, 1.-2. metatars arasında; periferik arter hastalığı muayenesinde bakılır.",
+          "Ön loj sendromu (kompartman) bu arter-siniri sıkıştırır: ayak dorsifleksiyon kaybı ve 1.-2. parmak arası duyu kaybı."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "a_tibialis_posterior",
+      "canonical": "Arteria tibialis posterior",
+      "kind": "artery",
+      "region": "lower_limb",
+      "turkish": "Arka tibial arter",
+      "english": "Posterior tibial artery",
+      "abbreviations": [],
+      "synonyms": [
+        "arka tibial arter",
+        "arteria tibialis posterior",
+        "posterior tibial artery",
+        "a. tibialis posterior"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.lower_limb_nerves",
+      "facts": {
+        "origin": "A. poplitea'nın uç dalı.",
+        "course": "Bacağın arka (fleksör) locasında iner; medial malleolus'un ARKASINDAN (canalis malleolaris) geçip aa. plantares medialis ve lateralis'e ayrılır.",
+        "branches": [
+          "A. fibularis (peronea) — arka lojun lateralini besler",
+          "Uç: a. plantaris medialis ve lateralis (arcus plantaris)"
+        ],
+        "supply": "Bacağın arka locası ve ayak tabanı.",
+        "relations": "Medial malleolus arkasında n. tibialis ile birlikte retinaculum musculorum flexorum altından geçer (Tom, Dick ANd Harry sırası).",
+        "high_yield": [
+          "Nabzı medial malleolus ile calcaneus arasında (canalis malleolaris) alınır; diyabetik ayak ve PAH muayenesinde şart.",
+          "Ayak tabanı arcus plantaris'i bu arterin uç dallarından oluşur (a. dorsalis pedis ile birleşir)."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "v_femoralis",
+      "canonical": "Vena femoralis",
+      "kind": "vein",
+      "region": "lower_limb",
+      "turkish": "Femoral ven",
+      "english": "Femoral vein",
+      "abbreviations": [],
+      "synonyms": [
+        "femoral ven",
+        "vena femoralis",
+        "femoral vein",
+        "v. femoralis"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.lower_limb_nerves",
+      "facts": {
+        "origin": "V. poplitea'nın canalis adductorius'tan sonraki devamı.",
+        "course": "Trigonum femorale'de a. femoralis'in medialinde çıkar; lig. inguinale altında v. iliaca externa olur.",
+        "tributaries": [
+          "V. saphena magna (hiatus saphenus'ta katılır)",
+          "V. profunda femoris",
+          "Vv. circumflexae femoris"
+        ],
+        "drains_into": "V. iliaca externa (lig. inguinale altında) → v. iliaca communis → v. cava inferior.",
+        "relations": "Femoral kılıfta, arterin medialinde; santral venöz erişim ve derin ven trombozunun (DVT) damarı.",
+        "high_yield": [
+          "Trigonum femorale'de arterin MEDİALİNDEDİR (NAVEL sırası); femoral venöz kateter arterin medialinden konur.",
+          "Alt ekstremite DVT'si en sık femoral-popliteal derin venlerde; pulmoner emboli kaynağıdır."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "v_saphena_magna",
+      "canonical": "Vena saphena magna",
+      "kind": "vein",
+      "region": "lower_limb",
+      "turkish": "Büyük safen ven",
+      "english": "Great saphenous vein",
+      "abbreviations": [],
+      "synonyms": [
+        "büyük safen ven",
+        "buyuk safen ven",
+        "vena saphena magna",
+        "great saphenous vein",
+        "v. saphena magna",
+        "gsv"
+      ],
+      "topic_id": "anatomy.musculoskeletal.lower_limb.lower_limb_nerves",
+      "facts": {
+        "origin": "Ayak sırtındaki arcus venosus dorsalis pedis'in medial ucundan.",
+        "course": "Medial malleolus'un ÖNÜNDEN (sabit) geçer, bacağın-uyluğun medialinde yüzeyel çıkar; hiatus saphenus'ta v. femoralis'e dökülür.",
+        "tributaries": [
+          "Bacak ve uyluğun medial yüzeyel venleri",
+          "Vv. superficiales (epigastrica, circumflexa iliaca, pudendae) — hiatus saphenus çevresinde"
+        ],
+        "drains_into": "V. femoralis (hiatus saphenus / saphenofemoral bileşke).",
+        "relations": "Vücudun en uzun venidir; medial malleolus önünde n. saphenus (n. femoralis dalı) ile komşudur (keside sinir zedelenebilir).",
+        "high_yield": [
+          "Medial malleolus önündeki sabit konumu acil venöz kesi (venous cutdown) için klasik noktadır.",
+          "Koroner ve periferik baypas greftinin ana kaynağıdır (ters çevrilerek).",
+          "Yüzeyel olduğundan varislerin ve safenofemoral yetmezliğin damarıdır; n. saphenus ile birlikte seyreder."
+        ]
+      },
+      "relations": []
     }
   ],
   "terms": [

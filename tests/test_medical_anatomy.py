@@ -1460,3 +1460,41 @@ def test_the_head_and_neck_vessels_carry_the_carotid_system() -> None:
     eca_card = lab.describe("a_carotis_externa")
     branch_section = next(s for s in eca_card["sections"] if s["label"] == "Dallar")
     assert len(branch_section["items"]) == 8
+
+
+def test_the_lower_limb_vessels_mirror_the_upper_limb() -> None:
+    """The femoral–popliteal–tibial arterial line and the deep/superficial
+    veins, with an overview whose tables carry the arterial sequence and the
+    femoral-triangle contents (NAVEL)."""
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=None)
+
+    overview = lab.describe("vasa_membri_inferioris")
+    assert overview is not None and overview["kind"] == "region" and overview["region"] == "lower_limb"
+    line = next(t for t in overview["tables"] if "arter" in t["title"].lower())
+    assert [row[0] for row in line["rows"]][0] == "A. femoralis"
+    triangle = next(t for t in overview["tables"] if "trigonum" in t["title"].lower())
+    # NAVEL, lateral to medial: nerve, artery, vein, empty canal, lymphatics.
+    order = [row[1].lower() for row in triangle["rows"]]
+    assert "n. femoralis" in order[0] and "a. femoralis" in order[1] and "v. femoralis" in order[2]
+
+    vessels = {"a_femoralis", "a_poplitea", "a_tibialis_anterior", "a_tibialis_posterior",
+               "v_femoralis", "v_saphena_magna"}
+    assert {r["structure_id"] for r in overview["relations"] if r["relation"] == "contains"} == vessels
+    for vid in vessels:
+        card = lab.describe(vid)
+        assert card is not None and card["kind"] in {"artery", "vein"} and card["region"] == "lower_limb", vid
+
+    # The two limbs now carry the same vascular shape: four arteries and two veins each.
+    def limb_vessels(region):
+        counts = {"artery": 0, "vein": 0}
+        for structure in structures:
+            if structure.region == region and structure.kind in counts:
+                counts[structure.kind] += 1
+        return counts
+    assert limb_vessels("lower_limb") == {"artery": 4, "vein": 2}
+    assert limb_vessels("upper_limb") == {"artery": 4, "vein": 2}

@@ -548,7 +548,10 @@ The Medical Academy regression coverage (`tests/test_medical_*.py`) includes:
   scene of ribs, sternum and spine, and the abdominal wall — the rectus-sheath
   and inguinal-canal tables and the four muscle cards, and the head-and-neck
   vessels — the external-carotid-branch and carotid-sheath tables and the
-  carotid, vertebral and jugular cards) (`test_medical_anatomy.py`);
+  carotid, vertebral and jugular cards, and the lower-limb vessels — the
+  arterial-line and femoral-triangle tables and the femoral/popliteal/tibial
+  and saphenous cards, with both limbs holding four arteries and two veins)
+  (`test_medical_anatomy.py`);
 - the academy facade, its four tools, the tutor's decisions and question
   generation against a fake model client;
 - the core engine's augmentation hook: prompt replacement, tool narrowing,

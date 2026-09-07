@@ -486,6 +486,16 @@ vertebral artery and the internal jugular vein. A new curriculum branch,
 anatomy.cardiovascular.head_neck_vessels, holds them; the cards are schematic
 (no 3D).
 
+### Lower-limb vessels
+
+The lower limb gains its vasculature to mirror the upper limb. An overview card
+(vasa_membri_inferioris) carries the arterial line (external iliac → femoral →
+popliteal → tibial) with each name change at its landmark and the
+femoral-triangle contents (NAVEL), with the pulse points and the great
+saphenous vein's landmark at the medial malleolus. Cards were added for the
+femoral, popliteal and anterior and posterior tibial arteries and the femoral
+and great saphenous veins.
+
 ### Cranial nerves
 
 The twelve cranial nerves have a section of their own, tied to the skull
@@ -562,9 +572,9 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
 - Peripheral nerves have no mesh in BodyParts3D 4.0, so nerve cards keep the
   schematic map, and pins derived from the shape stay marked approximate until
   someone who knows confirms them by hand.
-- The head and neck are complete (full skull, cranial nerves, joints and the
-  carotid system) and so is the trunk (vertebral column, thoracic cage,
-  abdominal wall); still missing are the
+- The head and neck are complete (skull, cranial nerves, joints, carotid
+  system), the trunk is complete (vertebral column, thoracic cage, abdominal
+  wall), and both limbs now carry vessels; still missing are the
   abdominal-wall muscles and the lower limb no vessels. The coverage audit in
   `docs/PROJECT_STATE.md` lists the gaps in priority order.
 - Image-based question *generation* needs an image whose provenance is known;

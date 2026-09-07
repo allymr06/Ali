@@ -4752,6 +4752,733 @@
           "target": "os_sphenoidale"
         }
       ]
+    },
+    {
+      "structure_id": "cranial_nerves",
+      "canonical": "Nervi craniales",
+      "kind": "region",
+      "region": "head_neck",
+      "turkish": "Kraniyal sinirler (12 çift)",
+      "english": "Cranial nerves (12 pairs)",
+      "synonyms": [
+        "kraniyal sinirler",
+        "kafa çiftleri",
+        "cranial nerves",
+        "kafa sinirleri",
+        "nervi craniales"
+      ],
+      "topic_id": "anatomy.neuroanatomy.cranial_nerves",
+      "facts": {
+        "location": "Beyin sapından (ve I-II için beyinden) çıkan, çoğu baş-boyunu innerve eden 12 çift sinir. Numara sırası kökenlerinin ön-arka dizilimiyle aynıdır: I-II ön beyin/ara beyin, III-IV mezensefalon, V-VIII pons, IX-XII bulbus (medulla oblongata).",
+        "parts": [
+          "Yalnız duyusal: I (koku), II (görme), VIII (işitme-denge)",
+          "Yalnız motor: III, IV, VI (göz), XI (boyun), XII (dil)",
+          "Karışık: V, VII, IX, X",
+          "Parasempatik taşıyanlar: III (pupilla/akomodasyon), VII (gözyaşı, tükürük), IX (parotis), X (torax-abdomen)"
+        ],
+        "high_yield": [
+          "'On İki Tembel Cin...' yerine işlevle öğren: duyusal/motor/karışık ayrımı (bkz. tablo) ve her sinirin kafatası çıkışı en sık sınav konusudur.",
+          "Pupilla ışık refleksi: afferent II, efferent III. Kornea refleksi: afferent V1, efferent VII. Kusma refleksi: afferent IX, efferent X.",
+          "Parasempatik ganglionlar: III→ciliare, VII→pterygopalatinum ve submandibulare, IX→oticum."
+        ],
+        "study_notes": [
+          "Önce bu genel bakış tablosunu ezberle: sinir → tip → kafatası çıkışı → ana işlev → lezyon. Her satır bir kartın özetidir.",
+          "Çıkışları nörokranyum kartındaki 'Delikler ve içinden geçenler' tablosuyla eşleştir: aynı delikler iki yerde de var; sinir kartından çıkışa, taban kartından deliğe bakabilirsin.",
+          "Beyin sapı seviyesini çekirdeklerle bağla: III-IV mezensefalon, V-VI-VII-VIII pons, IX-X-XI-XII bulbus. Bir seviyedeki inme o seviyenin sinirlerini birlikte tutar.",
+          "Muayeneyi sinirle eşle: her kartın 'Muayene' satırı klinikte nasıl test edildiğini söyler; pratikte bunlar sorulur."
+        ],
+        "tables": [
+          {
+            "title": "On iki kraniyal sinir · genel bakış",
+            "columns": [
+              "Sinir",
+              "No",
+              "Tip",
+              "Kafatası çıkışı",
+              "Ana işlev",
+              "Lezyon belirtisi"
+            ],
+            "rows": [
+              [
+                "N. olfactorius",
+                "I",
+                "Duyusal",
+                "Lamina cribrosa (foramina cribrosa)",
+                "Koku",
+                "Anozmi"
+              ],
+              [
+                "N. opticus",
+                "II",
+                "Duyusal",
+                "Canalis opticus",
+                "Görme",
+                "Görme kaybı, afferent pupil defekti"
+              ],
+              [
+                "N. oculomotorius",
+                "III",
+                "Motor + parasempatik",
+                "Fissura orbitalis superior",
+                "Göz kaslarının çoğu, üst göz kapağı, pupilla daralması, akomodasyon",
+                "Pitozis, 'aşağı-dışa' göz, midriyazis"
+              ],
+              [
+                "N. trochlearis",
+                "IV",
+                "Motor",
+                "Fissura orbitalis superior",
+                "M. obliquus superior (aşağı-içe bakış)",
+                "Merdiven inerken çift görme, baş karşı tarafa eğik"
+              ],
+              [
+                "N. trigeminus",
+                "V",
+                "Karışık",
+                "V1 fissura orbitalis superior · V2 foramen rotundum · V3 foramen ovale",
+                "Yüz duyusu; çiğneme kasları (V3)",
+                "Yüzde his kaybı, çene yaralı tarafa kayar, kornea refleksi (afferent)"
+              ],
+              [
+                "N. abducens",
+                "VI",
+                "Motor",
+                "Fissura orbitalis superior",
+                "M. rectus lateralis (dışa bakış)",
+                "İçe şaşılık, dışa bakış kaybı, yatay çift görme"
+              ],
+              [
+                "N. facialis",
+                "VII",
+                "Karışık",
+                "Meatus acusticus internus → foramen stylomastoideum",
+                "Mimik kasları; gözyaşı-tükürük; dilin ön 2/3 tadı",
+                "Periferik fasiyal paralizi (alın dahil), hiperakuzi, tat kaybı"
+              ],
+              [
+                "N. vestibulocochlearis",
+                "VIII",
+                "Duyusal",
+                "Meatus acusticus internus",
+                "İşitme ve denge",
+                "İşitme kaybı, tinnitus, vertigo"
+              ],
+              [
+                "N. glossopharyngeus",
+                "IX",
+                "Karışık",
+                "Foramen jugulare",
+                "Farinks duyusu, dilin arka 1/3 tadı, parotis, sinus caroticus",
+                "Yutma güçlüğü, kusma refleksi kaybı (afferent)"
+              ],
+              [
+                "N. vagus",
+                "X",
+                "Karışık",
+                "Foramen jugulare",
+                "Farinks-larinks kasları, torax-abdomen parasempatiği",
+                "Ses kısıklığı, disfaji, uvula sağlam tarafa kayar"
+              ],
+              [
+                "N. accessorius",
+                "XI",
+                "Motor",
+                "Foramen jugulare (çıkış)",
+                "M. sternocleidomastoideus, m. trapezius",
+                "Omuz silkme ve başı karşı tarafa çevirme zayıflığı"
+              ],
+              [
+                "N. hypoglossus",
+                "XII",
+                "Motor",
+                "Canalis nervi hypoglossi",
+                "Dil kasları (palatoglossus hariç)",
+                "Dil çıkarınca yaralı tarafa kayar, atrofi"
+              ]
+            ]
+          }
+        ]
+      },
+      "relations": [
+        {
+          "relation": "contains",
+          "target": "cn_i_olfactorius"
+        },
+        {
+          "relation": "contains",
+          "target": "cn_ii_opticus"
+        },
+        {
+          "relation": "contains",
+          "target": "cn_iii_oculomotorius"
+        },
+        {
+          "relation": "contains",
+          "target": "cn_iv_trochlearis"
+        },
+        {
+          "relation": "contains",
+          "target": "cn_v_trigeminus"
+        },
+        {
+          "relation": "contains",
+          "target": "cn_vi_abducens"
+        },
+        {
+          "relation": "contains",
+          "target": "cn_vii_facialis"
+        },
+        {
+          "relation": "contains",
+          "target": "cn_viii_vestibulocochlearis"
+        },
+        {
+          "relation": "contains",
+          "target": "cn_ix_glossopharyngeus"
+        },
+        {
+          "relation": "contains",
+          "target": "cn_x_vagus"
+        },
+        {
+          "relation": "contains",
+          "target": "cn_xi_accessorius"
+        },
+        {
+          "relation": "contains",
+          "target": "cn_xii_hypoglossus"
+        }
+      ]
+    },
+    {
+      "structure_id": "cn_i_olfactorius",
+      "canonical": "Nervus olfactorius (CN I)",
+      "kind": "nerve",
+      "region": "head_neck",
+      "turkish": "Koku siniri",
+      "english": "Olfactory nerve",
+      "abbreviations": [
+        "CN I",
+        "n. olfactorius"
+      ],
+      "synonyms": [
+        "koku siniri",
+        "olfactory nerve",
+        "birinci kraniyal sinir",
+        "cn 1",
+        "olfactorius"
+      ],
+      "topic_id": "anatomy.neuroanatomy.cranial_nerves",
+      "facts": {
+        "number": "I",
+        "type": "Özel duyusal (koku)",
+        "components": [
+          "SVA (özel visseral afferent): koku"
+        ],
+        "nucleus": [
+          "Beyin sapında çekirdeği yoktur; birinci nöronlar burun mukozasında, bulbus olfactorius'ta sinaps yapar"
+        ],
+        "foramen": [
+          "Lamina cribrosa ossis ethmoidalis'in delikleri (foramina cribrosa)"
+        ],
+        "course": "Regio olfactoria mukozasındaki reseptör hücrelerin aksonları (fila olfactoria) lamina cribrosa'dan geçip bulbus olfactorius'a girer; tractus olfactorius ile ilerler.",
+        "sensory": "Koku (yalnızca üst burun boşluğu, regio olfactoria).",
+        "examination": "Her burun deliği ayrı ayrı, tanıdık ve tahriş etmeyen kokuyla (kahve, vanilya) test edilir; amonyak gibi tahriş ediciler V ile karışır.",
+        "high_yield": [
+          "Tek doğrudan ön beyin uzantısı olan sinir; asıl 'sinir' burun ile bulbus arası fila olfactoria'dır.",
+          "Lamina cribrosa kırığı → anozmi + BOS rinoresi; kafa travmasında koku kaybı sık."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "cn_ii_opticus",
+      "canonical": "Nervus opticus (CN II)",
+      "kind": "nerve",
+      "region": "head_neck",
+      "turkish": "Görme siniri",
+      "english": "Optic nerve",
+      "abbreviations": [
+        "CN II",
+        "n. opticus"
+      ],
+      "synonyms": [
+        "görme siniri",
+        "optik sinir",
+        "optic nerve",
+        "cn 2",
+        "opticus"
+      ],
+      "topic_id": "anatomy.neuroanatomy.cranial_nerves",
+      "facts": {
+        "number": "II",
+        "type": "Özel duyusal (görme)",
+        "components": [
+          "SSA (özel somatik afferent): görme"
+        ],
+        "nucleus": [
+          "Retina ganglion hücreleri; lifler corpus geniculatum laterale'de sinaps yapar (asıl 'çekirdek' talamik)"
+        ],
+        "foramen": [
+          "Canalis opticus (a. ophthalmica ile birlikte)"
+        ],
+        "course": "Retina → canalis opticus → chiasma opticum (nazal lifler çaprazlar) → tractus opticus → corpus geniculatum laterale → radiatio optica → korteks (calcarina).",
+        "sensory": "Görme. Işık refleksinin afferent kolu (efferent: III).",
+        "examination": "Görme keskinliği (Snellen), görme alanı (konfrontasyon), renk, fundoskopi ve pupilla ışık refleksi (afferent).",
+        "high_yield": [
+          "Merkezi sinir sistemi uzantısıdır: meninkslerle sarılı, oligodendrosit miyelinli; bu yüzden gerçek anlamda rejenere olmaz ve papilödem burada görülür.",
+          "Lezyon yeri alanı belirler: sinir → tek göz körlüğü; chiasma → bitemporal hemianopi; traktus → homonim hemianopi."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "cn_iii_oculomotorius",
+      "canonical": "Nervus oculomotorius (CN III)",
+      "kind": "nerve",
+      "region": "head_neck",
+      "turkish": "Göz hareket siniri",
+      "english": "Oculomotor nerve",
+      "abbreviations": [
+        "CN III",
+        "n. oculomotorius"
+      ],
+      "synonyms": [
+        "okülomotor sinir",
+        "göz hareket siniri",
+        "oculomotor nerve",
+        "cn 3",
+        "oculomotorius"
+      ],
+      "topic_id": "anatomy.neuroanatomy.cranial_nerves",
+      "facts": {
+        "number": "III",
+        "type": "Motor + parasempatik",
+        "components": [
+          "GSE (genel somatik efferent): dış göz kasları",
+          "GVE (genel visseral efferent, parasempatik): iç göz kasları"
+        ],
+        "nucleus": [
+          "Nucleus nervi oculomotorii (mezensefalon, colliculus superior düzeyi)",
+          "Nucleus accessorius (Edinger-Westphal): parasempatik"
+        ],
+        "foramen": [
+          "Fissura orbitalis superior (anulus tendineus'un içinden)"
+        ],
+        "course": "Mezensefalondan fossa interpeduncularis'ten çıkar, sinus cavernosus'un yan duvarında ilerler, fissura orbitalis superior'dan orbitaya girer; üst ve alt dala ayrılır.",
+        "motor": "M. levator palpebrae superioris, m. rectus superior, medialis, inferior, m. obliquus inferior.",
+        "parasympathetic": "Ganglion ciliare'de sinaps → m. sphincter pupillae (pupilla daralması) ve m. ciliaris (akomodasyon).",
+        "examination": "Göz kapağı düzeyi (pitozis), göz hareketleri (yukarı-aşağı-içe), pupilla ışık ve akomodasyon refleksi.",
+        "high_yield": [
+          "Tam felç: pitozis, göz 'aşağı ve dışa' (VI ve IV karşısız), midriyazis (dilate) ve ışık refleksi kaybı.",
+          "Parasempatik lifler sinirin dışında (yüzeyel) seyreder: bası (uncus herniasyonu, anevrizma) önce pupillayı büyütür; iskemi (diyabet) pupillayı korur ('pupilla-koruyan')."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "cn_iv_trochlearis",
+      "canonical": "Nervus trochlearis (CN IV)",
+      "kind": "nerve",
+      "region": "head_neck",
+      "turkish": "Makara siniri",
+      "english": "Trochlear nerve",
+      "abbreviations": [
+        "CN IV",
+        "n. trochlearis"
+      ],
+      "synonyms": [
+        "troklear sinir",
+        "makara siniri",
+        "trochlear nerve",
+        "cn 4",
+        "trochlearis"
+      ],
+      "topic_id": "anatomy.neuroanatomy.cranial_nerves",
+      "facts": {
+        "number": "IV",
+        "type": "Motor",
+        "components": [
+          "GSE: tek bir dış göz kası (m. obliquus superior)"
+        ],
+        "nucleus": [
+          "Nucleus nervi trochlearis (mezensefalon, colliculus inferior düzeyi)"
+        ],
+        "foramen": [
+          "Fissura orbitalis superior (anulus tendineus'un dışında)"
+        ],
+        "course": "Beyin sapından ARKADAN çıkan tek kraniyal sinir; hemen çaprazlaşır (karşı kası innerve eder), sinus cavernosus yan duvarında ilerler, fissura orbitalis superior'dan girer.",
+        "motor": "M. obliquus superior (gözü aşağı ve içe/intorsiyon).",
+        "examination": "Göz addükte iken aşağı bakış; hasta karşı omuza baş eğerek çift görmeyi telafi eder.",
+        "high_yield": [
+          "En ince ve en uzun intrakraniyal seyri olan sinir; kafa travmasında sık zedelenir.",
+          "Felç: merdiven inerken/okurken dikey çift görme, baş sağlam tarafa eğik (Bielschowsky)."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "cn_v_trigeminus",
+      "canonical": "Nervus trigeminus (CN V)",
+      "kind": "nerve",
+      "region": "head_neck",
+      "turkish": "Üçüz sinir",
+      "english": "Trigeminal nerve",
+      "abbreviations": [
+        "CN V",
+        "n. trigeminus"
+      ],
+      "synonyms": [
+        "trigeminal sinir",
+        "üçüz sinir",
+        "trigeminal nerve",
+        "cn 5",
+        "trigeminus",
+        "v1",
+        "v2",
+        "v3"
+      ],
+      "topic_id": "anatomy.neuroanatomy.cranial_nerves",
+      "facts": {
+        "number": "V",
+        "type": "Karışık (büyük duyusal + küçük motor)",
+        "components": [
+          "GSA: yüz, ağız-burun mukozası, dişler, dura duyusu",
+          "SVE (branchial motor): çiğneme kasları (V3)"
+        ],
+        "nucleus": [
+          "Nucleus mesencephalicus (proprioseption)",
+          "Nucleus pontinus (principalis, dokunma)",
+          "Nucleus spinalis (ağrı-ısı)",
+          "Nucleus motorius (pons)"
+        ],
+        "foramen": [
+          "V1 (ophthalmicus): fissura orbitalis superior",
+          "V2 (maxillaris): foramen rotundum",
+          "V3 (mandibularis): foramen ovale"
+        ],
+        "course": "Ponstan iki kökle çıkar; ganglion trigeminale (Gasser) cavum trigeminale'de (Meckel) yer alır; buradan üç dal ayrılır. Motor kök yalnız V3'e katılır.",
+        "motor": "Mm. masticatorii (temporalis, masseter, pterygoideus medialis/lateralis), m. tensor tympani, m. tensor veli palatini, m. mylohyoideus, digastric'in ön karnı.",
+        "sensory": "V1 alın-korne-burun sırtı; V2 orta yüz-üst çene-üst dişler; V3 alt çene-alt dişler, dilin ön 2/3 genel duyusu (tat değil).",
+        "examination": "Üç bölgede iğne/dokunma duyusu, kornea refleksi (afferent V1), çene açma-kapama ve çiğneme kası gücü.",
+        "high_yield": [
+          "Kornea refleksinin afferenti V1'dir (efferent VII); refleks kaybı erken uyarıdır.",
+          "V3 motor felcinde çene açılırken YARALI tarafa kayar (m. pterygoideus lateralis).",
+          "Trigeminal nevralji: V2/V3 yayılımında saniyeler süren şimşek tarzı ağrı."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "cn_vi_abducens",
+      "canonical": "Nervus abducens (CN VI)",
+      "kind": "nerve",
+      "region": "head_neck",
+      "turkish": "Uzaklaştırıcı göz siniri",
+      "english": "Abducens nerve",
+      "abbreviations": [
+        "CN VI",
+        "n. abducens"
+      ],
+      "synonyms": [
+        "abdusens sinir",
+        "abducens nerve",
+        "cn 6",
+        "abducens"
+      ],
+      "topic_id": "anatomy.neuroanatomy.cranial_nerves",
+      "facts": {
+        "number": "VI",
+        "type": "Motor",
+        "components": [
+          "GSE: tek bir dış göz kası (m. rectus lateralis)"
+        ],
+        "nucleus": [
+          "Nucleus nervi abducentis (pons, colliculus facialis'in altında)"
+        ],
+        "foramen": [
+          "Fissura orbitalis superior (anulus tendineus içinden)"
+        ],
+        "course": "Pons-bulbus sınırından çıkar, clivus boyunca uzun bir yol alır, Dorello kanalından geçip sinus cavernosus'un İÇİNDEN (a. carotis interna komşuluğunda) ilerler, fissura orbitalis superior'dan girer.",
+        "motor": "M. rectus lateralis (gözü dışa/abduksiyon).",
+        "examination": "Yana (dışa) bakış; içe şaşılık ve yatay çift görme aranır.",
+        "high_yield": [
+          "Uzun intrakraniyal seyri nedeniyle kafa içi basınç artışında ilk etkilenen sinirdir ('yanlış lokalize edici' bulgu).",
+          "Sinus cavernosus içinde tek serbest seyreden sinir olduğundan buradaki patolojilerde erken tutulur."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "cn_vii_facialis",
+      "canonical": "Nervus facialis (CN VII)",
+      "kind": "nerve",
+      "region": "head_neck",
+      "turkish": "Yüz siniri",
+      "english": "Facial nerve",
+      "abbreviations": [
+        "CN VII",
+        "n. facialis"
+      ],
+      "synonyms": [
+        "fasiyal sinir",
+        "yüz siniri",
+        "facial nerve",
+        "cn 7",
+        "facialis"
+      ],
+      "topic_id": "anatomy.neuroanatomy.cranial_nerves",
+      "facts": {
+        "number": "VII",
+        "type": "Karışık (motor + parasempatik + özel duyusal)",
+        "components": [
+          "SVE: mimik kasları",
+          "GVE (parasempatik): gözyaşı ve tükürük bezleri",
+          "SVA: dilin ön 2/3 tadı",
+          "GSA: kulak kepçesi bir bölge duyusu"
+        ],
+        "nucleus": [
+          "Nucleus motorius nervi facialis (pons)",
+          "Nucleus salivatorius superior (parasempatik)",
+          "Nucleus tractus solitarii (tat)"
+        ],
+        "foramen": [
+          "Meatus acusticus internus → canalis nervi facialis → foramen stylomastoideum"
+        ],
+        "course": "Pons-bulbus sınırından (VIII ile) çıkar, meatus acusticus internus'a girer, canalis facialis'te ganglion geniculi'de dirsek yapar; foramen stylomastoideum'dan çıkıp gl. parotidea içinde dallanır. Dallar: n. petrosus major, n. stapedius, chorda tympani.",
+        "motor": "Mimik kasları, m. stapedius, m. stylohyoideus, digastric'in arka karnı, platysma.",
+        "parasympathetic": "N. petrosus major → ganglion pterygopalatinum → gl. lacrimalis ve burun-damak bezleri; chorda tympani → ganglion submandibulare → gl. submandibularis ve sublingualis.",
+        "sensory": "Chorda tympani ile dilin ön 2/3 tadı.",
+        "examination": "Alın kırıştırma, göz sıkma, diş gösterme; tat (ön 2/3), gözyaşı, hiperakuzi sorgusu.",
+        "high_yield": [
+          "Periferik (nükleer/infranükleer) felç TÜM yarı yüzü tutar; santral (üst motor nöron) felç alnı korur çünkü üst yüz iki taraflı innerve edilir.",
+          "Bell paralizisi: ani periferik VII felci; lezyon düzeyine göre tat kaybı, hiperakuzi (stapedius), gözyaşı azalması eklenebilir.",
+          "Kornea refleksinin efferenti VII'dir (afferent V1)."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "cn_viii_vestibulocochlearis",
+      "canonical": "Nervus vestibulocochlearis (CN VIII)",
+      "kind": "nerve",
+      "region": "head_neck",
+      "turkish": "İşitme-denge siniri",
+      "english": "Vestibulocochlear nerve",
+      "abbreviations": [
+        "CN VIII",
+        "n. vestibulocochlearis"
+      ],
+      "synonyms": [
+        "vestibulokoklear sinir",
+        "işitme siniri",
+        "denge siniri",
+        "vestibulocochlear nerve",
+        "cn 8",
+        "vestibulocochlearis"
+      ],
+      "topic_id": "anatomy.neuroanatomy.cranial_nerves",
+      "facts": {
+        "number": "VIII",
+        "type": "Özel duyusal (işitme ve denge)",
+        "components": [
+          "SSA: işitme (koklear) ve denge (vestibüler)"
+        ],
+        "nucleus": [
+          "Nuclei cochleares (işitme)",
+          "Nuclei vestibulares (denge) — pons-bulbus sınırı"
+        ],
+        "foramen": [
+          "Meatus acusticus internus (VII ve a. labyrinthi ile)"
+        ],
+        "course": "İç kulaktaki ganglion spirale (koklear) ve ganglion vestibulare (Scarpa) nöronlarından; meatus acusticus internus'tan geçip pons-bulbus sınırında (serebellopontin köşe) beyin sapına girer.",
+        "sensory": "Koklear: işitme. Vestibüler: baş pozisyonu ve hareketi (denge).",
+        "examination": "İşitme (fısıltı, Rinne-Weber diyapazon testleri), denge/nistagmus, baş itme testi.",
+        "high_yield": [
+          "Serebellopontin köşe tümörü (vestibüler schwannom/akustik nörinom): ilerleyici tek taraflı işitme kaybı, tinnitus, sonra V ve VII tutulumu.",
+          "İletim tipi kayıp (dış/orta kulak) vs sensorinöral kayıp (VIII/koklea) ayrımı Rinne-Weber ile yapılır."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "cn_ix_glossopharyngeus",
+      "canonical": "Nervus glossopharyngeus (CN IX)",
+      "kind": "nerve",
+      "region": "head_neck",
+      "turkish": "Dil-yutak siniri",
+      "english": "Glossopharyngeal nerve",
+      "abbreviations": [
+        "CN IX",
+        "n. glossopharyngeus"
+      ],
+      "synonyms": [
+        "glossofaringeal sinir",
+        "dil yutak siniri",
+        "glossopharyngeal nerve",
+        "cn 9",
+        "glossopharyngeus"
+      ],
+      "topic_id": "anatomy.neuroanatomy.cranial_nerves",
+      "facts": {
+        "number": "IX",
+        "type": "Karışık",
+        "components": [
+          "SVE: tek kas (m. stylopharyngeus)",
+          "GVE (parasempatik): gl. parotidea",
+          "SVA: dilin arka 1/3 tadı",
+          "GVA/GSA: farinks, tonsil, dilin arka 1/3 genel duyusu, sinus ve glomus caroticum"
+        ],
+        "nucleus": [
+          "Nucleus ambiguus (motor)",
+          "Nucleus salivatorius inferior (parasempatik)",
+          "Nucleus tractus solitarii (tat + visseral duyu)"
+        ],
+        "foramen": [
+          "Foramen jugulare"
+        ],
+        "course": "Bulbustan çıkar, foramen jugulare'den geçer (ganglion superius ve inferius), m. stylopharyngeus boyunca farinks ve dil köküne ulaşır; n. tympanicus (Jacobson) → n. petrosus minor parotise gider.",
+        "motor": "M. stylopharyngeus (farinksi kaldırır).",
+        "parasympathetic": "N. petrosus minor → ganglion oticum → gl. parotidea.",
+        "sensory": "Dilin arka 1/3 tadı ve genel duyusu, farinks-tonsil-orta kulak duyusu, sinus caroticus (baroreseptör) ve glomus caroticum (kemoreseptör).",
+        "examination": "Kusma (öğürme) refleksinin afferent kolu; tat (arka 1/3); yumuşak damak IX+X birlikte değerlendirilir.",
+        "high_yield": [
+          "Kusma refleksi: afferent IX, efferent X. Sinus caroticus refleksinin afferenti IX'dur (kan basıncı).",
+          "İzole IX felci nadirdir; genelde X ve XI ile birlikte (foramen jugulare sendromu) tutulur."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "cn_x_vagus",
+      "canonical": "Nervus vagus (CN X)",
+      "kind": "nerve",
+      "region": "head_neck",
+      "turkish": "Vagus siniri",
+      "english": "Vagus nerve",
+      "abbreviations": [
+        "CN X",
+        "n. vagus"
+      ],
+      "synonyms": [
+        "vagus siniri",
+        "vagus nerve",
+        "cn 10",
+        "vagus",
+        "pnömogastrik"
+      ],
+      "topic_id": "anatomy.neuroanatomy.cranial_nerves",
+      "facts": {
+        "number": "X",
+        "type": "Karışık (en geniş dağılım)",
+        "components": [
+          "SVE: farinks-larinks kasları",
+          "GVE (parasempatik): torax ve abdomen organları",
+          "SVA: epiglottis tadı",
+          "GVA/GSA: larinks-farinks, dış kulak yolu, iç organ duyusu"
+        ],
+        "nucleus": [
+          "Nucleus ambiguus (motor)",
+          "Nucleus dorsalis nervi vagi (parasempatik)",
+          "Nucleus tractus solitarii (visseral duyu-tat)"
+        ],
+        "foramen": [
+          "Foramen jugulare"
+        ],
+        "course": "Bulbustan çıkar, foramen jugulare'den geçer (ganglion superius/inferius), carotis kılıfı içinde boyundan toraksa iner; n. laryngeus recurrens ve superior larinksi, dallar kalp-akciğer-GİS'i (kolonun sol fleksurasına kadar) innerve eder.",
+        "motor": "Yumuşak damak (m. levator veli palatini), farinks konstriktörleri, larinks kasları (recurrens).",
+        "parasympathetic": "Kalp (hız yavaşlatma), bronşlar, mide-bağırsak (sol kolik fleksuraya kadar) sekresyon ve motilite.",
+        "sensory": "Larinks-farinks duyusu, dış kulak yolu bir bölümü, torako-abdominal visseral duyu.",
+        "examination": "'Aaa' dedirtince yumuşak damak simetrisi (uvula sağlam tarafa kayar), ses kalitesi, kusma refleksinin efferent kolu.",
+        "high_yield": [
+          "Tek taraflı felç: uvula SAĞLAM tarafa kayar, ses kısıklığı (recurrens), disfaji.",
+          "N. laryngeus recurrens solda arcus aortae, sağda a. subclavia altından döner; tiroid cerrahisi ve mediasten patolojilerinde risk altındadır."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "cn_xi_accessorius",
+      "canonical": "Nervus accessorius (CN XI)",
+      "kind": "nerve",
+      "region": "head_neck",
+      "turkish": "Yardımcı sinir",
+      "english": "Accessory nerve",
+      "abbreviations": [
+        "CN XI",
+        "n. accessorius"
+      ],
+      "synonyms": [
+        "aksesuar sinir",
+        "yardımcı sinir",
+        "accessory nerve",
+        "cn 11",
+        "accessorius",
+        "spinal aksesuar"
+      ],
+      "topic_id": "anatomy.neuroanatomy.cranial_nerves",
+      "facts": {
+        "number": "XI",
+        "type": "Motor",
+        "components": [
+          "SVE/GSE: iki boyun kası"
+        ],
+        "nucleus": [
+          "Nucleus spinalis nervi accessorii (medulla spinalis C1-C5/6 ön boynuz)"
+        ],
+        "foramen": [
+          "Radices spinales foramen magnum'dan girer; sinir foramen jugulare'den çıkar"
+        ],
+        "course": "Omurilik köklerinden çıkan lifler foramen magnum'dan kafaya girer, foramen jugulare'den çıkar; m. sternocleidomastoideus'u geçip trigonum cervicale posterius'ta yüzeyel seyreder (yaralanmaya açık).",
+        "motor": "M. sternocleidomastoideus (başı KARŞI tarafa çevirir) ve m. trapezius (üst lifler: omuz kaldırma).",
+        "examination": "Omuz silkme (trapezius) ve başı dirence karşı yana çevirme (SKM) gücü.",
+        "high_yield": [
+          "Boyun arka üçgeninde yüzeyel olduğundan lenf nodu biyopsisi/travmada zedelenir: omuz düşüklüğü, kanat scapula, omuz kaldırma zayıflığı.",
+          "SKM başı karşı tarafa çevirdiğinden, felçte hasta yaralı tarafa dönmekte zorlanır."
+        ]
+      },
+      "relations": []
+    },
+    {
+      "structure_id": "cn_xii_hypoglossus",
+      "canonical": "Nervus hypoglossus (CN XII)",
+      "kind": "nerve",
+      "region": "head_neck",
+      "turkish": "Dil altı siniri",
+      "english": "Hypoglossal nerve",
+      "abbreviations": [
+        "CN XII",
+        "n. hypoglossus"
+      ],
+      "synonyms": [
+        "hipoglossal sinir",
+        "dil altı siniri",
+        "hypoglossal nerve",
+        "cn 12",
+        "hypoglossus"
+      ],
+      "topic_id": "anatomy.neuroanatomy.cranial_nerves",
+      "facts": {
+        "number": "XII",
+        "type": "Motor",
+        "components": [
+          "GSE: dil kasları"
+        ],
+        "nucleus": [
+          "Nucleus nervi hypoglossi (bulbus, orta hatta, tabanda)"
+        ],
+        "foramen": [
+          "Canalis nervi hypoglossi (os occipitale)"
+        ],
+        "course": "Bulbustan (piramit ile oliva arası oluk) çıkar, canalis nervi hypoglossi'den geçer, a. carotis ve v. jugularis arasından dile ulaşır.",
+        "motor": "Dilin tüm iç ve dış kasları (m. genioglossus, hyoglossus, styloglossus; palatoglossus HARİÇ — o X'tir).",
+        "examination": "Dili öne çıkarttırma (deviasyon), atrofi ve fasikülasyon; dili yanağa itme gücü.",
+        "high_yield": [
+          "Tek taraflı çekirdek/periferik felç: dil çıkarınca YARALI tarafa kayar (sağlam m. genioglossus iter), atrofi ve fasikülasyon.",
+          "Üst motor nöron lezyonunda dil KARŞI tarafa kayar ve atrofi olmaz — ayrım budur."
+        ]
+      },
+      "relations": []
     }
   ],
   "terms": [

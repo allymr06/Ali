@@ -531,7 +531,10 @@ The Medical Academy regression coverage (`tests/test_medical_*.py`) includes:
   table shape, every importer scene's mapping against the curated data, the
   skull rules on a synthetic bone (foramen magnum low and midline, crista
   galli high, no pin for a hole), and a scene's card, palette and note with
-  the malformed colours dropped (`test_medical_anatomy.py`);
+  the malformed colours dropped, the twelve cranial nerves (an overview
+  table of the right shape, a card each with its skull exit and lesion, the
+  exits agreeing with the neurocranium foramen table, and the cranial-nerve
+  fields staying off the limb nerve cards) (`test_medical_anatomy.py`);
 - the academy facade, its four tools, the tutor's decisions and question
   generation against a fake model client;
 - the core engine's augmentation hook: prompt replacement, tool narrowing,

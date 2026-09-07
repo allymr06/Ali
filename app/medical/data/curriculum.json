@@ -119,6 +119,20 @@
               ]
             }
           ]
+        },
+        {
+          "id": "neuroanatomy",
+          "title_tr": "Nöroanatomi",
+          "title_en": "Neuroanatomy",
+          "keywords": ["nöroanatomi", "neuroanatomy", "beyin", "sinir sistemi"],
+          "topics": [
+            {
+              "id": "cranial_nerves",
+              "title_tr": "Kraniyal sinirler (12 çift)",
+              "title_en": "Cranial nerves (12 pairs)",
+              "keywords": ["kraniyal sinir", "cranial nerve", "kafa çiftleri", "nervi craniales", "olfactorius", "opticus", "oculomotorius", "trochlearis", "trigeminus", "abducens", "facialis", "vestibulocochlearis", "glossopharyngeus", "vagus", "accessorius", "hypoglossus"]
+            }
+          ]
         }
       ]
     },

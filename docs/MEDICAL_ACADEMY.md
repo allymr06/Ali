@@ -402,6 +402,24 @@ no rule, no pin.
 python scripts/import_bodyparts3d.py isa_BP3D_4.0_obj_99.zip --scene neurocranium
 ```
 
+### Cranial nerves
+
+The twelve cranial nerves have a section of their own, tied to the skull
+foramina the neurocranium work added. An overview card (`cranial_nerves`)
+carries a high-yield table — nerve, number, type, skull exit, main function,
+lesion sign — and a study guide (how to group them by type, by brain-stem
+level, and by the reflexes they share). Twelve nerve cards follow, each with
+its functional components, nuclei, exit foramen, course, motor and sensory
+fields, parasympathetic branch where there is one, how it is tested at the
+bedside, and its lesion signs. The exit named on each card is one the skull
+base's own foramen table lists, so the two cards never disagree; a test holds
+them to that. The cranial-nerve fields (number, components, nuclei, exit,
+parasympathetic, examination) are optional on a nerve card, so the limb nerve
+cards are unchanged — they still show only origin, course, motor, sensory and
+high-yield. The curriculum gained `anatomy.neuroanatomy.cranial_nerves`.
+Cranial nerves have no licensed mesh, so their cards are schematic; nothing on
+them is generated.
+
 ### Bell-ringer (zilli sınav)
 
 A bell-ringer (spotter) is the practical anatomy exam: numbered pins on
@@ -461,7 +479,8 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
   schematic map, and pins derived from the shape stay marked approximate until
   someone who knows confirms them by hand.
 - The viscerocranium topic exists in the curriculum but has no cards yet; the
-  head and neck have no cranial-nerve, vessel or joint cards; the trunk has no
+  head and neck have the twelve cranial nerves now but no vessel or joint
+  cards (temporomandibular, atlanto-occipital); the trunk has no
   abdominal-wall muscles and the lower limb no vessels. The coverage audit in
   `docs/PROJECT_STATE.md` lists the gaps in priority order.
 - Image-based question *generation* needs an image whose provenance is known;

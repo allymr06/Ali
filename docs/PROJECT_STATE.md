@@ -50,8 +50,22 @@ Last verified: 6 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2254 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 2255 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
+
+## The abdominal wall (7 September 2026)
+
+The anterolateral abdominal wall completes the trunk. An overview card
+(paries_abdominis_anterior) carries the two tables every first-year is asked
+for — the rectus sheath above and below the arcuate line (below it the
+posterior wall is only transversalis fascia) and the walls, rings and contents
+of the inguinal canal (the spermatic cord or round ligament, the deep ring
+lateral to the inferior epigastric artery) — with the Hesselbach triangle and
+the direct-vs-indirect hernia distinction. Cards were added for the three flat
+muscles (external and internal oblique, transversus) and rectus abdominis, each
+with origin, insertion, innervation, action and high-yield. No new geometry;
+the flat sheets stay schematic. The anatomy data is 114 structures, and the
+trunk — vertebral column, thoracic cage and abdominal wall — is now complete.
 
 ## The thoracic cage (7 September 2026)
 

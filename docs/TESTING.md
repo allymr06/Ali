@@ -545,7 +545,8 @@ The Medical Academy regression coverage (`tests/test_medical_*.py`) includes:
   atlanto-occipital and atlanto-axial cards with their disc, movements and the
   bones they connect, and the thoracic cage — the rib-classification and
   rib-parts tables, the typical/first/floating rib cards, and the rib-cage
-  scene of ribs, sternum and spine) (`test_medical_anatomy.py`);
+  scene of ribs, sternum and spine, and the abdominal wall — the rectus-sheath
+  and inguinal-canal tables and the four muscle cards) (`test_medical_anatomy.py`);
 - the academy facade, its four tools, the tutor's decisions and question
   generation against a fake model client;
 - the core engine's augmentation hook: prompt replacement, tool narrowing,

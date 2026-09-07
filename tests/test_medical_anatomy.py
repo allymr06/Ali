@@ -1382,3 +1382,41 @@ def test_the_rib_cage_scene_draws_ribs_sternum_and_spine_together() -> None:
     assert len(THORACIC_CAGE["costa"][0][2]) == 16  # ribs 3-10, left and right
     # The sternum is its three parts merged into one mesh.
     assert len(THORACIC_CAGE["sternum"][0][2]) == 3
+
+
+def test_the_abdominal_wall_carries_the_rectus_sheath_and_inguinal_canal() -> None:
+    """The anterolateral abdominal wall: the four flat/vertical muscles, and an
+    overview whose tables carry the rectus sheath above and below the arcuate
+    line and the walls and contents of the inguinal canal."""
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, _source = load_anatomy_data()
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=None)
+
+    overview = lab.describe("paries_abdominis_anterior")
+    assert overview is not None and overview["kind"] == "region" and overview["region"] == "trunk"
+    assert "karın" in overview["topic_path"].lower()
+    sheath = next(t for t in overview["tables"] if "rektus" in t["title"].lower())
+    rows = {row[0]: row for row in sheath["rows"]}
+    # Below the arcuate line the posterior wall is only transversalis fascia.
+    assert "transversalis" in rows["Linea arcuata ALTI"][2].lower() and "aponeuroz yok" in rows["Linea arcuata ALTI"][2].lower()
+    canal = next(t for t in overview["tables"] if "inguinalis" in t["title"].lower())
+    canal_rows = {row[0]: row[1] for row in canal["rows"]}
+    assert "epigastrica inferior" in canal_rows["Derin halka (anulus inguinalis profundus)"].lower()
+    assert "funiculus spermaticus" in canal_rows["İçerik (erkek)"].lower()
+    assert "teres uteri" in canal_rows["İçerik (kadın)"].lower()
+
+    muscles = ["m_obliquus_externus_abdominis", "m_obliquus_internus_abdominis",
+               "m_transversus_abdominis", "m_rectus_abdominis"]
+    assert {r["structure_id"] for r in overview["relations"] if r["relation"] == "contains"} == set(muscles)
+    for mid in muscles:
+        card = lab.describe(mid)
+        assert card is not None and card["kind"] == "muscle" and card["region"] == "trunk", mid
+        # a muscle card is quizzed on innervation/origin/insertion/action
+        assert any(item["kind"] == "muscle_fact" for item in lab.quiz(mid, count=4, seed="m")), mid
+    # Rectus abdominis runs between the pubis and the costal margin.
+    rectus = lab.describe("m_rectus_abdominis")
+    sections = {s["label"]: s["items"] for s in rectus["sections"]}
+    assert any("xiphoideus" in item.lower() or "kaburga" in item.lower() for item in sections["Insertio"])

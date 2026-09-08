@@ -157,10 +157,18 @@ def test_a_question_without_concepts_is_read_for_one_or_anchored_to_itself() -> 
     named = question("named", "Aksiyon potansiyelinin yükselen fazında hangi olay olur?")
     named.concept_ids = []
     store.save_question(named)
+    # A question whose key is neutral but whose distractor names a concept:
+    # the finding must not be filed under the option the question ruled out.
+    distractor = Question(question_id="distractor", subject="physiology", stem="Aşağıdakilerden hangisi tabloda verilmemiştir?",
+                          options=[QuestionOption("A", "Birinci"), QuestionOption("B", "Dinlenim membran potansiyeli")],
+                          correct_key="A", topic_id=TOPIC, concept_ids=[], explanation="")
+    store.save_question(distractor)
     plain = [QuestionOption(key, text) for key, text in zip("ABCD", ["Birinci", "İkinci", "Üçüncü", "Dördüncü"])]
     for identifier, stem in (("first", "I. ve II. öncül için hangisi doğrudur?"), ("second", "Aşağıdakilerden hangisi tabloda verilmemiştir?")):
         store.save_question(Question(question_id=identifier, subject="physiology", stem=stem, options=list(plain), correct_key="A", topic_id=TOPIC, concept_ids=[], explanation=""))
 
+    # A distractor must not name the finding: the key here is "Sodyum girişi"
+    # (an action-potential concept) while option A names calcium.
     engine.record_event(store.get_question("named"), correct=False, answer_key="A", confidence="sure")
     engine.record_event(store.get_question("first"), correct=False, answer_key="B", confidence="sure")
     engine.record_event(store.get_question("second"), correct=False, answer_key="B", confidence="sure")
@@ -175,6 +183,10 @@ def test_a_question_without_concepts_is_read_for_one_or_anchored_to_itself() -> 
     assert anchored["statement"] == "Bu soruda “İkinci” seçildi; doğrusu “Birinci”."
     assert anchored["concept_name"].startswith("I. ve II.") and anchored["topic_id"] == TOPIC
     assert engine.open_findings_for([], topic_id=TOPIC) != [], "the plan finds a question-anchored finding by its topic"
+
+    engine.record_event(store.get_question("distractor"), correct=False, answer_key="B", confidence="sure")
+    concepts = {item["concept_id"] for item in engine.findings()}
+    assert RMP not in concepts and "question:distractor" in concepts, "a wrong option never names the finding"
 
 
 def test_a_repeated_submission_id_is_stored_once() -> None:

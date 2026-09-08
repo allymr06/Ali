@@ -170,7 +170,11 @@ class UnderstandingEngine:
         if question.concept_ids:
             return list(question.concept_ids)
         if self._concepts is not None:
-            text = " ".join([question.stem, *(option.text for option in question.options), question.explanation or ""])
+            # The stem, the key and the question's own explanation say what the
+            # question is about. The wrong options must not: a distractor would
+            # name the finding after a structure the question only ruled out.
+            correct = question.option(question.correct_key or "")
+            text = " ".join([question.stem, correct.text if correct else "", question.explanation or ""])
             for concept in self._concepts.find(text, limit=3):
                 if concept.subject == question.subject:
                     return [concept.concept_id]

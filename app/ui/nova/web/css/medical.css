@@ -152,6 +152,14 @@ button.med-row:hover { background: rgba(var(--accent-rgb), 0.05); }
 .med-set .ms-name:hover { color: var(--accent-2); }
 .med-set .ms-side { font-family: var(--font-mono); font-size: 0.64rem; color: var(--ink-4); white-space: nowrap; }
 .med-set .ms-progress { font-family: var(--font-mono); font-size: 0.64rem; color: var(--accent-2); }
+.med-committee-list { display: grid; gap: 0.42rem; margin-top: 0.15rem; }
+.med-committee { display: grid; grid-template-columns: minmax(6.5rem, 0.34fr) minmax(0, 1fr); gap: 0.42rem; align-items: start; }
+.med-committee-name, .med-lesson { border: 1px solid var(--line-1); border-radius: 999px; background: var(--surface-2); color: var(--ink-3); cursor: pointer; font: 500 var(--text-xs)/1.2 var(--font-ui); padding: 0.38rem 0.58rem; text-align: left; transition: border-color 160ms ease, color 160ms ease, background 160ms ease; }
+.med-committee-name { color: var(--ink-1); display: flex; justify-content: space-between; }
+.med-committee-name span, .med-lesson span { color: var(--ink-4); font-family: var(--font-mono); margin-left: 0.3rem; }
+.med-lesson-list { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.med-committee-name:hover, .med-lesson:hover, .med-committee-name.active, .med-lesson.active { border-color: rgba(var(--accent-rgb), 0.55); color: var(--accent-2); background: rgba(var(--accent-rgb), 0.08); }
+@media (max-width: 760px) { .med-committee { grid-template-columns: 1fr; } }
 .med-structures { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.5rem; }
 .med-structure {
   display: flex; flex-direction: column; gap: 0.15rem;

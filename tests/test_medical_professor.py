@@ -963,3 +963,56 @@ def test_in_an_export_a_stem_opening_with_an_abbreviation_is_not_option_a() -> N
     assert first.number == "7" and first.stem.startswith("A. subclavia ve brachial plexus")
     assert [key for key, _ in first.options] == ["A", "B", "C", "D", "E"] and first.answer_key == "B" and first.committee == "6"
     assert len(result.questions) == 3 and result.notes == []
+
+
+def test_in_an_export_a_question_without_its_owner_lines_still_keeps_its_options() -> None:
+    from app.medical.professor import QuestionImportParser
+
+    text = (
+        "69. soru:\nBirinci?\nSoru Sahibi : BURCU BABA\nAnabilimdalı : Tıbbi Biyokimya\n\nA) a\nB) b-Doğru Seçenek\n\n"
+        "70. soru:\nEkstrasellüler matrikste hücre yapışması ve göçüne katılan glikoprotein aşağıdakilerden hangisidir?\n\n"
+        "A) Elastin\nB) Fibrillin\nC) Fibronektin-Doğru Seçenek\nD) Kollajen\nE) Sindekan\n\n"
+        "71. soru:\nÜçüncü?\nSoru Sahibi : BURCU BABA\nAnabilimdalı : Tıbbi Biyokimya\n\nA) a-Doğru Seçenek\nB) b\n"
+    )
+    result = QuestionImportParser().parse(text)
+    orphan = result.questions[1]
+    assert orphan.number == "70" and orphan.stem.endswith("hangisidir?") and orphan.owner is None
+    assert [key for key, _ in orphan.options] == ["A", "B", "C", "D", "E"] and orphan.answer_key == "C"
+    assert [item.owner for item in result.questions] == ["BURCU BABA", None, "BURCU BABA"]
+
+
+def test_in_an_export_a_key_suffix_wrapped_onto_the_next_line_still_marks_the_option() -> None:
+    from app.medical.professor import QuestionImportParser
+
+    text = (
+        "5. soru:\nVerilen bilgilerden hangisi yanlıştır?\nSoru Sahibi : DİLEK YONAR\nAnabilimdalı : Biyofizik\n\n"
+        "A) Kovalent bağ elektron paylaşımıdır.\nB) Polar olmayan bağda elektronlar eşit paylaşılır.\nC) Moleküller arası kuvvetler çekim kuvvetleridir.\n"
+        "D) Moleküller arası kuvvetleri ne kadar zayıfsa, kaynama noktası o kadar yüksek olur.\n-Doğru Seçenek\nE) Hidrojen bağları en güçlüsüdür.\n\n"
+        "6. soru:\nİkinci?\nSoru Sahibi : DİLEK YONAR\nAnabilimdalı : Biyofizik\n\nA) a\nB) b\n-Öğrencinin işaretlediği\nC) c-Doğru Seçenek-\n\n"
+        "7. soru:\nÜçüncü?\nSoru Sahibi : DİLEK YONAR\nAnabilimdalı : Biyofizik\n\nA) a-Doğru Seçenek\nB) b\n"
+    )
+    result = QuestionImportParser().parse(text)
+    first, second = result.questions[0], result.questions[1]
+    assert first.answer_key == "D" and first.options[3][1].endswith("o kadar yüksek olur.")
+    assert second.answer_key == "C" and second.student_marked == "B" and second.options[1][1] == "b"
+
+
+def test_in_an_export_options_printed_above_the_owner_lines_are_still_the_options() -> None:
+    from app.medical.professor import QuestionImportParser
+
+    # A figure sits beside the options and the owner lines come last on the page.
+    text = (
+        "14. soru:\nSentezlenmiş A ligandının bağlanmaları için ΔH ve ΔS verilmiştir. Şekle göre hangisi söylenebilir?\n"
+        "A) Reseptör X – Ligand A bağlanması için ΔG > 0’ dır-Doğru Seçenek\nB) Reseptör X – Ligand A bağlanması spontandır\n"
+        "C) Reseptör Z – Ligand A bağlanması yüksek sıcaklıklarda spontan gelişebilir\nD) Reseptör Y – Ligand A bağlanması yokuşyukarı\nbir reaksiyondur\n"
+        "E) Reseptör Y – Ligand A bağlanması spontandır\nSoru Sahibi : ŞERİFE CANKURTARAN SAYAR\nAnabilimdalı : Biyofizik\n\n"
+        "15. soru:\nA. subclavia ile ilgili hangisi doğrudur?\nSoru Sahibi : ŞERİFE CANKURTARAN SAYAR\nAnabilimdalı : Biyofizik\n\nA) a\nB) b-Doğru Seçenek\n\n"
+        "16. soru:\nÜçüncü?\nSoru Sahibi : ŞERİFE CANKURTARAN SAYAR\nAnabilimdalı : Biyofizik\n\nA) a-Doğru Seçenek\nB) b\n"
+    )
+    result = QuestionImportParser().parse(text)
+    figure, abbreviation = result.questions[0], result.questions[1]
+    assert figure.stem.endswith("hangisi söylenebilir?") and figure.owner == "ŞERİFE CANKURTARAN SAYAR"
+    assert [key for key, _ in figure.options] == ["A", "B", "C", "D", "E"] and figure.answer_key == "A"
+    assert figure.options[0][1] == "Reseptör X – Ligand A bağlanması için ΔG > 0’ dır"
+    assert figure.options[3][1] == "Reseptör Y – Ligand A bağlanması yokuşyukarı bir reaksiyondur"
+    assert abbreviation.stem.startswith("A. subclavia") and [key for key, _ in abbreviation.options] == ["A", "B"] and abbreviation.answer_key == "B"

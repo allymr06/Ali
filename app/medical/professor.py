@@ -256,8 +256,31 @@ class QuestionImportParser:
             blocks.append(current)
         return blocks
 
+    @staticmethod
+    def _strip_marks(text: str) -> tuple[str, list[str], bool]:
+        """Take the export's suffixes off an option: (text, key marks, student's mark).
+
+        The suffixes come in either order, may both sit on one option, and may
+        have been wrapped onto the line below by the scan.
+        """
+        marks = 0
+        student = False
+        while True:
+            if _KEY_SUFFIX.search(text):
+                text = _KEY_SUFFIX.sub("", text).strip()
+                marks += 1
+                continue
+            if _STUDENT_SUFFIX.search(text):
+                text = _STUDENT_SUFFIX.sub("", text).strip()
+                student = True
+                continue
+            break
+        return text, ["key"] * marks, student
+
     def _parse_block(self, number: str, lines: list[str], *, export: bool = False) -> ParsedQuestion | None:
-        stem_parts: list[str] = []
+        # (text, held): a held line looked like an option but came before the
+        # owner lines of an export; it is stem unless no options follow them.
+        stem_entries: list[tuple[str, bool]] = []
         options: list[tuple[str, str]] = []
         answer: str | None = None
         owner: str | None = None
@@ -265,6 +288,11 @@ class QuestionImportParser:
         marked_keys: list[str] = []
         student_marked: str | None = None
         warnings: list[str] = []
+        # A scanned export can miss the owner lines of one question; only a
+        # block that has them holds its stem back until they are read.
+        expects_owner = export and any(
+            _OWNER_LINE.match(line.strip()) or _DEPARTMENT_LINE.match(line.strip()) for line in lines
+        )
         for line in lines:
             stripped = line.strip()
             if not stripped:
@@ -280,22 +308,18 @@ class QuestionImportParser:
             option = _OPTION_LINE.match(stripped)
             # In an export the options follow the owner and department lines; a
             # stem that opens with an abbreviation ("A. subclavia ve …") is not
-            # option A.
-            if option and export and owner is None and department is None and not options:
+            # option A. The line is held: a paper that prints the options beside
+            # a figure, above the owner lines, has no options after them.
+            held = False
+            if option and expects_owner and owner is None and department is None and not options:
                 option = None
+                held = True
             if option:
                 letter, text = option.group(1).upper(), option.group(2).strip()
-                # The suffixes come in either order and may both sit on one option.
-                while True:
-                    if _KEY_SUFFIX.search(text):
-                        text = _KEY_SUFFIX.sub("", text).strip()
-                        marked_keys.append(letter)
-                        continue
-                    if _STUDENT_SUFFIX.search(text):
-                        text = _STUDENT_SUFFIX.sub("", text).strip()
-                        student_marked = letter
-                        continue
-                    break
+                text, marks, student = self._strip_marks(text)
+                marked_keys.extend(letter for _ in marks)
+                if student:
+                    student_marked = letter
                 options.append((letter, text))
                 continue
             stated_answer = _ANSWER_ONLY.match(stripped)
@@ -303,11 +327,33 @@ class QuestionImportParser:
                 answer = stated_answer.group(1).upper()
                 continue
             if options:
-                # Continuation of the last option.
+                # Continuation of the last option; a scan wraps the suffix too.
                 key, text = options[-1]
-                options[-1] = (key, f"{text} {stripped}")
+                merged, marks, student = self._strip_marks(f"{text} {stripped}")
+                marked_keys.extend(key for _ in marks)
+                if student:
+                    student_marked = key
+                options[-1] = (key, merged)
+            elif stem_entries and stem_entries[-1][1] and not held:
+                text, _held = stem_entries[-1]
+                stem_entries[-1] = (f"{text} {stripped}", True)
             else:
-                stem_parts.append(stripped)
+                stem_entries.append((stripped, held))
+        if not options and any(held for _, held in stem_entries):
+            # Nothing followed the owner lines: the held lines were the options.
+            for text, held in stem_entries:
+                if not held:
+                    continue
+                option = _OPTION_LINE.match(text)
+                letter, body = option.group(1).upper(), option.group(2).strip()
+                body, marks, student = self._strip_marks(body)
+                marked_keys.extend(letter for _ in marks)
+                if student:
+                    student_marked = letter
+                options.append((letter, body))
+            stem_parts = [text for text, held in stem_entries if not held]
+        else:
+            stem_parts = [text for text, _ in stem_entries]
         if stem_parts:
             # "1. soru:" leaves the word on the first line; it is not the stem.
             stem_parts[0] = _STEM_PREFIX.sub("", stem_parts[0])

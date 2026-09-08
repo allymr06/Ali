@@ -517,3 +517,28 @@ def test_scanned_pages_are_transcribed_and_then_mined_like_any_paper(tmp_path) -
         assert asyncio.run(academy.continue_processing(document_id=document.document_id, vision=False, analysis=False))["continue"]["queued"] == 0
     finally:
         academy.close()
+
+
+def test_mining_tells_apart_questions_that_share_a_generic_stem(academy, tmp_path) -> None:
+    root = tmp_path / "cikmislar"
+    root.mkdir()
+    paper = (
+        "KOMİTE 2\n\n27. soru:\nAşağıdaki ifadelerden hangisi yanlıştır?\nSoru Sahibi : AYŞE CANSEVEN\nAnabilimdalı : Biyofizik\n\n"
+        "A) Isı bir enerji türüdür\nB) Entropi düzensizliktir\nC) Sıcaklık bir enerjidir-Doğru Seçenek\nD) İş yol bağımlıdır\nE) Enerji korunur\n\n"
+        "28. soru:\nAşağıdaki ifadelerden hangisi yanlıştır?\nSoru Sahibi : AYŞE CANSEVEN\nAnabilimdalı : Biyofizik\n\n"
+        "A) Kas bir dönüştürücüdür\nB) Kemik esnektir-Doğru Seçenek\nC) Tendon gerilir\nD) Kıkırdak yumuşaktır\nE) Deri katmanlıdır\n\n"
+        "29. soru:\nAşağıdaki ifadelerden hangisi yanlıştır?\nSoru Sahibi : AYŞE CANSEVEN\nAnabilimdalı : Biyofizik\n\n"
+        "A) Kas bir dönüştürücüdür\nB) Kemik esnektir-Doğru Seçenek\nC) Tendon gerilir\nD) Kıkırdak yumuşaktır\nE) Deri katmanlıdır\n"
+    )
+    (root / "Biyofizik Tüm Komiteler Çıkmış.txt").write_text(paper, encoding="utf-8")
+    record = academy.import_folder(str(root), name="Çıkmış sorular")
+    asyncio.run(academy.process_lecture_set(record["set_id"]))
+
+    report = academy.mine_questions(set_id=record["set_id"])
+
+    # Two questions with the same stem and different options are two questions;
+    # the third repeats the second word for word and is the only one skipped.
+    assert report["questions_added"] == 2 and report["skipped"] == 1
+    profile = next(item for item in academy.store.list_professors() if "Canseven" in item.name)
+    assert sorted(question.correct_key for question in academy.store.get_questions(profile.question_ids)) == ["B", "C"]
+    assert academy.mine_questions(set_id=record["set_id"])["questions_added"] == 0, "a second pass files nothing twice"

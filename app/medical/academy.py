@@ -91,7 +91,7 @@ from app.medical.schemas import (
 )
 from app.medical.store import MedicalStore
 from app.medical.terminology import TerminologyIndex, load_anatomy_data
-from app.medical.text import excerpt, fold
+from app.medical.text import excerpt, fold, question_fingerprint
 from app.medical.tutor import MEDICAL_TOOLS, MedicalTutor
 
 EventCallback = Callable[[dict[str, Any]], None]
@@ -1734,7 +1734,9 @@ class MedicalAcademy:
         """
         documents = self._mining_scope(set_id=set_id, document_ids=document_ids)
         parser = QuestionImportParser()
-        existing_stems = {fold(question.stem) for question in self.store.query_questions(limit=100_000)}
+        # "Aşağıdaki ifadelerden hangisi yanlıştır?" opens many questions; the
+        # options tell them apart, so a question is known by stem and options.
+        existing_stems = {question_fingerprint(question.stem, [option.text for option in question.options]) for question in self.store.query_questions(limit=100_000)}
         per_professor: dict[str, dict[str, Any]] = {}
         books: list[str] = []
         papers: list[str] = []
@@ -1802,7 +1804,7 @@ class MedicalAcademy:
                     per_professor.setdefault(owner.profile_id, {"profile_id": owner.profile_id, "name": owner.name, "documents": 0, "questions_added": 0})
                 parsed = parser.parse(section_text)
                 for item in parsed.questions:
-                    folded = fold(item.stem)
+                    folded = question_fingerprint(item.stem, [text for _, text in item.options]) if item.stem.strip() else ""
                     if not folded or folded in existing_stems:
                         skipped += 1
                         continue

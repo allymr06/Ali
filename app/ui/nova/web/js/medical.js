@@ -527,6 +527,24 @@ const Medical = {
     }).join("");
     $$("[data-set-open]", host).forEach((node) => node.addEventListener("click", () => {
       this.setFilter = this.setFilter === node.dataset.setOpen ? null : node.dataset.setOpen;
+      this.committeeFilter = null;
+      this.lessonFilter = null;
+      this.renderLectureSets();
+      this.renderDocuments();
+    }));
+    $$("[data-committee][data-catalog-set]", host).filter((node) => !node.dataset.lesson).forEach((node) => node.addEventListener("click", () => {
+      const same = this.committeeFilter === node.dataset.committee && !this.lessonFilter;
+      this.setFilter = node.dataset.catalogSet;
+      this.committeeFilter = same ? null : node.dataset.committee;
+      this.lessonFilter = null;
+      this.renderLectureSets();
+      this.renderDocuments();
+    }));
+    $$("[data-lesson][data-catalog-set]", host).forEach((node) => node.addEventListener("click", () => {
+      const same = this.committeeFilter === node.dataset.committee && this.lessonFilter === node.dataset.lesson;
+      this.setFilter = node.dataset.catalogSet;
+      this.committeeFilter = same ? null : node.dataset.committee;
+      this.lessonFilter = same ? null : node.dataset.lesson;
       this.renderLectureSets();
       this.renderDocuments();
     }));
@@ -576,6 +594,8 @@ const Medical = {
     const set = this.setFilter ? (this.lectureSets || []).find((item) => item.set_id === this.setFilter) : null;
     return this.documents.filter((item) => {
       if (set && !(item.tags || []).includes(set.name)) return false;
+      if (this.committeeFilter && !(item.tags || []).includes(this.committeeFilter)) return false;
+      if (this.lessonFilter && !(item.tags || []).includes(this.lessonFilter)) return false;
       if (!query) return true;
       const haystack = [item.title, item.file_name, item.subject, ...(item.tags || [])].join(" ").toLocaleLowerCase("tr");
       return haystack.includes(query);

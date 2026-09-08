@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.medical.anatomy import AnatomyLab
+from app.core.time import utc_now
 from app.medical.catalog import Curriculum
 from app.medical.concepts import ConceptGraph
 from app.medical.learning import LearningEngine
@@ -92,6 +93,7 @@ class QuestionGenerator:
         concepts: ConceptGraph,
         anatomy: AnatomyLab,
         learning: LearningEngine,
+        reviewer: Any | None = None,
     ) -> None:
         self._store = store
         self._model = model
@@ -100,6 +102,9 @@ class QuestionGenerator:
         self._concepts = concepts
         self._anatomy = anatomy
         self._learning = learning
+        # The source-support reviewer (app/medical/review.py); None keeps the
+        # paper as validation alone accepted it.
+        self._reviewer = reviewer
 
     # ------------------------------------------------------------------
     # grounding
@@ -310,6 +315,14 @@ class QuestionGenerator:
                     for problem in problems:
                         rejected_reasons[problem] = rejected_reasons.get(problem, 0) + 1
                     continue
+                # Three separate outcomes, recorded apart: the structure passed
+                # here; the reference survived build_question's cross-check or
+                # did not; the passage's support is the reviewer's to say.
+                question.metadata["validation"] = {
+                    "structure": "passed",
+                    "references": "verified" if question.origin == QuestionOrigin.LECTURE_DERIVED else ("unverified" if claims_lecture else "none"),
+                    "checked_at": utc_now().isoformat(),
+                }
                 similar, score, other_id = is_too_similar(question, avoid + accepted)
                 if similar:
                     rejected_reasons["too_similar"] = rejected_reasons.get("too_similar", 0) + 1
@@ -337,7 +350,16 @@ class QuestionGenerator:
         if len(accepted) < needed:
             notes.append(f"{needed} sorudan {len(accepted)} tanesi kalite süzgecinden geçti.")
         self._store.save_questions(accepted)
-        return accepted, notes
+        if self._reviewer is None:
+            return accepted, notes
+        # Every accepted item is in the bank with its status; only the
+        # source-supported ones (and the unsourced study items) make the paper.
+        kept, quarantined, gate_notes = await self._reviewer.gate(accepted)
+        notes.extend(gate_notes)
+        self._store.save_questions(accepted)
+        if not kept:
+            raise GenerationError("Üretilen soruların hiçbiri kaynak desteği süzgecinden geçmedi; " + (gate_notes[0] if gate_notes else "tekrar dene."))
+        return kept, notes
 
     @staticmethod
     def _figure_for(raw: dict[str, Any], figures: list[FigureRef]) -> FigureRef | None:
@@ -394,7 +416,8 @@ class QuestionGenerator:
         wanted = [question_id for question_id in wrong_question_ids if question_id not in excluded]
         chosen: list[Question] = []
         if wanted:
-            chosen.extend(self._store.get_questions(wanted))
+            # A question the student had invalidated is no longer one of their mistakes.
+            chosen.extend(question for question in self._store.get_questions(wanted) if not question.metadata.get("invalidated"))
         if only_wrong:
             return chosen[: config.question_count]
         if len(chosen) < config.question_count:
@@ -407,7 +430,7 @@ class QuestionGenerator:
                         self._store.query_questions(subject=subject, topic_id=topic_id, with_answer_key=True, limit=300)
                     )
             seen = {question.question_id for question in chosen} | excluded
-            pool = [question for question in candidates if question.question_id not in seen]
+            pool = [question for question in candidates if question.question_id not in seen and not question.metadata.get("invalidated")]
             if config.difficulty:
                 pool.sort(key=lambda question: abs(int(question.difficulty) - int(config.difficulty)))
             rng = random.Random(config.title or new_id("seed"))

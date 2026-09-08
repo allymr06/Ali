@@ -154,6 +154,50 @@ class LearningEngine:
             updated.append(mastery)
         return updated
 
+    def exclude_question(self, question: Question, *, reason: str = "") -> list[ConceptMastery]:
+        """Take a question found wrong out of the mastery it moved.
+
+        The attempts stay as they were made; only the summary rows are
+        corrected: the question's answers are subtracted from attempts and
+        correct, the recent window and the streak are rebuilt from the
+        remaining exam attempts on the concept, and the level and the next
+        review follow. Answers that never went through an exam attempt (the
+        lab, the chat quiz) are not on record per question and are left as
+        they are; the row's reason says a correction was made.
+        """
+        attempts = sorted(self._store.list_attempts(limit=2000), key=lambda item: item.started_at)
+        corrected: list[ConceptMastery] = []
+        for concept_id in self.concept_ids_for(question):
+            mastery = self._store.get_mastery(concept_id)
+            if mastery is None:
+                continue
+            removed = [entry.correct for attempt in attempts for identifier, entry in attempt.answers.items() if identifier == question.question_id and entry.answer_key and entry.correct is not None]
+            if not removed:
+                continue
+            remaining: list[bool] = []
+            for attempt in attempts:
+                for identifier, entry in attempt.answers.items():
+                    if identifier == question.question_id or not entry.answer_key or entry.correct is None:
+                        continue
+                    other = self._store.get_question(identifier)
+                    if other is not None and concept_id in self.concept_ids_for(other):
+                        remaining.append(bool(entry.correct))
+            mastery.attempts = max(0, mastery.attempts - len(removed))
+            mastery.correct = max(0, mastery.correct - sum(1 for item in removed if item))
+            mastery.recent = remaining[-RECENT_WINDOW:] if remaining else []
+            streak = 0
+            for item in reversed(remaining):
+                if not item:
+                    break
+                streak += 1
+            mastery.streak = streak
+            mastery.level = level_for(mastery)
+            mastery.next_review_at = next_review_for(mastery, self._clock()) if mastery.attempts else None
+            mastery.reason = reason_for(mastery) + " Bir soru geçersiz sayıldı; kayıt düzeltildi." + (f" ({reason})" if reason else "")
+            self._store.save_mastery(mastery)
+            corrected.append(mastery)
+        return corrected
+
     def schedule_review(self, concept_id: str, at: datetime, *, reason: str = "", subject: str = "") -> ConceptMastery:
         """Bring a concept's next review forward to ``at`` (never later).
 

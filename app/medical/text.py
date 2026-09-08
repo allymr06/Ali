@@ -63,6 +63,12 @@ def fold(text: str) -> str:
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
 
 
+def question_fingerprint(stem: str, option_texts: list[str] | tuple[str, ...] = ()) -> str:
+    """Folded stem plus folded options: what makes a question the same question."""
+    parts = [fold(stem).strip()] + [fold(text).strip() for text in option_texts]
+    return " | ".join(part for part in parts if part)
+
+
 def normalize(text: str) -> str:
     """Folded text with punctuation collapsed to single spaces."""
     return " ".join(_TOKEN_PATTERN.findall(fold(text)))

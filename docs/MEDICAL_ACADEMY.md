@@ -292,6 +292,19 @@ paper marked; two options marked correct name no key. Such a paper belongs to
 nobody as a whole. The style profiles built this way rest on keyed exam
 questions and their note says so.
 
+The real scans taught the parser three more things. A key suffix the scan
+wrapped onto the line below the option (`D) … olur.` / `-Doğru Seçenek`)
+still marks that option: a continuation line is re-read for the suffixes. A
+page that prints the options beside a figure, *above* the owner lines, has
+no options after them, so the option-shaped lines held back as stem become
+the options after all (the `A. subclavia …` rule only holds while real
+options follow the owner lines). And a question whose owner lines are
+missing from the print keeps its options and its key; it is filed under
+nobody rather than under the previous owner. Two questions are the same
+question only when stem *and* options agree (`question_fingerprint`):
+"Aşağıdaki ifadelerden hangisi yanlıştır?" opens a dozen questions per
+semester, and each is kept.
+
 The papers Ali shared are scans with no text layer, so a document whose pages
 hold no text is first *transcribed*: `transcribe_document` renders each page
 and asks the vision model to write it out exactly as printed (headings,

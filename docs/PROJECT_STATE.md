@@ -86,18 +86,43 @@ as a suffix. Ali asked for one thing from them: the lecturers' styles.
   narration see the paper like any text PDF.
 - The download of a Drive folder keeps a file's id in its name when another
   file in the same folder has the same name, so nothing is overwritten again.
-- **State at the end of the session.** Three of the eight papers were
-  transcribed (37 of 131 pages: Anatomi, Biyofizik, the first page of
-  Biyokimya) before the free-tier vision quota ran out; the transcription of
-  the first Anatomi page was checked line by line against the scan, and the
-  four questions on it carry the owner, committee, key and the student's mark
-  the scan shows. 121 keyed questions were filed under six lecturers, three of
-  them merged with profiles already read from the lectures (Rabet Gözil now
-  has 21 exam questions over 10 lectures, Hakkı Yeşilyurt 35, Şerife
-  Cankurtaran Sayar 31 with an answer distribution that leans on A). The
-  remaining 94 pages are read by "Şekilleri incele" on the set (or "Metne
-  çevir (OCR)" on a paper) once the quota returns, followed by "Hocaları
-  ayır"; a background loop was left retrying with the same product path.
+- **The vision quota stopped at 37 of 131 pages** (Anatomi, Biyofizik, the
+  first page of Biyokimya). Ali asked for the rest to be read now, so the
+  remaining 94 pages were rendered and transcribed by hand into the same
+  export format the model produces (headings, numbers, owner and department
+  lines, options with their suffixes; a figure described in one line in
+  parentheses; handwritten notes on the scans ignored), stored as the pages'
+  text through the same path (`save_page`, `reindex`, the *taranmış metin*
+  tag), and mined with "Hocaları ayır". Nothing was corrected or guessed: a
+  question whose owner lines are missing from the print stays ownerless.
+- **What the scans taught the parser.** A key suffix wrapped onto the next
+  line lost the key (three Biyofizik questions); options printed beside a
+  figure above the owner lines lost their key and options (one more); a
+  question without owner lines lost its options to the stem; and six
+  questions that open with "Aşağıdaki ifadelerden hangisi yanlıştır?" were
+  skipped as duplicates of each other. All four are fixed with tests: the
+  suffixes are re-read on a continuation line, held-back option lines become
+  the options when none follow the owner lines, the hold applies only to a
+  block that has owner lines, and a question is known by its stem *and*
+  options (`question_fingerprint`).
+- **State at the end of the session.** All 131 pages of the eight papers are
+  text (37 by the model, 94 by hand from the renders), every paper parses
+  to exactly the number of `N. soru:` starts it prints, and 476 questions
+  are filed — every one with the key the paper marks — under 21 owners:
+  Burcu Baba 59, Müge Öçal Demirtaş 38, Hakkı Yeşilyurt 35, Cumhur Bilgi 34,
+  Özgül Kısa 32, Şerife Cankurtaran Sayar 31, Kadirhan Sunguroğlu 28, Dilek
+  Yonar 25, Pelin Telkoparan Akıllılar 24, Sami Aydoğan 24, Rabet Gözil 21,
+  Pınar Şahin 16, Gülsen Güneş 16, Çağla Zübeyde Köprü 15, Gizem İlter Aktaş
+  15, Ülker Çuhacı 12, Çiğdem Özer 12, Burcu Akkurt 10, Saide Muratoğlu 10,
+  Ayşe Gülnihal Canseven Kurşun 9, Çiğdem Çiçek 8; nine of them merged with
+  the profile already read from their lectures. Two questions have no owner
+  lines in the print (Biyofizik K1 no. 15, Biyokimya K5 no. 70) and stay
+  ownerless; the Mikrobiyoloji paper starts at question 57 with no committee
+  heading on any page, so its questions carry none. The model's transcription
+  of one Anatomi option had swallowed a handwritten note after the key
+  suffix; the page text was corrected to what is printed. Two answer
+  distributions stand out as real signals: Cankurtaran Sayar keys A in 22 of
+  31, Gülsen Güneş in 12 of 16.
 
 ## What the shared Drive folder held (8 September 2026)
 

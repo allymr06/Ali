@@ -152,7 +152,63 @@ class UnderstandingEngine:
     # ------------------------------------------------------------------
 
     def concept_name(self, concept_id: str) -> str:
+        if concept_id.startswith("question:"):
+            question = self._store.get_question(concept_id[len("question:"):])
+            return _excerpt(question.stem, 80) if question is not None else "Soru"
         return self._learning.concept_name(concept_id)
+
+    def _concept_ids(self, question: Question) -> list[str]:
+        """The concepts an answer is evidence about.
+
+        A question that names its concepts is evidence about them. One that
+        does not — an imported committee question, usually — is matched
+        against the concept graph by its own wording, within its subject. When
+        nothing matches, the finding is anchored to the question itself rather
+        than to a topic or a whole subject, so unrelated questions never feed
+        one finding and the repair looks up the question, not the subject.
+        """
+        if question.concept_ids:
+            return list(question.concept_ids)
+        if self._concepts is not None:
+            # The stem, the key and the question's own explanation say what the
+            # question is about. The wrong options must not: a distractor would
+            # name the finding after a structure the question only ruled out.
+            correct = question.option(question.correct_key or "")
+            text = " ".join([question.stem, correct.text if correct else "", question.explanation or ""])
+            for concept in self._concepts.find(text, limit=3):
+                if concept.subject == question.subject:
+                    return [concept.concept_id]
+        return [f"question:{question.question_id}"]
+
+    def _statement(self, concept_id: str, question: Question, event: dict[str, Any]) -> str:
+        chosen = question.option(event.get("answer_key") or "")
+        correct = question.option(event.get("correct_key") or "")
+        chosen_text = _excerpt(chosen.text, 80) if chosen else (event.get("answer_key") or "—")
+        correct_text = _excerpt(correct.text, 80) if correct else (event.get("correct_key") or "?")
+        if concept_id.startswith("question:"):
+            return f"Bu soruda “{chosen_text}” seçildi; doğrusu “{correct_text}”."
+        return f"{self.concept_name(concept_id)} konusunda yanlış cevap: “{chosen_text}” seçildi, doğrusu “{correct_text}”."
+
+    def _retrieval_query(self, finding: dict[str, Any]) -> str:
+        """What to look up for a finding: the concept's name, or the question itself when the finding is anchored to one."""
+        concept_id = str(finding.get("concept_id", ""))
+        if concept_id.startswith("question:"):
+            question = self._store.get_question(concept_id[len("question:"):])
+            if question is not None:
+                correct = question.option(question.correct_key or "")
+                return _excerpt(" ".join([question.stem, correct.text if correct else "", question.explanation or ""]), 400)
+        return finding.get("concept_name") or concept_id
+
+    @staticmethod
+    def _principle(originals: list[Question]) -> str:
+        parts: list[str] = []
+        for question in originals[:1]:
+            correct = question.option(question.correct_key or "")
+            if correct:
+                parts.append(f"Doğru cevap: {correct.text}")
+            if question.explanation:
+                parts.append(_excerpt(question.explanation, 300))
+        return " ".join(parts)
 
     def _subject_of(self, concept_id: str, fallback: str) -> str:
         concept = self._concepts.get(concept_id) if self._concepts is not None else None
@@ -176,9 +232,17 @@ class UnderstandingEngine:
     def finding(self, finding_id: str) -> dict[str, Any] | None:
         return self._store.get_record(FINDING_KIND, finding_id)
 
-    def open_findings_for(self, concept_ids: Iterable[str]) -> list[dict[str, Any]]:
+    def open_findings_for(self, concept_ids: Iterable[str], *, topic_id: str | None = None) -> list[dict[str, Any]]:
+        """Open findings on these concepts — and, given a topic, those anchored to a question of that topic."""
         wanted = set(concept_ids)
-        return [item for item in self._store.list_records(FINDING_KIND, limit=2000) if item.get("concept_id") in wanted and item.get("status") in OPEN_STATUSES]
+        found: list[dict[str, Any]] = []
+        for item in self._store.list_records(FINDING_KIND, limit=2000):
+            if item.get("status") not in OPEN_STATUSES:
+                continue
+            concept_id = str(item.get("concept_id", ""))
+            if concept_id in wanted or (topic_id is not None and item.get("topic_id") == topic_id and concept_id.startswith("question:")):
+                found.append(item)
+        return found
 
     # ------------------------------------------------------------------
     # sampling: when an explanation is asked for
@@ -192,7 +256,7 @@ class UnderstandingEngine:
         sitting a small deterministic sample is asked, plus any question on a
         concept with an open finding.
         """
-        concept_ids = self._learning.concept_ids_for(question)
+        concept_ids = self._concept_ids(question)
         if self.open_findings_for(concept_ids):
             return True, "open_finding"
         if not immediate:
@@ -229,7 +293,7 @@ class UnderstandingEngine:
         if level is not None and level not in CONFIDENCE_LEVELS:
             raise ValueError("Güven bildirimi 'sure', 'unsure' ya da 'guess' olmalı.")
         key = str(submission_id or "").strip()
-        concept_ids = self._learning.concept_ids_for(question)
+        concept_ids = self._concept_ids(question)
         if key:
             for existing in self._store.list_records(EVENT_KIND, subject_key=concept_ids[0], limit=500):
                 if existing.get("submission_id") == key:
@@ -334,6 +398,17 @@ class UnderstandingEngine:
             "valid": True,
         }
 
+    def _mistake(self, question: Question, event: dict[str, Any]) -> dict[str, str]:
+        """What was picked and what the key was — the repair's explanation needs both, in the question's own words."""
+        chosen = question.option(event.get("answer_key") or "")
+        correct = question.option(event.get("correct_key") or "")
+        return {
+            "stem": _excerpt(question.stem, 300),
+            "chosen": _excerpt(chosen.text, 120) if chosen else str(event.get("answer_key") or ""),
+            "correct": _excerpt(correct.text, 120) if correct else str(event.get("correct_key") or ""),
+            "explanation": _excerpt(question.explanation, 300),
+        }
+
     def _new_finding(self, concept_id: str, question: Question, event: dict[str, Any], statement: str, *, priority: int, status: str = "hypothesis") -> dict[str, Any]:
         now = self._clock().isoformat()
         finding = {
@@ -351,6 +426,7 @@ class UnderstandingEngine:
             "follow_ups": [],
             "history": [{"at": now, "status": status, "note": "İlk kanıt kaydedildi.", "by": "rule"}],
             "provenance": {"assessor": "rule", "version": ASSESSMENT_VERSION},
+            "mistake": self._mistake(question, event) if event.get("correct") is False else None,
             "student_note": "",
             "pending_diagnostic": None,
             "repair": None,
@@ -420,7 +496,7 @@ class UnderstandingEngine:
                     wrong_events = [item for item in self.events(concept_id=concept_id) if item.get("correct") is False and not item.get("invalidated")]
                     if classification != "wrong_high_confidence" and len(wrong_events) < 2:
                         continue
-                    statement = f"{self.concept_name(concept_id)} konusunda yanlış cevap: {question.option(event.get('answer_key') or '').text if question.option(event.get('answer_key') or '') else event.get('answer_key') or '—'} seçildi, doğrusu {event.get('correct_key') or '?'}."
+                    statement = self._statement(concept_id, question, event)
                     finding = self._new_finding(concept_id, question, event, statement, priority=3 if kind == "answer_confident" else 2)
                     if len(wrong_events) >= 2 and classification != "wrong_high_confidence":
                         for earlier in wrong_events:
@@ -628,7 +704,7 @@ class UnderstandingEngine:
         text = ""
         if not sources and self._retriever is not None:
             try:
-                blocks = self._retriever.retrieve(finding.get("concept_name") or finding["concept_id"], RetrievalScope(subject=finding.get("subject")), limit=2)
+                blocks = self._retriever.retrieve(self._retrieval_query(finding), RetrievalScope(subject=finding.get("subject")), limit=2)
             except Exception:
                 blocks = []
             for block in blocks:
@@ -645,7 +721,7 @@ class UnderstandingEngine:
         if not self._model.available:
             return {"text": "Model sağlayıcısı kapalı: pasajı oku ve JARVIS'e bu kavramı sor; anlatım sonra üretilebilir.", "assessor": "none"}
         try:
-            text = await self._model.text("repair_explanation", repair_explanation_prompt(name, finding.get("statement", ""), evidence_lines, passage.get("text", "")), system_prompt=PIPELINE_SYSTEM)
+            text = await self._model.text("repair_explanation", repair_explanation_prompt(name, finding.get("statement", ""), evidence_lines, passage.get("text", ""), mistake=finding.get("mistake")), system_prompt=PIPELINE_SYSTEM)
         except MedicalModelError as exc:
             return {"text": f"Anlatım üretilemedi ({exc}); pasajı oku ve JARVIS'e sor.", "assessor": "none"}
         return {"text": _excerpt(text, 1500), "assessor": f"model:{getattr(self._model, 'model', '') or 'unknown'}"}
@@ -660,7 +736,7 @@ class UnderstandingEngine:
         if self._generator is not None and self._model.available:
             subject = finding.get("subject") or (originals[0].subject if originals else None)
             config = ExamConfig(subjects=[subject] if subject else [], topic_ids=[finding["topic_id"]] if finding.get("topic_id") else [], question_count=1, option_count=5, difficulty=3, include_images=False, randomize=False)
-            directive = transfer_directive(finding.get("concept_name", ""), finding.get("statement", ""), [item.stem for item in originals[:2]])
+            directive = transfer_directive(finding.get("concept_name", ""), finding.get("statement", ""), [item.stem for item in originals[:2]], principle=self._principle(originals))
             try:
                 generated, notes = await self._generator.generate(config, professor_directive=directive)
                 if generated:

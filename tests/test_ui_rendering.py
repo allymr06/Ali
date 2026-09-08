@@ -20,6 +20,11 @@ from app.ui.desktop import ApprovalPrompt, DesktopWindow, RoundedSurface
 from app.ui.models import ChatMessage, UIScreen
 
 
+# Tk pumps its events when it gets a slice of the machine; every wait here
+# is a patience, never a performance claim.
+UI_PUMP_TIMEOUT = 15.0
+
+
 def _tk_root() -> tk.Tk:
     try:
         root = tk.Tk()
@@ -111,7 +116,7 @@ def test_primary_screens_render_cards_and_composer_on_first_layout() -> None:
         for screen in (UIScreen.HOME, UIScreen.CHAT, UIScreen.SETTINGS):
             window.render(screen)
             surfaces: list[RoundedSurface] = []
-            deadline = time.monotonic() + 1.0
+            deadline = time.monotonic() + UI_PUMP_TIMEOUT
             while time.monotonic() < deadline:
                 root.update()
                 surfaces = _rounded_surfaces(window.workspace)
@@ -222,12 +227,16 @@ def test_worker_completion_is_applied_by_the_ui_event_pump() -> None:
             args=(operation_id, "command_done", future),
         )
         worker.start()
-        worker.join(timeout=1)
-        deadline = time.monotonic() + 1
+        worker.join(timeout=UI_PUMP_TIMEOUT)
+        assert not worker.is_alive(), "the worker thread never handed its result over"
+        # The pump runs on Tk's own schedule; a loaded machine can take a
+        # while. The check is that the completion is applied, not how soon:
+        # a tight wall-clock bound here fails the test, not the code.
+        deadline = time.monotonic() + UI_PUMP_TIMEOUT
         while window._active_operation_id is not None:
             root.update()
             time.sleep(0.005)
-            assert time.monotonic() < deadline
+            assert time.monotonic() < deadline, "the UI event pump did not apply the worker's completion"
 
         assert [message.role for message in controller.state.messages] == [
             "user",

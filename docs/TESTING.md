@@ -670,3 +670,27 @@ The Medical Academy regression coverage (`tests/test_medical_*.py`) includes:
   tabs, the answer's confidence and submission id, the flag in three places,
   destructive study actions confirmed, study jobs dispatched by action, and
   the prerequisite name box with confirm and reject.
+
+## Live pass and the tests it added (9 September 2026)
+
+Driving the five features in the running window produced six fixes, each
+pinned by a test that fails on the unfixed code:
+
+- a practice paper records one event per answer even when it is finished
+  (`test_medical_study.py`);
+- a plan with a confirmed scope is laid out the moment it is created, and a
+  manual activity fits beside fixed work while automatic work makes room
+  (`test_medical_planner.py`);
+- a question without concepts is read for one from its stem, its key and its
+  own explanation, is never filed under a distractor, and is otherwise
+  anchored to itself; the plan still finds such findings by topic
+  (`test_medical_understanding.py`);
+- the repair explanation prompt carries the question, the chosen option and
+  the key, and forbids restating the key as the mistake
+  (`test_medical_understanding.py`);
+- the page names an assessor, an explanation grade and a prerequisite's
+  provenance in Turkish (`test_nova_web.py`, `test_medical_study.py`).
+
+Two pre-existing flakes were repaired at the same time: the source-review
+quarantine test no longer depends on a shuffled option letter, and the
+desktop UI pump test waits on the pump instead of racing a one-second clock.

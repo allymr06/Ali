@@ -25,6 +25,7 @@ const STUDY_FINDING_TONE = { hypothesis: "", supported: "bad", disputed: "warn",
 const STUDY_SUPPORT_TONE = { source_supported: "ok", imported: "ok", needs_review: "warn", conflicting_evidence: "bad", insufficient_evidence: "warn", unresolved: "warn", not_applicable: "", stale: "warn", unavailable: "bad", invalidated: "bad" };
 const STUDY_ACTIVITY_TONE = { planned: "", started: "accent", completed: "ok", skipped: "", missed: "bad" };
 const STUDY_QUALITY_TONE = { specific: "ok", partial: "violet", generic: "warn", wrong: "bad", unassessed: "" };
+const STUDY_QUALITY_TR = { specific: "özgül", partial: "kısmen", generic: "genel", wrong: "yanlış", unassessed: "değerlendirilmedi" };
 const STUDY_MASTERY_TR = { weak: "zayıf", moderate: "orta", strong: "güçlü", unknown: "bilinmiyor" };
 const STUDY_OUTCOME_TR = { against: "bulguyu destekliyor", confirms: "bulguyu doğruladı", for: "bulguya karşı", unclear: "belirsiz", neutral: "nötr" };
 const STUDY_BASIS_OPTIONS = [["user_confirmed", "Ben onaylıyorum"], ["page_caption", "Sayfadaki başlık ya da etiket"], ["none", "Henüz bilmiyorum (adsız kaydet)"]];
@@ -44,6 +45,19 @@ function studyDate(value) {
   } catch (error) {
     return text;
   }
+}
+
+function studyAssessor(value) {
+  // Who judged this: a rule in the core, or the model — named when the
+  // academy pins one, plain "Model" when the gateway routes it.
+  const text = String(value || "");
+  if (!text || text === "none") return "Model kapalı";
+  if (text === "rule") return "Kural";
+  if (text.startsWith("model:")) {
+    const name = text.slice(6);
+    return !name || name === "unknown" ? "Model" : `Model · ${name}`;
+  }
+  return text;
 }
 
 function studyOptions(options, { chosen = null, correctKey = null, revealed = false } = {}) {
@@ -128,7 +142,7 @@ const Study = {
       <span class="chip ${String(event.classification || "").startsWith("wrong") || event.classification === "correct_contradictory" ? "warn" : "ok"}">${esc(this.classificationLabel(event))}</span>
       ${assessment.suspected_misconception ? `<br>Olası yanlış anlama: ${esc(assessment.suspected_misconception)}` : ""}
       ${assessment.note ? `<br>${esc(assessment.note)}` : ""}
-      <br><span class="faint">Değerlendiren: ${esc(assessment.assessor || "kural")}</span></div>`;
+      <br><span class="faint">Değerlendiren: ${esc(studyAssessor(assessment.assessor || "rule"))}</span></div>`;
   },
 
   supportChip(support) {
@@ -334,7 +348,7 @@ const Study = {
              ${(step.limitations || []).length ? `<p class="med-review-note">${step.limitations.map((line) => esc(line)).join(" ")}</p>` : ""}`
           : `<p class="med-review-note">${esc(step.note || "Aktarım sorusu üretilemedi.")}</p>`;
       } else {
-        body = `<div class="med-page-text">${esc(step.text || "")}</div>${step.assessor ? `<span class="faint">Kaynak: ${esc(step.assessor)}</span>` : ""}`;
+        body = `<div class="med-page-text">${esc(step.text || "")}</div>${step.assessor ? `<span class="faint">Anlatımı yazan: ${esc(studyAssessor(step.assessor))}</span>` : ""}`;
       }
       const done = step.done ? '<span class="chip ok">tamam</span>' : (step.step === "follow_up" ? `<span class="chip">${esc(studyDate(step.due_at))}</span>` : "");
       const action = !step.done && ["problem", "passage", "explanation"].includes(step.step)
@@ -464,7 +478,7 @@ const Study = {
       <div class="panel-title"><span class="kicker">Oturum sonucu</span><span class="chip">${esc(session.mode === "timed" ? "süreli" : "çalışma")}</span></div>
       <div class="med-score"><span class="ms-value">${results.identification_accuracy === null || results.identification_accuracy === undefined ? "—" : "%" + Math.round(results.identification_accuracy * 100)}</span>
         <span class="ms-note">${results.identified || 0}/${results.scored || 0} puanlı örnek tanındı · ${results.shown || 0} gösterildi${results.study_only ? ` · ${results.study_only} yalnız çalışma` : ""}</span></div>
-      ${Object.keys(quality).length ? `<div class="med-chips">${Object.entries(quality).map(([key, count]) => `<span class="chip ${STUDY_QUALITY_TONE[key] || ""}">açıklama ${esc(key)} · ${count}</span>`).join("")}</div>` : '<p class="med-review-note">Açıklama değerlendirilmedi.</p>'}
+      ${Object.keys(quality).length ? `<div class="med-chips">${Object.entries(quality).map(([key, count]) => `<span class="chip ${STUDY_QUALITY_TONE[key] || ""}">açıklama ${esc(STUDY_QUALITY_TR[key] || key)} · ${count}</span>`).join("")}</div>` : '<p class="med-review-note">Açıklama değerlendirilmedi.</p>'}
       ${results.note ? `<p class="med-review-note">${esc(results.note)}</p>` : ""}
       <div class="med-bank-list">${(session.items || []).map((item) => `<div class="med-row"><span class="med-row-title">${esc((item.specimen || {}).label || "(adsız)")}</span>
         <span class="med-row-side">${item.answer ? (item.answer.timed_out ? "süre doldu" : item.answer.correct ? "✓" : "✗") : "—"}</span>
@@ -780,6 +794,10 @@ const Study = {
     }
     const today = await this.request("plan_today", { plan_id: plan.plan_id });
     if (today.ok === false) { toast(today.error || "Bugün görünümü okunamadı.", true); return; }
+    // Reading today may have planned a new day; the header must say what the
+    // plan looks like after that, not before.
+    const fresh = await this.request("plan", { plan_id: plan.plan_id });
+    if (fresh.ok !== false && fresh.plan) Object.assign(plan, fresh.plan);
     plan.today_view = today.today;
     const weekdays = (plan.budget && plan.budget.weekdays) || {};
     const budgetLine = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"].map((name, index) => `${name} ${weekdays[String(index)] !== undefined ? weekdays[String(index)] : 45}`).join(" · ");

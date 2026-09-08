@@ -548,22 +548,37 @@ def diagnostic_assessment_prompt(question: str, expected_answer: str, rubric: st
     )
 
 
-def repair_explanation_prompt(concept_name: str, statement: str, evidence_lines: Iterable[str], passage_text: str) -> str:
+def repair_explanation_prompt(concept_name: str, statement: str, evidence_lines: Iterable[str], passage_text: str, *, mistake: dict[str, str] | None = None) -> str:
     lines = "\n".join(f"- {line}" for line in evidence_lines if line)
+    # A finding opened by a wrong answer knows exactly what was picked and what
+    # the key was. Without that, a model asked to "name the misunderstanding"
+    # sometimes names the correct answer as the error.
+    facts = ""
+    if mistake:
+        facts = (
+            f"The question asked: {mistake.get('stem', '')}\n"
+            f"The student chose: {mistake.get('chosen', '')}\n"
+            f"The correct answer is: {mistake.get('correct', '')}\n"
+            + (f"The question's own explanation: {mistake.get('explanation', '')}\n" if mistake.get("explanation") else "")
+            + "The misunderstanding is choosing the first over the second. Never describe the correct answer as the mistake, and never "
+            "state the opposite of the key.\n"
+        )
     return (
         "Write a short, targeted explanation in Turkish (6-10 sentences) for a first-year medical student who holds the misunderstanding "
         "below. Name the misunderstanding plainly in the first sentence, then give the correct principle, then one concrete contrast that "
         "shows why the wrong idea fails, and end with one sentence on how to recognise the situation next time. Use official Latin "
         "anatomical terms. Stay within the passage when one is given; say so when it does not cover a point. No disclaimers, no headings.\n\n"
-        f"Concept: {concept_name}\nMisunderstanding: {statement}\nWhat the student wrote or chose:\n{lines or '- (none)'}\n"
+        f"Concept: {concept_name}\nMisunderstanding: {statement}\n{facts}What the student wrote or chose:\n{lines or '- (none)'}\n"
         f"Course passage: {passage_text or '(none available)'}\n"
     )
 
 
-def transfer_directive(concept_name: str, statement: str, original_stems: Iterable[str]) -> str:
+def transfer_directive(concept_name: str, statement: str, original_stems: Iterable[str], *, principle: str = "") -> str:
     stems = "; ".join(_stem for _stem in original_stems if _stem)
     return (
-        f"TRANSFER QUESTION. The student misunderstood: {statement} (concept: {concept_name}). Write a question that requires the same "
+        f"TRANSFER QUESTION. The student misunderstood: {statement} (concept: {concept_name}). "
+        + (f"The point being tested: {principle} " if principle else "")
+        + "Write a question that requires the same "
         "principle applied in a DIFFERENT context (another organ, scenario, patient situation or example), so that the misunderstanding "
         "would lead to a wrong option. Do not reuse the setting or the wording of these earlier questions: "
         f"{stems or '(none)'}. One clear key; the explanation must state the principle explicitly."

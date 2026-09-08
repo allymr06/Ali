@@ -151,6 +151,44 @@ def test_two_low_confidence_errors_make_a_hypothesis_and_three_support_it() -> N
     assert finding["status"] == "supported" and finding["history"][-1]["note"].startswith("Birbirinden bağımsız")
 
 
+def test_a_question_without_concepts_is_read_for_one_or_anchored_to_itself() -> None:
+    """An imported committee question names no concept; the finding must still be about something real."""
+    engine, store, _learning = build()
+    named = question("named", "Aksiyon potansiyelinin yükselen fazında hangi olay olur?")
+    named.concept_ids = []
+    store.save_question(named)
+    # A question whose key is neutral but whose distractor names a concept:
+    # the finding must not be filed under the option the question ruled out.
+    distractor = Question(question_id="distractor", subject="physiology", stem="Aşağıdakilerden hangisi tabloda verilmemiştir?",
+                          options=[QuestionOption("A", "Birinci"), QuestionOption("B", "Dinlenim membran potansiyeli")],
+                          correct_key="A", topic_id=TOPIC, concept_ids=[], explanation="")
+    store.save_question(distractor)
+    plain = [QuestionOption(key, text) for key, text in zip("ABCD", ["Birinci", "İkinci", "Üçüncü", "Dördüncü"])]
+    for identifier, stem in (("first", "I. ve II. öncül için hangisi doğrudur?"), ("second", "Aşağıdakilerden hangisi tabloda verilmemiştir?")):
+        store.save_question(Question(question_id=identifier, subject="physiology", stem=stem, options=list(plain), correct_key="A", topic_id=TOPIC, concept_ids=[], explanation=""))
+
+    # A distractor must not name the finding: the key here is "Sodyum girişi"
+    # (an action-potential concept) while option A names calcium.
+    engine.record_event(store.get_question("named"), correct=False, answer_key="A", confidence="sure")
+    engine.record_event(store.get_question("first"), correct=False, answer_key="B", confidence="sure")
+    engine.record_event(store.get_question("second"), correct=False, answer_key="B", confidence="sure")
+
+    findings = {item["concept_id"]: item for item in engine.findings()}
+    # The wording names a concept the graph knows: the finding is about it.
+    assert AP in findings and findings[AP]["statement"].startswith("Aksiyon potansiyeli")
+    # The other two match nothing, so each is anchored to its own question —
+    # never merged into one finding about the whole subject.
+    assert set(findings) - {AP} == {"question:first", "question:second"}
+    anchored = findings["question:first"]
+    assert anchored["statement"] == "Bu soruda “İkinci” seçildi; doğrusu “Birinci”."
+    assert anchored["concept_name"].startswith("I. ve II.") and anchored["topic_id"] == TOPIC
+    assert engine.open_findings_for([], topic_id=TOPIC) != [], "the plan finds a question-anchored finding by its topic"
+
+    engine.record_event(store.get_question("distractor"), correct=False, answer_key="B", confidence="sure")
+    concepts = {item["concept_id"] for item in engine.findings()}
+    assert RMP not in concepts and "question:distractor" in concepts, "a wrong option never names the finding"
+
+
 def test_a_repeated_submission_id_is_stored_once() -> None:
     engine, store, _learning = build()
     store.save_question(question("q1", "Yükselen faz?"))
@@ -322,6 +360,12 @@ def test_a_repair_session_explains_cites_teaches_asks_anew_and_schedules_the_fol
     assert steps["problem"]["text"].startswith("Aksiyon potansiyeli konusunda yanlış cevap") and "hipotez" in steps["problem"]["text"]
     assert steps["passage"]["sources"][0] == {"document_id": "d1", "page_number": 12, "title": "Fizyoloji notları", "quote": "Aksiyon potansiyelinin yükselen fazı Na+ girişiyle olur."}
     assert steps["explanation"]["text"].startswith("Yükselen fazda Na+") and steps["explanation"]["assessor"].startswith("model:")
+    # The explanation prompt is told which option was picked and which is the
+    # key, in the question's own words: without it a model asked to name the
+    # misunderstanding sometimes names the correct answer as the error.
+    prompt = next(item for item in engine._model._gateway.prompts if "repair" in item.lower() or "misunderstanding" in item.lower())
+    assert "The student chose: Potasyum girişi" in prompt and "The correct answer is: Sodyum girişi" in prompt
+    assert "Never describe the correct answer as the mistake" in prompt
     transfer = steps["transfer"]
     assert transfer["question"]["stem"].startswith("Bir kalp kası hücresinde") and "correct_key" not in transfer["question"]
     assert transfer["similarity"] is not None and transfer["limitations"][0].startswith("Farklı bağlamda bir soru daha")

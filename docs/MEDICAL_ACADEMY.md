@@ -741,9 +741,10 @@ results, the question bank and the library page (`js/study.js`, `css/study.css`)
 An answer may carry `confidence` — `sure`, `unsure` or `guess` ("Eminim /
 Kararsızım / Tahmin ettim", chips above the options) — and a `submission_id`,
 so a repeated click or a retried call records it once. `UnderstandingEngine`
-stores one *event* per answered question: the key, the confidence, the
-reasoning, where it came from (exam, check, diagnosis, repair, histology) and a
-rule-based classification (`correct_supported`, `correct_unsupported`,
+stores one *event* per answered question — identified by the attempt and the
+question, so a practice answer and the finish of the same paper record it
+once — with the key, the confidence, the reasoning, where it came from (exam,
+check, diagnosis, repair, histology) and a rule-based classification (`correct_supported`, `correct_unsupported`,
 `correct_contradictory`, `wrong_low_confidence`, `wrong_high_confidence`).
 
 Reasoning is asked sparingly. In a paper with immediate feedback the runner
@@ -760,7 +761,14 @@ unassessed. Neither the reasoning nor its verdict changes the exam mark.
 ### Misconception findings and their repair
 
 A *finding* is a statement about one concept ("Yükselen fazı K+ girişi
-sanıyor") with the evidence behind it. One piece of evidence opens a
+sanıyor") with the evidence behind it. A question that names its concepts is
+evidence about them. An imported committee question names none, so it is read
+against the concept graph — its stem, its correct option and its own
+explanation, never a distractor, which would file the finding under the very
+structure the question ruled out. When nothing matches, the finding is
+anchored to that question rather than to a topic or a whole subject: two
+unrelated questions never feed one finding, and the repair looks the question
+up instead of a subject name. Coverage still sees these findings, by topic. One piece of evidence opens a
 *hypothesis*; two distinct pieces (a plain low-confidence wrong answer counts
 0.7, a confident wrong answer or contradictory reasoning 1.0, a diagnostic
 answer 2) make it *supported*. The student can challenge (`disputed`), dismiss
@@ -771,8 +779,11 @@ leaves it, or — twice refuted — withdraws it.
 
 A *repair session* has five steps: the problem in words, the lecture passage
 retrieved for the concept with its page chips, a short explanation (model, or a
-pointer to the passage when there is none — labelled), a *transfer* question
-generated in a different context with its similarity to the original stated,
+pointer to the passage when there is none — labelled; the prompt carries the
+question, the chosen option and the key, so the model cannot name the correct
+answer as the mistake), a *transfer* question generated in a different context
+with its similarity to the original stated (the directive carries the point the
+original question tested),
 and a delayed follow-up: the concept is scheduled in the review queue three
 days later. Answering the transfer question right marks the finding
 `repair_demonstrated`; only a correct answer on that concept at least two days
@@ -964,9 +975,14 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
   document gives no crop. Identification is matched against the recorded
   name and Latin name only — a synonym the student uses is a wrong answer
   until it is recorded as an alias on the specimen.
-- The five features were verified with a scripted model in the test suite
-  and in the static demo page with stubbed bridge replies; a live pass in the
-  native window against Gemini has not been done yet.
+- The five features were exercised in the native window against Gemini on
+  9 September 2026 (plan, "Bugün", a practice sitting with confidence and a
+  reasoning, a repair with its transfer question, a histology specimen cut
+  from a lecture page and identified in a timed session, the source-support
+  gate on a generated paper, a flag and an invalidation). What that pass
+  changed is recorded in `docs/PROJECT_STATE.md`. It ran on a copy of the
+  study store; the vision pass had described no page in it, so specimens
+  there carry no model description.
 
 ## Lab inspection controls (8 September 2026)
 

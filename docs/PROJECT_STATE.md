@@ -87,8 +87,59 @@ Last verified: 9 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2425 tests passing, 4 skipped (`scripts/verify.py`, Python 3.12.8 on Windows 11, 8 September 2026)
+- Automated verification: 2426 tests passing, 6 skipped (`scripts/verify.py`, Python 3.12.8 on Windows 11, 9 September 2026)
 - Production readiness: not yet claimed
+
+## The study workflow in the live window (9 September 2026)
+
+The five features were driven in the running Nova window against Gemini, on a
+copy of the study store (243 documents, 11 948 pages, 706 imported questions),
+through the page's own handlers over the WebView2 debugging port. Everything
+below was observed, not inferred; six defects came out of it and are fixed.
+
+- **A practice answer was recorded twice.** The page sends its own submission
+  token with an answer; finishing the paper sent the attempt's. The event's
+  identity is the attempt and the question in both places now, so a finding is
+  no longer fed the same answer twice.
+- **A confirmed plan was not laid out until "Bugün" was opened**, so the first
+  summary said everything fit with nothing planned. Creation plans at once.
+- **A manual activity could not be added to a full day.** Only fixed work
+  (manual, started, completed) counts against the budget; the automatic
+  activities are planned again around the new entry.
+- **Every wrong answer in a subject fed one finding.** The imported committee
+  questions name no concept, so findings were called "Anatomi konusunda yanlış
+  cevap" and the repair retrieved a history-of-medicine page for the subject
+  name. Findings are now anchored to a concept read from the question, or to
+  the question itself.
+- **A distractor named a finding**: a question about the deep peroneal nerve
+  was filed under *nervus obturatorius* because that was one of the wrong
+  options. The concept is read from the stem, the key and the explanation.
+- **The repair explanation called the correct answer the misunderstanding.**
+  The prompt now carries the question, the chosen option and the key, and
+  forbids restating the key as the error. The live re-run explained the actual
+  mistake (a sensory nerve chosen for a motor function).
+- Two labels leaked English (`model:unknown`, `açıklama specific`) and the
+  prerequisite rows showed raw provenance keys; all three are Turkish now.
+
+What the pass confirmed, end to end: a plan with a confirmed scope laid out
+within a 50-minute budget; Başla / Bitti / Atla moving one activity through
+started, completed (12 real minutes, which the estimate then learned) and
+skipped, with a manual entry surviving a replan inside the budget; a practice
+sitting carrying confidence and asking for a reasoning, the model's verdict
+coming back as a classification; a repair session quoting the student's own
+lower-limb lectures, explaining the mistake and asking a transfer question
+about the lateral malleolus (similarity 0.042); a histology specimen cut from
+a lecture page (a 100 KB crop rendered from the PDF), hidden in a timed
+session, identified with folding and its explanation graded *özgül* with the
+features named; the source-support gate quarantining one of two generated
+questions and saying so on the paper; a flag and then an invalidation that
+kept the attempt, corrected one mastery row and withdrew one finding.
+
+Also repaired here: two tests that failed on load rather than on behaviour —
+a source-review test that named an alternative option letter (generation
+re-letters options with a random seed, so the letter sometimes became the
+key), and the desktop UI pump test, whose one-second wall-clock bound failed
+on a busy machine.
 
 ## Medical Academy expansion (8 September 2026)
 
@@ -137,8 +188,8 @@ with a scripted model and a restart in the middle).
   runner; reasoning boxes for wrong answers in the results; support chips,
   "Kaynağı incele", the flag and "Geçersiz say" in the bank; the region
   selector on a library page; study jobs reported by push. Verified in the
-  static demo page with stubbed bridge replies and in QuickJS; the native
-  window with a live model has not been exercised for these screens yet.
+  static demo page with stubbed bridge replies, in QuickJS, and then in the
+  native window against Gemini (see the entry above).
 
 ## Reliability repairs (8 September 2026)
 

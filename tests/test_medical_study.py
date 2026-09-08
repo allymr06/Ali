@@ -153,6 +153,29 @@ def test_a_paper_marked_at_the_end_keeps_confidence_until_it_is_finished(academy
     assert finding["concept_id"] == AP and finding["evidence"][0]["kind"] == "answer_confident"
 
 
+def test_a_practice_paper_records_each_answer_once_even_when_it_is_finished(academy) -> None:
+    instance = academy(None)
+    store, study = instance.store, instance.study
+    for index in range(2):
+        store.save_question(question(f"q{index}", f"Soru {index}?"))
+    paper = asyncio.run(instance.generate_exam({"from_bank": True, "question_count": 2, "topic_ids": [EXCITABLE], "randomize": False, "immediate_feedback": True}))
+    exam_id = paper["exam_id"]
+    instance.start_exam(exam_id)
+    # The page sends its own token with the answer; the event's identity is still the attempt and the question.
+    first = instance.answer(exam_id, "q0", "A", confidence="sure", submission_id=f"{exam_id}:q0:A")
+    second = instance.answer(exam_id, "q1", "B", confidence="guess", submission_id=f"{exam_id}:q1:B")
+    assert len(study.understanding.events()) == 2
+
+    result = instance.finish_exam(exam_id)
+
+    assert result["analysis"]["events"] == {"q0": first["event_id"], "q1": second["event_id"]}
+    assert len(study.understanding.events()) == 2, "finishing a practice paper records nothing twice"
+    (finding,) = study.understanding.findings()
+    evidence = finding["evidence"]
+    assert len({item["event_id"] for item in evidence}) == len(evidence), "no event is counted twice as evidence"
+    assert [item["kind"] for item in evidence] == ["answer_confident", "follow_up"]
+
+
 def test_invalidating_a_question_through_the_workflow_corrects_everything_it_moved(academy) -> None:
     instance = academy(None)
     store, study = instance.store, instance.study
@@ -210,6 +233,8 @@ def test_a_student_names_a_prerequisite_and_the_graph_keeps_its_provenance(acade
     assert confirmed["status"] == "reviewed"
     direct = [item for item in study.call("prerequisites", {"concept_id": AP})["prerequisites"] if item["depth"] == 1]
     assert any(item["concept_id"] == nernst["concept_id"] and item["provenance"] == "student" for item in direct)
+    # Every row the page shows names its provenance in Turkish, never the raw key.
+    assert {item["provenance_label"] for item in direct} <= {"Öğrenci önerdi", "Müfredat sırası (gözden geçirilmiş)", "Ders materyalinde belirtilmiş", "Model önerisi"}
 
     # A link that would close a cycle is refused at confirmation, never stored as reviewed.
     backwards = study.call("prerequisite_suggest", {"concept_id": RMP, "requires": AP, "provenance": "student"})["edge"]

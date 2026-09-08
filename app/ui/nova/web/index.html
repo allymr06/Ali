@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="css/components.css">
 <link rel="stylesheet" href="css/screens.css">
 <link rel="stylesheet" href="css/medical.css">
+<link rel="stylesheet" href="css/study.css">
 </head>
 <body>
 
@@ -409,6 +410,14 @@
                 <div id="med-session-form" class="med-session-form"></div>
               </div>
               <div class="panel med-card">
+                <div class="panel-title"><span class="kicker">Bugün</span><span id="med-today-note" class="faint"></span></div>
+                <div id="med-today" class="med-list"></div>
+              </div>
+              <div class="panel med-card">
+                <div class="panel-title"><span class="kicker">Anlama</span></div>
+                <div id="med-understanding-card" class="med-list"></div>
+              </div>
+              <div class="panel med-card">
                 <div class="panel-title"><span class="kicker">Bugünün tekrarı</span><span id="med-review-count" class="faint"></span></div>
                 <div id="med-review-queue" class="med-list"></div>
               </div>
@@ -577,6 +586,73 @@
                 <div class="panel-title"><span class="kicker">Kavram ustalığı</span><span id="med-mastery-count" class="faint"></span></div>
                 <div id="med-mastery-list" class="med-mastery"></div>
               </div>
+            </div>
+          </section>
+
+          <!-- Plan -->
+          <section class="med-view" data-view="plan" hidden>
+            <div class="med-split">
+              <div class="panel med-card med-tree-panel">
+                <div class="panel-title"><span class="kicker">Sınav planları</span><span id="med-plan-count" class="faint"></span></div>
+                <div id="med-plan-list" class="med-list"></div>
+                <form id="med-plan-form" class="med-form" autocomplete="off">
+                  <div class="med-form-row">
+                    <label class="med-field"><span>Sınav adı</span><input id="med-plan-name" type="text" maxlength="80" placeholder="Komite 2"></label>
+                    <label class="med-field"><span>Sınav tarihi</span><input id="med-plan-date" type="date"></label>
+                  </div>
+                  <div class="med-form-row">
+                    <label class="med-field"><span>Dersler (boş bırakılırsa belgelerden önerilir)</span><select id="med-plan-subjects" multiple size="4" aria-label="Dersler"></select></label>
+                    <label class="med-field"><span>Günlük süre (dk)</span><input id="med-plan-minutes" type="number" min="5" max="600" value="45"></label>
+                  </div>
+                  <div class="med-switches">
+                    <label class="switch-row small" title="Her sabah o günün etkinliklerini hatırlatma merkezine bırakır"><span>Sabah hatırlat</span><input id="med-plan-notify" class="switch" type="checkbox"></label>
+                    <label class="switch-row small"><span>Saat</span><input id="med-plan-notify-time" type="time" value="09:00"></label>
+                  </div>
+                  <p class="settings-note">Süreler tahmindir ve tamamladığın etkinliklerin gerçek süresiyle güncellenir; plan günlük süreyi hiç aşmaz.</p>
+                  <div class="btn-row"><button id="med-plan-create" class="btn btn-primary small" type="submit">Plan oluştur</button></div>
+                </form>
+              </div>
+              <div id="med-plan-detail" class="med-plan-detail"></div>
+            </div>
+          </section>
+
+          <!-- Anlama -->
+          <section class="med-view" data-view="understanding" hidden>
+            <div class="med-split">
+              <div class="panel med-card med-tree-panel">
+                <div class="panel-title"><span class="kicker">Bulgular</span><span id="med-und-count" class="faint"></span></div>
+                <div id="med-und-summary" class="med-chips"></div>
+                <div class="btn-row" style="justify-content:flex-start">
+                  <button id="med-und-check" class="btn btn-ghost small" type="button" title="Bankadan bir soru: cevap, güven ve gerekçe birlikte kaydedilir; gerekçe kaynağa göre değerlendirilir">Anlama kontrolü</button>
+                  <button id="med-und-refresh" class="icon-btn small" type="button" title="Yenile"></button>
+                </div>
+                <div id="med-und-findings" class="med-list"></div>
+                <div class="panel-title"><span class="kicker">Zorlanılan kavramlar</span></div>
+                <div id="med-und-struggling" class="med-list"></div>
+                <div class="panel-title"><span class="kicker">Son kayıtlar</span></div>
+                <div id="med-und-events" class="med-list"></div>
+              </div>
+              <div id="med-und-detail" class="med-und-detail"></div>
+            </div>
+          </section>
+
+          <!-- Histoloji -->
+          <section class="med-view" data-view="histology" hidden>
+            <div class="med-split">
+              <div class="panel med-card med-tree-panel">
+                <div class="panel-title"><span class="kicker">Örnekler</span><span id="med-histo-count" class="faint"></span></div>
+                <p id="med-histo-empty" class="settings-note"></p>
+                <div class="med-form-row">
+                  <label class="med-field"><span>Örnek sayısı</span><input id="med-histo-n" type="number" min="1" max="10" value="10"></label>
+                  <label class="med-field"><span>Süre (sn)</span><input id="med-histo-seconds" type="number" min="15" max="300" value="60"></label>
+                </div>
+                <div class="btn-row" style="justify-content:flex-start">
+                  <button id="med-histo-study" class="btn btn-ghost small" type="button" title="Adı kaydedilmemiş örnekler de gösterilir; puanlanmaz">Çalışma oturumu</button>
+                  <button id="med-histo-timed" class="btn btn-primary small" type="button" title="Yalnız adı onaylanmış örnekler; süre bitince cevap boş sayılır">Süreli pratik</button>
+                </div>
+                <div id="med-histo-list" class="med-list"></div>
+              </div>
+              <div id="med-histo-detail" class="med-histo-detail"></div>
             </div>
           </section>
 
@@ -813,6 +889,7 @@
 <script src="js/activity.js"></script>
 <script src="js/panels.js"></script>
 <script src="js/medical.js"></script>
+<script src="js/study.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

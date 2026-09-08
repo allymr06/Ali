@@ -58,6 +58,16 @@ A domain augmenter that raises, times out or returns an unsupported value is
 recorded in the diagnostics ledger and ignored; the turn completes without it.
 The Medical Academy (`app/medical/`) is the first such layer.
 
+Inside it, `app/medical/study.py` composes the connected study workflow —
+answer events with confidence and reasoning, misconception findings and
+repair, the prerequisite graph and diagnosis, the exam-date planner, the
+histology practicals and the source-support review — over the same store
+and learning model, and publishes it as named actions: synchronous ones
+answered from the store, asynchronous ones run as bridge jobs that report
+back by push, and destructive ones that fail closed without an explicit
+confirmation. The bridge dispatches by name and adds nothing of its own
+(`docs/MEDICAL_ACADEMY.md`, "The connected study workflow").
+
 ## Identity and traceability
 
 `request_id`, `conversation_id`, `task_id`, `plan_id`, and the current step

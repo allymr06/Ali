@@ -21,6 +21,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from app.medical.histology import HistologyBank
+from app.medical.models import SUBJECT_LABELS_TR
 from app.medical.planner import StudyPlanner
 from app.medical.prerequisites import PrerequisiteDiagnosis, PrerequisiteGraph
 from app.medical.review import SourceSupportReviewer
@@ -86,6 +87,7 @@ class StudyWorkflow:
             "repair_answer": lambda payload: {"session": self.understanding.answer_transfer(_text(payload, "session_id"), _optional(payload, "answer_key"), confidence=_optional(payload, "confidence"), reasoning=_text(payload, "reasoning"), submission_id=_optional(payload, "submission_id")), "finding": self._finding_of_session(_text(payload, "session_id"))},
             # prerequisites and diagnosis
             "prerequisites": lambda payload: self.prerequisites.payload(_text(payload, "concept_id")),
+            "concept_search": lambda payload: {"concepts": self._concept_search(_text(payload, "text"))},
             "prerequisite_suggest": lambda payload: {"edge": self.prerequisites.suggest(_text(payload, "concept_id"), _text(payload, "requires"), provenance=_text(payload, "provenance", "model_suggested"), note=_text(payload, "note"), source=_mapping(payload, "source")).to_dict()},
             "prerequisite_confirm": lambda payload: {"edge": self.prerequisites.confirm(_text(payload, "edge_id")).to_dict()},
             "prerequisite_reject": lambda payload: {"edge": self.prerequisites.reject(_text(payload, "edge_id")).to_dict()},
@@ -218,6 +220,24 @@ class StudyWorkflow:
         event["assessment"] = {**(event.get("assessment") or {}), "status": "pending"}
         self._academy.store.save_record("understanding_event", event_id, event, subject_key=event["concept_ids"][0])
         return event
+
+    def _concept_search(self, text: str, *, limit: int = 8) -> list[dict[str, Any]]:
+        """Concepts a student can name a prerequisite by: alias hits first, then a name substring."""
+        query = " ".join(str(text or "").split())
+        if len(query) < 2:
+            return []
+        graph = self._academy.concepts
+        found = list(graph.find(query, limit=limit))
+        folded = query.replace("İ", "i").replace("I", "ı").casefold()
+        for concept in graph.all():
+            if len(found) >= limit:
+                break
+            if concept in found:
+                continue
+            names = [concept.name, *concept.aliases]
+            if any(folded in str(name).replace("İ", "i").replace("I", "ı").casefold() for name in names):
+                found.append(concept)
+        return [{"concept_id": item.concept_id, "name": item.name, "subject": item.subject, "subject_label": SUBJECT_LABELS_TR.get(item.subject, item.subject)} for item in found[:limit]]
 
     def _support(self, question_id: str) -> dict[str, Any]:
         question = self._academy.store.get_question(question_id)

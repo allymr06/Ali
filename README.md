@@ -93,7 +93,7 @@ See `docs/MEDICAL_ACADEMY.md`.
 
 ## Verification status
 
-The current test suite contains **2348 tests passing, 5 skipped (`scripts/verify.py`, Python 3.12.8 on Windows 11, 8 September 2026)**. Earlier
+The current test suite contains **2425 tests passing, 4 skipped (`scripts/verify.py`, Python 3.12.8 on Windows 11, 8 September 2026)**. Earlier
 dated counts in `docs/FINAL_AUDIT.md` and `docs/PROJECT_STATE.md` are history,
 not the present state. Automated tests run the Nova page scripts under QuickJS
 and the Windows integrations against fakes; live microphone, speaker, vision

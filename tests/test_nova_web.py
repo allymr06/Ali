@@ -1060,3 +1060,118 @@ def test_a_station_still_loading_its_specimen_cannot_be_answered() -> None:
 
     context.eval('void Lab.answerStation("acromion")')
     assert len(bell(context)["answers"]) == 1 and bell(context)["answers"][0]["correct"] is True
+
+
+# ---------------------------------------------------------------------------
+# the connected study workflow: plan, understanding, histology, confidence
+# ---------------------------------------------------------------------------
+
+
+STUDY_STUBS = """
+function icon() { return ""; }
+function toast() {}
+function el(tag, className) { return {className, style: {}, appendChild() {}, parentNode: null}; }
+const State = {screen: "medical"};
+"""
+
+STUDY_MARKUP = """
+(() => JSON.stringify({
+  chips: Study.confidenceChips("unsure"),
+  locked: Study.confidenceChips("sure", {locked: true}),
+  explain: Study.explainBox({event_id: "ev1", reason: "open_finding"}),
+  sent: Study.explainBox({event_id: "ev1", reason: "sample", sent: true, text: "Cunku K girer", note: "Dogru cevap, gerekce celiskili"}),
+  support: Study.supportChip({status: "needs_review", label: "Inceleme gerekli", scored: false, reason: "Kaynak destegi henuz incelenmedi."}),
+  scored: Study.supportChip({status: "source_supported", label: "Kaynak destekli", scored: true}),
+  none: Study.supportChip(null),
+  today_empty: Study.todayMarkup({plan: null, message: "Sinav plani yok."}),
+  today: Study.todayMarkup({plan: {plan_id: "p1", name: "Komite 2", exam_date: "2026-09-15", days_left: 7}, date: "2026-09-08", budget: 45, planned_minutes: 40, done_minutes: 0,
+    activities: [{activity_id: "a1", kind: "read", kind_label: "Materyali oku", title: "Aksiyon potansiyeli", reason: "Kapsamda, calisilmadi.", estimate_minutes: 20, estimate_label: "varsayilan tahmin", status: "planned", status_label: "Planlandi"}],
+    next: {activity_id: "a1", kind: "read", kind_label: "Materyali oku", title: "Aksiyon potansiyeli", reason: "Kapsamda, calisilmadi.", estimate_minutes: 20, estimate_label: "varsayilan tahmin", status: "planned", status_label: "Planlandi"},
+    message: "", fit: false, overload: {message: "Kapsam kalan sureye sigmiyor: 300 dk is var."}}, {compact: true}),
+  coverage: Study.coverageMarkup({topics: [{topic_id: "t1", title: "Uyarilabilir dokular", state: "misconception", state_label: "Onarim bekleyen yanlis anlama", attempts: 4, correct: 1, findings: 1}], counts: {misconception: 1, unstudied: 0}, labels: {misconception: "Onarim bekleyen yanlis anlama", unstudied: "Kapsamda, calisilmadi"}}),
+  specimen_hidden: Study.specimenMarkup({specimen_id: "hs1", label: "Cok katli yassi epitel", latin: "Epithelium stratificatum", basis: "user_confirmed", basis_label: "Ogrenci onayladi", status: "eligible", status_label: "Puanli sinava uygun", document_title: "Histoloji", page_number: 3, features: ["Bazal tabaka"], model_description: "Model boyle gordu"}, {reveal: false}),
+  specimen_shown: Study.specimenMarkup({specimen_id: "hs1", label: "Cok katli yassi epitel", latin: "Epithelium stratificatum", basis: "user_confirmed", basis_label: "Ogrenci onayladi", status: "eligible", status_label: "Puanli sinava uygun", document_title: "Histoloji", page_number: 3, features: ["Bazal tabaka"], model_description: "Model boyle gordu"}, {reveal: true}),
+  session_note: Study.sessionResultsMarkup({mode: "timed", items: [], results: {shown: 3, scored: 2, identified: 1, identification_accuracy: 0.5, explanation_quality: {}, study_only: 1, repeated_specimens: 1, note: "Bazi ornekler daha once gorulmustu."}}),
+  reasons: Study.reasoningPrompts({questions: [{question_id: "q1", stem: "Yanlis soru", answer: "A", correct: false}, {question_id: "q2", stem: "Dogru soru", answer: "B", correct: true}], analysis: {events: {q1: "ev1", q2: "ev2"}}}),
+  finding: Study.findingMarkup({finding_id: "mc1", concept_name: "Aksiyon potansiyeli", statement: "Yukselen fazi K+ girisi saniyor.", status: "supported", status_label: "Desteklenen bulgu", subject_label: "Fizyoloji", priority: 3, evidence_count: 2,
+    evidence: [{kind: "answer_confident", excerpt: "Cunku K girer", outcome: "against", valid: true}], sources: [{document_id: "d1", page_number: 3, title: "Fizyoloji"}],
+    pending_diagnostic: {question: "Repolarizasyonda hangi iyon hareket eder?", expected_answer: "GIZLI CEVAP", rubric: "GIZLI RUBRIK"}, history: []}),
+}))()
+"""
+
+
+def study_context():
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(STUDY_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    context.eval(JS_SOURCES["js/study.js"])
+    return context
+
+
+def test_study_markup_labels_estimates_hides_answers_and_speaks_turkish() -> None:
+    result = json.loads(study_context().eval(STUDY_MARKUP))
+
+    # Confidence: three Turkish levels, the chosen one lit, locked after the reveal.
+    for label in ("Eminim", "Kararsızım", "Tahmin ettim"):
+        assert label in result["chips"]
+    assert 'class="chip active accent" data-confidence="unsure"' in result["chips"]
+    assert result["locked"].count("disabled") == 3
+    # The reasoning box says why it asks and never hides that it is optional.
+    assert "açık bir bulgu" in result["explain"] and "data-explain-send" in result["explain"]
+    assert "Cunku K girer" in result["sent"] and "gerekce celiskili" in result["sent"]
+    # Source support: an unreviewed question is marked unscored; a supported one is not.
+    assert "Inceleme gerekli" in result["support"] and "puansız" in result["support"]
+    assert "puansız" not in result["scored"] and result["none"] == ""
+    # Today: no plan is an honest empty state; a plan shows the estimate as an estimate and the overload as words.
+    assert "Sinav plani yok." in result["today_empty"] and 'data-study-go="plan"' in result["today_empty"]
+    for text in ("Komite 2", "7 gün kaldı", "≈ 20 dk", "varsayilan tahmin", "sigmiyor", 'data-activity-run="a1"'):
+        assert text in result["today"], text
+    # Coverage: states with a count are chips; empty states are not invented.
+    assert "Onarim bekleyen yanlis anlama · 1" in result["coverage"] and "1/4" in result["coverage"]
+    assert "Kapsamda, calisilmadi" not in result["coverage"]
+    # A specimen in a session hides its answer, its Latin name, its features and the model's description.
+    for secret in ("Cok katli yassi epitel", "Epithelium", "Bazal tabaka", "Model boyle gordu"):
+        assert secret not in result["specimen_hidden"], secret
+    assert 'data-crop="hs1"' in result["specimen_hidden"]
+    assert "Cok katli yassi epitel" in result["specimen_shown"] and "Model betimlemesi (cevap değil)" in result["specimen_shown"]
+    # Session results keep the repeated-specimen caveat.
+    assert "%50" in result["session_note"] and "1/2" in result["session_note"] and "daha once gorulmustu" in result["session_note"]
+    # Reasoning is asked only for the wrong answers that have an event.
+    assert "Yanlis soru" in result["reasons"] and 'data-reason-send="ev1"' in result["reasons"]
+    assert "Dogru soru" not in result["reasons"]
+    # A finding's diagnostic question is shown; its expected answer and rubric never are.
+    assert "Repolarizasyonda hangi iyon" in result["finding"]
+    assert "GIZLI" not in result["finding"]
+    assert "Onarımı başlat" in result["finding"] and "İtiraz et" in result["finding"]
+
+
+def test_the_study_screens_are_declared_wired_and_confirmed() -> None:
+    assert "js/study.js" in shell.WEB_ASSETS and "css/study.css" in shell.WEB_ASSETS
+    for view in ("plan", "understanding", "histology"):
+        assert f'data-view="{view}"' in HTML, view
+    tabs = section(JS, "const MED_TABS = [", "];")
+    for view in ("plan", "understanding", "histology"):
+        assert f'["{view}",' in tabs, view
+    medical_js = JS_SOURCES["js/medical.js"]
+    study_js = JS_SOURCES["js/study.js"]
+    # The answer carries the confidence and a submission id; the runner, the review and the bank can flag a question.
+    assert "params.confidence" in medical_js and "params.submission_id" in medical_js
+    assert 'data-run="report"' in medical_js
+    assert medical_js.count("Soruda hata olabilir") >= 3
+    # Destructive study actions send the confirmation flag only from their own dialog.
+    for action in ("invalidate_question", "plan_delete", "histology_delete"):
+        call = study_js[study_js.index(f'"{action}"'):]
+        assert "confirmed: true" in call[:320], action
+    assert study_js.count("confirmed: true") == 3
+    # Study jobs return through the report push and are dispatched by action.
+    assert 'String(payload.job) === "study"' in medical_js
+    for action in ("understanding_assess", "diagnostic_ask", "repair_start", "question_review", "histology_answer"):
+        assert f'action === "{action}"' in study_js, action
+    # Dashboard cards and the library's region selector are declared.
+    for element_id in ("med-today", "med-understanding-card", "med-plan-detail", "med-und-detail", "med-histo-detail", "med-histo-form"):
+        assert f'id="{element_id}"' in HTML + JS, element_id
+    # A prerequisite the model or the student proposes is confirmed or rejected by the student, by name.
+    for marker in ("data-edge-confirm", "data-edge-reject", '"concept_search"', '"prerequisite_suggest"', 'provenance: "student"'):
+        assert marker in study_js, marker

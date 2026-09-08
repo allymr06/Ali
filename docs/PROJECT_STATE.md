@@ -62,12 +62,68 @@ Last verified: 8 September 2026
   its save and counted once, an exam is finalized once per attempt with its
   adaptive verdict stored, and a reminder whose delivery failed is leased,
   retried and kept instead of lost, 8 September 2026
+- Completed feature milestone: Medical Academy expansion (confidence and
+  reasoning with every answer, misconception findings with diagnosis and
+  repair, prerequisites with provenance and prerequisite diagnosis, the
+  exam-date plan with curriculum coverage and "Bugün", histology practicals
+  from the student's own page figures, source-support review with the
+  student's flag and invalidation), 8 September 2026
 - Next action: plugin process isolation; code signing and a user-attended
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2348 tests passing, 5 skipped (`scripts/verify.py`, Python 3.12.8 on Windows 11, 8 September 2026)
+- Automated verification: 2425 tests passing, 4 skipped (`scripts/verify.py`, Python 3.12.8 on Windows 11, 8 September 2026)
 - Production readiness: not yet claimed
+
+## Medical Academy expansion (8 September 2026)
+
+Five connected capabilities, one journey: an exam is planned, "Bugün" says
+what to do, an answer carries the student's confidence, a contradictory
+reasoning opens a finding, the diagnosis looks at a prerequisite, a repair
+session asks a transfer question, the delayed review resolves the finding and
+the plan's coverage moves (`tests/test_medical_study.py` runs it end to end
+with a scripted model and a restart in the middle).
+
+- **Confidence and reasoning.** `QuestionAttempt` carries `confidence` and
+  `reasoning`; every answer path (exam, anatomy, check, diagnosis, repair,
+  histology) accepts them with a `submission_id`. `UnderstandingEngine`
+  records events, samples reasoning (two per exam, always on an open
+  finding), assesses it with one bounded model call, and classifies the
+  answer. The mark never changes.
+- **Findings and repair.** Weighted evidence opens a hypothesis and supports
+  it at two; challenge, dismiss, reopen with notes; a diagnostic question
+  whose expected answer never reaches the page; a five-step repair with a
+  generated transfer question and a delayed follow-up in the review queue;
+  resolution only from a later correct answer on the concept.
+- **Prerequisites.** 63 seeded curriculum edges with reasons; suggestions
+  from material, the model or the student stay pending until confirmed;
+  cycles refused; a diagnosis that asks at most three bank questions,
+  locates the foundation and lays out the way back.
+- **Planner.** Plans with a confirmed scope, weekday budgets, days off,
+  reminders; six coverage states with "studied" kept apart from
+  "demonstrated"; a day never over budget; labelled estimates refined from
+  actual durations; missed days and overload reported with numbers; replans
+  that keep completed and manual work; "Bugün" on the dashboard.
+- **Histology.** A rectangle on a lecture page becomes a specimen with a
+  fresh 2× crop; name and features need a basis; a model description is
+  never the answer; study and timed sessions that hide the answer, match the
+  identification with folding, grade the explanation separately, and say
+  when repeated images inflated the score.
+- **Source support.** Generated questions are reviewed against their passage
+  before a paper (twelve per paper at most) and carry a status the bank
+  shows; imported keys are never edited; "Soruda hata olabilir" flags with
+  four kinds; invalidation keeps the attempt and corrects mastery and
+  findings. `JARVIS_MEDICAL_SOURCE_REVIEW` (default on).
+- **Storage.** `MedicalStore` schema 2: `records` and `media` tables, a
+  recorded migration, `transaction()`; every record kind listed in
+  `docs/MEDICAL_ACADEMY.md`.
+- **Nova.** Tabs Plan, Anlama, Histoloji; dashboard cards Bugün and Anlama;
+  confidence chips, the "Kısaca neden?" box and the flag button in the
+  runner; reasoning boxes for wrong answers in the results; support chips,
+  "Kaynağı incele", the flag and "Geçersiz say" in the bank; the region
+  selector on a library page; study jobs reported by push. Verified in the
+  static demo page with stubbed bridge replies and in QuickJS; the native
+  window with a live model has not been exercised for these screens yet.
 
 ## Reliability repairs (8 September 2026)
 

@@ -1444,6 +1444,7 @@ class MedicalAcademy:
                 **question_payload(question, reveal=reveal and (finished or (attempt is not None and question.question_id in attempt.answers)), include_explanation=reveal and (finished or (attempt is not None and question.question_id in attempt.answers)), curriculum=self.curriculum),
                 "answer": (attempt.answers[question.question_id].answer_key if attempt and question.question_id in attempt.answers else None),
                 "flagged": (attempt.answers[question.question_id].flagged if attempt and question.question_id in attempt.answers else False),
+                "confidence": (attempt.answers[question.question_id].confidence if attempt and question.question_id in attempt.answers else None),
                 "correct": (attempt.answers[question.question_id].correct if attempt and question.question_id in attempt.answers and (finished or exam.config.immediate_feedback) else None),
             }
             for question in questions

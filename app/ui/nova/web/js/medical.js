@@ -13,11 +13,14 @@
 
 const MED_TABS = [
   ["dashboard", "Panel", "home"],
+  ["plan", "Plan", "alarm"],
   ["subjects", "Konular", "memory"],
   ["library", "Kütüphane", "research"],
   ["notes", "Notlar", "chat"],
   ["exam", "Sınav", "tasks"],
   ["bank", "Soru bankası", "tools"],
+  ["understanding", "Anlama", "spark"],
+  ["histology", "Histoloji", "vision"],
   ["professor", "Hoca tarzı", "integrations"],
   ["progress", "İlerleme", "diagnostics"],
   ["anatomy", "Anatomi Lab", "vision"],
@@ -138,7 +141,10 @@ const Medical = {
   markTabs() {
     $$("#med-tabs .med-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === this.view));
     const counts = this.state && this.state.counts ? this.state.counts : {};
-    const map = { library: counts.documents, notes: counts.notes, exam: counts.exams, bank: counts.questions };
+    const study = (this.state && this.state.study) || {};
+    const histology = study.histology || {};
+    const map = { library: counts.documents, notes: counts.notes, exam: counts.exams, bank: counts.questions,
+      plan: study.plans, understanding: study.findings_open, histology: (histology.eligible || 0) + (histology.study_only || 0) };
     $$("#med-tabs .med-tab-count").forEach((node) => {
       const value = map[node.dataset.count];
       node.textContent = Number.isFinite(Number(value)) && Number(value) > 0 ? String(value) : "";
@@ -188,6 +194,9 @@ const Medical = {
     if (view === "bank") { await this.loadBank(); return; }
     if (view === "professor") { await this.loadProfessors(); return; }
     if (view === "progress") { await this.loadProgress(); return; }
+    if (view === "plan") { await Study.openPlan(); return; }
+    if (view === "understanding") { await Study.openUnderstanding(); return; }
+    if (view === "histology") { await Study.openHistology(); return; }
     if (view === "anatomy") { await Lab.open(); return; }
   },
 
@@ -303,6 +312,8 @@ const Medical = {
         ["Kısa not çıkar", () => this.quickAsk("bu konudan kısa sınav notu çıkar")],
         ["Yüksek verimli noktalar", () => this.quickAsk("bu konunun yüksek verimli noktalarını ver")],
         ["Zayıf alanlarımı tekrar et", () => this.quickAsk("zayıf olduğum konuları tekrar et")],
+        ["Bugünün planı", () => this.show("plan")],
+        ["Anlama kontrolü", () => { this.show("understanding"); Study.startCheck(); }],
         ["Belge ekle", () => { this.show("library"); this.importDocument(); }],
         ["Anatomi Lab", () => this.show("anatomy")],
       ];
@@ -315,6 +326,7 @@ const Medical = {
         quick.appendChild(btn);
       });
     }
+    Study.renderDashboardCards(this.state.study);
     this.markTabs();
   },
 
@@ -783,8 +795,11 @@ const Medical = {
     const host = $("#med-page-view");
     if (!host || !this.page) return;
     const page = this.page;
+    Study.endRegionSelect();
     host.innerHTML = `
-      <div>${page.image ? `<div class="med-page-image"><img src="${page.image}" alt="Sayfa ${page.page_number}"></div>`
+      <div>${page.image ? `<div id="med-page-image" class="med-page-image"><img src="${page.image}" alt="Sayfa ${page.page_number}"></div>
+        <div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-ghost small" data-histo-select title="Şekli çerçeve içine al; adı ve dayanağıyla histoloji örneği olarak kaydedilir">Histoloji örneği seç</button></div>
+        <div id="med-histo-form"></div>`
         : `<div class="med-explain">${esc(page.image_error || "Bu belge için sayfa görüntüsü yok.")}</div>`}</div>
       <div>
         ${(page.headings || []).length ? `<div class="med-chips">${page.headings.map((heading) => `<span class="chip">${esc(heading)}</span>`).join("")}</div>` : ""}
@@ -792,6 +807,8 @@ const Medical = {
           ${(page.visual_labels || []).length ? `<div class="med-chips" style="margin-top:.4rem">${page.visual_labels.slice(0, 20).map((label) => `<span class="chip violet">${esc(label)}</span>`).join("")}</div>` : ""}</div>` : ""}
         <div class="med-page-text">${esc(page.text || "(bu sayfadan metin çıkarılamadı)")}</div>
       </div>`;
+    const select = host.querySelector("[data-histo-select]");
+    if (select && this.document) select.addEventListener("click", () => Study.beginRegionSelect(this.document.document_id, page.page_number));
   },
 
   /* ── notes ─────────────────────────────────────────────────────── */
@@ -1019,6 +1036,7 @@ const Medical = {
         </div>
         ${this.figureMarkup(question)}
         <div class="mq-stem">${esc(question.stem)}</div>
+        ${Study.confidenceChips(question.confidence || null, { locked: revealed })}
         <div class="med-options">${(question.options || []).map((option) => {
           const chosen = question.answer === option.key;
           const isCorrect = revealed && question.correct_key === option.key;
@@ -1030,17 +1048,21 @@ const Medical = {
         ${revealed && question.explanation ? `<div class="med-explain"><h4>Açıklama</h4>${esc(question.explanation)}
           ${question.trap ? `<br><b>Tuzak:</b> ${esc(question.trap)}` : ""}
           ${(question.references || []).map((ref) => `<br><span class="med-source">${esc(ref.title)} · s. ${ref.page_number}</span>`).join("")}</div>` : ""}
+        ${Study.explainBox(Study.pendingFor(question))}
+        ${Study.assessmentMarkup(question.assessment)}
       </div>
       <div class="med-runner-nav">
         <button type="button" class="btn btn-ghost small" data-run="prev" ${index === 0 ? "disabled" : ""}>← Önceki</button>
         <button type="button" class="btn btn-ghost small" data-run="next" ${index >= questions.length - 1 ? "disabled" : ""}>Sonraki →</button>
         <span class="spacer"></span>
         <button type="button" class="btn btn-ghost small" data-run="ask">JARVIS'e sor</button>
+        <button type="button" class="btn btn-ghost small" data-run="report" title="Cevap anahtarı, kaynak ya da şekil hatalı olabilir: soruyu işaretle">Soruda hata olabilir</button>
       </div>`;
     this.loadFigures(host);
     $$("[data-option]", host).forEach((node) => node.addEventListener("click", () => this.answer(question.question_id, node.dataset.option)));
     $$("[data-goto]", host).forEach((node) => node.addEventListener("click", () => { this.runner.index = Number(node.dataset.goto); this.renderRunner(); }));
     $$("[data-run]", host).forEach((node) => node.addEventListener("click", () => this.runnerAction(node.dataset.run, question)));
+    Study.bindRunner(host, question);
     this.startTimer();
   },
 
@@ -1099,18 +1121,26 @@ const Medical = {
     if (action === "finish") { await this.finishExam(); return; }
     if (action === "flag") { await this.answer(question.question_id, question.answer, { flagged: !question.flagged }); return; }
     if (action === "ask") { this.quickAsk(`Bu soruyu açıkla: ${question.stem}`); return; }
+    if (action === "report") { Study.flagQuestion(question.question_id, { exam_id: this.exam.exam_id, attempt_id: this.exam.attempt ? this.exam.attempt.attempt_id : null }); return; }
   },
 
   async answer(questionId, answerKey, { flagged } = {}) {
     if (!this.exam) return;
     const params = { exam_id: this.exam.exam_id, question_id: questionId, answer_key: answerKey || "", current_index: this.runner.index };
     if (flagged !== undefined) params.flagged = flagged;
+    // What the student said about the answer travels with it: the confidence
+    // chosen on the card, and a submission id so a repeated click or a retry
+    // records the answer once.
+    const target = (this.exam.questions || []).find((item) => item.question_id === questionId);
+    if (target && target.confidence) params.confidence = target.confidence;
+    if (answerKey) params.submission_id = Study.submissionId(this.exam.exam_id, questionId, answerKey);
     const result = await this.request("answer", params);
     if (result.ok === false) { toast(result.error || "Cevap kaydedilemedi.", true); return; }
     const question = (this.exam.questions || []).find((item) => item.question_id === questionId);
     if (question) {
       question.answer = result.answer;
       question.flagged = result.flagged;
+      Study.notePending(question, result);
       if (result.feedback) {
         question.correct = result.feedback.correct;
         question.correct_key = result.feedback.correct_key;
@@ -1174,6 +1204,7 @@ const Medical = {
           <div class="med-chips">${analysis.weak_concepts.map((item) => `<span class="chip bad">${esc(item.label)} · ${item.correct}/${item.total}</span>`).join("")}</div>
           <div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-ghost small" data-result="review">Zayıf alanları tekrar et</button>
           <button type="button" class="btn btn-ghost small" data-result="retry">Yanlışlarımı tekrar sor</button></div></div>` : ""}
+        ${Study.reasoningPrompts(exam)}
         ${this.reviewSection(questions)}
       </div>`;
     this.loadFigures(host);
@@ -1187,6 +1218,7 @@ const Medical = {
       this.show("library");
       this.openDocument(documentId).then(() => this.openPage(Number(page)));
     }));
+    Study.bindResults(host, exam);
   },
 
   reviewSection(questions) {
@@ -1223,6 +1255,7 @@ const Medical = {
       ${question.explanation ? `<div class="med-explain">${esc(question.explanation)}${question.trap ? `<br><b>Tuzak:</b> ${esc(question.trap)}` : ""}</div>` : ""}
       <div class="mb-meta">
         <button type="button" class="chip" data-ask="${esc("Bu soruyu ayrıntılı açıkla: " + question.stem)}">JARVIS'e sor</button>
+        <button type="button" class="chip" data-flag-question="${esc(question.question_id)}">Soruda hata olabilir</button>
         ${(question.references || []).map((ref) => `<button type="button" class="chip" data-source="${esc(ref.document_id + "|" + ref.page_number)}">${esc(ref.title)} · s. ${ref.page_number}</button>`).join("")}
       </div>
     </div>`;
@@ -1273,8 +1306,14 @@ const Medical = {
         ${question.has_answer_key ? "" : '<span class="chip warn">cevap anahtarı yok</span>'}
         ${question.last_result === true ? '<span class="chip ok">doğru yapmıştın</span>' : question.last_result === false ? '<span class="chip bad">yanlış yapmıştın</span>' : ""}
         ${(question.problems || []).length ? `<span class="chip warn" title="${esc(question.problems.join(", "))}">kalite uyarısı</span>` : ""}
+        ${Study.supportChip(question.support)}
+        ${question.flags ? `<span class="chip warn">${question.flags} işaret</span>` : ""}
+        ${question.invalidated ? '<span class="chip bad">geçersiz sayıldı</span>' : ""}
         <span class="mb-actions">
           ${question.has_answer_key ? "" : `<select data-key="${esc(question.question_id)}" aria-label="Cevap anahtarı"><option value="">anahtar seç</option>${(question.options || []).map((option) => `<option value="${esc(option.key)}">${esc(option.key)}</option>`).join("")}</select>`}
+          ${question.support && ["needs_review", "stale", "unresolved", "conflicting_evidence", "insufficient_evidence"].includes(question.support.status) ? `<button type="button" class="chip" data-review="${esc(question.question_id)}" title="Model, soruyu ve anahtarı kaynak pasajla karşılaştırır">Kaynağı incele</button>` : ""}
+          ${question.invalidated ? "" : `<button type="button" class="chip" data-flag-question="${esc(question.question_id)}">Soruda hata olabilir</button>`}
+          ${question.invalidated ? "" : `<button type="button" class="chip warn" data-invalidate="${esc(question.question_id)}" title="Deneme kayıtları kalır; sorunun ustalık ve bulgu etkisi geri alınır">Geçersiz say</button>`}
           <button type="button" class="icon-btn small" data-remove="${esc(question.question_id)}" title="Sil">${icon("trash")}</button>
         </span>
       </div>
@@ -1286,6 +1325,9 @@ const Medical = {
     </div>`).join("");
     $$("[data-remove]", host).forEach((node) => node.addEventListener("click", () => this.deleteQuestion(node.dataset.remove)));
     $$("[data-key]", host).forEach((node) => node.addEventListener("change", () => this.setAnswerKey(node.dataset.key, node.value)));
+    $$("[data-review]", host).forEach((node) => node.addEventListener("click", () => Study.reviewQuestion(node.dataset.review)));
+    $$("[data-flag-question]", host).forEach((node) => node.addEventListener("click", () => Study.flagQuestion(node.dataset.flagQuestion)));
+    $$("[data-invalidate]", host).forEach((node) => node.addEventListener("click", () => Study.invalidateQuestion(node.dataset.invalidate)));
   },
 
   async deleteQuestion(questionId) {
@@ -1606,7 +1648,9 @@ const Medical = {
       if (State.screen === "medical" && this.view === "professor") this.loadProfessors();
       return;
     }
+    if (kind === "job_report" && String(payload.job) === "study") { Study.onJob(payload); return; }
     if (kind === "job_report") { this.onJobReport(payload); return; }
+    if (kind === "repair_started") return;
     if (kind === "anatomy_open") {
       showScreen("medical");
       this.show("anatomy");
@@ -3098,6 +3142,7 @@ function bindMedical() {
   const mine = $("#med-prof-mine");
   if (mine) mine.addEventListener("click", () => Medical.mineProfessors());
   Narration.bind();
+  Study.bind();
   const labSearch = $("#lab-search");
   if (labSearch) labSearch.addEventListener("input", () => Lab.renderList(labSearch.value));
   const labels = $("#lab-labels");

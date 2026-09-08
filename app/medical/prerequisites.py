@@ -47,6 +47,7 @@ PROVENANCE_LABELS_TR: dict[str, str] = {
     "curriculum": "Müfredat sırası (gözden geçirilmiş)",
     "imported": "Ders materyalinde belirtilmiş",
     "model_suggested": "Model önerisi",
+    "student": "Öğrenci önerdi",
 }
 STATUS_LABELS_TR: dict[str, str] = {"reviewed": "Onaylı", "pending": "Onay bekliyor", "rejected": "Reddedildi"}
 
@@ -209,8 +210,8 @@ class PrerequisiteGraph:
     def suggest(self, concept_id: str, requires: str, *, provenance: str = "model_suggested", note: str = "", source: dict[str, Any] | None = None) -> PrerequisiteEdge:
         if self._store is None:
             raise ValueError("Ön koşul önerisi için depo gerekli.")
-        if provenance not in ("imported", "model_suggested"):
-            raise ValueError("Öneri kaynağı 'imported' ya da 'model_suggested' olmalı.")
+        if provenance not in ("imported", "model_suggested", "student"):
+            raise ValueError("Öneri kaynağı 'imported', 'model_suggested' ya da 'student' olmalı.")
         if not self.known(concept_id) or not self.known(requires):
             raise ValueError("Bilinmeyen kavram: ön koşul kaydedilmedi.")
         if concept_id == requires:
@@ -252,7 +253,7 @@ class PrerequisiteGraph:
             "name": self.name(concept_id),
             "known": self.known(concept_id),
             "prerequisites": self.prerequisites_of(concept_id),
-            "pending": [edge.to_dict() for edge in self.edges_for(concept_id, reviewed_only=False) if edge.status == "pending"],
+            "pending": [{**edge.to_dict(), "requires_name": self.name(edge.requires)} for edge in self.edges_for(concept_id, reviewed_only=False) if edge.status == "pending"],
             "dependents": [{"concept_id": edge.concept_id, "name": self.name(edge.concept_id), "provenance": edge.provenance} for edge in self.dependents_of(concept_id)],
         }
 

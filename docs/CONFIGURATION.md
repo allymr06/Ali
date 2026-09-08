@@ -27,6 +27,7 @@ JARVIS untouched.
 | `JARVIS_MEDICAL_VISION_PAGES_PER_DOCUMENT` | `12` | How many figure-heavy pages per document are read with vision. `0` disables the visual pass. |
 | `JARVIS_MEDICAL_NARRATION_VOICE` | `local` | Voice that reads a lecture aloud in *sesli anlatım*: `local` (the Windows Turkish voice, no quota, one voice for the whole lecture) or `cloud` (the Gemini voice; falls back to local when it fails or the daily quota runs out, and says so). |
 | `JARVIS_MEDICAL_NARRATION_CHECKPOINT_EVERY` | `3` | After every N narration segments JARVIS asks whether anything was unclear and listens for a few seconds; `0` never asks (questions can still be typed or spoken with the button). |
+| `JARVIS_MEDICAL_SOURCE_REVIEW` | `true` | Review every generated question with a source passage against that passage before it enters a paper (at most twelve model calls per paper); unsupported items stay in the bank with their status. `false` skips the gate: new questions stay `needs_review` and unscored until reviewed from the bank. |
 | `JARVIS_MEDICAL_OFFICE_CONVERSION` | `true` | Export `.ppt`/`.pptx` lectures to PDF through the installed PowerPoint (COM automation, read-only, cached under `converted/`). `false` refuses presentations at import. |
 
 Licensed 3D anatomy assets are registered by hand in

@@ -240,7 +240,10 @@ def test_a_new_paper_quarantines_the_unsupported_and_returns_a_smaller_valid_pap
         draft("Radius başı ile eklem yapan humerus çıkıntısı hangisidir?", correct="A", source_index=1, source_page=12),
         draft(SLIDE_STEM, SLIDE_OPTIONS, correct="B", source_index=1, source_page=12),
     )
-    gateway = Gateway(paper, review_reply(), review_reply(alternative="C"))
+    # The second item is quarantined for a reason that does not depend on a
+    # letter: generation re-letters the options with a random seed, so an
+    # "alternative C" would sometimes name the key the shuffle just produced.
+    gateway = Gateway(paper, review_reply(), review_reply(outside=True))
     reviewer = SourceSupportReviewer(store, MedicalModelClient(gateway), clock=lambda: BASE)
     generator = make_generator(store, gateway, reviewer=reviewer)
 

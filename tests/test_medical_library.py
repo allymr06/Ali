@@ -345,3 +345,72 @@ def test_a_quota_outage_leaves_the_figure_pages_pending_and_the_pass_can_be_resu
             asyncio.run(academy.continue_processing(set_id="nope"))
     finally:
         academy.close()
+
+
+
+BOOK = (
+    "Halk Sağlığı\nEditör\nDoç. Dr. Birgül Piyal\nYazarlar\nProf. Dr. Recep Akdur\nANKARA ÜNİVERSİTESİ YAYINLARI\n"
+    "ISBN: 978-975-482-970-9\n© Ankara Üniversitesi, 2011\n1. Baskı\n"
+    + "Halk sağlığı, toplumun sağlığını koruma ve geliştirme bilimidir.\n" * 8
+    + "Değerlendirme Soruları\n1. Halk sağlığının tanımı aşağıdakilerden hangisidir?\nA) Toplumun sağlığını koruma bilimi\nB) Yalnızca tedavi hizmeti\n"
+)
+SCANNED_DECK = "Bakteri Metabolizmasi\n"
+
+
+def test_a_published_book_keeps_its_questions_but_its_authors_are_not_lecturers(academy, tmp_path) -> None:
+    root = tmp_path / "dersler"
+    (root / "Komite 1").mkdir(parents=True)
+    (root / "Komite 1" / "Halk Sağlığı.txt").write_text(BOOK, encoding="utf-8")
+    record = academy.import_folder(str(root))
+    asyncio.run(academy.process_lecture_set(record["set_id"]))
+
+    report = academy.mine_questions(set_id=record["set_id"])
+
+    assert academy.store.list_professors() == [], "a book's editor is not the student's lecturer"
+    assert report["books"] == ["Halk Sağlığı"] and report["professors"] == []
+    assert report["unattributed"] == [], "a book is not reported as a lecture nobody signed"
+    assert report["questions_added"] == 1
+    question = academy.store.query_questions(limit=10)[0]
+    assert question.professor_id is None and "kitaptan" in question.tags
+    assert any("yayımlanmış kitap" in note for note in report["notes"])
+
+
+def test_a_lecturer_named_only_on_a_pictured_cover_is_read_from_the_figure(academy, tmp_path) -> None:
+    root = tmp_path / "dersler"
+    (root / "Komite 3" / "Mikrobiyoloji").mkdir(parents=True)
+    (root / "Komite 3" / "Mikrobiyoloji" / "Mikrobiyoloji 5 - Bakteri metabolizması.txt").write_text(SCANNED_DECK, encoding="utf-8")
+    record = academy.import_folder(str(root))
+    asyncio.run(academy.process_lecture_set(record["set_id"]))
+    document = academy.store.list_documents()[0]
+
+    # Nothing on the page names anybody, so the document has no lecturer yet.
+    assert academy.professor_for_document(document) is None
+
+    # The vision pass describes the cover; the name is in that description.
+    academy.pipeline.attach_visual_summary(
+        document.document_id,
+        1,
+        summary="Şekil (other): Sunumun kapak slaytı. Başlıkta 'Bakteri Metabolizması', altında Prof. Dr. Özgül Kısa yazıyor.",
+        labels=["Bakteri Metabolizması"],
+    )
+    mention = academy.professor_for_document(document)
+    assert mention is not None and mention.name == "Prof. Dr. Özgül Kısa" and mention.source == "visual"
+
+    report = academy.mine_questions(set_id=record["set_id"])
+    assert [entry["name"] for entry in report["professors"]] == ["Prof. Dr. Özgül Kısa"]
+    assert report["from_pictures"] == 1 and any("görüntüden okunduğu" in note for note in report["notes"])
+    assert academy.store.get_document(document.document_id).professor_id == academy.store.list_professors()[0].profile_id
+
+    # A page that is not a cover names nobody, however many people it pictures.
+    academy.pipeline.attach_visual_summary(
+        document.document_id,
+        1,
+        summary="Görselde Dr. Refik Saydam'ın portresi ve sağlık örgütlenmesi şeması var.",
+        labels=[],
+    )
+    for profile in academy.store.list_professors():
+        academy.store.delete_professor(profile.profile_id)
+    document = academy.store.get_document(document.document_id)
+    document.professor_id = None
+    academy.store.save_document(document)
+    assert academy.professor_for_document(document) is None

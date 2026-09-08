@@ -53,7 +53,9 @@ from app.medical.professor import (
     StyleProfiler,
     imported_question,
     fuller_name,
+    looks_like_cover,
     looks_like_question_paper,
+    mentions_in_text,
     professor_from_title,
     professor_key,
     professor_mentions,
@@ -99,6 +101,10 @@ NOTES_MAX_CHARS = 12_000
 PAGE_IMAGE_SCALE = 1.5
 BANK_LIST_LIMIT = 200
 LECTURE_SET_PREFIX = "lecture_set:"
+# A published book's front matter. Its authors are not the student's
+# lecturers, so a book's questions are kept without an owner.
+_BOOK_STRONG = ("isbn", "yayinlari", "yayinevi", "yayin evi", "matbaa", "tum haklari", "copyright", "basimevi")
+_BOOK_EDITORIAL = ("editor", "yazarlar", "baski", "basim", "ceviri", "bolum yazarlari")
 # The vision pass against a free-tier provider: a breath between pages, one
 # long wait after a refusal, and a stop after two refusals in a row so the
 # remaining pages stay pending instead of being marked failed by an outage.
@@ -126,6 +132,19 @@ SUBJECT_FOLDER_ALIASES: tuple[tuple[str, str], ...] = (
     ("biyoloji", "biology"),
     ("genetik", "biology"),
 )
+
+
+def looks_like_book(pages: Iterable[Any]) -> bool:
+    """Whether the opening pages are a book's front matter.
+
+    An ISBN settles it; otherwise a publisher's mark has to meet an
+    editorial one, so a lecture that merely cites a textbook is not
+    mistaken for one.
+    """
+    text = fold(" ".join(str(getattr(page, "text", "")) for page in list(pages)[:3]))
+    if "isbn" in text:
+        return True
+    return any(marker in text for marker in _BOOK_STRONG) and any(marker in text for marker in _BOOK_EDITORIAL)
 
 
 def folder_subject(parts: Iterable[str]) -> str | None:
@@ -1548,14 +1567,28 @@ class MedicalAcademy:
     # ------------------------------------------------------------------
 
     def professor_for_document(self, document: StudyDocument) -> ProfessorMention | None:
-        """The lecturer a document names: its opening pages first, then its file name."""
-        mentions = professor_mentions(self.store.get_pages(document.document_id, page_from=1, page_to=MENTION_PAGES))
+        """The lecturer a document names: its opening pages first, then its file name.
+
+        A deck whose title slide is a picture carries the name only in what the
+        vision pass wrote about that page, so those descriptions are read too —
+        after the text, never instead of it.
+        """
+        opening = self.store.get_pages(document.document_id, page_from=1, page_to=MENTION_PAGES)
+        mentions = professor_mentions(opening)
         complete = [mention for mention in mentions if mention.complete]
         if complete:
             return complete[0]
         from_title = professor_from_title(document.title) or professor_from_title(Path(document.file_name).stem)
         if from_title is not None:
             return from_title
+        for page in opening[:2]:
+            # Only a cover slide with no text of its own: a portrait inside a
+            # lecture also names a person, and that person is not the lecturer.
+            if page.char_count >= 40 or not looks_like_cover(page.visual_summary):
+                continue
+            described = mentions_in_text(page.visual_summary)
+            if described:
+                return described[0]
         if document.page_count > MENTION_PAGES:
             # Some lecturers sign the closing slide instead of the first.
             closing = professor_mentions(self.store.get_pages(document.document_id, page_from=max(MENTION_PAGES + 1, document.page_count - 1), page_to=document.page_count), limit_pages=None)
@@ -1610,6 +1643,8 @@ class MedicalAcademy:
         parser = QuestionImportParser()
         existing_stems = {fold(question.stem) for question in self.store.query_questions(limit=100_000)}
         per_professor: dict[str, dict[str, Any]] = {}
+        books: list[str] = []
+        from_pictures = 0
         # Question ids gathered per profile; the profile is re-read at the end so
         # a fuller name learned from a later lecture is what gets rebuilt.
         touched: dict[str, list[str]] = {}
@@ -1624,7 +1659,12 @@ class MedicalAcademy:
             if progress is not None and (index % 10 == 0 or index == len(documents)):
                 progress(index, len(documents), document.title)
             pages = self.store.get_pages(document.document_id)
-            mention = self.professor_for_document(document)
+            book = looks_like_book(pages)
+            # A book's front matter names its authors, not the student's
+            # lecturer; its questions are kept, but under nobody.
+            mention = None if book else self.professor_for_document(document)
+            if book:
+                books.append(document.title)
             profile: ProfessorProfile | None = None
             if mention is not None:
                 profile, created = self._profile_for_mention(mention, document.subject)
@@ -1638,7 +1678,9 @@ class MedicalAcademy:
                     document.professor_id = profile.profile_id
                     self.store.save_document(document)
                 touched.setdefault(profile.profile_id, [])
-            else:
+                if mention.source == "visual":
+                    from_pictures += 1
+            elif not book:
                 unattributed.append(document.title)
             text = "\n\n".join(page.text for page in pages)
             # A lecture keeps every question under its lecturer; only a compiled
@@ -1670,7 +1712,7 @@ class MedicalAcademy:
                         origin=QuestionOrigin.LECTURE_DERIVED,
                         page_number=page_number,
                         image_ref=image_ref,
-                        tags=["ders notundan", document.title[:60]],
+                        tags=["kitaptan" if book else "ders notundan", document.title[:60]],
                     )
                     self.store.save_question(question)
                     added_here += 1
@@ -1701,11 +1743,17 @@ class MedicalAcademy:
             "professors": sorted(per_professor.values(), key=lambda entry: (-entry["documents"], entry["name"])),
             "unattributed": unattributed[:60],
             "incomplete": incomplete[:20],
+            "books": books[:40],
+            "from_pictures": from_pictures,
             "notes": [],
             "mined_at": utc_now().isoformat(),
         }
         if unattributed:
             report["notes"].append(f"{len(unattributed)} belgede hoca adı bulunamadı; bu belgeler hocasız kaldı.")
+        if books:
+            report["notes"].append(f"{len(books)} belge yayımlanmış kitap: soruları alındı ama kapaktaki yazarlar hoca sayılmadı ({', '.join(books[:3])}{'…' if len(books) > 3 else ''}).")
+        if from_pictures:
+            report["notes"].append(f"{from_pictures} belgede hoca adı, kapak sayfası görüntüden okunduğu için şekil incelemesinden alındı.")
         if incomplete:
             report["notes"].append("Adı eksik okunan hocalar: " + ", ".join(incomplete) + ". Profil adını Hoca tarzı ekranından düzeltebilirsin.")
         if added_total == 0:

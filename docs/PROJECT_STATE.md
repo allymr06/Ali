@@ -65,6 +65,35 @@ Last verified: 8 September 2026
 - Automated verification: 2297 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
 
+## What the shared Drive folder held (8 September 2026)
+
+Ali expected the committee past-exam papers in the shared folder. They are not
+in it. The folder's 236 files — listed in full and each one imported — are
+lecture decks, lab handouts and two published textbooks; no file is an exam
+paper, and a search of every imported page for exam markers (answer keys, "A
+grubu", numbered questions with lettered options) finds questions only inside
+lectures and those textbooks. Two caveats are recorded honestly: the listing
+was fetched anonymously, so a file inside the folder that is not shared with
+"anyone with the link" would be invisible to it; and two pairs of files shared
+a name inside their folder (`Halk Sağlığı.pdf`, `Küresel İklim Krizi ve
+Sağlık.pdf`), so the first download overwrote one of each pair — both copies
+were fetched again under distinct names and imported, taking the set to 235
+documents.
+
+The audit that followed changed two things in the code:
+
+- **A book is not a lecturer.** The 560-page *Halk Sağlığı* is an Ankara
+  University distance-learning textbook; its editor and authors had become
+  four "lecturers". Front matter is now recognised (ISBN, or a publisher's
+  mark with an editorial one), the book's questions are kept under nobody and
+  tagged *kitaptan*, and the real lecturer list fell to 24 people.
+- **A pictured cover still names its lecturer.** Ten decks (the microbiology
+  block) are scans with no text at all, so their title slides named nobody.
+  What the vision pass writes about page 1 is now read as well — bounded to
+  the first pages, to pages with no text of their own, and to descriptions
+  that say they are a cover, so a portrait inside a lecture never becomes the
+  lecturer.
+
 ## The semester's lectures, their lecturers and sesli anlatım (8 September 2026)
 
 Ali shared the term's Google Drive folder (HUP, KDT, Komite 1–5: 236 files,
@@ -1534,3 +1563,116 @@ OpenAI-compatible API endpoint. Its credential lives in its own Windows
 Credential Manager record. The default model is `gemini-3.5-flash-lite`, and an
 optional `JARVIS_VISION_MODEL` routes `VISION` requests to a separate Gemini
 model when the two differ.
+
+## JARVIS speaks in Ali's own voice (8 September 2026)
+
+Ali supplied a recording of himself and asked that JARVIS's main voice be
+built from it. A previous session had cut a 12.3 s reference clip from that
+recording and started validating it on the publisher's free Hugging Face
+demo; the work stopped at the upload, and the two files it had begun in this
+repository (`app/voice/chatterbox_worker.py`, `app/voice/profiles.py`, noted
+in the previous entry as left uncommitted) were no longer in the working
+tree. The reference clip itself survived, in
+`JARVIS-1/artifacts/jarvis_voice_preview/user_voice/`, alongside the 42 s
+original and the two earlier auditions that used stock voices (Piper's
+Turkish model and Microsoft's AhmetNeural) rather than Ali's.
+
+The clip was measured before anything was built on it: 12.30 s, 24 kHz mono
+16-bit, peak -4.9 dBFS, no clipped samples, noise floor -75 dBFS (about 54 dB
+of headroom over the speech), one 0.6 s pause, one speaker, no music, median
+f0 105 Hz. It is a good reference. Its provenance is honest: seconds 8.5 to
+20.8 of the original, high-passed at 60 Hz and loudness-normalised, with no
+pitch change and nothing synthesised.
+
+**Validation.** The publisher's Space (Chatterbox Multilingual, the model's
+own Turkish) generated two samples from that clip on its GPU in about 13 s
+each. Median f0 came back at 105 and 111 Hz against the reference's 105, and
+the spectrum matched to within a few hundred hertz — the speaker identity
+survives the clone. The anonymous ZeroGPU allowance ran out after those two,
+which is a reason not to depend on the Space and no obstacle to the local
+path that replaced it.
+
+**Architecture.** `JARVIS_VOICE_TTS_PROVIDER=chatterbox` selects a new
+synthesizer registered beside Gemini in the voice provider registry, so the
+voice session, its interruption and its fallback are untouched. The model
+runs in a **separate interpreter** (`app/voice/chatterbox_worker.py`, driven
+over stdin/stdout as one JSON object per line): it needs torch and 3.2 GB of
+weights that must not enter the desktop process, and a native crash in it
+must not take the assistant down. The worker loads once and stays resident;
+one that dies is restarted on the next request; the application's `close()`
+stops it. `app/voice/profiles.py` resolves the reference from a profile
+directory outside the repository and refuses a missing, empty, unreadable,
+too short or too long one before any model loads. Speaker conditionals are
+cached on disk, keyed by a hash of the recording, so replacing the clip
+under the same name never serves stale features.
+
+**Measured on this laptop** (i7-10510U, 4 cores, 7.8 GB RAM, weights on the
+HDD, CPU only, `int8-dynamic`, 4 threads):
+
+| Stage | Seconds |
+| --- | --- |
+| torch and chatterbox import | 155 |
+| model load | 1034 |
+| conditioning the reference (first time) | 71 |
+| conditioning from cache | under 1 |
+| generating a 6 s sentence | 40 to 64 |
+
+That last row is a real-time factor of about seven to eleven: a minute of
+computing for six seconds of speech, which is usable for reading something
+out and far too slow for conversation. The cloud voice therefore stays the
+default and the cloned voice is opt-in. Peak resident memory during the load
+was 3.4 GB, settling at about 1.8 GB.
+float32 is not viable here at all: the published loader needs roughly twice
+the model's size at once and failed with a paging-file error, and even the
+tensor-by-tensor loader added for this work thrashed for 35 minutes without
+finishing while other applications held about 4 GB. `int8-dynamic` quantizes
+the text-to-speech-token stage the moment its weights land and before the
+next checkpoint is read, which is what makes the load fit.
+
+**Two defects the real run found that the fakes could not.** A worker whose
+process starts but whose model fails to load looked *ready*, so a failed
+start was mistaken for a warm voice; readiness now means the model is
+loaded. And launching the worker by file path -- which is right, because
+launching it as a module drags the desktop's dependencies into the torch
+interpreter -- puts its own directory first on the import path, where
+`app/voice/chatterbox.py` shadows the installed `chatterbox` package and the
+worker reports the model as missing while it sits there installed. The
+worker now drops its own directory before importing anything, and a test
+holds that. Its stderr goes to `cache/worker.log` in the profile, because
+the first of these cost a twenty-minute load to diagnose with the traceback
+thrown away.
+
+**Privacy.** The recording lives in `%LOCALAPPDATA%\JARVIS\voice_profiles\ali`,
+never in the repository. `data/voice_profiles/`, `voice_profiles/` and
+`*.voiceprofile` are ignored, and tests assert both that those paths are
+ignored and that no audio file is tracked anywhere. With the model directory
+set the worker also sets `HF_HUB_OFFLINE`, so nothing reaches the network.
+
+**Quality, measured not judged.** The locally generated speech tracks the
+reference closely: median f0 99 to 103 Hz against the reference's 105, the
+same effective bandwidth (about 6.9 kHz), no clipped samples, and a peak
+normalised to -3 dBFS so every reply plays at one level. Whether it *sounds*
+like Ali is his to say; the samples are in the profile's `samples/`. One
+model behaviour is worth knowing: given two or three words it keeps
+generating past them and its end-of-speech guard has to cut it off, so
+"Tamam efendim." came back as 5.9 s at 44 per cent speech. Full sentences
+behave.
+
+**The resident worker does not survive the load here.** At the very end of
+the load the worker dies with no traceback and the parent sees its pipe
+close, and it takes twenty minutes to find out. It happened on all six
+attempts through the adapter, with as much as 3.8 GB free and the machine
+otherwise idle; every one of them reached the model. The benchmark that
+produced the samples drives the same engine in a single process and did
+finish. So the engine works on this laptop and the out-of-process worker
+does not reliably get it loaded here; the cause is not yet established and
+the next step is to capture the worker's exit code and Windows' own record
+of why it ended.
+
+**Not done.** The cloned voice is not the default and should not be until it
+runs on a GPU: at eleven times slower than real time a spoken turn would time
+out twice over (`JARVIS_VOICE_OPERATION_TIMEOUT_SECONDS` is 60). Streaming
+synthesis is not implemented for it — the model returns a whole clip — so
+time-to-first-audio equals the whole generation. `docs/VOICE_CLONE.md`
+documents the whole thing; `scripts/voice_clone_sample.py` speaks arbitrary
+text in the voice and reports its own latency.

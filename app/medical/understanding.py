@@ -394,6 +394,17 @@ class UnderstandingEngine:
             "valid": True,
         }
 
+    def _mistake(self, question: Question, event: dict[str, Any]) -> dict[str, str]:
+        """What was picked and what the key was — the repair's explanation needs both, in the question's own words."""
+        chosen = question.option(event.get("answer_key") or "")
+        correct = question.option(event.get("correct_key") or "")
+        return {
+            "stem": _excerpt(question.stem, 300),
+            "chosen": _excerpt(chosen.text, 120) if chosen else str(event.get("answer_key") or ""),
+            "correct": _excerpt(correct.text, 120) if correct else str(event.get("correct_key") or ""),
+            "explanation": _excerpt(question.explanation, 300),
+        }
+
     def _new_finding(self, concept_id: str, question: Question, event: dict[str, Any], statement: str, *, priority: int, status: str = "hypothesis") -> dict[str, Any]:
         now = self._clock().isoformat()
         finding = {
@@ -411,6 +422,7 @@ class UnderstandingEngine:
             "follow_ups": [],
             "history": [{"at": now, "status": status, "note": "İlk kanıt kaydedildi.", "by": "rule"}],
             "provenance": {"assessor": "rule", "version": ASSESSMENT_VERSION},
+            "mistake": self._mistake(question, event) if event.get("correct") is False else None,
             "student_note": "",
             "pending_diagnostic": None,
             "repair": None,
@@ -705,7 +717,7 @@ class UnderstandingEngine:
         if not self._model.available:
             return {"text": "Model sağlayıcısı kapalı: pasajı oku ve JARVIS'e bu kavramı sor; anlatım sonra üretilebilir.", "assessor": "none"}
         try:
-            text = await self._model.text("repair_explanation", repair_explanation_prompt(name, finding.get("statement", ""), evidence_lines, passage.get("text", "")), system_prompt=PIPELINE_SYSTEM)
+            text = await self._model.text("repair_explanation", repair_explanation_prompt(name, finding.get("statement", ""), evidence_lines, passage.get("text", ""), mistake=finding.get("mistake")), system_prompt=PIPELINE_SYSTEM)
         except MedicalModelError as exc:
             return {"text": f"Anlatım üretilemedi ({exc}); pasajı oku ve JARVIS'e sor.", "assessor": "none"}
         return {"text": _excerpt(text, 1500), "assessor": f"model:{getattr(self._model, 'model', '') or 'unknown'}"}

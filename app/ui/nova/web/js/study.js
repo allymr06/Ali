@@ -46,6 +46,19 @@ function studyDate(value) {
   }
 }
 
+function studyAssessor(value) {
+  // Who judged this: a rule in the core, or the model — named when the
+  // academy pins one, plain "Model" when the gateway routes it.
+  const text = String(value || "");
+  if (!text || text === "none") return "Model kapalı";
+  if (text === "rule") return "Kural";
+  if (text.startsWith("model:")) {
+    const name = text.slice(6);
+    return !name || name === "unknown" ? "Model" : `Model · ${name}`;
+  }
+  return text;
+}
+
 function studyOptions(options, { chosen = null, correctKey = null, revealed = false } = {}) {
   return `<div class="med-options">${(options || []).map((option) => {
     const isChosen = chosen === option.key;
@@ -128,7 +141,7 @@ const Study = {
       <span class="chip ${String(event.classification || "").startsWith("wrong") || event.classification === "correct_contradictory" ? "warn" : "ok"}">${esc(this.classificationLabel(event))}</span>
       ${assessment.suspected_misconception ? `<br>Olası yanlış anlama: ${esc(assessment.suspected_misconception)}` : ""}
       ${assessment.note ? `<br>${esc(assessment.note)}` : ""}
-      <br><span class="faint">Değerlendiren: ${esc(assessment.assessor || "kural")}</span></div>`;
+      <br><span class="faint">Değerlendiren: ${esc(studyAssessor(assessment.assessor || "rule"))}</span></div>`;
   },
 
   supportChip(support) {
@@ -334,7 +347,7 @@ const Study = {
              ${(step.limitations || []).length ? `<p class="med-review-note">${step.limitations.map((line) => esc(line)).join(" ")}</p>` : ""}`
           : `<p class="med-review-note">${esc(step.note || "Aktarım sorusu üretilemedi.")}</p>`;
       } else {
-        body = `<div class="med-page-text">${esc(step.text || "")}</div>${step.assessor ? `<span class="faint">Kaynak: ${esc(step.assessor)}</span>` : ""}`;
+        body = `<div class="med-page-text">${esc(step.text || "")}</div>${step.assessor ? `<span class="faint">Anlatımı yazan: ${esc(studyAssessor(step.assessor))}</span>` : ""}`;
       }
       const done = step.done ? '<span class="chip ok">tamam</span>' : (step.step === "follow_up" ? `<span class="chip">${esc(studyDate(step.due_at))}</span>` : "");
       const action = !step.done && ["problem", "passage", "explanation"].includes(step.step)

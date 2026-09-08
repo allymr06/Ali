@@ -1172,6 +1172,8 @@ def test_the_study_screens_are_declared_wired_and_confirmed() -> None:
     # Dashboard cards and the library's region selector are declared.
     for element_id in ("med-today", "med-understanding-card", "med-plan-detail", "med-und-detail", "med-histo-detail", "med-histo-form"):
         assert f'id="{element_id}"' in HTML + JS, element_id
+    # Who judged a thing is said in Turkish, and an unnamed model is not called "unknown".
+    assert 'return "Kural"' in study_js and '"model:"' in study_js and '"unknown"' in study_js
     # A prerequisite the model or the student proposes is confirmed or rejected by the student, by name.
     for marker in ("data-edge-confirm", "data-edge-reject", '"concept_search"', '"prerequisite_suggest"', 'provenance: "student"'):
         assert marker in study_js, marker

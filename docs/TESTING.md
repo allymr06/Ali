@@ -717,3 +717,7 @@ and without the atlas, by building synthetic export packs:
 - no module under `app/` imports `bpy` or `mathutils`, importing the exporter
   does not import Blender, and the exporter opens the blend as data
   (`use_scripts=False`, automatic script execution refused).
+
+- the `hidden` attribute is honoured: no class on an element the page hides may
+  set `display` without a matching `[hidden]` rule (`test_nova_web.py`). The
+  narration panel failed this and was showing empty on every Medical screen.

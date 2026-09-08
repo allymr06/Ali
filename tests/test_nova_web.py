@@ -1356,3 +1356,27 @@ def test_the_study_screens_are_declared_wired_and_confirmed() -> None:
     # A prerequisite the model or the student proposes is confirmed or rejected by the student, by name.
     for marker in ("data-edge-confirm", "data-edge-reject", '"concept_search"', '"prerequisite_suggest"', 'provenance: "student"'):
         assert marker in study_js, marker
+
+
+def test_hidden_really_hides_every_panel_the_page_toggles() -> None:
+    """A class that sets `display` outranks the `hidden` attribute.
+
+    The narration panel was declared `hidden` and shown anyway, because
+    `.med-narration { display: flex }` won: it took 142 px from every Medical
+    screen, including the Anatomy Lab's stage. Any class on an element the page
+    hides must either leave `display` alone or carry its own `[hidden]` rule.
+    """
+    classes: set[str] = set()
+    # The attribute itself, never aria-hidden or a name that merely ends in it.
+    for tag in re.findall(r"<[a-zA-Z][^>]*(?<![-\w])hidden(?=[\s>=])[^>]*>", HTML):
+        for group in re.findall(r'class="([^"]+)"', tag):
+            classes.update(group.split())
+    assert "med-narration" in classes, "the sample this test was written for must still be in the page"
+
+    unguarded = []
+    for name in sorted(classes):
+        sets_display = re.search(rf"^\.{re.escape(name)}\s*\{{[^}}]*\bdisplay\s*:", CSS, re.MULTILINE)
+        guarded = re.search(rf"^\.{re.escape(name)}\[hidden\]\s*\{{[^}}]*display\s*:\s*none", CSS, re.MULTILINE)
+        if sets_display and not guarded:
+            unguarded.append(name)
+    assert unguarded == [], f"these classes override the hidden attribute: {unguarded}"

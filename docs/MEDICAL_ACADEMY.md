@@ -514,8 +514,8 @@ one on re-import.
 
 ### A second atlas: Z-Anatomy (nerves in the same frame)
 
-BodyParts3D has no peripheral nerves, so the nerves of the arm and leg stay
-schematic. [Z-Anatomy](https://github.com/Z-Anatomy/Models-of-human-anatomy)
+BodyParts3D has no peripheral nerves, which is why the nerves of the arm and
+leg were schematic for so long. [Z-Anatomy](https://github.com/Z-Anatomy/Models-of-human-anatomy)
 does have them, in the same body as its bones, muscles and vessels, under
 CC BY-SA 4.0 over the same BodyParts3D lineage. Its distribution is a Blender
 file, which is why the pipeline is split in three, and why **Blender is a
@@ -568,14 +568,17 @@ previous one. Meshes already installed are never overwritten; entries from
 other datasets are kept. Stop JARVIS before running it:
 
 ```
-"<blender>" --factory-startup -b -y --python scripts/export_z_anatomy.py -- <Z-Anatomy.blend> <export dir>
+"<blender>" --factory-startup --disable-autoexec -b --python scripts/export_z_anatomy.py -- <Z-Anatomy.blend> <export dir>
 python scripts/install_z_anatomy.py <export dir> --assets "%LOCALAPPDATA%\JARVIS\medical\anatomy_assets"
 ```
 
-**Status.** The pipeline and its validation are implemented and tested against
-synthetic packs; the atlas itself has not been exported on this machine, which
-has no Blender installed. Until it is run, the lab keeps the BodyParts3D pack
-and the nerves stay schematic.
+**Status.** Exported and installed on 9 September 2026 with Blender 3.6.23
+(portable, verified against blender.org's checksum, kept outside the project):
+37 structures, 148 000 triangles, 15 source pins, 12 MB of OBJ. The lab's
+`upper_limb_right` scene is now 5 bones, 14 muscles, 4 arteries, 2 veins and
+**5 nerves**, and `lower_limb_right` is 4 bones and 3 nerves — the first nerve
+geometry the lab has ever had. The head, spine and thorax scenes keep their
+BodyParts3D meshes; the two frames never meet in one scene.
 
 ### The scene
 

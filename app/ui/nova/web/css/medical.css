@@ -133,6 +133,7 @@ button.med-row:hover { background: rgba(var(--accent-rgb), 0.05); }
 .med-topic h2 { font-family: var(--font-display); font-size: var(--text-lg); font-weight: 300; letter-spacing: 0.02em; }
 .med-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .med-set-list { display: flex; flex-direction: column; gap: 0.45rem; }
+.med-narration[hidden] { display: none; }
 .med-narration { margin: 0 0 0.9rem; padding: 0.9rem 1.1rem; display: flex; flex-direction: column; gap: 0.5rem; border-color: rgba(var(--accent-rgb), 0.45); }
 .med-narration .mn-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 .med-narration h2 { font-size: var(--text-lg); margin: 0; }

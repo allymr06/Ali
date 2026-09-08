@@ -87,7 +87,7 @@ Last verified: 9 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2426 tests passing, 6 skipped (`scripts/verify.py`, Python 3.12.8 on Windows 11, 9 September 2026)
+- Automated verification: 2456 tests passing, 5 skipped (`scripts/verify.py`, Python 3.12.8 on Windows 11, 9 September 2026)
 - Production readiness: not yet claimed
 
 ## The Z-Anatomy asset pipeline (9 September 2026)
@@ -121,10 +121,36 @@ overwrites a mesh, twelve ways a pack can fail its source check, a scene that
 would mix two coordinate frames, and the absence of Blender from everything
 the application imports.
 
-Not done here: the atlas has not been exported. This machine has no Blender
-and the source archive was never downloaded, so the lab still serves the
-BodyParts3D pack and the nerves stay schematic. Running the two documented
-commands on a machine with Blender is all that remains.
+**Exported, installed and seen working.** The pinned archive (83 MB) and its
+`Startup.blend` (293 MB) were downloaded and both matched the reviewed
+checksums; Blender 3.6.23 portable was fetched from blender.org and verified
+against its published SHA-256, and lives outside the project. Two defects in
+the exporter surfaced only when it first ran, and both are fixed:
+
+- it used `hashlib.file_digest`, which is Python 3.11+; Blender 3.6 ships
+  3.10, so the blend's digest is now read in chunks;
+- it evaluated the whole file's dependency graph, which evaluates thousands of
+  unrelated modifiers — one boolean among them killed Blender with an access
+  violation after 2m40s. The export now builds a scene of its own holding only
+  the allowlisted objects and what they depend on (115 objects), and evaluates
+  that. The file's own scene is untouched and nothing is written back.
+
+The export then produced 37 OBJ files, 148 000 triangles and 15 source pins in
+12 MB. Installed, the lab's `upper_limb_right` scene became 5 bones, 14
+muscles, 4 arteries, 2 veins and 5 nerves; `lower_limb_right` 4 bones and 3
+nerves. The humerus now carries six pins from the atlas's own annotations
+(both tubercles, the intertubercular sulcus, the olecranon, coronoid and
+radial fossae) — features BodyParts3D could not provide at all. Alignment was
+checked in the numbers and on screen: *n. axillaris* sits at z 1.35–1.40 m
+against a humerus spanning 1.087–1.405 m, and with the muscle, artery and vein
+layers switched off the radial nerve is visibly wrapped around the back of the
+humerus in the viewport.
+
+**One UI defect fell out of that check.** `.med-narration { display: flex }`
+outranked the panel's own `hidden` attribute, so an empty narration panel took
+142 px from every Medical screen — including the Anatomy Lab, whose stage grew
+from 485 px to 588 px once it was fixed. A page test now refuses any class that
+sets `display` on an element the page hides without its own `[hidden]` rule.
 
 ## The study workflow in the live window (9 September 2026)
 

@@ -780,6 +780,10 @@ const Study = {
     }
     const today = await this.request("plan_today", { plan_id: plan.plan_id });
     if (today.ok === false) { toast(today.error || "Bugün görünümü okunamadı.", true); return; }
+    // Reading today may have planned a new day; the header must say what the
+    // plan looks like after that, not before.
+    const fresh = await this.request("plan", { plan_id: plan.plan_id });
+    if (fresh.ok !== false && fresh.plan) Object.assign(plan, fresh.plan);
     plan.today_view = today.today;
     const weekdays = (plan.budget && plan.budget.weekdays) || {};
     const budgetLine = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"].map((name, index) => `${name} ${weekdays[String(index)] !== undefined ? weekdays[String(index)] : 45}`).join(" · ");

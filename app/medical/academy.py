@@ -1539,7 +1539,10 @@ class MedicalAcademy:
                     source="exam",
                     exam_id=exam_id,
                     attempt_id=attempt.attempt_id,
-                    submission_id=submission_id or f"{attempt.attempt_id}:{question_id}",
+                    # The event's identity is the attempt and the question, not
+                    # the page's token: finishing the paper offers the same id
+                    # and gets this event back instead of recording a second one.
+                    submission_id=f"{attempt.attempt_id}:{question_id}",
                 )
                 result["event_id"] = event.get("event_id")
                 wanted, why = self.study.understanding.wants_explanation(question, exam_id=exam_id, immediate=True)

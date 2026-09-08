@@ -271,6 +271,19 @@ def test_estimates_learn_from_real_minutes_and_states_stay_distinct() -> None:
     assert view["done_minutes"] == 90
 
 
+def test_a_confirmed_plan_is_laid_out_the_moment_it_is_created() -> None:
+    planner, _store, _learning, _understanding, _clock = build()
+    record = physiology_plan(planner, minutes=40)
+
+    summary = planner.summary(record["plan_id"])
+
+    # The first summary already says what fits: the page reads it before "Bugün".
+    assert summary["planned"] > 0 and summary["planned_minutes"] > 0
+    assert summary["needed_minutes"] > 0 and isinstance(summary["fit"], bool)
+    assert record.get("last_planned_at") is not None
+    assert any("oluşturuldu" in item["note"] for item in record["history"])
+
+
 def test_manual_work_survives_replanning_and_must_fit_the_day() -> None:
     planner, _store, _learning, _understanding, _clock = build()
     record = physiology_plan(planner, minutes=40)

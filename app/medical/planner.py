@@ -186,6 +186,11 @@ class StudyPlanner:
             "history": [{"at": now, "note": "Plan oluşturuldu." + (" Kapsam belgelerden önerildi; onay bekliyor." if inferred else "")}],
         }
         self._store.save_record(PLAN_KIND, record["plan_id"], record, subject_key=record["status"])
+        if record["scope_confirmed"]:
+            # A confirmed scope is planned at once, so the summary the page
+            # reads back says what fits and what does not from the first look.
+            self.replan(record["plan_id"], reason="Plan oluşturuldu.")
+            return self._require(record["plan_id"])
         return record
 
     def _scope(self, subjects, topic_ids, document_ids, page_ranges, *, expand_documents: bool = True) -> dict[str, Any]:
@@ -692,16 +697,24 @@ class StudyPlanner:
         return self.activity_payload(activity)
 
     def add_manual(self, plan_id: str, *, day: Any, title: str, minutes: int, topic_id: str | None = None, kind: str = "read", reason: str = "Elle eklendi") -> dict[str, Any]:
-        """A manual adjustment survives every replan; it still has to fit the day."""
+        """A manual adjustment survives every replan; it still has to fit the day.
+
+        Only fixed work counts against the day — other manual entries and
+        what was started or done. Automatic activities make room: the day is
+        planned again around the new entry.
+        """
         record = self._require(plan_id)
         when = parse_date(day)
         budget = self.budget_for(record, when)
-        used = self._existing_minutes(self.activities(plan_id, day=when))
+        fixed = [item for item in self.activities(plan_id, day=when) if item.get("manual") or item.get("status") in ("started", "completed")]
+        used = self._existing_minutes(fixed)
         estimate = max(MIN_ACTIVITY_MINUTES, int(minutes))
         if used + estimate > budget:
-            raise ValueError(f"Bu gün için {budget} dk ayrılmış, {used} dk planlı: {estimate} dk daha sığmıyor.")
+            raise ValueError(f"Bu gün için {budget} dk ayrılmış, {used} dk sabit: {estimate} dk daha sığmıyor.")
         activity = {"activity_id": new_id("act"), "plan_id": plan_id, "date": when.isoformat(), "kind": kind if kind in ACTIVITY_LABELS_TR else "read", "kind_label": ACTIVITY_LABELS_TR.get(kind, ACTIVITY_LABELS_TR["read"]), "topic_id": topic_id, "title": " ".join(str(title).split())[:80] or "Çalışma", "state": "manual", "reason": reason, "estimate_minutes": estimate, "estimate_label": "öğrencinin tahmini", "score": 0, "order": 50, "status": "planned", "manual": True, "started_at": None, "completed_at": None, "actual_minutes": None}
         self._store.save_record(ACTIVITY_KIND, activity["activity_id"], activity, subject_key=plan_id)
         record["history"].append({"at": self.now().isoformat(), "note": f"Elle eklendi: {activity['title']} ({when.isoformat()})."})
         self._save(record)
-        return self.activity_payload(activity)
+        if record.get("scope_confirmed"):
+            self.replan(plan_id, reason="Elle etkinlik eklendi.")
+        return self.activity_payload(self._activity(activity["activity_id"]))

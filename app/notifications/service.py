@@ -11,9 +11,15 @@ is persisted, nothing here acts on the user's behalf, and every string it
 receives is bounded before it is kept.
 
 The reminder watch polls a :class:`~app.reminders.service.ReminderService`
-on its own daemon thread; the service claims due reminders atomically, so
-each one is handed to the delivery callback exactly once even if the shell
-restarts the watch.
+on its own daemon thread. The service leases due reminders; the watch
+hands each to the delivery callback and then acknowledges the lease when
+the callback returned, or releases it with the error when the callback
+raised, so a reminder whose delivery failed comes back for a bounded set
+of retries instead of being lost. A lease nobody settles expires and is
+handed out again, so delivery to the callback is at-least-once; the
+callback keeps a repeat from becoming a second entry by the reminder's
+id. The watch also drives the routine store, which has no leases: it
+keeps that older contract untouched.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ import json
 import sqlite3
 import threading
 import uuid
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -356,6 +362,22 @@ class NotificationCenter:
         self._notify(listeners, entry, unread)
         return entry
 
+    def find(self, kind: str, reference: str | None) -> Notification | None:
+        """The newest entry of ``kind`` carrying ``reference``, or None.
+
+        A reference is a durable identity the publisher chose (a reminder's
+        id): a delivery handed out a second time can ask whether the centre
+        already holds it before publishing again.
+        """
+        wanted = _bounded(reference, 120) or None
+        if wanted is None:
+            return None
+        with self._lock:
+            for entry in self._items:
+                if entry.kind == kind and entry.reference == wanted:
+                    return entry
+        return None
+
     def _find_duplicate(self, dedupe_key: str | None, now: datetime) -> Notification | None:
         key = _bounded(dedupe_key, 120) or None
         if key is None or self._dedupe_seconds <= 0:
@@ -470,6 +492,11 @@ class ReminderWatch:
     came due while the desktop was closed fire right after boot. Errors in
     the store or in delivery are swallowed: a broken reminder must not
     stop the next one, and the thread must never die noisily.
+
+    A source that leases what it hands out — its items carry a
+    ``claim_token`` and it has ``acknowledge`` and ``release`` — hears how
+    each delivery went; a source without them (the routine store, which
+    moves a routine to its next slot as it claims it) is polled as before.
     """
 
     def __init__(
@@ -494,18 +521,37 @@ class ReminderWatch:
         return thread is not None and thread.is_alive() and not self._stop.is_set()
 
     def poll_once(self) -> int:
-        """Claim and deliver everything due right now; returns the count."""
+        """Claim and deliver everything due right now; returns the count.
+
+        The callback returning is the delivery boundary: the claim is then
+        acknowledged. The callback raising releases the claim with the
+        error, and the source decides when to hand the item out again.
+        """
         try:
             due = list(self._reminders.claim_due())
         except Exception:
             return 0
+        acknowledge = getattr(self._reminders, "acknowledge", None)
+        release = getattr(self._reminders, "release", None)
         delivered = 0
         for reminder in due:
+            token = reminder.get("claim_token") if isinstance(reminder, Mapping) else None
+            identity = reminder.get("reminder_id") if isinstance(reminder, Mapping) else None
             try:
                 self._deliver(reminder)
-                delivered += 1
-            except Exception:
+            except Exception as exc:
+                if token and callable(release):
+                    try:
+                        release(identity, token, error=exc)
+                    except Exception:
+                        pass
                 continue
+            delivered += 1
+            if token and callable(acknowledge):
+                try:
+                    acknowledge(identity, token)
+                except Exception:
+                    pass
         return delivered
 
     def start(self) -> None:

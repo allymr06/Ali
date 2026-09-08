@@ -230,6 +230,15 @@ Scoring, breakdowns (subject, topic, difficulty), weak and strong concepts,
 the review list and the next-step suggestion are all computed in
 `analyse_attempt` — deterministic, explainable, no model involved.
 
+Finishing is done once per attempt. `finish_exam` runs under the academy
+lock and in one store transaction: a simulation's answers are recorded into
+mastery, the analysis (with the adaptive verdict — previous difficulty,
+suggested difficulty, reason) is stored with the attempt, the session's
+difficulty moves and the exam is marked completed, together or not at all.
+A second finish for the same attempt — a repeated click, a retried call —
+returns the stored result exactly as it was and emits no second completion;
+starting the exam again opens a new attempt that is finalized on its own.
+
 ## Professor style
 
 Imported questions are parsed deterministically: numbered stems, lettered
@@ -348,7 +357,8 @@ lecturer's subject when none was chosen.
 The recent window is the last 8 attempts. Review intervals follow the level
 (1, 1, 3, 7 days, growing with the streak up to 30). Every queued review
 says why it was queued. Adaptive difficulty needs five recent results and
-moves at most one step, and it says what it did.
+moves at most one step, and it says what it did; the verdict is part of the
+attempt's stored result and is never recomputed from a later difficulty.
 
 Wrong-answer choices are counted per concept, so an insight can name the
 actual confusion ("Scapula sorularında 2 kez fossa supraspinata seçeneğine
@@ -692,6 +702,20 @@ ignored, and a token of five letters or more is accepted as the start of the
 word it abbreviates. At the end every station is listed with the student's
 answer, the correct name and its description, and each station was recorded
 as an anatomy answer, so the structure's mastery moves with it.
+
+One answer per station. The station is claimed the moment an answer is
+given — before the save is awaited — so a second click, a second Enter or
+the bell landing on a manual answer does nothing, and the exam advances
+once, after the academy accepted the save. A station is graded against the
+pin fixed when it opened, whatever the student selects in the list
+meanwhile, and cannot be answered while its specimen is still loading. A
+reply that arrives after "Bitir" or "Yeniden" belongs to the exam it was
+sent from and changes nothing in the one that replaced it. A save the
+academy refused or the bridge failed is said so ("Cevap kaydedilemedi: …")
+with two ways on: "Tekrar dene" resends the same submission id, which
+`record_anatomy_answer` recognises so a lost reply cannot count a station
+twice, and "Kaydetmeden geç" moves on with the station marked unsaved in the
+results.
 
 ## Safety and privacy
 

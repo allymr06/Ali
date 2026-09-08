@@ -893,3 +893,199 @@ def test_levels_map_every_recorded_concept_to_its_current_level() -> None:
         engine.record(question_for("c.capitulum"), correct=False)
 
     assert engine.levels() == {"c.capitulum": MasteryLevel.WEAK}
+
+
+# ---------------------------------------------------------------------------
+# finalization happens once: mastery, difficulty and the stored verdict
+# ---------------------------------------------------------------------------
+
+
+def adaptive_sitting(factory, *, answers: bool | None = True, difficulty: int = 3, adaptive: bool = True, **fields):
+    """Five gradable questions, session difficulty set, every question answered
+    right (True), wrong (False) or left blank (None)."""
+    instance, exam_id = sitting(factory, count=5, **fields)
+    session = instance.sessions.get()
+    session.difficulty = difficulty
+    session.adaptive_difficulty = adaptive
+    instance.sessions.save(session)
+    instance.start_exam(exam_id)
+    if answers is not None:
+        for index in range(5):
+            instance.answer(exam_id, f"q{index}", "B" if answers else "A")
+    return instance, exam_id
+
+
+def test_finishing_a_sitting_again_moves_the_difficulty_only_once(academy) -> None:
+    instance, exam_id = adaptive_sitting(academy)
+
+    first = instance.finish_exam(exam_id)
+    assert instance.sessions.get().difficulty == 4
+    second = instance.finish_exam(exam_id)
+    third = instance.finish_exam(exam_id)
+
+    assert instance.sessions.get().difficulty == 4, "3 → 4 → 4, not 3 → 4 → 5"
+    assert first["analysis"]["adaptive"] == {"previous": 3, "suggested": 4, "reason": "Son 5 sorunun 5'i doğru: zorluk bir kademe arttı."}
+    assert second["analysis"] == first["analysis"] and third["analysis"] == first["analysis"]
+    assert second["attempt"] == first["attempt"] and third["status"] == "completed"
+    assert instance.learning.summary()["attempts"] == 5, "the five answers were recorded once"
+
+
+def test_finishing_an_unsuccessful_sitting_again_lowers_the_difficulty_only_once(academy) -> None:
+    instance, exam_id = adaptive_sitting(academy, answers=False)
+
+    instance.finish_exam(exam_id)
+    instance.finish_exam(exam_id)
+    payload = instance.finish_exam(exam_id)
+
+    assert instance.sessions.get().difficulty == 2
+    assert payload["analysis"]["adaptive"]["previous"] == 3 and payload["analysis"]["adaptive"]["suggested"] == 2
+
+
+def test_the_adaptive_verdict_is_stored_with_the_result_and_survives_a_reload(academy) -> None:
+    instance, exam_id = adaptive_sitting(academy)
+
+    payload = instance.finish_exam(exam_id)
+
+    assert payload["analysis"]["adaptive"]["suggested"] == 4
+    stored = instance.store.get_attempt(payload["attempt"]["attempt_id"])
+    assert stored.analysis["adaptive"] == payload["analysis"]["adaptive"]
+    assert instance.exam(exam_id)["analysis"]["adaptive"] == payload["analysis"]["adaptive"]
+
+
+def test_a_completed_result_keeps_the_verdict_of_its_own_day(academy) -> None:
+    instance, exam_id = adaptive_sitting(academy)
+    instance.finish_exam(exam_id)
+    session = instance.sessions.get()
+    session.difficulty = 5
+    instance.sessions.save(session)
+
+    payload = instance.finish_exam(exam_id)
+
+    assert payload["analysis"]["adaptive"] == {"previous": 3, "suggested": 4, "reason": "Son 5 sorunun 5'i doğru: zorluk bir kademe arttı."}
+    assert instance.sessions.get().difficulty == 5, "a repeated request touches nothing"
+
+
+def test_a_new_attempt_at_the_same_exam_is_finalized_on_its_own(academy) -> None:
+    instance, exam_id = adaptive_sitting(academy)
+    first = instance.finish_exam(exam_id)
+
+    instance.start_exam(exam_id)
+    for index in range(5):
+        instance.answer(exam_id, f"q{index}", "B")
+    second = instance.finish_exam(exam_id)
+
+    assert second["attempt"]["attempt_id"] != first["attempt"]["attempt_id"]
+    assert second["analysis"]["adaptive"] == {"previous": 4, "suggested": 5, "reason": "Son 5 sorunun 5'i doğru: zorluk bir kademe arttı."}
+    assert instance.sessions.get().difficulty == 5
+    assert instance.store.get_attempt(first["attempt"]["attempt_id"]).analysis["adaptive"]["previous"] == 3
+    assert instance.learning.summary()["attempts"] == 10
+
+
+def test_a_study_sitting_counts_each_answer_once_however_often_it_is_finished(academy) -> None:
+    instance, exam_id = adaptive_sitting(academy, immediate_feedback=True)
+    assert instance.learning.summary()["attempts"] == 5, "recorded as the answers were given"
+
+    instance.finish_exam(exam_id)
+    instance.finish_exam(exam_id)
+
+    assert instance.learning.summary()["attempts"] == 5
+    assert instance.sessions.get().difficulty == 4
+
+
+def test_concurrent_finalization_requests_apply_the_effects_once(academy) -> None:
+    import threading
+
+    instance, exam_id = adaptive_sitting(academy)
+    events: list[dict] = []
+    instance.subscribe(lambda event: events.append(event) if event.get("kind") == "exam_finished" else None)
+    results: list[dict] = []
+    gate = threading.Barrier(4)
+
+    def finish() -> None:
+        gate.wait()
+        results.append(instance.finish_exam(exam_id))
+
+    threads = [threading.Thread(target=finish) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(10)
+
+    assert len(results) == 4 and all(result["analysis"] == results[0]["analysis"] for result in results)
+    assert instance.sessions.get().difficulty == 4
+    assert instance.learning.summary()["attempts"] == 5
+    assert len(events) == 1, "one completion event, not one per request"
+
+
+def test_finalization_without_adaptive_difficulty_or_with_a_short_paper_stays_as_it_was(academy) -> None:
+    instance, exam_id = adaptive_sitting(academy, adaptive=False)
+    payload = instance.finish_exam(exam_id)
+    assert "adaptive" not in payload["analysis"] and instance.sessions.get().difficulty == 3
+    assert instance.finish_exam(exam_id)["analysis"] == payload["analysis"]
+
+    short, short_id = sitting(academy)
+    short.start_exam(short_id)
+    short.answer(short_id, "q0", "B")
+    first = short.finish_exam(short_id)
+    assert "adaptive" not in first["analysis"] and first["analysis"]["total"] == 3
+    assert short.finish_exam(short_id)["analysis"] == first["analysis"]
+
+
+def test_an_unanswered_paper_finished_twice_records_no_attempt(academy) -> None:
+    instance, exam_id = adaptive_sitting(academy, answers=None)
+
+    first = instance.finish_exam(exam_id)
+    second = instance.finish_exam(exam_id)
+
+    assert first["analysis"]["unanswered"] == 5 and first["analysis"]["adaptive"]["suggested"] == 3
+    assert second["analysis"] == first["analysis"]
+    assert instance.learning.summary()["attempts"] == 0 and instance.sessions.get().difficulty == 3
+
+
+def test_a_failure_in_the_middle_of_finalization_leaves_nothing_half_applied(academy, monkeypatch) -> None:
+    instance, exam_id = adaptive_sitting(academy)
+    original = instance.store.save_exam
+    calls = {"count": 0}
+
+    def flaky(exam):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("disk full")
+        return original(exam)
+
+    monkeypatch.setattr(instance.store, "save_exam", flaky)
+
+    with pytest.raises(RuntimeError, match="disk full"):
+        instance.finish_exam(exam_id)
+
+    assert instance.store.latest_attempt(exam_id).finished_at is None, "the attempt is still open"
+    assert instance.learning.summary()["attempts"] == 0, "the mastery writes were rolled back"
+    assert instance.sessions.get().difficulty == 3
+
+    payload = instance.finish_exam(exam_id)
+
+    assert payload["status"] == "completed" and payload["analysis"]["adaptive"]["suggested"] == 4
+    assert instance.learning.summary()["attempts"] == 5 and instance.sessions.get().difficulty == 4
+
+
+# ---------------------------------------------------------------------------
+# bell-ringer submissions: a retried save moves mastery once
+# ---------------------------------------------------------------------------
+
+
+def test_an_anatomy_answer_sent_again_with_its_submission_id_is_recorded_once(academy) -> None:
+    instance = academy(None)
+
+    first = instance.record_anatomy_answer("scapula", "acromion", True, submission_id="1-0-abc")
+    again = instance.record_anatomy_answer("scapula", "acromion", True, submission_id="1-0-abc")
+
+    assert first["submission_id"] == "1-0-abc" and "repeated" not in first
+    assert again["repeated"] is True and again["mastery"] == first["mastery"]
+    assert instance.store.get_mastery("anatomy.scapula.acromion").attempts == 1
+
+    instance.record_anatomy_answer("scapula", "acromion", False, submission_id="1-1-def")
+    assert instance.store.get_mastery("anatomy.scapula.acromion").attempts == 2
+    # The quiz sends no id and is recorded every time, as before.
+    instance.record_anatomy_answer("scapula", "acromion", True)
+    instance.record_anatomy_answer("scapula", "acromion", True)
+    assert instance.store.get_mastery("anatomy.scapula.acromion").attempts == 4

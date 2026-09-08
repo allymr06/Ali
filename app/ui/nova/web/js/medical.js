@@ -2581,7 +2581,10 @@ const Lab = {
       [shuffled[index], shuffled[swapAt]] = [shuffled[swapAt], shuffled[index]];
     }
     const count = Math.min(10, shuffled.length);
-    this.bell = { stations: shuffled.slice(0, count), index: -1, seconds: clamp(seconds, 15, 300), answers: [], current: null, timer: null, remaining: 0, pool };
+    // ``run`` names the exam a reply belongs to: a response that arrives
+    // after "Bitir" or "Yeniden" may not touch the exam that replaced it.
+    this.bellRun = (this.bellRun || 0) + 1;
+    this.bell = { run: this.bellRun, stations: shuffled.slice(0, count), index: -1, seconds: clamp(seconds, 15, 300), answers: [], current: null, loading: null, landmark: null, specimen: "", pending: null, failed: null, timer: null, remaining: 0, pool };
     this.nextStation();
   },
 
@@ -2603,19 +2606,35 @@ const Lab = {
 
   async nextStation() {
     const bell = this.bell;
-    if (!bell) return;
+    // A station whose answer is still being saved (or waits for a retry)
+    // holds the exam: nothing advances past it until it is settled.
+    if (!bell || bell.pending) return;
     clearInterval(bell.timer);
+    bell.timer = null;
     bell.index += 1;
     if (bell.index >= bell.stations.length) { this.finishBellRinger(); return; }
-    bell.current = bell.stations[bell.index];
+    const station = bell.stations[bell.index];
+    // ``current`` hides the answer sheet from the moment the station exists;
+    // ``loading`` keeps it unanswerable until its own pin is fixed below.
+    bell.current = station;
+    bell.loading = station;
     bell.remaining = bell.seconds;
+    if (!this.structure || this.structure.structure_id !== station.structure_id) await this.select(station.structure_id);
+    // "Bitir" or "Yeniden" while the specimen was loading: this exam is over.
+    if (this.bell !== bell || bell.loading !== station) return;
+    // The station is graded against its own pin, fixed here, however the
+    // selection changes before the answer comes.
+    const specimen = this.structure && this.structure.structure_id === station.structure_id ? this.structure : null;
+    bell.landmark = (specimen && (specimen.landmarks || []).find((item) => item.landmark_id === station.landmark_id)) || { latin: station.landmark_id, turkish: "" };
+    bell.specimen = specimen ? specimen.canonical : station.structure_id;
+    bell.loading = null;
     this.ring();
-    if (!this.structure || this.structure.structure_id !== bell.current.structure_id) await this.select(bell.current.structure_id);
     this.highlight = [];
     this.renderInfo();
     this.renderBellStrip();
     this.draw();
     bell.timer = setInterval(() => {
+      if (this.bell !== bell || bell.current !== station) { clearInterval(bell.timer); return; }
       bell.remaining -= 1;
       const timer = $("#lab-bell-timer");
       if (timer) { timer.textContent = `${bell.remaining} sn`; timer.classList.toggle("low", bell.remaining <= 10); }
@@ -2630,12 +2649,27 @@ const Lab = {
     if (!strip) return;
     strip.hidden = false;
     const bell = this.bell;
-    strip.innerHTML = `<span class="chip warn">İstasyon ${bell.index + 1}/${bell.stations.length}</span>
+    if (!bell) { strip.hidden = true; strip.innerHTML = ""; return; }
+    const position = `<span class="chip warn">İstasyon ${bell.index + 1}/${bell.stations.length}</span>`;
+    if (bell.failed) {
+      // The answer was graded but not saved: the student decides whether to
+      // try the save again or to go on with the station left unrecorded.
+      strip.innerHTML = `${position}
+        <span class="lab-bell-error">Cevap kaydedilemedi: ${esc(bell.failed.error)}</span>
+        <button type="button" class="btn btn-primary small" data-bell="retry">Tekrar dene</button>
+        <button type="button" class="btn btn-ghost small" data-bell="unsaved">Kaydetmeden geç</button>
+        <button type="button" class="btn btn-ghost small" data-bell="stop">Bitir</button>`;
+    } else if (bell.pending) {
+      strip.innerHTML = `${position}<span class="faint">Cevap kaydediliyor…</span>
+        <button type="button" class="btn btn-ghost small" data-bell="stop">Bitir</button>`;
+    } else {
+      strip.innerHTML = `${position}
       <span id="lab-bell-timer" class="lab-bell-timer">${bell.remaining} sn</span>
       <input id="lab-bell-answer" type="text" placeholder="Pinli yapının Latince adı…" autocomplete="off" spellcheck="false">
       <button type="button" class="btn btn-primary small" data-bell="answer">Cevapla</button>
       <button type="button" class="btn btn-ghost small" data-bell="skip">Geç</button>
       <button type="button" class="btn btn-ghost small" data-bell="stop">Bitir</button>`;
+    }
     const input = $("#lab-bell-answer");
     if (input) {
       input.addEventListener("keydown", (event) => { if (event.key === "Enter") this.answerStation(input.value); });
@@ -2645,20 +2679,76 @@ const Lab = {
     $$("[data-bell]", strip).forEach((node) => node.addEventListener("click", () => {
       if (node.dataset.bell === "answer") this.answerStation(($("#lab-bell-answer") || {}).value || "");
       else if (node.dataset.bell === "skip") this.answerStation("", { skipped: true });
+      else if (node.dataset.bell === "retry") this.retryStation();
+      else if (node.dataset.bell === "unsaved") this.skipSaving();
       else this.finishBellRinger();
     }));
   },
 
   async answerStation(text, { timedOut = false, skipped = false } = {}) {
     const bell = this.bell;
-    if (!bell || !bell.current) return;
-    clearInterval(bell.timer);
+    // The station is claimed here, before anything asynchronous: a second
+    // click, a second Enter, or the bell landing on a manual answer finds
+    // no station to answer and does nothing. A station still loading its
+    // specimen has no pin to grade against yet and is not claimable.
+    if (!bell || !bell.current || bell.loading || bell.pending) return false;
     const station = bell.current;
-    const landmark = (this.structure.landmarks || []).find((item) => item.landmark_id === station.landmark_id) || { latin: station.landmark_id, turkish: "" };
-    const correct = !timedOut && !skipped && latinMatches(text, landmark.latin);
-    bell.answers.push({ station, given: text, latin: landmark.latin, turkish: landmark.turkish, correct, timedOut, skipped, structure: this.structure.canonical });
-    await Medical.request("anatomy_answer", { structure_id: station.structure_id, landmark_id: station.landmark_id, correct });
     bell.current = null;
+    clearInterval(bell.timer);
+    bell.timer = null;
+    const landmark = bell.landmark || { latin: station.landmark_id, turkish: "" };
+    const correct = !timedOut && !skipped && latinMatches(text, landmark.latin);
+    const record = { station, given: text, latin: landmark.latin, turkish: landmark.turkish, correct, timedOut, skipped, structure: bell.specimen, saved: false };
+    bell.answers.push(record);
+    // The submission id lets the academy recognise a retry of a save whose
+    // reply was lost, so a station is never counted twice on its side either.
+    bell.pending = { station, record, submission: `${bell.run}-${bell.index}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`, inFlight: false };
+    this.renderBellStrip();
+    return this.saveStation(bell);
+  },
+
+  async saveStation(bell) {
+    const pending = bell.pending;
+    if (!pending || pending.inFlight) return false;
+    pending.inFlight = true;
+    bell.failed = null;
+    const { station, record, submission } = pending;
+    let result;
+    try {
+      result = await Medical.request("anatomy_answer", { structure_id: station.structure_id, landmark_id: station.landmark_id, correct: record.correct, submission_id: submission });
+    } catch (error) {
+      result = { ok: false, error: String((error && error.message) || error || "İstek başarısız.") };
+    }
+    pending.inFlight = false;
+    // A reply for an exam that was finished or restarted meanwhile, or for
+    // a station already settled another way: it may not advance, redraw or
+    // restart anything.
+    if (this.bell !== bell || bell.pending !== pending) return false;
+    if (!result || result.ok === false) {
+      bell.failed = { error: (result && result.error) || "Çekirdek cevap vermedi." };
+      toast(`Cevap kaydedilemedi: ${bell.failed.error}`, true);
+      this.renderBellStrip();
+      return false;
+    }
+    record.saved = true;
+    bell.pending = null;
+    this.nextStation();
+    return true;
+  },
+
+  retryStation() {
+    const bell = this.bell;
+    if (!bell || !bell.pending || bell.pending.inFlight) return;
+    this.saveStation(bell);
+  },
+
+  skipSaving() {
+    // The student goes on without the answer being recorded: the results
+    // list says so, and mastery does not move for this station.
+    const bell = this.bell;
+    if (!bell || !bell.pending || bell.pending.inFlight) return;
+    bell.pending = null;
+    bell.failed = null;
     this.nextStation();
   },
 
@@ -2666,6 +2756,11 @@ const Lab = {
     const bell = this.bell;
     if (!bell) return;
     clearInterval(bell.timer);
+    bell.timer = null;
+    // A save still in flight belongs to this exam alone: its reply finds the
+    // exam gone and changes nothing; the results say the record was pending.
+    if (bell.pending) { bell.pending.record.saved = "pending"; bell.pending = null; }
+    bell.failed = null;
     const strip = $("#lab-bell-strip");
     if (strip) { strip.hidden = true; strip.innerHTML = ""; }
     this.bell = null;
@@ -2676,7 +2771,7 @@ const Lab = {
     host.innerHTML = `<h2>Zilli sınav bitti</h2><div class="lab-tr">${bell.answers.length} istasyon · ${right} doğru</div>
       <div class="lab-bell-results">${bell.answers.map((item, index) => `<div class="lab-bell-row ${item.correct ? "ok" : "bad"}">
         <span>${index + 1}</span><span><b>${esc(item.latin)}</b> · ${esc(item.structure)}${item.turkish ? "<br>" + esc(item.turkish) : ""}
-        <br><span class="faint">${item.correct ? "Doğru" : item.timedOut ? "Süre doldu" : item.skipped ? "Geçildi" : "Senin cevabın: " + esc(item.given || "—")}</span></span></div>`).join("")}</div>
+        <br><span class="faint">${item.correct ? "Doğru" : item.timedOut ? "Süre doldu" : item.skipped ? "Geçildi" : "Senin cevabın: " + esc(item.given || "—")}${item.saved === false ? " · kaydedilmedi" : item.saved === "pending" ? " · kaydı bekleniyordu" : ""}</span></span></div>`).join("")}</div>
       <div class="btn-row" style="justify-content:flex-start;margin-top:8px"><button type="button" class="btn btn-ghost small" data-bell-done="again">Yeniden</button>
       <button type="button" class="btn btn-ghost small" data-bell-done="close">Karta dön</button></div>`;
     $$("[data-bell-done]", host).forEach((node) => node.addEventListener("click", () => {

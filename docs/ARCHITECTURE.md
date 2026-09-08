@@ -470,8 +470,16 @@ the notification centre.
 `NotificationCenter` is a bounded, thread-safe attention list (persisted
 through `NotificationStore` below the state directory) with kinds,
 severities, target screens and dedupe-by-key collapsing;
-`ReminderWatch` polls the reminder store on a daemon thread and hands each
-due reminder out exactly once. The bridge owns one centre per window
+`ReminderWatch` polls the reminder store on a daemon thread; the store
+leases what is due (`claim_due` with a claim token, one immediate
+transaction), the watch hands each reminder to the bridge and then
+acknowledges the lease or, when delivery raised, releases it for a bounded
+retry (30 s doubling to 15 min, five attempts, then kept as undeliverable);
+a lease nobody settles expires after 120 s. Delivery to the callback is
+therefore at-least-once and acknowledgment exactly-once per token; the
+bridge keeps a repeat from becoming a second entry by the reminder's id
+(`NotificationCenter.find`). The routine store is polled by the same watch
+with no leases, as before. The bridge owns one centre per window
 session, publishes into it from the core's observers (reminders, ledger
 warnings, screen observations) and from its own completions when the
 window is unattended (replies, approval requests as tool name and risk

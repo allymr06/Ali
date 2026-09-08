@@ -1389,7 +1389,7 @@ class NovaBridge:
         if name == "anatomy_quiz":
             return {"ok": True, "questions": _jsonable(academy.anatomy_quiz(text("structure_id"), count=number("count", 5)))}
         if name == "anatomy_answer":
-            return {"ok": True, **_jsonable(academy.record_anatomy_answer(text("structure_id"), text("landmark_id") or None, payload.get("correct") is True))}
+            return {"ok": True, **_jsonable(academy.record_anatomy_answer(text("structure_id"), text("landmark_id") or None, payload.get("correct") is True, submission_id=text("submission_id") or None))}
         raise KeyError(name)
 
     def _medical_start(self, operation: Any, *, report: str = "") -> bool:
@@ -1556,16 +1556,36 @@ class NovaBridge:
         return {"ok": True, "started": True, "message": message}
 
     def _deliver_reminder(self, reminder: Mapping[str, Any]) -> None:
+        """Put a due reminder in the notification centre.
+
+        Delivery means the centre accepted the entry (written through to
+        its store when it has one); the native toast is a courtesy on top,
+        and its absence is not a failed delivery. The reminder's id is the
+        entry's reference, so a reminder handed out again — its
+        acknowledgment lost to a crash or an expired lease — is found and
+        not shown twice. Whatever stops the centre taking the entry
+        propagates, and the watch returns the claim for a later retry.
+        """
         text = str(reminder.get("text", "")).strip()
         if not text:
             return
-        self._publish(
+        reference = str(reminder.get("reminder_id", "")).strip() or None
+        centre = self._notifications
+        if reference is not None and centre.find("reminder", reference) is not None:
+            self._record_ui_event(
+                "reminder.repeated",
+                "A reminder handed out again was already in the centre.",
+                reminder_id=reference,
+            )
+            return
+        entry = centre.publish(
             "reminder",
             NOTIFICATION_TITLES["reminder"],
             text,
-            reference=str(reminder.get("reminder_id", "")) or None,
-            alert=True,
+            reference=reference,
         )
+        if not self._attended:
+            self._notify_os(entry.title, entry.body)
 
     def _on_screen_observation(self, entry: Any) -> None:
         if not isinstance(entry, Mapping):

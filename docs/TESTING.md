@@ -473,9 +473,13 @@ rendered from real numbers).
 `tests/test_notifications.py` covers the centre (bounded titles, bodies and
 data; kind and severity validation; newest-first bounded listing; mark
 read, dismiss, clear; dedupe within the window only; broken listeners;
-concurrent publishing) and the reminder watch (exactly-once delivery per
-claim, delivery and store errors swallowed, immediate first poll, periodic
-polling, idempotent start and stop, restart). `tests/test_ui_nova.py`
+concurrent publishing) and the reminder watch (leases acknowledged after
+delivery and released with the error when delivery raised, a source without
+leases polled as before, delivery and store errors swallowed, immediate
+first poll, periodic polling, idempotent start and stop, restart).
+`tests/test_reminder_delivery.py` covers the reminder store's lifecycle with a
+controllable clock (see the reliability repair entry of 8 September 2026 in
+`docs/PROJECT_STATE.md`). `tests/test_ui_nova.py`
 covers the bridge: the boot payload and the watch lifecycle, due reminders
 reaching the page and following a replaced runtime, the centre API,
 unattended routing to the OS notifier with the setting and the in-flight

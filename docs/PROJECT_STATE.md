@@ -65,6 +65,40 @@ Last verified: 8 September 2026
 - Automated verification: 2297 tests passing, 4 skipped (`scripts/verify.py`)
 - Production readiness: not yet claimed
 
+## The committee papers (8 September 2026)
+
+The past exams were in a second folder Ali shared: eight PDFs, one per
+subject (*Anatomi Tüm Komiteler Çıkmış* … *Tıbbi Biyoloji Tüm Komiteler
+Çıkmış*), 131 pages, every one a scan with no text layer. They are an exam
+system's export: a `KOMITE N` heading per page and, under every question, the
+author (`Soru Sahibi :`), the department and the options with the key marked
+as a suffix. Ali asked for one thing from them: the lecturers' styles.
+
+- The parser reads the export (owner, department, committee, key suffix, the
+  student's own mark kept apart from the key, two keys naming none) and the
+  mining files each question under its own owner, merging `RABET GÖZİL` with
+  the `Prof. Dr. Rabet Gözil` already known from the lectures; such a paper
+  belongs to nobody as a whole.
+- Scanned pages are transcribed by the vision model before anything else
+  (`transcribe_document`, first step of `continue_processing`), exactly as
+  printed, with the figure pass's pacing and outage rule; the transcription
+  becomes the page's text, so the deterministic parser, the search and the
+  narration see the paper like any text PDF.
+- The download of a Drive folder keeps a file's id in its name when another
+  file in the same folder has the same name, so nothing is overwritten again.
+- **State at the end of the session.** Three of the eight papers were
+  transcribed (37 of 131 pages: Anatomi, Biyofizik, the first page of
+  Biyokimya) before the free-tier vision quota ran out; the transcription of
+  the first Anatomi page was checked line by line against the scan, and the
+  four questions on it carry the owner, committee, key and the student's mark
+  the scan shows. 121 keyed questions were filed under six lecturers, three of
+  them merged with profiles already read from the lectures (Rabet Gözil now
+  has 21 exam questions over 10 lectures, Hakkı Yeşilyurt 35, Şerife
+  Cankurtaran Sayar 31 with an answer distribution that leans on A). The
+  remaining 94 pages are read by "Şekilleri incele" on the set (or "Metne
+  çevir (OCR)" on a paper) once the quota returns, followed by "Hocaları
+  ayır"; a background loop was left retrying with the same product path.
+
 ## What the shared Drive folder held (8 September 2026)
 
 Ali expected the committee past-exam papers in the shared folder. They are not
@@ -1658,16 +1692,40 @@ generating past them and its end-of-speech guard has to cut it off, so
 "Tamam efendim." came back as 5.9 s at 44 per cent speech. Full sentences
 behave.
 
-**The resident worker does not survive the load here.** At the very end of
-the load the worker dies with no traceback and the parent sees its pipe
-close, and it takes twenty minutes to find out. It happened on all six
-attempts through the adapter, with as much as 3.8 GB free and the machine
-otherwise idle; every one of them reached the model. The benchmark that
-produced the samples drives the same engine in a single process and did
-finish. So the engine works on this laptop and the out-of-process worker
-does not reliably get it loaded here; the cause is not yet established and
-the next step is to capture the worker's exit code and Windows' own record
-of why it ended.
+**The bug that cost six runs, and what it actually was.** Every attempt
+through the adapter failed at the end of the load, twenty minutes in, with
+the parent reporting that the worker had stopped responding. The obvious
+reading was memory — the laptop has 8 GB, the load peaks at 3.4 GB, and the
+system commit charge did climb to 16.7 of 17.8 GB while it ran. That reading
+was wrong, and the way to find out was to stop guessing and record how the
+worker ended. It had not ended: the failure now says *still running, so it
+stopped writing rather than died*.
+
+The worker answers on its stdout, one JSON object per line, and the model's
+vocoder prints `Removing weight norm...` to that same stdout as the last
+step of loading. The parent read the vocoder's chatter, could not parse it,
+and called the worker dead. The single-process benchmark never noticed
+because it does not parse stdout, which is why the same engine produced the
+samples while the adapter never once got a reply.
+
+Fixed on both sides. The worker now duplicates the real stdout to a private
+descriptor for the protocol and points descriptor 1 at stderr, so every
+print from any library lands in the log instead of the channel; and the
+parent steps over a line it cannot parse instead of mistaking it for a
+death, quoting it if nothing better arrives. The exit-code reporting that
+found this stays: a worker that really dies now names the code and, where
+Windows has one, the reason. The offending line turned out to be the
+watermarker's, not the vocoder's — `loaded PerthNet (Implicit) at step
+250,000` — which is the point: the channel has to be private, because
+guessing which library will print next is not a strategy.
+
+With that, the eighth attempt went through. The desktop's own path —
+adapter, worker process, real model, WAV — produced
+`jarvis_01.wav` (8.72 s of speech in 323.8 s) and `jarvis_02.wav`
+(8.84 s in 84.4 s). The gap between those two is the point: the first
+sentence after a load costs a factor of 37, the next one 9.5, which
+matches the benchmark's 7 to 11. Time the second sentence, not the first.
+The load itself is 15 to 20 minutes either way.
 
 **Not done.** The cloned voice is not the default and should not be until it
 runs on a GPU: at eleven times slower than real time a spoken turn would time

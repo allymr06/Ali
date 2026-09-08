@@ -837,3 +837,129 @@ def test_a_name_in_prose_is_read_only_as_far_as_the_sentence_lets_it() -> None:
     assert looks_like_cover(cover) and looks_like_cover("Sunum başlığı ve bölüm adı")
     assert not looks_like_cover("Görselde Dr. Refik Saydam'ın portresi ve sağlık örgütlenmesi şeması var.")
     assert not looks_like_cover("")
+
+
+
+# ---------------------------------------------------------------------------
+# an exam system's export: the owner of every question, the key as a suffix
+# ---------------------------------------------------------------------------
+
+EXAM_EXPORT = """KOMITE 5
+
+1. soru:
+"Eklem tipi art. sellaris'tir. Discus articularis'i vardır." Aşağıdaki eklemlerden hangisi bu özelliklere sahiptir?
+Soru Sahibi : RABET GÖZİL
+Anabilimdalı : Anatomi
+
+A) Art. sternoclavicularis-Doğru Seçenek
+B) Art. acromioclavicularis-Öğrencinin işaretlediği
+C) Skapulotorakal eklem
+D) Artt. costochondrales
+E) Artt. costotransversaria
+
+ 2. soru:
+Sulcus arteriae vertebralis aşağıdaki kemiklerin hangisinde bulunur?
+Soru Sahibi : HAKKI YEŞİLYURT
+Anabilimdalı : Anatomi
+
+A) Os occipitale-Öğrencinin işaretlediği
+B) Os temporale
+C) Os sphenoidale
+D) Atlas-Doğru Seçenek
+E)  Axis
+
+ 3. soru:
+Aşağıdaki yapılardan hangisi sadece servikal vertebralarda bulunur?
+Soru Sahibi : HAKKI YEŞİLYURT
+Anabilimdalı : Anatomi
+
+A) Foramen vertebrale
+B) Foramen transversarium-Doğru Seçenek-Öğrencinin işaretlediği
+C) Processus transversus
+D) Incisura vertebralis inferior
+E) Processus articularis superior
+KOMITE 1
+
+29. soru:
+Organik Kimyada Alkan yapıların genel formülü aşağıdakilerden hangisidir?
+Soru Sahibi : CUMHUR BİLGİ
+Anabilimdalı : Tıbbi Biyokimya
+
+A) CnH2n+2-Doğru Seçenek-
+B) CnH2n-2-Doğru Seçenek
+C) CnH2n+1
+D) CnH2n-1
+E) CnH2n
+"""
+
+
+def test_an_exam_export_yields_the_owner_department_committee_key_and_the_students_mark() -> None:
+    from app.medical.professor import QuestionImportParser
+
+    result = QuestionImportParser().parse(EXAM_EXPORT)
+    questions = {question.number: question for question in result.questions}
+    assert set(questions) == {"1", "2", "3", "29"}
+    first = questions["1"]
+    assert first.stem.startswith('"Eklem tipi') and "soru:" not in first.stem, "the numbering word is not the stem"
+    assert first.owner == "RABET GÖZİL" and first.department == "Anatomi" and first.committee == "5"
+    assert first.answer_key == "A" and first.student_marked == "B"
+    assert [text for _key, text in first.options] == ["Art. sternoclavicularis", "Art. acromioclavicularis", "Skapulotorakal eklem", "Artt. costochondrales", "Artt. costotransversaria"], "the suffixes are not part of the option"
+    assert questions["2"].answer_key == "D" and questions["2"].student_marked == "A"
+    # Both suffixes on one option: the key and the mark are the same letter.
+    assert questions["3"].answer_key == "B" and questions["3"].student_marked == "B"
+    assert questions["3"].committee == "5", "a committee heading holds until the next one"
+    # After the next heading the committee changes; two options marked correct name no key.
+    assert questions["29"].committee == "1" and questions["29"].department == "Tıbbi Biyokimya"
+    assert questions["29"].answer_key is None and questions["29"].warnings
+    assert questions["29"].options[0][1] == "CnH2n+2"
+    assert result.answer_key_found is True
+    # A plain paper without the export lines still parses as before.
+    plain = QuestionImportParser().parse("1. Scapula nedir?\nA) Kemik\nB) Kas\nCevap: A\n").questions[0]
+    assert plain.owner is None and plain.committee is None and plain.answer_key == "A"
+
+
+def test_mention_from_an_owner_line() -> None:
+    from app.medical.professor import mention_from_owner, professor_key, same_person
+
+    mention = mention_from_owner("RABET GÖZİL")
+    assert mention is not None and mention.name == "Rabet Gözil" and mention.source == "question"
+    assert same_person(mention.key, professor_key("Prof. Dr. Rabet Gözil"))
+    assert mention_from_owner("HASAN") is None and mention_from_owner("") is None
+
+
+def test_in_an_export_a_numbered_list_inside_a_stem_is_not_a_new_question() -> None:
+    from app.medical.professor import QuestionImportParser
+
+    text = (
+        "KOMITE 1\n\n12. soru:\nÖnceki soru?\nSoru Sahibi : DİLEK YONAR\nAnabilimdalı : Biyofizik\n\nA) p-Doğru Seçenek\nB) q\n\n"
+        "13. soru:\nBu durum aşağıdaki iki liste nasıl eşleştirilebilir?\n1. Bazı öğünlerden sonra sindirim sorunları yaşayan hasta\n"
+        "2. Acılı, baharatlı gıda alımı\n3. Acısız ve baharatsız beslenme\nSoru Sahibi : DİLEK YONAR\nAnabilimdalı : Biyofizik\n\n"
+        "A) 1-a, 2-b, 3-c-Doğru Seçenek\nB) 1-b, 2-a, 3-c\nC) 1-c, 2-b, 3-a\n\n"
+        "14. soru:\nİkinci soru?\nSoru Sahibi : DİLEK YONAR\nAnabilimdalı : Biyofizik\n\nA) x-Doğru Seçenek\nB) y\n"
+    )
+    result = QuestionImportParser().parse(text)
+    assert [question.number for question in result.questions] == ["12", "13", "14"]
+    matching = result.questions[1]
+    assert "1. Bazı öğünlerden" in matching.stem and "3. Acısız" in matching.stem
+    assert matching.answer_key == "A" and len(matching.options) == 3
+    assert result.notes == []
+    # Fewer than three "N. soru:" starts is not an export, and plain numbering still splits.
+    plain = QuestionImportParser().parse("1. Birinci?\nA) a\nB) b\n2. İkinci?\nA) c\nB) d\n")
+    assert [question.number for question in plain.questions] == ["1", "2"]
+
+
+def test_in_an_export_a_stem_opening_with_an_abbreviation_is_not_option_a() -> None:
+    from app.medical.professor import QuestionImportParser
+
+    text = (
+        "KOMİTE 6\n\n7. soru:\nA. subclavia ve brachial plexus'un trunkuslarının yer aldığı üçgen aşağıdakilerden hangisidir?\n"
+        "Soru Sahibi : RABET GÖZİL\nAnabilimdalı : Anatomi\n\nA) Trigonum occipitale\nB) Trigonum supraclaviculare-Doğru Seçenek-Öğrencinin işaretlediği\n"
+        "C) Trigonum musculare\nD) Trigonum caroticum\nE) Trigonum suboccipitale\n\n"
+        "8. soru:\nİkinci?\nSoru Sahibi : RABET GÖZİL\nAnabilimdalı : Anatomi\n\nA) a\nB) b-Doğru Seçenek\n\n"
+        "9. soru:\nÜçüncü?\nSoru Sahibi : RABET GÖZİL\nAnabilimdalı : Anatomi\n\nA) a-Doğru Seçenek\nB) b\n"
+    )
+    result = QuestionImportParser().parse(text)
+    first = result.questions[0]
+    assert first.number == "7" and first.stem.startswith("A. subclavia ve brachial plexus")
+    assert [key for key, _ in first.options] == ["A", "B", "C", "D", "E"] and first.answer_key == "B" and first.committee == "6"
+    assert len(result.questions) == 3 and result.notes == []

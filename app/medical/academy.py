@@ -25,7 +25,7 @@ from app.medical.anatomy import AnatomyLab
 from app.medical.catalog import Curriculum, valid_subject
 from app.medical.concepts import ConceptGraph, default_concept_graph
 from app.medical.context import SessionManager
-from app.medical.documents import DocumentError, DocumentPipeline
+from app.medical.documents import DocumentError, DocumentPipeline, page_headings
 from app.medical.generation import ExamBuilder, GenerationError, QuestionGenerator
 from app.medical.intents import MedicalIntentParser
 from app.medical.learning import LearningEngine
@@ -55,6 +55,7 @@ from app.medical.professor import (
     fuller_name,
     looks_like_cover,
     looks_like_question_paper,
+    mention_from_owner,
     mentions_in_text,
     professor_from_title,
     professor_key,
@@ -111,6 +112,17 @@ _BOOK_EDITORIAL = ("editor", "yazarlar", "baski", "basim", "ceviri", "bolum yaza
 VISION_PACE_SECONDS = 1.0
 VISION_RETRY_WAIT_SECONDS = 20.0
 VISION_OUTAGE_LIMIT = 2
+# Scanned pages: below this many characters a page is read with the vision
+# model, at a scale that keeps small option text legible.
+OCR_MIN_CHARS = 20
+OCR_IMAGE_SCALE = 2.0
+OCR_PROMPT = (
+    "Transcribe this scanned exam page exactly as written, in reading order, as plain text. Keep every line: "
+    "the committee heading (for example 'KOMITE 5'), the question numbers ('12. soru:'), the stem, the "
+    "'Soru Sahibi :' and 'Anabilimdalı :' lines, each option on its own line with its letter ('A) …'), and any "
+    "suffix attached to an option such as '-Doğru Seçenek' or '-Öğrencinin işaretlediği'. Do not add, omit, "
+    "correct or translate anything, and do not comment. Ignore handwritten notes in the margins."
+)
 _OUTAGE_MARKERS = ("ProviderUnavailableError", "ProviderRateLimitError", "ProviderTimeoutError", "zaman aşımı", "429", "quota", "RESOURCE_EXHAUSTED")
 
 
@@ -802,7 +814,78 @@ class MedicalAcademy:
         self._emit({"kind": "lecture_set_processed", **report})
         return report
 
-    async def continue_processing(self, *, set_id: str | None = None, document_id: str | None = None, vision: bool = True, analysis: bool = True) -> dict[str, Any]:
+    async def transcribe_document(self, document_id: str, *, pace_seconds: float | None = None, retry_wait_seconds: float | None = None) -> dict[str, Any]:
+        """Read the pages of a scanned document with the vision model.
+
+        A page with no text of its own is transcribed as written — the
+        committee heading, the question numbers, the owner and department
+        lines, each option with its suffixes — and stored as the page's text,
+        so the deterministic parser, the search and the narration see the
+        paper exactly as a text PDF. The same outage rule as the figure pass
+        applies: two refusals stop the document, the rest stays untranscribed
+        and the report says so.
+        """
+        document = self.store.get_document(document_id)
+        if document is None:
+            raise DocumentError("Belge bulunamadı.")
+        if not self.model.available:
+            raise MedicalModelError("Taranmış sayfaları okumak için model sağlayıcısı gerekli.")
+        pages = [page for page in self.store.get_pages(document_id) if page.char_count < OCR_MIN_CHARS]
+        pace = VISION_PACE_SECONDS if pace_seconds is None else float(pace_seconds)
+        retry_wait = VISION_RETRY_WAIT_SECONDS if retry_wait_seconds is None else float(retry_wait_seconds)
+        transcribed = 0
+        outages = 0
+        stopped: str | None = None
+        for index, page in enumerate(pages, start=1):
+            if index > 1 and pace > 0:
+                await asyncio.sleep(pace)
+            self._job(document_id, "reading", f"Taranmış sayfalar okunuyor · {index} / {len(pages)} (s. {page.page_number})")
+            try:
+                png = await asyncio.to_thread(self.pipeline.render_page, document_id, page.page_number, scale=OCR_IMAGE_SCALE)
+                text = await self.model.text("page_ocr", OCR_PROMPT, system_prompt=PIPELINE_SYSTEM, images=[{"data": png, "mime_type": "image/png", "detail": "high"}], task_type="vision")
+            except MedicalModelError as exc:
+                if looks_like_outage(exc):
+                    outages += 1
+                    self._record("document.ocr_paused", str(exc), level="warning", document_id=document_id, page=page.page_number)
+                    if outages >= VISION_OUTAGE_LIMIT:
+                        stopped = f"Sayfa okuma durdu: model şu an yanıt vermiyor (kota dolmuş olabilir); {len(pages) - index + 1} sayfa bekliyor, sonra sürdürülebilir."
+                        break
+                    if retry_wait > 0:
+                        await asyncio.sleep(retry_wait)
+                    continue
+                self._record("document.ocr_failed", str(exc), level="warning", document_id=document_id, page=page.page_number)
+                continue
+            except DocumentError as exc:
+                self._record("document.ocr_failed", str(exc), level="warning", document_id=document_id, page=page.page_number)
+                continue
+            outages = 0
+            body = str(text or "").strip()
+            if len(body) < OCR_MIN_CHARS:
+                continue
+            page.text = body
+            page.headings = page_headings(body)
+            self.store.save_page(page)
+            transcribed += 1
+        if transcribed:
+            self.pipeline.reindex(document_id)
+            refreshed = self.store.get_document(document_id)
+            if refreshed is not None:
+                refreshed.tags = list(dict.fromkeys(refreshed.tags + ["taranmış metin"]))[:20]
+                self.store.save_document(refreshed)
+        self.vision_state = {"outage": stopped is not None, "detail": stopped or "", "at": utc_now().isoformat() if stopped else None}
+        current = self.store.get_document(document_id) or document
+        self._job(document_id, "ready", current.status_detail, done=True)
+        report = {"document_id": document_id, "pages": len(pages), "transcribed": transcribed, "remaining": len(pages) - transcribed, "stopped": stopped}
+        self._record("document.transcribed", "Scanned pages transcribed.", document_id=document_id, transcribed=transcribed, remaining=report["remaining"], stopped=bool(stopped))
+        self._emit({"kind": "document_transcribed", "document_id": document_id, "title": current.title, **{key: value for key, value in report.items() if key != "document_id"}, "quiet": True})
+        return report
+
+    def _needs_ocr(self, document: StudyDocument) -> bool:
+        if document.status != DocumentStatus.READY or not document.page_count:
+            return False
+        return any(page.char_count < OCR_MIN_CHARS for page in self.store.get_pages(document.document_id))
+
+    async def continue_processing(self, *, set_id: str | None = None, document_id: str | None = None, vision: bool = True, analysis: bool = True, ocr: bool = True) -> dict[str, Any]:
         """Pick up what the model left: pending figure pages, missing analyses.
 
         Ready documents keep their pages and chunks; only the model work that
@@ -823,14 +906,24 @@ class MedicalAcademy:
             candidates = [item for item in (self.store.get_document(identifier) for identifier in record.get("document_ids", [])) if item is not None]
         else:
             candidates = self.store.list_documents()
-        queue = [item for item in candidates if item.status == DocumentStatus.READY and ((vision and item.visual_pages_pending) or (analysis and "analiz edildi" not in item.tags))]
+        queue = [item for item in candidates if item.status == DocumentStatus.READY and ((vision and item.visual_pages_pending) or (analysis and "analiz edildi" not in item.tags) or (ocr and self._needs_ocr(item)))]
         described = 0
         analysed = 0
+        transcribed = 0
         touched = 0
         stopped: str | None = None
         for index, document in enumerate(queue, start=1):
             self._emit({"kind": "lecture_set_progress", "set_id": set_id, "stage": "vision", "done": index - 1, "total": len(queue), "current": document.title, "document_id": document.document_id})
             touched += 1
+            if ocr and self._needs_ocr(document):
+                # Words first: a scanned paper's questions, headings and figures
+                # all depend on the text being there.
+                read = await self.transcribe_document(document.document_id)
+                transcribed += read["transcribed"]
+                if read["stopped"]:
+                    stopped = read["stopped"]
+                    break
+                document = self.store.get_document(document.document_id) or document
             if vision and document.visual_pages_pending:
                 described += await self._vision_pass(document)
                 if self.vision_state.get("outage"):
@@ -851,7 +944,7 @@ class MedicalAcademy:
                     pass
             refreshed = self.store.get_document(document.document_id) or document
             self._job(document.document_id, "ready", refreshed.status_detail, done=True)
-        report = {"set_id": set_id, "document_id": document_id, "queued": len(queue), "documents": touched, "described": described, "analysed": analysed, "stopped": stopped}
+        report = {"set_id": set_id, "document_id": document_id, "queued": len(queue), "documents": touched, "described": described, "analysed": analysed, "transcribed": transcribed, "stopped": stopped}
         self._record("lecture_set.continued", "Pending model work continued.", **{key: value for key, value in report.items() if key != "stopped"}, stopped=bool(stopped))
         self._emit({"kind": "vision_resumed", **report})
         return {"continue": report}
@@ -1644,7 +1737,10 @@ class MedicalAcademy:
         existing_stems = {fold(question.stem) for question in self.store.query_questions(limit=100_000)}
         per_professor: dict[str, dict[str, Any]] = {}
         books: list[str] = []
+        papers: list[str] = []
+        unread: list[str] = []
         from_pictures = 0
+        owners_seen: dict[str, set[str]] = {}
         # Question ids gathered per profile; the profile is re-read at the end so
         # a fuller name learned from a later lecture is what gets rebuilt.
         touched: dict[str, list[str]] = {}
@@ -1659,6 +1755,10 @@ class MedicalAcademy:
             if progress is not None and (index % 10 == 0 or index == len(documents)):
                 progress(index, len(documents), document.title)
             pages = self.store.get_pages(document.document_id)
+            if pages and all(page.char_count < OCR_MIN_CHARS for page in pages) and not any(page.visual_summary for page in pages):
+                # A scan nobody has read yet names nobody and holds no question.
+                unread.append(document.title)
+                continue
             book = looks_like_book(pages)
             # A book's front matter names its authors, not the student's
             # lecturer; its questions are kept, but under nobody.
@@ -1686,7 +1786,13 @@ class MedicalAcademy:
             # A lecture keeps every question under its lecturer; only a compiled
             # paper is cut at the headings that name one.
             probe = parser.parse(text)
-            sections = split_by_professor(text) if looks_like_question_paper(text, len(probe.questions)) else [(None, text)]
+            paper = looks_like_question_paper(text, len(probe.questions))
+            owned = any(item.owner for item in probe.questions)
+            if owned:
+                papers.append(document.title)
+                if document.title in unattributed:
+                    unattributed.remove(document.title)
+            sections = split_by_professor(text) if paper and not owned else [(None, text)]
             added_here = 0
             for section_mention, section_text in sections:
                 owner = profile
@@ -1701,28 +1807,53 @@ class MedicalAcademy:
                         skipped += 1
                         continue
                     existing_stems.add(folded)
+                    question_owner = owner
+                    if item.owner:
+                        # An exam export names the author of every question.
+                        owner_mention = mention_from_owner(item.owner)
+                        if owner_mention is not None:
+                            question_owner, _created = self._profile_for_mention(owner_mention, folder_subject([item.department or ""]) or document.subject)
+                            entry = per_professor.setdefault(question_owner.profile_id, {"profile_id": question_owner.profile_id, "name": question_owner.name, "documents": 0, "questions_added": 0})
+                            entry["name"] = question_owner.name
+                            seen_docs = owners_seen.setdefault(question_owner.profile_id, set())
+                            if document.document_id not in seen_docs:
+                                seen_docs.add(document.document_id)
+                                entry["documents"] += 1
+                            touched.setdefault(question_owner.profile_id, [])
                     page_number = self._page_of(pages, item.stem)
                     page = next((page for page in pages if page.page_number == page_number), None) if page_number else None
                     image_ref = f"{document.document_id}|{page_number}" if item.has_image and page is not None and page.image_count else None
+                    subject = folder_subject([item.department or ""]) or document.subject or (question_owner.subject if question_owner else None) or ""
+                    exam_item = bool(item.owner) or (paper and not book)
+                    tags = ["kitaptan" if book else "çıkmış" if exam_item else "ders notundan", document.title[:60]]
+                    if item.committee:
+                        tags.append(f"Komite {item.committee}")
+                    if item.department:
+                        tags.append(item.department[:40])
                     question = imported_question(
                         item,
-                        subject=document.subject or (owner.subject if owner else None) or "anatomy",
-                        professor_id=owner.profile_id if owner else None,
+                        subject=subject,
+                        professor_id=question_owner.profile_id if question_owner else None,
                         document_id=document.document_id,
-                        origin=QuestionOrigin.LECTURE_DERIVED,
+                        origin=QuestionOrigin.IMPORTED_EXAM if exam_item else QuestionOrigin.LECTURE_DERIVED,
                         page_number=page_number,
                         image_ref=image_ref,
-                        tags=["kitaptan" if book else "ders notundan", document.title[:60]],
+                        tags=tags,
                     )
+                    question.metadata.update({key: value for key, value in (("owner", item.owner), ("department", item.department), ("committee", item.committee), ("student_marked", item.student_marked)) if value})
+                    if "taranmış metin" in document.tags:
+                        question.metadata["ocr"] = True
+                    if item.warnings:
+                        question.metadata["warnings"] = list(item.warnings)
                     self.store.save_question(question)
                     added_here += 1
                     if not question.has_answer_key:
                         without_key += 1
                     if image_ref:
                         with_image += 1
-                    if owner is not None:
-                        per_professor[owner.profile_id]["questions_added"] += 1
-                        touched.setdefault(owner.profile_id, []).append(question.question_id)
+                    if question_owner is not None:
+                        per_professor[question_owner.profile_id]["questions_added"] += 1
+                        touched.setdefault(question_owner.profile_id, []).append(question.question_id)
             if added_here:
                 documents_with_questions += 1
                 added_total += added_here
@@ -1730,7 +1861,11 @@ class MedicalAcademy:
             profile = self.store.get_professor(profile_id)
             if profile is None:
                 continue
-            notes = profile.notes or ("Sorular ders notlarındaki örnek/tekrar sorularından çıkarıldı; gerçek sınav kâğıdı yüklenince tarz kesinleşir." if new_ids else "")
+            new_questions = self.store.get_questions(new_ids)
+            if any(question.origin == QuestionOrigin.IMPORTED_EXAM for question in new_questions):
+                notes = "Sorular çıkmış sınav kâğıtlarından alındı (her sorunun 'Soru Sahibi' satırı); cevap anahtarı kâğıdın kendi işaretinden okundu."
+            else:
+                notes = profile.notes or ("Sorular ders notlarındaki örnek/tekrar sorularından çıkarıldı; gerçek sınav kâğıdı yüklenince tarz kesinleşir." if new_ids else "")
             self._rebuild_profile(profile.profile_id, profile.name, profile.subject, list(dict.fromkeys(profile.question_ids + new_ids)), notes=notes)
         report = {
             "documents": len(documents),
@@ -1744,12 +1879,18 @@ class MedicalAcademy:
             "unattributed": unattributed[:60],
             "incomplete": incomplete[:20],
             "books": books[:40],
+            "papers": papers[:40],
+            "unread": unread[:40],
             "from_pictures": from_pictures,
             "notes": [],
             "mined_at": utc_now().isoformat(),
         }
         if unattributed:
             report["notes"].append(f"{len(unattributed)} belgede hoca adı bulunamadı; bu belgeler hocasız kaldı.")
+        if unread:
+            report["notes"].append(f"{len(unread)} belge henüz okunmamış tarama: önce “Metne çevir (OCR)” gerekir ({', '.join(unread[:3])}{'…' if len(unread) > 3 else ''}).")
+        if papers:
+            report["notes"].append(f"{len(papers)} belge çıkmış sınav kâğıdı: her soru kendi 'Soru Sahibi' satırındaki hocaya bağlandı ({', '.join(papers[:3])}{'…' if len(papers) > 3 else ''}).")
         if books:
             report["notes"].append(f"{len(books)} belge yayımlanmış kitap: soruları alındı ama kapaktaki yazarlar hoca sayılmadı ({', '.join(books[:3])}{'…' if len(books) > 3 else ''}).")
         if from_pictures:

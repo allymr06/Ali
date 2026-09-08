@@ -280,6 +280,29 @@ a file that *looks like a compiled paper* (`looks_like_question_paper`: at
 least five questions and most lines question-shaped) is split at the headings
 that name a lecturer, each section going to the heading above it.
 
+An exam system's export names the author of every question — `Soru Sahibi :`
+under the stem, `Anabilimdalı :` for the department, `KOMITE N` at the top of
+the page, the key as a suffix on the option itself (`-Doğru Seçenek`) and the
+student's own mark as another (`-Öğrencinin işaretlediği`), which is never
+read as a key. The parser reads all of it: each question goes to its own
+owner (merged with a lecturer already known from a lecture by the same
+surname rule), keeps its committee, department and the student's mark as
+metadata, takes its subject from the department, and carries the key the
+paper marked; two options marked correct name no key. Such a paper belongs to
+nobody as a whole. The style profiles built this way rest on keyed exam
+questions and their note says so.
+
+The papers Ali shared are scans with no text layer, so a document whose pages
+hold no text is first *transcribed*: `transcribe_document` renders each page
+and asks the vision model to write it out exactly as printed (headings,
+numbers, owner and department lines, options with their suffixes, nothing
+added or corrected), stores the transcription as the page's text, re-indexes
+the chunks and tags the document *taranmış metin*; questions filed from it
+carry `ocr: true`. The pass has the figure pass's pacing and outage rule, runs
+first inside `continue_processing` ("Metne çevir (OCR)" on the document,
+"Şekilleri incele" on the set), and a page it could not read stays as it
+was.
+
 A published book is not a lecture: front matter with an ISBN (or a publisher's
 mark meeting an editorial one) marks the document as a book, its end-of-unit
 questions are filed under nobody and tagged *kitaptan*, and its editors and

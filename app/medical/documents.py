@@ -733,6 +733,19 @@ class DocumentPipeline:
             kind="visual",
         )
 
+    def reindex(self, document_id: str) -> StudyDocument | None:
+        """Rebuild the chunks from the stored pages (after their text changed)."""
+        document = self._store.get_document(document_id)
+        if document is None:
+            return None
+        pages = self._store.get_pages(document_id)
+        document.chunk_count = self._index(document, pages)
+        document.page_count = len(pages)
+        if document.status == DocumentStatus.READY:
+            document.status_detail = self._ready_detail(document)
+        self._store.save_document(document)
+        return document
+
     # ------------------------------------------------------------------
     # vision support
     # ------------------------------------------------------------------

@@ -48,6 +48,19 @@ _ANSWER_HEADER = re.compile(r"(cevap anahtar|yan[ıi]t anahtar|answer key|cevapl
 _TABLE_SEPARATORS = re.compile(r"[\s,;.:|/\\–—-]*")
 _DANGLING_OPENERS = re.compile(r"[\s(\[{]+$")
 _MULTI_STATEMENT = re.compile(r"(?:^|\s|\()(i{1,3}|iv|v)\s*[.)\-]", re.IGNORECASE)
+# The exam system's export: every question carries its owner and department,
+# pages open with the committee, and the key is a suffix on the option itself
+# ("-Doğru Seçenek"); the student's own mark is another suffix and never a key.
+_OWNER_LINE = re.compile(r"^\s*soru\s+sahibi\s*[:\-–]\s*(.+?)\s*$", re.IGNORECASE)
+_DEPARTMENT_LINE = re.compile(r"^\s*anabilim\s*dal[ıi]\s*[:\-–]\s*(.+?)\s*$", re.IGNORECASE)
+_COMMITTEE_LINE = re.compile(r"^\s*kom[iİı]te\s*[-:]?\s*(\d{1,2})\s*$", re.IGNORECASE)
+_STEM_PREFIX = re.compile(r"^\s*soru\s*[:\-–]\s*", re.IGNORECASE)
+# In an export every question starts as "12. soru:"; a numbered list inside a
+# stem ("1. Bazı öğünlerden…") is then part of the question, not a new one.
+_EXPORT_START = re.compile(r"^\s*(\d{1,3})\s*[.)\-:]?\s*soru\s*[:\-–]\s*(.*)$", re.IGNORECASE)
+EXPORT_MIN_STARTS = 3
+_KEY_SUFFIX = re.compile(r"\s*[-–]\s*do[gğ]ru\s+se[çc]enek\s*[-–]?\s*$", re.IGNORECASE)
+_STUDENT_SUFFIX = re.compile(r"\s*[-–]\s*[öo][ğg]rencinin\s+i[şs]aretledi[ğg]i\s*[-–]?\s*$", re.IGNORECASE)
 _IMAGE_WORDS = ("sekil", "resim", "okla", "isaretli", "goruntu", "fotograf", "figure", "image", "arrow", "labeled", "labelled", "mikrograf", "preparat", "kesitte")
 
 SAMPLE_LIMITED = 10
@@ -62,6 +75,12 @@ class ParsedQuestion:
     answer_key: str | None = None
     has_image: bool = False
     warnings: list[str] = field(default_factory=list)
+    # From an exam system's export: who wrote the question, which department
+    # and committee it belongs to, and which option the student had marked.
+    owner: str | None = None
+    department: str | None = None
+    committee: str | None = None
+    student_marked: str | None = None
 
 
 @dataclass(slots=True)
@@ -89,11 +108,13 @@ class QuestionImportParser:
         questions: list[ParsedQuestion] = []
         notes: list[str] = []
         unresolved: list[str] = []
+        export = sum(1 for line in lines if _EXPORT_START.match(line)) >= EXPORT_MIN_STARTS
         for section in self._split_answer_tables(lines):
             parsed_section: list[ParsedQuestion] = []
-            for number, block_lines in self._blocks(section.body):
-                parsed = self._parse_block(number, block_lines)
+            for number, block_lines, committee in self._blocks(section.body, export=export):
+                parsed = self._parse_block(number, block_lines, export=export)
                 if parsed is not None:
+                    parsed.committee = committee
                     parsed_section.append(parsed)
             # Every paper starts numbering at 1, so a section that holds the
             # same number twice holds more than one paper: a table row cannot
@@ -208,15 +229,26 @@ class QuestionImportParser:
         return answer_map, conflicts
 
     @staticmethod
-    def _blocks(lines: list[str]) -> list[tuple[str, list[str]]]:
-        blocks: list[tuple[str, list[str]]] = []
-        current: tuple[str, list[str]] | None = None
+    def _blocks(lines: list[str], *, export: bool = False) -> list[tuple[str, list[str], str | None]]:
+        """(number, lines, committee) per question; a committee heading holds until the next.
+
+        ``export`` narrows a question start to "N. soru:" so that a numbered list
+        inside a stem stays inside it.
+        """
+        blocks: list[tuple[str, list[str], str | None]] = []
+        current: tuple[str, list[str], str | None] | None = None
+        committee: str | None = None
+        start = _EXPORT_START if export else _QUESTION_START
         for line in lines:
-            match = _QUESTION_START.match(line)
+            heading = _COMMITTEE_LINE.match(line)
+            if heading:
+                committee = heading.group(1)
+                continue
+            match = start.match(line)
             if match and not _OPTION_LINE.match(line):
                 if current is not None:
                     blocks.append(current)
-                current = (match.group(1), [match.group(2)])
+                current = (match.group(1), [match.group(2)], committee)
                 continue
             if current is not None:
                 current[1].append(line)
@@ -224,17 +256,47 @@ class QuestionImportParser:
             blocks.append(current)
         return blocks
 
-    def _parse_block(self, number: str, lines: list[str]) -> ParsedQuestion | None:
+    def _parse_block(self, number: str, lines: list[str], *, export: bool = False) -> ParsedQuestion | None:
         stem_parts: list[str] = []
         options: list[tuple[str, str]] = []
         answer: str | None = None
+        owner: str | None = None
+        department: str | None = None
+        marked_keys: list[str] = []
+        student_marked: str | None = None
+        warnings: list[str] = []
         for line in lines:
             stripped = line.strip()
             if not stripped:
                 continue
+            owner_line = _OWNER_LINE.match(stripped)
+            if owner_line:
+                owner = owner_line.group(1).strip()
+                continue
+            department_line = _DEPARTMENT_LINE.match(stripped)
+            if department_line:
+                department = department_line.group(1).strip()
+                continue
             option = _OPTION_LINE.match(stripped)
+            # In an export the options follow the owner and department lines; a
+            # stem that opens with an abbreviation ("A. subclavia ve …") is not
+            # option A.
+            if option and export and owner is None and department is None and not options:
+                option = None
             if option:
-                options.append((option.group(1).upper(), option.group(2).strip()))
+                letter, text = option.group(1).upper(), option.group(2).strip()
+                # The suffixes come in either order and may both sit on one option.
+                while True:
+                    if _KEY_SUFFIX.search(text):
+                        text = _KEY_SUFFIX.sub("", text).strip()
+                        marked_keys.append(letter)
+                        continue
+                    if _STUDENT_SUFFIX.search(text):
+                        text = _STUDENT_SUFFIX.sub("", text).strip()
+                        student_marked = letter
+                        continue
+                    break
+                options.append((letter, text))
                 continue
             stated_answer = _ANSWER_ONLY.match(stripped)
             if stated_answer:
@@ -246,7 +308,10 @@ class QuestionImportParser:
                 options[-1] = (key, f"{text} {stripped}")
             else:
                 stem_parts.append(stripped)
-        stem = " ".join(stem_parts).strip()
+        if stem_parts:
+            # "1. soru:" leaves the word on the first line; it is not the stem.
+            stem_parts[0] = _STEM_PREFIX.sub("", stem_parts[0])
+        stem = " ".join(part for part in stem_parts if part).strip()
         if not options and stem:
             stem, options = self._split_inline_options(stem)
         else:
@@ -268,6 +333,13 @@ class QuestionImportParser:
             expected = "ABCDEF"[len(cleaned)] if len(cleaned) < 6 else None
             if key == expected:
                 cleaned.append((key, text))
+        if answer is None and marked_keys:
+            distinct = list(dict.fromkeys(marked_keys))
+            if len(distinct) == 1:
+                answer = distinct[0]
+            else:
+                # Two options marked correct name no key; the paper contradicts itself.
+                warnings.append("birden çok seçenek 'Doğru Seçenek' olarak işaretli")
         stem_answer = _ANSWER_TAIL.search(stem)
         if stem_answer and answer is None:
             # A stem that is nothing but the statement asks nothing, so the
@@ -278,7 +350,17 @@ class QuestionImportParser:
                 stem = remainder
         folded = fold(stem)
         has_image = any(word in folded for word in _IMAGE_WORDS)
-        return ParsedQuestion(number=number, stem=stem, options=cleaned, answer_key=answer if answer and any(key == answer for key, _ in cleaned) else None, has_image=has_image)
+        return ParsedQuestion(
+            number=number,
+            stem=stem,
+            options=cleaned,
+            answer_key=answer if answer and any(key == answer for key, _ in cleaned) else None,
+            has_image=has_image,
+            warnings=warnings,
+            owner=owner or None,
+            department=department or None,
+            student_marked=student_marked if student_marked and any(key == student_marked for key, _ in cleaned) else None,
+        )
 
     @staticmethod
     def _split_inline_options(text: str) -> tuple[str, list[tuple[str, str]]]:
@@ -579,6 +661,17 @@ def mentions_in_text(text: str) -> list[ProfessorMention]:
                 found.append(ProfessorMention(name=f"{title} {name}", key=key, line=window.strip()[:90], source="visual", complete=True))
             break
     return found
+
+
+def mention_from_owner(owner: str) -> ProfessorMention | None:
+    """The lecturer an exam export names as the question's owner ("RABET GÖZİL")."""
+    parsed = academic_title_and_name("Dr. " + str(owner or "").strip())
+    if parsed is None:
+        return None
+    _title, name = parsed
+    if len(name.split()) < 2:
+        return None
+    return ProfessorMention(name=name, key=professor_key(name), line=str(owner).strip(), source="question")
 
 
 def professor_from_title(title: str) -> ProfessorMention | None:

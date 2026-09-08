@@ -1098,14 +1098,14 @@ class NovaBridge:
             "lecture_set_imported": ("Ders seti içe aktarıldı", "{name}: {imported} belge eklendi, {duplicates} zaten kayıtlıydı, {failed} eklenemedi."),
             "lecture_set_processed": ("Ders seti işlendi", "{name}: {processed} belge hazır, {failed} işlenemedi."),
             "professors_mined": ("Hocalar ayrıldı", "{documents} belge {professors} hocaya ayrıldı; {questions} soru çıkarıldı."),
-            "vision_resumed": ("Şekil incelemesi", "{described} şekil betimlendi, {analysed} belge analiz edildi. {stopped}"),
+            "vision_resumed": ("Şekil incelemesi", "{transcribed} taranmış sayfa okundu, {described} şekil betimlendi, {analysed} belge analiz edildi. {stopped}"),
         }
         entry = titles.get(kind)
         if entry is None:
             return
         title, template = entry
         try:
-            body = _plain_text(template.format(**{key: payload.get(key, "") for key in ("title", "findings", "count", "percent", "question", "message", "name", "imported", "duplicates", "failed", "processed", "documents", "professors", "questions", "described", "analysed", "stopped")}))
+            body = _plain_text(template.format(**{key: payload.get(key, "") for key in ("title", "findings", "count", "percent", "question", "message", "name", "imported", "duplicates", "failed", "processed", "documents", "professors", "questions", "described", "analysed", "stopped", "transcribed")}))
         except (KeyError, IndexError):
             body = str(payload.get("title", ""))
         self._publish(
@@ -1522,7 +1522,7 @@ class NovaBridge:
             if document_id and academy.store.get_document(document_id) is None:
                 return {"ok": False, "error": "Belge bulunamadı."}
             operation = academy.continue_processing(set_id=set_id, document_id=document_id, vision=payload.get("vision") is not False, analysis=payload.get("analysis") is not False)
-            message = "Bekleyen şekiller inceleniyor, eksik analizler tamamlanıyor; model durursa kaldığı yerde bekler."
+            message = "Taranmış sayfalar okunuyor, bekleyen şekiller inceleniyor, eksik analizler tamamlanıyor; model durursa kaldığı yerde bekler."
             report = "continue"
         elif name == "prepare_narration":
             if academy.store.get_document(text("document_id")) is None:

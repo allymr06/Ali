@@ -478,7 +478,9 @@ class MedicalStore:
         # These four live inside the JSON body, so SQL cannot narrow on them.
         refine: list[Callable[[Question], bool]] = []
         if document_id:
-            refine.append(lambda q: any(ref.document_id == document_id for ref in q.references))
+            # A generated question cites its pages; an imported or mined one only
+            # remembers the document it was read from.
+            refine.append(lambda q: any(ref.document_id == document_id for ref in q.references) or q.metadata.get("source_document_id") == document_id)
         if concept_id:
             refine.append(lambda q: concept_id in q.concept_ids)
         if with_answer_key is not None:

@@ -1091,7 +1091,7 @@ STUDY_MARKUP = """
   coverage: Study.coverageMarkup({topics: [{topic_id: "t1", title: "Uyarilabilir dokular", state: "misconception", state_label: "Onarim bekleyen yanlis anlama", attempts: 4, correct: 1, findings: 1}], counts: {misconception: 1, unstudied: 0}, labels: {misconception: "Onarim bekleyen yanlis anlama", unstudied: "Kapsamda, calisilmadi"}}),
   specimen_hidden: Study.specimenMarkup({specimen_id: "hs1", label: "Cok katli yassi epitel", latin: "Epithelium stratificatum", basis: "user_confirmed", basis_label: "Ogrenci onayladi", status: "eligible", status_label: "Puanli sinava uygun", document_title: "Histoloji", page_number: 3, features: ["Bazal tabaka"], model_description: "Model boyle gordu"}, {reveal: false}),
   specimen_shown: Study.specimenMarkup({specimen_id: "hs1", label: "Cok katli yassi epitel", latin: "Epithelium stratificatum", basis: "user_confirmed", basis_label: "Ogrenci onayladi", status: "eligible", status_label: "Puanli sinava uygun", document_title: "Histoloji", page_number: 3, features: ["Bazal tabaka"], model_description: "Model boyle gordu"}, {reveal: true}),
-  session_note: Study.sessionResultsMarkup({mode: "timed", items: [], results: {shown: 3, scored: 2, identified: 1, identification_accuracy: 0.5, explanation_quality: {}, study_only: 1, repeated_specimens: 1, note: "Bazi ornekler daha once gorulmustu."}}),
+  session_note: Study.sessionResultsMarkup({mode: "timed", items: [], results: {shown: 3, scored: 2, identified: 1, identification_accuracy: 0.5, explanation_quality: {specific: 1, generic: 1}, study_only: 1, repeated_specimens: 1, note: "Bazi ornekler daha once gorulmustu."}}),
   reasons: Study.reasoningPrompts({questions: [{question_id: "q1", stem: "Yanlis soru", answer: "A", correct: false}, {question_id: "q2", stem: "Dogru soru", answer: "B", correct: true}], analysis: {events: {q1: "ev1", q2: "ev2"}}}),
   finding: Study.findingMarkup({finding_id: "mc1", concept_name: "Aksiyon potansiyeli", statement: "Yukselen fazi K+ girisi saniyor.", status: "supported", status_label: "Desteklenen bulgu", subject_label: "Fizyoloji", priority: 3, evidence_count: 2,
     evidence: [{kind: "answer_confident", excerpt: "Cunku K girer", outcome: "against", valid: true}], sources: [{document_id: "d1", page_number: 3, title: "Fizyoloji"}],
@@ -1138,6 +1138,9 @@ def test_study_markup_labels_estimates_hides_answers_and_speaks_turkish() -> Non
     assert "Cok katli yassi epitel" in result["specimen_shown"] and "Model betimlemesi (cevap değil)" in result["specimen_shown"]
     # Session results keep the repeated-specimen caveat.
     assert "%50" in result["session_note"] and "1/2" in result["session_note"] and "daha once gorulmustu" in result["session_note"]
+    # The explanation grades are named in Turkish, never as the raw keys.
+    assert "açıklama özgül · 1" in result["session_note"] and "açıklama genel · 1" in result["session_note"]
+    assert "specific" not in result["session_note"]
     # Reasoning is asked only for the wrong answers that have an event.
     assert "Yanlis soru" in result["reasons"] and 'data-reason-send="ev1"' in result["reasons"]
     assert "Dogru soru" not in result["reasons"]

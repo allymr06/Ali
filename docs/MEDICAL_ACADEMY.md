@@ -26,7 +26,7 @@ Seven first-year subjects, curated as data rather than code:
 ```text
 app/medical/
   data/curriculum.json    107 topics across the seven subjects
-  data/anatomy.json       60 structures, 109 landmarks, 86 Latin terms
+  data/anatomy.json       127 structures, 278 landmarks, 86 Latin terms
   data/concepts.json      ~200 learnable concepts and their relations
   data/prerequisites.json 63 curriculum-order prerequisite links, each with its reason
   models.py               every persisted record, plus serialization
@@ -511,6 +511,71 @@ survives. Every pin written this way carries `"confidence": "approximate"` and
 its method, the lab draws it with "≈", and a landmark no rule can place (a
 groove, a crest) gets no pin at all. A pin placed by hand outranks a derived
 one on re-import.
+
+### A second atlas: Z-Anatomy (nerves in the same frame)
+
+BodyParts3D has no peripheral nerves, so the nerves of the arm and leg stay
+schematic. [Z-Anatomy](https://github.com/Z-Anatomy/Models-of-human-anatomy)
+does have them, in the same body as its bones, muscles and vessels, under
+CC BY-SA 4.0 over the same BodyParts3D lineage. Its distribution is a Blender
+file, which is why the pipeline is split in three, and why **Blender is a
+build-time tool only**: JARVIS never launches it, never imports `bpy`, and the
+lab runs on machines that have never had it installed (a test asserts both).
+
+```
+Z-Anatomy.zip (pinned revision, SHA-256 checked)
+  → scripts/export_z_anatomy.py   run inside Blender, factory startup, autoexec off
+  → <export>/*.obj + manifest.json    world-space triangles, hashes, provenance
+  → scripts/install_z_anatomy.py  validated, versioned, atomic install
+  → <medical directory>/anatomy_assets/z-anatomy-<token>/…
+  → the lab, through the same manifest every other asset uses
+```
+
+`scripts/z_anatomy_source.py` is the reviewed part: the pinned revision, the
+archive and blend checksums, the licence and attribution text, the exact
+source object names of 37 structures (9 bones, 14 muscles, 8 nerves, 4
+arteries, 2 veins) and of the atlas's own landmark annotations, and the two
+scenes they form. Nothing outside that allowlist is read.
+
+**Coordinate integrity.** Every object is evaluated in Blender and written in
+*world* space with its own normals, so bones, muscles, vessels and nerves keep
+the spatial relationship the atlas gives them; nothing is nudged into place by
+eye. The frame is recorded once per entry (`up_axis: z`, `side: right`) and the
+viewer converts it in one step, the same conversion the BodyParts3D pack uses.
+An install refuses a scene that would mix structures from two frames.
+
+**What the export may not do.** It adds no subdivision, no displacement and no
+smoothing: a fossa, a groove or a tubercle appears only if the source mesh has
+it. Curve-based nerves and vessels are the atlas author's own bevelled
+geometry, not trajectories inferred by JARVIS. The blend is opened with
+`use_scripts=False` and refuses to run at all while Blender's automatic script
+execution is on, so the file is read as data, never as code.
+
+**Landmarks.** Z-Anatomy ships annotation objects (`… .j`) that point at named
+features. The exporter takes the annotation's own endpoint, projects it onto
+the nearest point of that bone's surface, and refuses it if the hook names a
+different bone or the distance exceeds 3.5 % of the bone's extent. Each pin is
+stored with `"confidence": "approximate"` and a method line that names the
+annotation and the distance, so the lab can draw it as "≈" and say where it
+came from. A landmark the curriculum data does not define is refused rather
+than installed as an unlabelled dot.
+
+**Installing.** The installer re-reads the export, checks every SHA-256, the
+triangle counts, the licence, the attribution, the frame, the provenance and
+each pin against its bone's bounding box, then writes a *new* immutable
+directory and swaps the manifest atomically, keeping a snapshot of the
+previous one. Meshes already installed are never overwritten; entries from
+other datasets are kept. Stop JARVIS before running it:
+
+```
+"<blender>" --factory-startup -b -y --python scripts/export_z_anatomy.py -- <Z-Anatomy.blend> <export dir>
+python scripts/install_z_anatomy.py <export dir> --assets "%LOCALAPPDATA%\JARVIS\medical\anatomy_assets"
+```
+
+**Status.** The pipeline and its validation are implemented and tested against
+synthetic packs; the atlas itself has not been exported on this machine, which
+has no Blender installed. Until it is run, the lab keeps the BodyParts3D pack
+and the nerves stay schematic.
 
 ### The scene
 

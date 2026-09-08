@@ -90,6 +90,42 @@ Last verified: 9 September 2026
 - Automated verification: 2426 tests passing, 6 skipped (`scripts/verify.py`, Python 3.12.8 on Windows 11, 9 September 2026)
 - Production readiness: not yet claimed
 
+## The Z-Anatomy asset pipeline (9 September 2026)
+
+The Anatomy Lab's meshes come from BodyParts3D, which has no peripheral
+nerves. Z-Anatomy has them in the same body, under CC BY-SA 4.0, distributed
+as a Blender file. Three scripts turn that into JARVIS assets without making
+Blender a runtime dependency:
+
+- `scripts/z_anatomy_source.py` — the reviewed allowlist: pinned revision,
+  archive and blend checksums, licence and attribution, the source object
+  names of 37 structures (9 bones, 14 muscles, 8 nerves, 4 arteries, 2 veins),
+  the atlas's own landmark annotations, and the two scenes they form.
+- `scripts/export_z_anatomy.py` — runs inside Blender (factory startup,
+  automatic script execution refused, `use_scripts=False`), verifies the blend
+  hash, writes world-space triangulated OBJ with normals, projects each
+  annotation endpoint onto its bone surface (refused beyond 3.5 % of the
+  bone's extent or when the hook names another bone), and records provenance.
+- `scripts/install_z_anatomy.py` — validates the export against the reviewed
+  source (hashes, triangle counts, licence, attribution, frame, provenance,
+  every pin inside its bone, every structure and pin nameable by the
+  curriculum data), then installs into a new immutable directory and swaps the
+  manifest atomically with a rollback snapshot.
+
+Finished in this session: the curated femur gained *fovea capitis femoris*, the
+landmark the atlas annotates and the data lacked, so the export no longer
+produces an anchor the lab cannot name; the installer now refuses an unknown
+structure or an unnameable pin; 17 tests cover the allowlist against the
+curriculum, an install that keeps another dataset's entries and never
+overwrites a mesh, twelve ways a pack can fail its source check, a scene that
+would mix two coordinate frames, and the absence of Blender from everything
+the application imports.
+
+Not done here: the atlas has not been exported. This machine has no Blender
+and the source archive was never downloaded, so the lab still serves the
+BodyParts3D pack and the nerves stay schematic. Running the two documented
+commands on a machine with Blender is all that remains.
+
 ## The study workflow in the live window (9 September 2026)
 
 The five features were driven in the running Nova window against Gemini, on a

@@ -560,10 +560,12 @@ def repair_explanation_prompt(concept_name: str, statement: str, evidence_lines:
     )
 
 
-def transfer_directive(concept_name: str, statement: str, original_stems: Iterable[str]) -> str:
+def transfer_directive(concept_name: str, statement: str, original_stems: Iterable[str], *, principle: str = "") -> str:
     stems = "; ".join(_stem for _stem in original_stems if _stem)
     return (
-        f"TRANSFER QUESTION. The student misunderstood: {statement} (concept: {concept_name}). Write a question that requires the same "
+        f"TRANSFER QUESTION. The student misunderstood: {statement} (concept: {concept_name}). "
+        + (f"The point being tested: {principle} " if principle else "")
+        + "Write a question that requires the same "
         "principle applied in a DIFFERENT context (another organ, scenario, patient situation or example), so that the misunderstanding "
         "would lead to a wrong option. Do not reuse the setting or the wording of these earlier questions: "
         f"{stems or '(none)'}. One clear key; the explanation must state the principle explicitly."

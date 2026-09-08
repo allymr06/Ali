@@ -151,6 +151,32 @@ def test_two_low_confidence_errors_make_a_hypothesis_and_three_support_it() -> N
     assert finding["status"] == "supported" and finding["history"][-1]["note"].startswith("Birbirinden bağımsız")
 
 
+def test_a_question_without_concepts_is_read_for_one_or_anchored_to_itself() -> None:
+    """An imported committee question names no concept; the finding must still be about something real."""
+    engine, store, _learning = build()
+    named = question("named", "Aksiyon potansiyelinin yükselen fazında hangi olay olur?")
+    named.concept_ids = []
+    store.save_question(named)
+    plain = [QuestionOption(key, text) for key, text in zip("ABCD", ["Birinci", "İkinci", "Üçüncü", "Dördüncü"])]
+    for identifier, stem in (("first", "I. ve II. öncül için hangisi doğrudur?"), ("second", "Aşağıdakilerden hangisi tabloda verilmemiştir?")):
+        store.save_question(Question(question_id=identifier, subject="physiology", stem=stem, options=list(plain), correct_key="A", topic_id=TOPIC, concept_ids=[], explanation=""))
+
+    engine.record_event(store.get_question("named"), correct=False, answer_key="A", confidence="sure")
+    engine.record_event(store.get_question("first"), correct=False, answer_key="B", confidence="sure")
+    engine.record_event(store.get_question("second"), correct=False, answer_key="B", confidence="sure")
+
+    findings = {item["concept_id"]: item for item in engine.findings()}
+    # The wording names a concept the graph knows: the finding is about it.
+    assert AP in findings and findings[AP]["statement"].startswith("Aksiyon potansiyeli")
+    # The other two match nothing, so each is anchored to its own question —
+    # never merged into one finding about the whole subject.
+    assert set(findings) - {AP} == {"question:first", "question:second"}
+    anchored = findings["question:first"]
+    assert anchored["statement"] == "Bu soruda “İkinci” seçildi; doğrusu “Birinci”."
+    assert anchored["concept_name"].startswith("I. ve II.") and anchored["topic_id"] == TOPIC
+    assert engine.open_findings_for([], topic_id=TOPIC) != [], "the plan finds a question-anchored finding by its topic"
+
+
 def test_a_repeated_submission_id_is_stored_once() -> None:
     engine, store, _learning = build()
     store.save_question(question("q1", "Yükselen faz?"))

@@ -365,7 +365,7 @@ class StudyPlanner:
             # counts is the topic's evidence, not their sum.
             attempts_count = max(len(topic_answers), sum(item.attempts for item in concept_mastery))
             studied = topic_id in studied_topics or any(self._curriculum.is_within(item, topic_id) for item in studied_topics)
-            findings = self._understanding.open_findings_for(concept_ids) if (self._understanding is not None and concept_ids) else []
+            findings = self._understanding.open_findings_for(concept_ids, topic_id=topic_id) if self._understanding is not None else []
             active = [item for item in findings if item.get("status") in ("supported", "reopened")]
             due = any(is_due(item, moment) for item in concept_mastery)
             strong = [item for item in concept_mastery if item.level == MasteryLevel.STRONG]

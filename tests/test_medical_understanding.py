@@ -348,6 +348,12 @@ def test_a_repair_session_explains_cites_teaches_asks_anew_and_schedules_the_fol
     assert steps["problem"]["text"].startswith("Aksiyon potansiyeli konusunda yanlış cevap") and "hipotez" in steps["problem"]["text"]
     assert steps["passage"]["sources"][0] == {"document_id": "d1", "page_number": 12, "title": "Fizyoloji notları", "quote": "Aksiyon potansiyelinin yükselen fazı Na+ girişiyle olur."}
     assert steps["explanation"]["text"].startswith("Yükselen fazda Na+") and steps["explanation"]["assessor"].startswith("model:")
+    # The explanation prompt is told which option was picked and which is the
+    # key, in the question's own words: without it a model asked to name the
+    # misunderstanding sometimes names the correct answer as the error.
+    prompt = next(item for item in engine._model._gateway.prompts if "repair" in item.lower() or "misunderstanding" in item.lower())
+    assert "The student chose: Potasyum girişi" in prompt and "The correct answer is: Sodyum girişi" in prompt
+    assert "Never describe the correct answer as the mistake" in prompt
     transfer = steps["transfer"]
     assert transfer["question"]["stem"].startswith("Bir kalp kası hücresinde") and "correct_key" not in transfer["question"]
     assert transfer["similarity"] is not None and transfer["limitations"][0].startswith("Farklı bağlamda bir soru daha")

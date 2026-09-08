@@ -736,7 +736,9 @@ class MedicalStore:
         now = utc_now().isoformat()
         existing = self._row("SELECT created_at FROM records WHERE record_id = ?", (identifier,))
         created_at = str(existing["created_at"]) if existing is not None else str(body.get("created_at") or now)
-        stored = {**to_plain(body), "record_id": identifier, "kind": str(kind), "created_at": created_at, "updated_at": now}
+        # The table's kind lives under ``record_kind``: a record's own ``kind``
+        # field (an activity's kind of work) is its business.
+        stored = {**to_plain(body), "record_id": identifier, "record_kind": str(kind), "created_at": created_at, "updated_at": now}
         self._write(
             "INSERT INTO records (record_id, kind, subject_key, created_at, updated_at, body) VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(record_id) DO UPDATE SET kind = excluded.kind, subject_key = excluded.subject_key, updated_at = excluded.updated_at, body = excluded.body",

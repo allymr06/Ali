@@ -560,7 +560,8 @@ def test_study_records_are_kept_by_kind_and_subject_and_keep_their_creation_time
     store.save_record("understanding_event", "ev2", {"concept_ids": ["c2"], "correct": True}, subject_key="c2")
     store.save_record("misconception", "m1", {"concept_id": "c1"}, subject_key="c1")
 
-    assert first["record_id"] == "ev1" and first["kind"] == "understanding_event" and first["created_at"] == first["updated_at"]
+    assert first["record_id"] == "ev1" and first["record_kind"] == "understanding_event" and first["created_at"] == first["updated_at"]
+    assert store.save_record("plan_activity", "a1", {"kind": "read"})["kind"] == "read", "a record's own kind field is left alone"
     assert [item["record_id"] for item in store.list_records("understanding_event")] == ["ev2", "ev1"]
     assert [item["record_id"] for item in store.list_records("understanding_event", subject_key="c1")] == ["ev1"]
     assert [item["record_id"] for item in store.list_records("understanding_event", newest_first=False)] == ["ev1", "ev2"]

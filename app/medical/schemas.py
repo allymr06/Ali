@@ -302,3 +302,73 @@ def coerce_strings(data: Any, schema: dict[str, Any]) -> Any:
             trimmed = data[:max_items] if isinstance(max_items, int) else data
             return [coerce_strings(item, items) for item in trimmed]
     return data
+
+
+# ---------------------------------------------------------------------------
+# understanding: the model observes an explanation; the rules decide
+# ---------------------------------------------------------------------------
+
+REASONING_ASSESSMENT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        # supported: the explanation gives the right reason; contradictory: it
+        # states something the source contradicts; insufficient: too little to
+        # judge; off_topic: about something else.
+        "verdict": {"type": "string", "enum": ["supported", "contradictory", "insufficient", "off_topic"]},
+        "suspected_misconception": _string(400),
+        "quote": _string(300),
+        "assessment_confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+        "diagnostic_question": _string(400),
+        "note": _string(400),
+    },
+    "required": ["verdict", "assessment_confidence"],
+}
+
+DIAGNOSTIC_QUESTION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "question": _string(400),
+        "expected_answer": _string(400),
+        "rubric": _string(400),
+    },
+    "required": ["question", "expected_answer"],
+}
+
+DIAGNOSTIC_ASSESSMENT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        # confirms: the answer shows the suspected misunderstanding; refutes:
+        # it shows the student holds the correct idea; unclear: neither.
+        "verdict": {"type": "string", "enum": ["confirms", "refutes", "unclear"]},
+        "note": _string(400),
+        "assessment_confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+    },
+    "required": ["verdict"],
+}
+
+# A second reading of a generated question: does the cited passage support
+# the key, does the explanation follow it, is another option defensible.
+SUPPORT_REVIEW_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "evidence_supports_key": {"type": "string", "enum": ["yes", "partly", "no", "cannot_tell"]},
+        "explanation_follows_evidence": {"type": "string", "enum": ["yes", "partly", "no", "cannot_tell"]},
+        "alternative_defensible_option": {"type": "string", "enum": ["", "A", "B", "C", "D", "E", "F"]},
+        "relies_on_outside_information": {"type": "boolean"},
+        "figure_supports_identification": {"type": "string", "enum": ["yes", "no", "not_applicable", "cannot_tell"]},
+        "conflict_with_evidence": _string(400),
+        "reasoning": _string(600),
+    },
+    "required": ["evidence_supports_key", "explanation_follows_evidence", "relies_on_outside_information"],
+}
+
+# The quality of a histology explanation, apart from whether the name was right.
+HISTOLOGY_EXPLANATION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "quality": {"type": "string", "enum": ["specific", "partial", "generic", "wrong"]},
+        "features_named": _array(_string(120), max_items=10),
+        "note": _string(400),
+    },
+    "required": ["quality"],
+}

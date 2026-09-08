@@ -548,6 +548,11 @@ class QuestionAttempt:
     answered_at: datetime = field(default_factory=utc_now)
     elapsed_seconds: float | None = None
     flagged: bool = False
+    # What the student said about the answer, when they chose to: how sure
+    # they were ("sure" / "unsure" / "guess", None when not reported) and, on
+    # a sampled or investigated question, why. Neither touches the mark.
+    confidence: str | None = None
+    reasoning: str = ""
 
 
 @dataclass(slots=True)

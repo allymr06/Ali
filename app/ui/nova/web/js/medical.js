@@ -70,6 +70,8 @@ const Medical = {
   professors: [],
   professor: null,
   importReport: null,   // the last question import's own account of itself
+  committeeFilter: null,
+  lessonFilter: null,
   progressData: null,
   loaded: {},           // which views have been fetched at least once
   expanded: {},         // curriculum tree open state
@@ -507,6 +509,14 @@ const Medical = {
           ${set.visual_pending ? `<span class="chip violet">${set.visual_pending} şekil bekliyor</span>` : ""}
           ${(set.subjects || []).slice(0, 4).map((item) => `<span class="chip">${esc(item.label)} · ${item.count}</span>`).join("")}
         </div>
+        ${(set.committees || []).length ? `<div class="med-committee-list">${set.committees.map((committee) => `
+          <div class="med-committee">
+            <button type="button" class="med-committee-name ${this.committeeFilter === committee.committee && !this.lessonFilter ? "active" : ""}"
+                    data-committee="${esc(committee.committee)}" data-catalog-set="${esc(set.set_id)}">${esc(committee.committee)} <span>${committee.count}</span></button>
+            <div class="med-lesson-list">${(committee.lessons || []).map((lesson) => `
+              <button type="button" class="med-lesson ${this.committeeFilter === committee.committee && this.lessonFilter === lesson.lesson ? "active" : ""}"
+                      data-lesson="${esc(lesson.lesson)}" data-committee="${esc(committee.committee)}" data-catalog-set="${esc(set.set_id)}">${esc(lesson.lesson)} <span>${lesson.count}</span></button>`).join("")}</div>
+          </div>`).join("")}</div>` : ""}
         ${progress ? `<div class="ms-progress">${esc(progress.stage === "importing" ? "Ekleniyor" : "İşleniyor")} · ${progress.done} / ${progress.total} · ${esc(progress.current || "")}</div>` : ""}
         <div class="btn-row" style="justify-content:flex-start">
           ${set.pending || set.failed ? `<button type="button" class="btn btn-ghost small" data-set-act="process" data-set="${esc(set.set_id)}">${set.pending ? "Bekleyenleri işle" : "Başarısızları yeniden dene"}</button>` : ""}

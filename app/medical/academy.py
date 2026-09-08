@@ -693,10 +693,70 @@ class MedicalAcademy:
             "visual_pending": sum(document.visual_pages_pending for document in members),
             "visual_analyzed": sum(document.visual_pages_analyzed for document in members),
             "subjects": [{"subject": subject, "label": SUBJECT_LABELS_TR.get(subject, subject), "count": count} for subject, count in subjects.most_common()],
+            "committees": self._committee_catalog(members),
             "skipped": list(record.get("skipped") or [])[:50],
             "failures": list(record.get("failed") or [])[:50],
             "mined": record.get("mined"),
         }
+
+    @staticmethod
+    def _committee_catalog(documents: list[StudyDocument]) -> list[dict[str, Any]]:
+        """Derive the student's committee/course taxonomy from import tags.
+
+        A Drive semester is filed as ``set, Komite N, Ders``. Only numbered
+        committees belong in this catalogue; HUP, KDT and ungrouped material
+        deliberately remain outside it. The folder label wins over the broad
+        subject key so every real course remains visible.
+        """
+        grouped: dict[int, dict[str, list[str]]] = {}
+        ignored_tags = {"taranmış metin", "analiz edildi"}
+        for document in documents:
+            tags = [str(tag).strip() for tag in document.tags if str(tag).strip()]
+            committee_index = next(
+                (
+                    index
+                    for index, tag in enumerate(tags)
+                    if tag.casefold().startswith("komite ")
+                    and tag[7:].strip().isdigit()
+                    and 1 <= int(tag[7:].strip()) <= 5
+                ),
+                None,
+            )
+            if committee_index is None:
+                continue
+            number = int(tags[committee_index][7:].strip())
+            lesson = next(
+                (
+                    tag
+                    for tag in tags[committee_index + 1 :]
+                    if tag.casefold() not in ignored_tags
+                ),
+                SUBJECT_LABELS_TR.get(
+                    document.subject or "", document.subject or "Diğer"
+                ),
+            )
+            grouped.setdefault(number, {}).setdefault(lesson, []).append(
+                document.document_id
+            )
+
+        return [
+            {
+                "committee": f"Komite {number}",
+                "number": number,
+                "count": sum(len(ids) for ids in lessons.values()),
+                "lessons": [
+                    {
+                        "lesson": lesson,
+                        "count": len(ids),
+                        "document_ids": ids,
+                    }
+                    for lesson, ids in sorted(
+                        lessons.items(), key=lambda item: item[0].casefold()
+                    )
+                ],
+            }
+            for number, lessons in sorted(grouped.items())
+        ]
 
     def _save_lecture_set(self, record: dict[str, Any]) -> None:
         self.store.set_meta(LECTURE_SET_PREFIX + str(record["set_id"]), record)

@@ -43,7 +43,24 @@ from app.medical.models import (
     to_plain,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# Statements that bring a store from the version before them to their own.
+# Every statement is idempotent, so a migration interrupted halfway is simply
+# run again on the next start; the version in ``meta`` is written last.
+_MIGRATIONS: dict[int, tuple[str, ...]] = {
+    2: (
+        # Study records: understanding events, misconception findings, repair
+        # sessions, prerequisite edges, diagnoses, study plans and their
+        # activities, histology specimens and sessions, question flags and
+        # support reviews. One table, a kind per family, a JSON body each.
+        "CREATE TABLE IF NOT EXISTS records (record_id TEXT PRIMARY KEY, kind TEXT NOT NULL, subject_key TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, body TEXT NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS records_kind ON records (kind, subject_key)",
+        # Derived images (a histology crop) that can always be rebuilt from the
+        # page they came from; the page image itself is never touched.
+        "CREATE TABLE IF NOT EXISTS media (media_id TEXT PRIMARY KEY, kind TEXT NOT NULL, created_at TEXT NOT NULL, png BLOB NOT NULL)",
+    ),
+}
 
 # How many rows a filtered scan pulls per round trip. Filters that read the JSON
 # body cannot run in SQL, so those queries walk the table in pages instead of
@@ -109,13 +126,46 @@ class MedicalStore:
                     pass
             for statement in _SCHEMA:
                 self._connection.execute(statement)
-            self._connection.execute(
-                "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', ?)",
-                (str(SCHEMA_VERSION),),
-            )
+            self.migrations_applied = self._migrate()
             self._connection.commit()
         self._revision = 0
         self._content_revision = 0
+
+    def _migrate(self) -> list[int]:
+        """Bring the store up to ``SCHEMA_VERSION``; returns the versions applied.
+
+        A store from before versioning has the base tables and a version of
+        1 (or none, for a file older than the version row); each later version's
+        statements run in order and the version row moves after them. A store
+        written by a newer JARVIS keeps its version: its extra tables do not
+        disturb this one, and nothing here is deleted.
+        """
+        row = self._connection.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+        try:
+            stored = int(json.loads(row["value"])) if row is not None else 0
+        except (TypeError, ValueError):
+            stored = 1
+        applied: list[int] = []
+        for version in sorted(_MIGRATIONS):
+            if version <= stored:
+                continue
+            for statement in _MIGRATIONS[version]:
+                self._connection.execute(statement)
+            applied.append(version)
+        target = max(stored, SCHEMA_VERSION)
+        self._connection.execute(
+            "INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (str(target),),
+        )
+        return applied
+
+    @property
+    def schema_version(self) -> int:
+        row = self._row("SELECT value FROM meta WHERE key = 'schema_version'")
+        try:
+            return int(json.loads(row["value"])) if row is not None else 0
+        except (TypeError, ValueError):
+            return 0
 
     @property
     def path(self) -> Path | None:
@@ -675,6 +725,70 @@ class MedicalStore:
         return session
 
     # ------------------------------------------------------------------
+    # study records: one table for the study workflow's families of records
+    # ------------------------------------------------------------------
+
+    def save_record(self, kind: str, record_id: str, body: dict[str, Any], *, subject_key: str | None = None) -> dict[str, Any]:
+        """Upsert one record; ``created_at`` is kept, ``updated_at`` moves."""
+        identifier = str(record_id).strip()
+        if not identifier or not str(kind).strip():
+            raise ValueError("A record needs a kind and an id.")
+        now = utc_now().isoformat()
+        existing = self._row("SELECT created_at FROM records WHERE record_id = ?", (identifier,))
+        created_at = str(existing["created_at"]) if existing is not None else str(body.get("created_at") or now)
+        stored = {**to_plain(body), "record_id": identifier, "kind": str(kind), "created_at": created_at, "updated_at": now}
+        self._write(
+            "INSERT INTO records (record_id, kind, subject_key, created_at, updated_at, body) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(record_id) DO UPDATE SET kind = excluded.kind, subject_key = excluded.subject_key, updated_at = excluded.updated_at, body = excluded.body",
+            (identifier, str(kind), (str(subject_key) if subject_key else None), created_at, now, json.dumps(stored, ensure_ascii=False, sort_keys=True)),
+            indexed=False,
+        )
+        return stored
+
+    def get_record(self, kind: str, record_id: str) -> dict[str, Any] | None:
+        row = self._row("SELECT body FROM records WHERE record_id = ? AND kind = ?", (str(record_id).strip(), str(kind)))
+        return json.loads(row["body"]) if row is not None else None
+
+    def list_records(self, kind: str, *, subject_key: str | None = None, limit: int = 500, newest_first: bool = True) -> list[dict[str, Any]]:
+        order = "DESC" if newest_first else "ASC"
+        if subject_key is not None:
+            rows = self._rows(
+                f"SELECT body FROM records WHERE kind = ? AND subject_key = ? ORDER BY created_at {order}, rowid {order} LIMIT ?",
+                (str(kind), str(subject_key), max(1, int(limit))),
+            )
+        else:
+            rows = self._rows(f"SELECT body FROM records WHERE kind = ? ORDER BY created_at {order}, rowid {order} LIMIT ?", (str(kind), max(1, int(limit))))
+        return [json.loads(row["body"]) for row in rows]
+
+    def delete_record(self, kind: str, record_id: str) -> bool:
+        return self._write("DELETE FROM records WHERE record_id = ? AND kind = ?", (str(record_id).strip(), str(kind)), indexed=False) > 0
+
+    def count_records(self, kind: str, *, subject_key: str | None = None) -> int:
+        if subject_key is not None:
+            row = self._row("SELECT COUNT(*) AS n FROM records WHERE kind = ? AND subject_key = ?", (str(kind), str(subject_key)))
+        else:
+            row = self._row("SELECT COUNT(*) AS n FROM records WHERE kind = ?", (str(kind),))
+        return int(row["n"]) if row is not None else 0
+
+    # ------------------------------------------------------------------
+    # media: derived images, always rebuildable from their page
+    # ------------------------------------------------------------------
+
+    def put_media(self, media_id: str, kind: str, png: bytes) -> None:
+        self._write(
+            "INSERT INTO media (media_id, kind, created_at, png) VALUES (?, ?, ?, ?) ON CONFLICT(media_id) DO UPDATE SET kind = excluded.kind, png = excluded.png",
+            (str(media_id), str(kind), utc_now().isoformat(), sqlite3.Binary(bytes(png))),
+            indexed=False,
+        )
+
+    def get_media(self, media_id: str) -> bytes | None:
+        row = self._row("SELECT png FROM media WHERE media_id = ?", (str(media_id),))
+        return bytes(row["png"]) if row is not None else None
+
+    def delete_media(self, media_id: str) -> bool:
+        return self._write("DELETE FROM media WHERE media_id = ?", (str(media_id),), indexed=False) > 0
+
+    # ------------------------------------------------------------------
     # learned concepts (documents can teach the graph new nodes)
     # ------------------------------------------------------------------
 
@@ -707,6 +821,8 @@ class MedicalStore:
             "attempts": int(self._row("SELECT COUNT(*) AS n FROM attempts")["n"]),
             "mastery": int(self._row("SELECT COUNT(*) AS n FROM mastery")["n"]),
             "professors": int(self._row("SELECT COUNT(*) AS n FROM professors")["n"]),
+            "records": int(self._row("SELECT COUNT(*) AS n FROM records")["n"]),
         }
         counts["persistent"] = self.persistent
+        counts["schema_version"] = self.schema_version
         return counts

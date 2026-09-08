@@ -72,7 +72,7 @@ Last verified: 8 September 2026
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2425 tests passing, 4 skipped (`scripts/verify.py`, Python 3.12.8 on Windows 11, 8 September 2026)
+- Automated verification: 2426 tests passing, 6 skipped (`scripts/verify.py`, Python 3.12.8 on Windows 11, 9 September 2026)
 - Production readiness: not yet claimed
 
 ## The study workflow in the live window (9 September 2026)

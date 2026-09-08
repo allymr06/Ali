@@ -173,7 +173,7 @@ def test_a_practice_paper_records_each_answer_once_even_when_it_is_finished(acad
     (finding,) = study.understanding.findings()
     evidence = finding["evidence"]
     assert len({item["event_id"] for item in evidence}) == len(evidence), "no event is counted twice as evidence"
-    assert [item["kind"] for item in evidence] == ["answer", "follow_up"]
+    assert [item["kind"] for item in evidence] == ["answer_confident", "follow_up"]
 
 
 def test_invalidating_a_question_through_the_workflow_corrects_everything_it_moved(academy) -> None:

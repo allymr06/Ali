@@ -156,10 +156,24 @@ class PdfReader:
             except Exception:
                 pass
 
-    def render_png(self, page_number: int, scale: float = DEFAULT_RENDER_SCALE) -> bytes:
+    def render_png(self, page_number: int, scale: float = DEFAULT_RENDER_SCALE, *, region: tuple[float, float, float, float] | None = None) -> bytes:
+        """Render a page, or the part of it ``region`` names, to PNG bytes.
+
+        ``region`` is (x, y, width, height) as fractions of the page from its
+        top-left corner. The page itself is never altered: a crop is a new
+        rendering of that rectangle, which is how a histology specimen keeps
+        its link to the page it came from.
+        """
         page = self._document[page_number - 1]
         try:
-            bitmap = page.render(scale=max(0.2, min(MAX_RENDER_SCALE, float(scale))), rev_byteorder=True)
+            crop = (0, 0, 0, 0)
+            if region is not None:
+                x, y, width, height = (max(0.0, min(1.0, float(value))) for value in region)
+                if width <= 0 or height <= 0 or x + width > 1.0001 or y + height > 1.0001:
+                    raise DocumentError("Bölge sayfanın içinde olmalı.")
+                page_width, page_height = float(page.get_width()), float(page.get_height())
+                crop = (x * page_width, (1.0 - y - height) * page_height, (1.0 - x - width) * page_width, y * page_height)
+            bitmap = page.render(scale=max(0.2, min(MAX_RENDER_SCALE, float(scale))), rev_byteorder=True, crop=crop)
             try:
                 width, height, stride = int(bitmap.width), int(bitmap.height), int(bitmap.stride)
                 channels = int(getattr(bitmap, "n_channels", 3) or 3)
@@ -802,6 +816,19 @@ class DocumentPipeline:
             png = reader.render_png(page_number, chosen)
         self._store.put_page_image(document_id, page_number, chosen, png)
         return png
+
+    def render_region(self, document_id: str, page_number: int, region: tuple[float, float, float, float], *, scale: float | None = None) -> bytes:
+        """A fresh rendering of one rectangle of a page; the page image stays as it is."""
+        document = self._store.get_document(document_id)
+        if document is None:
+            raise DocumentError("Belge bulunamadı.")
+        if document.kind != "pdf":
+            raise DocumentError("Yalnızca PDF sayfalarından bölge alınabilir.")
+        chosen = float(scale or self._render_scale)
+        with PdfReader(self._bytes(document)) as reader:
+            if page_number < 1 or page_number > reader.page_count:
+                raise DocumentError("Sayfa numarası aralık dışında.")
+            return reader.render_png(page_number, chosen, region=region)
 
     # ------------------------------------------------------------------
     # deletion

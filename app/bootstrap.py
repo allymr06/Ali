@@ -578,6 +578,9 @@ def create_application(
         or default_state_path("jarvis_reminders.sqlite3")
     )
     reminders.register_tools(tool_executor)
+    if medical is not None:
+        # The study planner's optional daily reminder rides the reminder store.
+        medical.study.planner._remind = lambda text, at: (lambda result: (result.data or {}).get("reminder_id") if result.succeeded else None)(reminders.create(text, at=at))
 
     from app.routines import RoutineService
 

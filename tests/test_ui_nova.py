@@ -2518,3 +2518,78 @@ def test_a_reminder_the_centre_accepted_is_acknowledged_in_the_store(tmp_path) -
     finally:
         bridge._shutdown()
         controller.close()
+
+
+# ---------------------------------------------------------------------------
+# the study workflow over the bridge
+# ---------------------------------------------------------------------------
+
+
+def test_study_actions_answer_at_once_and_destructive_ones_need_confirmation(booted) -> None:
+    from datetime import date, timedelta
+
+    bridge = booted.bridge
+    created = bridge.medical_call("plan_create", {"name": "Komite 1", "exam_date": (date.today() + timedelta(days=5)).isoformat(), "subjects": ["anatomy"], "daily_minutes": 30})
+    assert created["ok"] is True and created["plan"]["name"] == "Komite 1" and created["plan"]["scope_confirmed"] is True
+    plan_id = created["plan"]["plan_id"]
+    today = bridge.medical_call("plan_today", {"plan_id": plan_id})
+    assert today["ok"] is True and today["today"]["budget"] in (30, 0) and today["today"]["planned_minutes"] <= 30
+    assert bridge.medical_call("understanding_overview", {})["findings"] == []
+    assert bridge.medical_call("histology_overview", {})["empty_state"]
+    assert bridge.medical_call("plan_delete", {"plan_id": plan_id}) == {"ok": False, "error": "Bu işlem onaylanmadı."}
+    deleted = bridge.medical_call("plan_delete", {"plan_id": plan_id, "confirmed": True})
+    assert deleted["ok"] is True and deleted["deleted"] is True and deleted["plans"] == []
+    assert bridge.medical_call("no_such_study_action", {})["ok"] is False
+    failed = bridge.medical_call("plan_create", {"name": "", "exam_date": "2030-01-01"})
+    assert failed == {"ok": False, "error": "Sınavın adı boş olamaz."}
+
+
+def test_async_study_actions_run_as_jobs_and_honour_the_pause_gate(booted) -> None:
+    bridge = booted.bridge
+    started: list[str] = []
+
+    def spy(operation, *, report: str = "") -> bool:
+        started.append(f"{operation.__qualname__}:{report}")
+        operation.close()
+        return True
+
+    bridge._medical_start = spy
+    result = bridge.medical_call("understanding_assess", {"event_id": "ev-x"})
+    assert result == {"ok": True, "started": True, "message": "Gerekçe değerlendiriliyor."}
+    assert started == ["StudyWorkflow._async:study"]
+    booted.controller.set_paused(True)
+    assert bridge.medical_call("repair_start", {"finding_id": "f"}) == {"ok": False, "error": shell.PAUSED_MESSAGE}
+    booted.controller.set_paused(False)
+
+
+def test_a_study_job_reports_back_to_the_page(booted) -> None:
+    from app.medical.models import Question, QuestionOption, SourceReference
+
+    academy = booted.app.medical
+    academy.store.save_question(Question(question_id="q-rev", subject="anatomy", stem="Scapula üzerinde m. deltoideus'un başlangıç yeri neresidir?", options=[QuestionOption("A", "Acromion"), QuestionOption("B", "Spina scapulae")], correct_key="A", explanation="Acromion.", references=[SourceReference("d-none", 1, quote="x", title="Yok")]))
+    result = booted.bridge.medical_call("question_review", {"question_id": "q-rev"})
+    assert result["ok"] is True and result["started"] is True
+    wait_until(lambda: any(item.get("job") == "study" for item in booted.window.payloads("medical")))
+    report = next(item for item in booted.window.payloads("medical") if item.get("job") == "study")
+    assert report["kind"] == "job_report" and report["action"] == "question_review" and report["question_id"] == "q-rev"
+    assert report["support"]["status"] in ("unavailable", "unresolved", "source_supported", "needs_review", "conflicting_evidence", "insufficient_evidence")
+    assert any(item.get("kind") == "refresh" for item in booted.window.payloads("medical"))
+
+
+def test_an_exam_answer_carries_confidence_over_the_bridge(booted) -> None:
+    from app.medical.models import Question, QuestionOption
+
+    academy = booted.app.medical
+    for index in range(2):
+        academy.store.save_question(Question(question_id=f"qb{index}", subject="anatomy", stem=f"Scapula sorusu {index}: hangi çıkıntı acromion ile eklem yapar?", options=[QuestionOption("A", "Clavicula"), QuestionOption("B", "Humerus")], correct_key="A", explanation="Clavicula.", topic_id="anatomy.musculoskeletal.upper_limb.shoulder"))
+    paper = asyncio.run(academy.generate_exam({"from_bank": True, "question_count": 2, "subjects": ["anatomy"], "randomize": False, "immediate_feedback": True}))
+    exam_id = paper["exam_id"]
+    assert booted.bridge.medical_call("start_exam", {"exam_id": exam_id})["ok"] is True
+    answered = booted.bridge.medical_call("answer", {"exam_id": exam_id, "question_id": "qb0", "answer_key": "A", "confidence": "sure", "reasoning": "Akromioklaviküler eklem.", "submission_id": "s1"})
+    assert answered["ok"] is True and answered["confidence"] == "sure" and answered["event_id"] and answered["feedback"]["correct"] is True
+    assert "explain" in answered
+    refused = booted.bridge.medical_call("answer", {"exam_id": exam_id, "question_id": "qb1", "answer_key": "B", "confidence": "kesin"})
+    assert refused == {"ok": False, "error": "Güven bildirimi 'sure', 'unsure' ya da 'guess' olmalı."}
+    events = booted.bridge.medical_call("understanding_events", {})["events"]
+    assert len(events) == 1 and events[0]["confidence"] == "sure" and events[0]["reasoning"] == "Akromioklaviküler eklem."
+

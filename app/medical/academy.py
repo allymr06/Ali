@@ -90,6 +90,8 @@ from app.medical.schemas import (
     QUESTION_EXTRACTION_SCHEMA,
 )
 from app.medical.store import MedicalStore
+from app.medical.study import StudyWorkflow
+from app.medical.understanding import CONFIDENCE_LEVELS
 from app.medical.terminology import TerminologyIndex, load_anatomy_data
 from app.medical.text import excerpt, fold, question_fingerprint
 from app.medical.tutor import MEDICAL_TOOLS, MedicalTutor
@@ -198,6 +200,7 @@ class MedicalAcademy:
         source_note: str = "",
         narration_voice: str = "local",
         narration_checkpoint_every: int = 3,
+        source_review: bool = False,
     ) -> None:
         self.store = store
         self.curriculum = curriculum
@@ -244,6 +247,9 @@ class MedicalAcademy:
             model_available=lambda: self.model.available,
             document_jobs=DocumentJobs(self),
         )
+        # The connected study workflow: understanding and repair, prerequisites,
+        # source-support review, the exam-date planner, histology practicals.
+        self.study = StudyWorkflow(self, source_review=source_review)
 
     # ------------------------------------------------------------------
     # events, diagnostics, background
@@ -442,6 +448,7 @@ class MedicalAcademy:
             "jobs": list(self._jobs.values()),
             "lecture_sets": self.lecture_sets(),
             "presentations": self.pipeline.converts_presentations,
+            "study": self.study.dashboard_block(),
         }
 
     def session_state(self) -> dict[str, Any]:
@@ -589,6 +596,9 @@ class MedicalAcademy:
             "image": None,
         }
         document = self.store.get_document(document_id)
+        # Opening a page is study, and only that; the planner marks the topic
+        # studied, never mastered.
+        self.study.planner.log_study(document_id=document_id, page_number=page.page_number, activity="read")
         if image and document is not None and document.kind == "pdf":
             try:
                 png = self.pipeline.render_page(document_id, page.page_number, scale=PAGE_IMAGE_SCALE)
@@ -1465,7 +1475,29 @@ class MedicalAcademy:
         self.sessions.save(session)
         return self.exam(exam_id)
 
-    def answer(self, exam_id: str, question_id: str, answer_key: str | None, *, elapsed_seconds: float | None = None, flagged: bool | None = None, current_index: int | None = None) -> dict[str, Any] | None:
+    def answer(
+        self,
+        exam_id: str,
+        question_id: str,
+        answer_key: str | None,
+        *,
+        elapsed_seconds: float | None = None,
+        flagged: bool | None = None,
+        current_index: int | None = None,
+        confidence: str | None = None,
+        reasoning: str = "",
+        submission_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Record an answer; optionally how sure the student was and why.
+
+        Confidence and reasoning never touch the mark. In a practice sitting
+        they become an understanding event at once (the answer is graded on
+        the spot); in a paper marked at the end they wait on the attempt
+        until it is finished. A missing confidence is unknown, not a guess.
+        """
+        level = str(confidence or "").strip().lower() or None
+        if level is not None and level not in CONFIDENCE_LEVELS:
+            raise ValueError("Güven bildirimi 'sure', 'unsure' ya da 'guess' olmalı.")
         exam = self.store.get_exam(exam_id)
         question = self.store.get_question(question_id)
         if exam is None or question is None or question_id not in exam.question_ids:
@@ -1479,10 +1511,16 @@ class MedicalAcademy:
         previous = attempt.answers.get(question_id)
         answered_before = previous is not None and bool(previous.answer_key)
         entry = record_answer(attempt, question, answer_key, elapsed_seconds=elapsed_seconds, flagged=flagged)
+        if level is not None or reasoning.strip():
+            entry.confidence = level if level is not None else (previous.confidence if previous is not None else None)
+            entry.reasoning = " ".join(reasoning.split())[:1200] or (previous.reasoning if previous is not None else "")
+        elif previous is not None:
+            entry.confidence = previous.confidence
+            entry.reasoning = previous.reasoning
         if current_index is not None:
             attempt.current_index = max(0, int(current_index))
         self.store.save_attempt(attempt)
-        result: dict[str, Any] = {"exam_id": exam_id, "question_id": question_id, "answer": entry.answer_key, "flagged": entry.flagged, "answered": len([item for item in attempt.answers.values() if item.answer_key])}
+        result: dict[str, Any] = {"exam_id": exam_id, "question_id": question_id, "answer": entry.answer_key, "flagged": entry.flagged, "confidence": entry.confidence, "answered": len([item for item in attempt.answers.values() if item.answer_key])}
         if exam.config.immediate_feedback and entry.answer_key:
             # Only the first answer to a question is an attempt at recall: in
             # immediate feedback the key is revealed with it, so a later send
@@ -1491,6 +1529,21 @@ class MedicalAcademy:
             # state attempts, a streak and a confusion the student never made.
             if entry.correct is not None and not answered_before:
                 self.learning.record(question, bool(entry.correct), chosen_key=entry.answer_key)
+                event = self.study.understanding.record_event(
+                    question,
+                    correct=bool(entry.correct),
+                    answer_key=entry.answer_key,
+                    confidence=entry.confidence,
+                    reasoning=entry.reasoning,
+                    source="exam",
+                    exam_id=exam_id,
+                    attempt_id=attempt.attempt_id,
+                    submission_id=submission_id or f"{attempt.attempt_id}:{question_id}",
+                )
+                result["event_id"] = event.get("event_id")
+                wanted, why = self.study.understanding.wants_explanation(question, exam_id=exam_id, immediate=True)
+                result["explain"] = wanted
+                result["explain_reason"] = why
             result["feedback"] = explanation_payload(question, entry.answer_key)
         return result
 
@@ -1527,6 +1580,28 @@ class MedicalAcademy:
                         if entry is not None and entry.answer_key and entry.correct is not None:
                             self.learning.record(question, bool(entry.correct), chosen_key=entry.answer_key)
                 analysis = analyse_attempt(exam, questions, attempt, curriculum=self.curriculum, mastery_levels=self.learning.levels())
+                # What the student said about each answer travels with the
+                # result: a paper marked at the end records its understanding
+                # events here, once, by attempt and question.
+                events: dict[str, str] = {}
+                for question in questions:
+                    entry = attempt.answers.get(question.question_id)
+                    if entry is None or not entry.answer_key or entry.correct is None:
+                        continue
+                    event = self.study.understanding.record_event(
+                        question,
+                        correct=bool(entry.correct),
+                        answer_key=entry.answer_key,
+                        confidence=entry.confidence,
+                        reasoning=entry.reasoning,
+                        source="exam",
+                        exam_id=exam_id,
+                        attempt_id=attempt.attempt_id,
+                        submission_id=f"{attempt.attempt_id}:{question.question_id}",
+                    )
+                    events[question.question_id] = str(event.get("event_id"))
+                analysis["events"] = events
+                self.study.understanding.confirm_follow_ups()
                 if session.adaptive_difficulty and analysis["total"] >= 5:
                     recent = [bool(attempt.answers[question_id].correct) for question_id in exam.question_ids if question_id in attempt.answers and attempt.answers[question_id].correct is not None]
                     suggested, reason = self.learning.suggest_difficulty(session.difficulty, recent)
@@ -1586,6 +1661,9 @@ class MedicalAcademy:
             item = question_payload(question, reveal=True, include_explanation=True, curriculum=self.curriculum)
             item["last_result"] = answered.get(question.question_id)
             item["problems"] = validate_question(question, require_explanation=False)
+            item["support"] = self.study.reviewer.status_of(question)
+            item["flags"] = len([flag for flag in question.metadata.get("flags", []) if isinstance(flag, dict)])
+            item["invalidated"] = bool(question.metadata.get("invalidated"))
             items.append(item)
         return {"questions": items, "counts": self.store.count_questions(), "total": len(items), "problems": []}
 
@@ -2071,7 +2149,7 @@ class MedicalAcademy:
             # loader's message is the only true one.
             return {**described, "available": False, "reason": described.get("reason") or str(exc)}
 
-    def record_anatomy_answer(self, structure_id: str, landmark_id: str | None, correct: bool, *, submission_id: str | None = None) -> dict[str, Any]:
+    def record_anatomy_answer(self, structure_id: str, landmark_id: str | None, correct: bool, *, submission_id: str | None = None, confidence: str | None = None) -> dict[str, Any]:
         """Move the structure's mastery by one bell-ringer or quiz answer.
 
         ``submission_id`` is the page's name for one station's one answer:
@@ -2088,6 +2166,9 @@ class MedicalAcademy:
             question = Question(question_id="anatomy-quiz", subject="anatomy", stem="anatomy quiz", options=[], correct_key=None, topic_id=structure.topic_id if structure else None, concept_ids=[concept_id])
             updated = self.learning.record(question, correct)
             result: dict[str, Any] = {"mastery": [self.learning.mastery_payload(item) for item in updated]}
+            if confidence:
+                event = self.study.understanding.record_event(question, correct=correct, answer_key=None, confidence=confidence, source="anatomy", submission_id=key or None)
+                result["event_id"] = event.get("event_id")
             if key:
                 result["submission_id"] = key
                 self._anatomy_submissions[key] = result
@@ -2138,6 +2219,7 @@ def create_medical_academy(
         source_note=source_note,
         narration_voice=str(getattr(settings, "medical_narration_voice", "local") or "local"),
         narration_checkpoint_every=int(getattr(settings, "medical_narration_checkpoint_every", 3) or 0),
+        source_review=bool(getattr(settings, "medical_source_review", False)),
     )
     academy.converter = converter
     if tool_executor is not None:

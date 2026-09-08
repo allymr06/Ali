@@ -280,8 +280,19 @@ a file that *looks like a compiled paper* (`looks_like_question_paper`: at
 least five questions and most lines question-shaped) is split at the headings
 that name a lecturer, each section going to the heading above it.
 
+A published book is not a lecture: front matter with an ISBN (or a publisher's
+mark meeting an editorial one) marks the document as a book, its end-of-unit
+questions are filed under nobody and tagged *kitaptan*, and its editors and
+authors never become the student's lecturers. A deck whose title slide is a
+picture carries its lecturer only in what the vision pass wrote about that
+page; that description is read too, but only for the first pages, only when
+the page has no text of its own, and only when the description says it is a
+cover — a portrait inside a history lecture names a person as well, and that
+person is not the lecturer.
+
 The report says what happened: lecturers found with their lecture counts,
-questions filed, lectures with no name anywhere, names read incompletely, and
+questions filed, books recognised as books, lecturers read from a pictured
+cover, lectures with no name anywhere, names read incompletely, and
 that the profiles built from review questions are limited until a real exam
 paper is uploaded. "Bu tarzda sınav" for a lecturer whose lectures are in the
 library draws its evidence from those lectures (up to twelve) and takes the

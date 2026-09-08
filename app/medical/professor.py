@@ -522,6 +522,65 @@ def fuller_name(candidate: str, current: str) -> bool:
     return len(new_tokens) > len(old_tokens)
 
 
+# A rank as it opens a phrase inside prose. The strict reader below decides
+# whether what follows is actually a person.
+_RANK_START = re.compile(
+    r"\b(?:prof|profesör|profesor|doç|doc|doçent|docent|dr|doktor|yrd|yard|uzm|uzman|arş|ars|öğr|ogr|öğretim|ogretim)\b\.?",
+    re.IGNORECASE,
+)
+_PHRASE_END = re.compile(r"[,;:\n\r\"'()\[\]\u2018\u2019\u201c\u201d]")
+MENTION_TOKENS = 6
+# What a described cover slide says about itself. A lecturer is read from a
+# picture only there: a portrait inside a history lecture names a person too.
+COVER_WORDS = ("kapak", "baslik", "başlık", "sunum", "slayt", "slide", "title")
+
+
+def looks_like_cover(summary: str) -> bool:
+    folded = fold(str(summary or ""))
+    return any(fold(word) in folded for word in COVER_WORDS)
+
+
+def mentions_in_text(text: str) -> list[ProfessorMention]:
+    """Lecturers named inside prose rather than on their own line.
+
+    A slide deck whose title page is a picture has no text to read; what the
+    vision pass wrote about that page does name the lecturer, but as a
+    sentence. The scan walks to each rank, takes the phrase that follows and
+    hands it to the same strict reader, so nothing becomes a person here that
+    would not be one on a line of its own.
+    """
+    body = str(text or "")
+    found: list[ProfessorMention] = []
+    seen: set[str] = set()
+    for match in _RANK_START.finditer(body):
+        window = _PHRASE_END.split(body[match.start() : match.start() + 90])[0]
+        tokens = window.split()[:MENTION_TOKENS]
+        # The name ends where the sentence resumes: Turkish prose continues in
+        # lower case ("Prof. Dr. Özgül Kısa adı yazıyor"), so a lower-case token
+        # is the boundary rather than part of the name.
+        kept: list[str] = []
+        for token in tokens:
+            letters = token.strip(".")
+            if kept and letters[:1].islower():
+                break
+            kept.append(token)
+        for size in range(len(kept), 1, -1):
+            parsed = academic_title_and_name(" ".join(kept[:size]))
+            if parsed is None:
+                continue
+            title, name = parsed
+            # In prose only a full name is safe: a lone first name after a rank
+            # is far more often the start of a sentence than a lecturer.
+            if len(name.split()) < 2 or garbled_name(name):
+                break
+            key = professor_key(name)
+            if key and key not in seen:
+                seen.add(key)
+                found.append(ProfessorMention(name=f"{title} {name}", key=key, line=window.strip()[:90], source="visual", complete=True))
+            break
+    return found
+
+
 def professor_from_title(title: str) -> ProfessorMention | None:
     """The lecturer written into a file name such as "Mikrobiyoloji Ülker Çuhacı 2 - Mantarlar"."""
     match = _TITLE_NAME.match(str(title or "").strip())

@@ -818,3 +818,22 @@ def test_only_a_real_rank_names_a_person_and_a_garbled_surname_still_merges() ->
     lecture = "Uzun bir ders notu satırı.\n" * 40 + paper
     assert looks_like_question_paper(paper, 6) and not looks_like_question_paper(lecture, 6)
     assert not looks_like_question_paper(paper, 3), "fewer than five questions is a lecture with review items"
+
+
+def test_a_name_in_prose_is_read_only_as_far_as_the_sentence_lets_it() -> None:
+    from app.medical.professor import looks_like_cover, mentions_in_text
+
+    cover = "Şekil (other): Bir sunum kapak slaytı. Başlıkta 'Bakteri Metabolizması' yazıyor, altında Prof. Dr. Özgül Kısa adı bulunuyor."
+    assert [mention.name for mention in mentions_in_text(cover)] == ["Prof. Dr. Özgül Kısa"], "the sentence after the name is not part of it"
+    assert mentions_in_text(cover)[0].source == "visual"
+    assert [mention.name for mention in mentions_in_text("Kapakta 'ALT EKSTREMİTE DAMARLARI' başlığı ve PROF. DR. A. KÜRKÇÜOĞLU imzası var.")] == ["Prof. Dr. A. Kürkçüoğlu"]
+    assert [mention.name for mention in mentions_in_text("Sunumu hazırlayan: Dr. Öğr. Üyesi Müge Öçal-Demirtaş, Tıbbi Biyoloji Anabilim Dalı.")] == ["Dr. Öğr. Üyesi Müge Öçal-Demirtaş"]
+    # Prose that only opens with an abbreviation, and a lone first name, name nobody.
+    assert mentions_in_text("Öğrenim hedefleri listelenmiş; araştırma yapmanın temel ilkeleri anlatılıyor.") == []
+    assert mentions_in_text("Etiketler: dr, scapula, acromion") == []
+    assert mentions_in_text("Sayfada Dr. Hasan yazıyor") == []
+
+    # A portrait inside a lecture names a person too, so only a cover slide counts.
+    assert looks_like_cover(cover) and looks_like_cover("Sunum başlığı ve bölüm adı")
+    assert not looks_like_cover("Görselde Dr. Refik Saydam'ın portresi ve sağlık örgütlenmesi şeması var.")
+    assert not looks_like_cover("")

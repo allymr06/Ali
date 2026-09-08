@@ -1186,11 +1186,16 @@ class NovaBridge:
             return {"ok": False, "available": False, "error": MEDICAL_UNAVAILABLE}
         name = str(action or "").strip()
         payload: Mapping[str, Any] = params if isinstance(params, Mapping) else {}
-        if name in MEDICAL_CONFIRMED_ACTIONS and payload.get("confirmed") is not True:
+        # The connected study workflow names its own operations (app/medical/study.py).
+        study = getattr(academy, "study", None)
+        confirmed = MEDICAL_CONFIRMED_ACTIONS | (study.CONFIRMED_ACTIONS if study is not None else frozenset())
+        if name in confirmed and payload.get("confirmed") is not True:
             return {"ok": False, "error": "Bu işlem onaylanmadı."}
-        if name in MEDICAL_BACKGROUND_ACTIONS:
+        if name in MEDICAL_BACKGROUND_ACTIONS or (study is not None and name in study.ASYNC_ACTIONS):
             return self._medical_background(academy, name, payload)
         try:
+            if study is not None and name in study.SYNC_ACTIONS:
+                return {"ok": True, **_jsonable(study.call(name, payload))}
             return self._medical_view(academy, name, payload)
         except KeyError:
             return {"ok": False, "error": f"Bilinmeyen işlem: {name}"}
@@ -1334,6 +1339,9 @@ class NovaBridge:
                 text("answer_key") or None,
                 flagged=payload.get("flagged"),
                 current_index=payload.get("current_index"),
+                confidence=text("confidence") or None,
+                reasoning=text("reasoning"),
+                submission_id=text("submission_id") or None,
             )
             if result is None:
                 return {"ok": False, "error": "Soru bu sınavda yok."}
@@ -1389,7 +1397,7 @@ class NovaBridge:
         if name == "anatomy_quiz":
             return {"ok": True, "questions": _jsonable(academy.anatomy_quiz(text("structure_id"), count=number("count", 5)))}
         if name == "anatomy_answer":
-            return {"ok": True, **_jsonable(academy.record_anatomy_answer(text("structure_id"), text("landmark_id") or None, payload.get("correct") is True, submission_id=text("submission_id") or None))}
+            return {"ok": True, **_jsonable(academy.record_anatomy_answer(text("structure_id"), text("landmark_id") or None, payload.get("correct") is True, submission_id=text("submission_id") or None, confidence=text("confidence") or None))}
         raise KeyError(name)
 
     def _medical_start(self, operation: Any, *, report: str = "") -> bool:
@@ -1548,6 +1556,19 @@ class NovaBridge:
                 prefer_cloud=(True if payload.get("voice") == "cloud" else False if payload.get("voice") == "local" else None),
             )
             message = "Sesli anlatım başlıyor."
+            study = getattr(academy, "study", None)
+            if study is not None:
+                try:
+                    study.planner.log_study(document_id=document_id, activity="narration")
+                except Exception:
+                    pass
+        elif getattr(academy, "study", None) is not None and name in academy.study.ASYNC_ACTIONS:
+            try:
+                operation = academy.study.start(name, payload)
+            except (KeyError, ValueError) as exc:
+                return {"ok": False, "error": str(exc) or f"Bilinmeyen işlem: {name}"}
+            report = "study"
+            message = academy.study.ASYNC_MESSAGES_TR.get(name, "İşlem sürüyor.")
         else:  # pragma: no cover - guarded by MEDICAL_BACKGROUND_ACTIONS
             return {"ok": False, "error": f"Bilinmeyen işlem: {name}"}
         if not self._medical_start(operation, report=report):

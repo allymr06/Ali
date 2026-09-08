@@ -309,8 +309,18 @@ class StudyPlanner:
             document = self._store.get_document(document_id)
             if document is not None:
                 topics.extend(item for item in document.topic_ids if item not in topics)
-        record = {"log_id": new_id("log"), "topic_ids": [item for item in topics if item], "document_id": document_id, "page_number": page_number, "activity": activity, "minutes": minutes, "at": self.now().isoformat()}
-        self._store.save_record(STUDY_LOG_KIND, record["log_id"], record, subject_key=(topics[0] if topics else document_id) or "-")
+        now = self.now()
+        key = (topics[0] if topics else document_id) or "-"
+        # The same page opened again within the hour is one study, not many rows.
+        for recent in self._store.list_records(STUDY_LOG_KIND, subject_key=key, limit=20):
+            if recent.get("document_id") == document_id and recent.get("page_number") == page_number and recent.get("activity") == activity and minutes is None:
+                try:
+                    if (now - datetime.fromisoformat(recent["at"])).total_seconds() < 3600:
+                        return recent
+                except (KeyError, ValueError, TypeError):
+                    pass
+        record = {"log_id": new_id("log"), "topic_ids": [item for item in topics if item], "document_id": document_id, "page_number": page_number, "activity": activity, "minutes": minutes, "at": now.isoformat()}
+        self._store.save_record(STUDY_LOG_KIND, record["log_id"], record, subject_key=key)
         return record
 
     def coverage(self, plan_id: str) -> dict[str, Any]:

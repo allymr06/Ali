@@ -1,8 +1,23 @@
 # JARVIS Project State
 
-Last verified: 8 September 2026
+Last verified: 9 September 2026
 
 ## Current status
+
+- Anatomy Lab inspection upgrade (8 September 2026): fullscreen/expanded stage,
+  camera presets and Fit, isolated structure inspection, bounded supersampling,
+  adjustable matte lighting, separated labels and WebGL-loss recovery implemented.
+  Verified 9 September: `scripts/verify.py` passed (2,436 passed, 4 skipped;
+  231.98 seconds), including 68 Nova page tests. Targeted anatomy/page run:
+  121 passed. Live Windows/WebView2 checks verified fullscreen entry/Escape
+  exit, isolated scapula framing, front camera preset and retained selection.
+  Those checks revealed label overlap and undersized isolated models; both
+  were corrected and checked again. Vertex-normal rotation has deterministic
+  regression coverage; no new anatomical mesh detail is claimed.
+  An earlier concurrent desktop/test run hit the classic Tk event-pump test's
+  one-second deadline; both subsequent full runs passed without live UI input.
+  No mesh sources, medical records, permission engine or provider config changed.
+  Changes remain uncommitted; no push or distribution performed.
 
 - Completed implementation milestone: Phase 17 — Windows packaging and installer
 - Completed validation milestone: Phase 18 — final audit and delivery evidence

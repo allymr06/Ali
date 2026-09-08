@@ -967,3 +967,36 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
 - The five features were verified with a scripted model in the test suite
   and in the static demo page with stubbed bridge replies; a live pass in the
   native window against Gemini has not been done yet.
+
+## Lab inspection controls (8 September 2026)
+
+The Nova Anatomy Lab now provides a fullscreen stage with an explicit exit
+button and Escape. The browser Fullscreen API is attempted on the user's click;
+unsupported WebViews display an announced, reversible expanded in-app stage.
+No native privilege or bridge method is added. Camera and layer choices survive
+entry and exit. Front/back/side/top presets and Fit provide repeatable views.
+Actions opening a separate lesson/quiz card leave fullscreen; expanded-mode
+keyboard focus stays within the inspection controls until Escape or exit.
+These are model-frame views, not a diagnostic orientation guarantee for arbitrary
+third-party meshes.
+
+Isolate displays the selected scene structure, normalizes to its own bounds,
+and fits the camera. Returning restores the user's layer visibility choices.
+Geometry and landmark pins share that same transform. Labels are spaced apart
+and linked to their original anchors; off-screen/overcrowded labels are omitted.
+Approximate anchors remain explicitly marked. Source mesh resolution is unchanged:
+rendering does not invent anatomical detail.
+
+Lighting is adjustable (80–160%); tissue colours remain matte. Imported vertex
+normals now follow the same z-up rotation as geometry, correcting misdirected
+lighting on BodyParts3D meshes. Drawing buffers
+use 1.5x minimum supersampling where budget allows, capped at 8 million pixels
+and the GPU renderbuffer limit. Unchanged buffers are not resized on every draw.
+Pointer/resize updates are coalesced through requestAnimationFrame (display-paced,
+not a guaranteed 120 FPS). WebGL loss preserves source data, shows an honest
+schematic, and recreates GPU buffers on restoration without recursive drawing.
+
+Regression coverage: `tests/test_nova_web.py` exercises fullscreen success and
+rejection roundtrips, isolation, camera fit, resolution budget, redraw coalescing,
+label separation and nonrecursive WebGL failure. Live Windows checks supplement
+these deterministic tests; see PROJECT_STATE for the latest validation results.

@@ -664,7 +664,19 @@
                 <label class="search med-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l6 6"/></svg><input id="lab-search" type="text" placeholder="Yapı ara…" spellcheck="false"></label>
                 <div id="lab-list" class="lab-list"></div>
               </aside>
-              <div class="lab-stage">
+              <div id="lab-stage" class="lab-stage">
+                <div class="lab-toolbar" role="group" aria-label="Model inceleme araçları">
+                  <div class="lab-view-presets" role="group" aria-label="Kamera açıları">
+                    <button class="btn btn-ghost small" type="button" data-lab-view="front">Ön</button>
+                    <button class="btn btn-ghost small" type="button" data-lab-view="back">Arka</button>
+                    <button class="btn btn-ghost small" type="button" data-lab-view="side">Yan</button>
+                    <button class="btn btn-ghost small" type="button" data-lab-view="top">Üst</button>
+                    <button class="btn btn-ghost small" type="button" data-lab-view="fit">Sığdır</button>
+                  </div>
+                  <button id="lab-isolate" class="btn btn-ghost small" type="button" aria-pressed="false">Seçileni yalnız göster</button>
+                  <label class="lab-light">Işık <input id="lab-exposure" type="range" min="80" max="160" value="115" step="5" aria-label="Model aydınlatması"></label>
+                  <button id="lab-fullscreen" class="btn btn-primary small" type="button" aria-pressed="false">Tam ekran</button>
+                </div>
                 <div id="lab-layers" class="lab-layers" aria-label="Sahne ve katmanlar"></div>
                 <div id="lab-viewport" class="lab-viewport">
                   <canvas id="lab-canvas" tabindex="0" aria-label="3B anatomi görünümü"></canvas>
@@ -684,7 +696,7 @@
                   </div>
                   <div id="lab-notice" class="lab-notice"></div>
                 </div>
-                <p class="lab-hint">Sürükle: her yöne döndür · Sağ tuş ya da Shift+sürükle: kaydır · Tekerlek: yakınlaştır · Ok tuşları: kaydır, Shift+ok: döndür, +/−: yakınlaştır, R: sıfırla</p>
+                <p class="lab-hint">Sürükle: döndür · Sağ tuş / Shift+sürükle: kaydır · Tekerlek / + −: yakınlaştır · Oklar: kaydır · Shift+ok: döndür · R: sıfırla · F: tam ekran · Esc: çık</p>
                 <div class="lab-actions">
                   <button id="lab-labels" class="btn btn-ghost small" type="button">Etiketler</button>
                   <button id="lab-detailed" class="btn btn-ghost small" type="button" title="Pinler adlarıyla; tıklayınca açıklama ve ders notları">Detaylı</button>

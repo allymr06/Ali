@@ -4,6 +4,9 @@ Audit date: 21 August 2026
 Revised: 22 August 2026 (single-provider consolidation and re-verification)
 Revised: 5 September 2026 (Nova desktop shell stabilization and rebuild;
 cinematic interface redesign verified from source)
+Revised: 8 September 2026 (reliability repairs — bell-ringer submissions,
+exam finalization, reminder delivery — and re-verification: 2348 tests passing, 5 skipped (`scripts/verify.py`, Python 3.12.8 on Windows 11, 8 September 2026); the counts
+below from earlier dates are history)
 
 ## Decision
 
@@ -66,7 +69,7 @@ install lifecycle test.
 | 18 | Errors are handled | Pass | Typed failures, bounded retries, recovery, and circuit breakers are covered. |
 | 19 | Logs are useful | Pass | Sanitized structured diagnostics, metrics, health, and hash-chained events are implemented. |
 | 20 | Secrets are not exposed | Pass | Configuration, diagnostics, memory, and tests enforce secret handling and redaction. |
-| 21 | Tests pass | Pass | 1197 deterministic tests pass, 1 skipped. |
+| 21 | Tests pass | Pass | 1197 deterministic tests passed, 1 skipped, on 5 September 2026; 2348 tests passing, 5 skipped (`scripts/verify.py`, Python 3.12.8 on Windows 11, 8 September 2026). |
 | 22 | Build succeeds | Pass | EXE, portable ZIP, and Inno Setup installer build; the frozen smoke gate reports qualified. |
 | 23 | Repeated launch/shutdown has no obvious leak | Pass | Controller and service shutdown are idempotent; the frozen build launched and shut down repeatedly across install, upgrade, and uninstall checks. |
 | 24 | UI remains responsive during background work | Pass | A persistent background event loop isolates Core/device work from Tk callbacks. |

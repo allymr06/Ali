@@ -109,6 +109,7 @@ _BOOK_EDITORIAL = ("editor", "yazarlar", "baski", "basim", "ceviri", "bolum yaza
 # The vision pass against a free-tier provider: a breath between pages, one
 # long wait after a refusal, and a stop after two refusals in a row so the
 # remaining pages stay pending instead of being marked failed by an outage.
+ANATOMY_SUBMISSION_MEMORY = 256  # bell-ringer submissions remembered for a retried save
 VISION_PACE_SECONDS = 1.0
 VISION_RETRY_WAIT_SECONDS = 20.0
 VISION_OUTAGE_LIMIT = 2
@@ -219,6 +220,9 @@ class MedicalAcademy:
         self._background: set[asyncio.Task[Any]] = set()
         self._jobs: dict[str, dict[str, Any]] = {}
         self._comparisons: dict[str, dict[str, Any]] = {}
+        # Bell-ringer submissions already recorded, by the page's submission
+        # id, so a retried save of a station moves mastery once.
+        self._anatomy_submissions: dict[str, dict[str, Any]] = {}
         # What the last vision pass met: an outage leaves pages pending and is
         # reported, so the student can resume later instead of reprocessing.
         self.vision_state: dict[str, Any] = {"outage": False, "detail": "", "at": None}
@@ -1431,35 +1435,52 @@ class MedicalAcademy:
         return result
 
     def finish_exam(self, exam_id: str) -> dict[str, Any] | None:
-        exam = self.store.get_exam(exam_id)
-        if exam is None:
-            return None
-        attempt = self.store.latest_attempt(exam.exam_id)
-        if attempt is None:
-            attempt = new_attempt(exam)
-        questions = self.store.get_questions(exam.question_ids)
-        if attempt.finished_at is None:
+        """Close the sitting — once.
+
+        Finalization has effects: mastery is recorded for a simulation's
+        answers and the session's difficulty may move. They happen exactly
+        once per attempt, under the academy lock and inside one store
+        transaction: a second request for a finished attempt (a repeated
+        click, a retried call) returns the stored result untouched — with
+        the adaptive verdict of its own day, not one recomputed from the
+        session's later difficulty — and a failure between the writes
+        leaves nothing half-applied, so the next call finalizes cleanly.
+        """
+        with self._lock:
+            exam = self.store.get_exam(exam_id)
+            if exam is None:
+                return None
+            attempt = self.store.latest_attempt(exam.exam_id)
+            if attempt is not None and attempt.finished_at is not None:
+                return self.exam(exam_id)
+            if attempt is None:
+                attempt = new_attempt(exam)
+            questions = self.store.get_questions(exam.question_ids)
             attempt.finished_at = utc_now()
-            if not exam.config.immediate_feedback:
-                for question in questions:
-                    entry = attempt.answers.get(question.question_id)
-                    if entry is not None and entry.answer_key and entry.correct is not None:
-                        self.learning.record(question, bool(entry.correct), chosen_key=entry.answer_key)
-        analysis = analyse_attempt(exam, questions, attempt, curriculum=self.curriculum, mastery_levels=self.learning.levels())
-        attempt.score = analysis["score"]
-        attempt.analysis = analysis
-        self.store.save_attempt(attempt)
-        exam.status = "completed"
-        exam.finished_at = attempt.finished_at
-        self.store.save_exam(exam)
-        session = self.sessions.get()
-        if session.adaptive_difficulty and analysis["total"] >= 5:
-            recent = [bool(attempt.answers[question_id].correct) for question_id in exam.question_ids if question_id in attempt.answers and attempt.answers[question_id].correct is not None]
-            suggested, reason = self.learning.suggest_difficulty(session.difficulty, recent)
-            analysis["adaptive"] = {"previous": session.difficulty, "suggested": suggested, "reason": reason}
-            if suggested != session.difficulty:
-                session.difficulty = suggested
-                self.sessions.save(session)
+            session = self.sessions.get()
+            with self.store.transaction():
+                if not exam.config.immediate_feedback:
+                    # A study sitting recorded every answer as it was given;
+                    # only a simulation's answers wait for the end.
+                    for question in questions:
+                        entry = attempt.answers.get(question.question_id)
+                        if entry is not None and entry.answer_key and entry.correct is not None:
+                            self.learning.record(question, bool(entry.correct), chosen_key=entry.answer_key)
+                analysis = analyse_attempt(exam, questions, attempt, curriculum=self.curriculum, mastery_levels=self.learning.levels())
+                if session.adaptive_difficulty and analysis["total"] >= 5:
+                    recent = [bool(attempt.answers[question_id].correct) for question_id in exam.question_ids if question_id in attempt.answers and attempt.answers[question_id].correct is not None]
+                    suggested, reason = self.learning.suggest_difficulty(session.difficulty, recent)
+                    analysis["adaptive"] = {"previous": session.difficulty, "suggested": suggested, "reason": reason}
+                    if suggested != session.difficulty:
+                        session.difficulty = suggested
+                        self.sessions.save(session)
+                # The verdict is part of the result: saved with it, not after it.
+                attempt.score = analysis["score"]
+                attempt.analysis = analysis
+                self.store.save_attempt(attempt)
+                exam.status = "completed"
+                exam.finished_at = attempt.finished_at
+                self.store.save_exam(exam)
         self._record("exam.finished", "Exam finished.", exam_id=exam_id, percent=analysis.get("percent"))
         self._emit({"kind": "exam_finished", "exam_id": exam_id, "title": exam.title, "percent": analysis.get("percent")})
         return self.exam(exam_id)
@@ -1990,12 +2011,29 @@ class MedicalAcademy:
             # loader's message is the only true one.
             return {**described, "available": False, "reason": described.get("reason") or str(exc)}
 
-    def record_anatomy_answer(self, structure_id: str, landmark_id: str | None, correct: bool) -> dict[str, Any]:
-        concept_id = f"anatomy.{structure_id}" + (f".{landmark_id}" if landmark_id else "")
-        structure = self.anatomy.get(structure_id)
-        question = Question(question_id="anatomy-quiz", subject="anatomy", stem="anatomy quiz", options=[], correct_key=None, topic_id=structure.topic_id if structure else None, concept_ids=[concept_id])
-        updated = self.learning.record(question, correct)
-        return {"mastery": [self.learning.mastery_payload(item) for item in updated]}
+    def record_anatomy_answer(self, structure_id: str, landmark_id: str | None, correct: bool, *, submission_id: str | None = None) -> dict[str, Any]:
+        """Move the structure's mastery by one bell-ringer or quiz answer.
+
+        ``submission_id`` is the page's name for one station's one answer:
+        a save sent again because its reply was lost is answered from
+        memory and moves nothing a second time. The memory is bounded and
+        lives with the process — a retry belongs to the same sitting.
+        """
+        key = str(submission_id or "").strip()[:80]
+        with self._lock:
+            if key and key in self._anatomy_submissions:
+                return {**self._anatomy_submissions[key], "repeated": True}
+            concept_id = f"anatomy.{structure_id}" + (f".{landmark_id}" if landmark_id else "")
+            structure = self.anatomy.get(structure_id)
+            question = Question(question_id="anatomy-quiz", subject="anatomy", stem="anatomy quiz", options=[], correct_key=None, topic_id=structure.topic_id if structure else None, concept_ids=[concept_id])
+            updated = self.learning.record(question, correct)
+            result: dict[str, Any] = {"mastery": [self.learning.mastery_payload(item) for item in updated]}
+            if key:
+                result["submission_id"] = key
+                self._anatomy_submissions[key] = result
+                while len(self._anatomy_submissions) > ANATOMY_SUBMISSION_MEMORY:
+                    del self._anatomy_submissions[next(iter(self._anatomy_submissions))]
+            return dict(result)
 
 
 # ---------------------------------------------------------------------------

@@ -67,7 +67,8 @@ Implemented:
 
 Not implemented yet:
 
-- notifications and proactive behavior
+- proactive behaviour beyond reminders and scheduled routines (JARVIS does
+  not start a conversation or an action of its own accord)
 - filesystem content search and multi-root plans
 - keyboard/mouse automation and general safe PowerShell execution
 - a tray icon for the classic Tkinter shell
@@ -92,7 +93,12 @@ See `docs/MEDICAL_ACADEMY.md`.
 
 ## Verification status
 
-The current test suite contains **1197 passing tests, 1 skipped** (`scripts/verify.py`), verified on 5 September 2026.
+The current test suite contains **2348 tests passing, 5 skipped (`scripts/verify.py`, Python 3.12.8 on Windows 11, 8 September 2026)**. Earlier
+dated counts in `docs/FINAL_AUDIT.md` and `docs/PROJECT_STATE.md` are history,
+not the present state. Automated tests run the Nova page scripts under QuickJS
+and the Windows integrations against fakes; live microphone, speaker, vision
+and installed-runtime checks are separate, user-attended work
+(`docs/FINAL_AUDIT.md`).
 
 The project does not yet claim production readiness. The first real Windows
 vertical slice is implemented and verified:

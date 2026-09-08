@@ -464,6 +464,7 @@ body.light .lab-label { background: rgba(255, 255, 255, 0.86); }
 .lab-bell { position: absolute; left: 12px; right: 12px; top: 12px; z-index: 4; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: color-mix(in srgb, var(--surface-1) 88%, transparent); }
 .lab-bell .lab-bell-timer { min-width: 52px; font-variant-numeric: tabular-nums; font-weight: 700; }
 .lab-bell .lab-bell-timer.low { color: var(--danger, #e06060); }
+.lab-bell .lab-bell-error { flex: 1; min-width: 120px; color: var(--danger, #e06060); font-size: var(--text-sm); }
 .lab-bell input { flex: 1; min-width: 120px; }
 .lab-bell-results { display: grid; gap: 6px; }
 .lab-bell-row { display: grid; grid-template-columns: 24px 1fr; gap: 8px; padding: 6px 8px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface-2); font-size: var(--text-sm); }

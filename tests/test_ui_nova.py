@@ -2461,3 +2461,60 @@ def test_continuing_pending_model_work_is_a_background_job_with_honest_refusals(
     wait_until(lambda: any(payload.get("kind") == "job_report" and payload.get("job") == "continue" for payload in booted.window.payloads("medical")))
     report = [payload for payload in booted.window.payloads("medical") if payload.get("kind") == "job_report" and payload.get("job") == "continue"][-1]
     assert report["queued"] == 0 and report["described"] == 0 and report["analysed"] == 0 and report["stopped"] is None
+
+
+# ---------------------------------------------------------------------------
+# reminder delivery: the centre is the boundary, the toast a courtesy
+# ---------------------------------------------------------------------------
+
+
+def test_a_reminder_handed_out_again_is_not_shown_twice(booted) -> None:
+    bridge = booted.bridge
+
+    bridge._deliver_reminder({"reminder_id": "r-dup", "text": "Su iç", "claim_token": "t1"})
+    bridge._deliver_reminder({"reminder_id": "r-dup", "text": "Su iç", "claim_token": "t2"})
+
+    items = [item for item in bridge.list_notifications()["items"] if item["kind"] == "reminder"]
+    assert [item["reference"] for item in items] == ["r-dup"] and items[0]["count"] == 1
+
+
+def test_an_unavailable_native_toast_is_not_a_failed_delivery(booted) -> None:
+    bridge = booted.bridge
+    bridge._attended = False
+
+    def broken(title: str, body: str) -> bool:
+        raise RuntimeError("no toast host")
+
+    bridge._os_notifier = broken
+
+    bridge._deliver_reminder({"reminder_id": "r-toast", "text": "Toplantı", "claim_token": "t"})
+
+    assert [item["reference"] for item in bridge.list_notifications()["items"] if item["kind"] == "reminder"] == ["r-toast"]
+
+
+def test_a_reminder_the_centre_accepted_is_acknowledged_in_the_store(tmp_path) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from app.reminders.service import ReminderService
+
+    moment = {"now": datetime.now(timezone.utc)}
+    service = ReminderService(tmp_path / "reminders.sqlite3", clock=lambda: moment["now"])
+    created = service.create("Kitabı iade et", minutes=1)
+    reminder_id = created.data["reminder_id"]
+    moment["now"] += timedelta(seconds=61)
+    app = application()
+    app.reminders = service
+    controller = DesktopController(app)
+    bridge = shell.NovaBridge(controller, None)
+    window = FakeWindow()
+    bridge._attach(window)
+    try:
+        bridge.boot()
+        wait_until(lambda: window.payloads("notification") != [])
+        entry = window.payloads("notification")[0]["notification"]
+        assert entry["kind"] == "reminder" and entry["reference"] == reminder_id
+        wait_until(lambda: service.get(reminder_id)["delivered"] is True)
+        assert service.list_active().data["reminders"] == []
+    finally:
+        bridge._shutdown()
+        controller.close()

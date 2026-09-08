@@ -13,6 +13,7 @@ import json
 import sqlite3
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
+from contextlib import contextmanager
 from threading import RLock
 from typing import Any
 
@@ -91,6 +92,9 @@ class MedicalStore:
         if self._path is not None:
             self._path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
+        # Depth of ``transaction()`` blocks on the current thread: writes
+        # inside one wait for the block's single commit.
+        self._transaction_depth = 0
         self._connection = sqlite3.connect(
             str(self._path) if self._path is not None else ":memory:",
             check_same_thread=False,
@@ -165,15 +169,44 @@ class MedicalStore:
     def _write(self, statement: str, parameters: tuple[Any, ...] = (), *, indexed: bool) -> int:
         with self._lock:
             cursor = self._connection.execute(statement, parameters)
-            self._connection.commit()
+            if not self._transaction_depth:
+                self._connection.commit()
             self._bump(indexed=indexed)
             return cursor.rowcount
 
     def _write_many(self, statement: str, rows: Iterable[tuple[Any, ...]], *, indexed: bool) -> None:
         with self._lock:
             self._connection.executemany(statement, rows)
-            self._connection.commit()
+            if not self._transaction_depth:
+                self._connection.commit()
             self._bump(indexed=indexed)
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """Commit the writes of the block together, or none of them.
+
+        The store's one connection is held under the lock for the whole
+        block, so no other thread writes in between; reads inside the block
+        see its own uncommitted writes. Nested blocks join the outer one.
+        """
+        with self._lock:
+            if self._transaction_depth:
+                self._transaction_depth += 1
+                try:
+                    yield
+                finally:
+                    self._transaction_depth -= 1
+                return
+            self._transaction_depth = 1
+            try:
+                yield
+            except BaseException:
+                self._connection.rollback()
+                raise
+            else:
+                self._connection.commit()
+            finally:
+                self._transaction_depth = 0
 
     def _rows(self, statement: str, parameters: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
         with self._lock:

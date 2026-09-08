@@ -58,12 +58,112 @@ Last verified: 8 September 2026
   and their review questions filed under them, a professor-style paper drawn
   from that lecturer's own lectures) and sesli anlatım — a lecture read aloud
   with questions answered in between, 8 September 2026
+- Completed reliability repair: a bell-ringer station is claimed before
+  its save and counted once, an exam is finalized once per attempt with its
+  adaptive verdict stored, and a reminder whose delivery failed is leased,
+  retried and kept instead of lost, 8 September 2026
 - Next action: plugin process isolation; code signing and a user-attended
   voice qualification remain release blockers (`docs/FINAL_AUDIT.md`)
 - State: development release; production acceptance is not yet achieved
 - Platform target: Windows 11, Python 3.12
-- Automated verification: 2297 tests passing, 4 skipped (`scripts/verify.py`)
+- Automated verification: 2348 tests passing, 5 skipped (`scripts/verify.py`, Python 3.12.8 on Windows 11, 8 September 2026)
 - Production readiness: not yet claimed
+
+## Reliability repairs (8 September 2026)
+
+A source review of commit `59b0ba3` (7 September) with small executable
+reproductions found three defects; each is repaired with the smallest
+coherent change and pinned by regression tests that fail on the unrepaired
+code (run in a throwaway worktree of the previous master: 22 of the new
+tests failed there and the reminder-lifecycle module did not import).
+
+- **A bell-ringer station could be answered twice.** `answerStation` cleared
+  `bell.current` only after awaiting the save, so a second click, a second
+  Enter, or the bell landing on a manual answer produced two answer records,
+  two `anatomy_answer` calls and two `nextStation` calls — a skipped station
+  and a mastery history with an answer it never gave. The station is now
+  claimed synchronously before the first await (`bell.current` cleared,
+  the timer stopped, `bell.pending` set), so at most one submission is
+  accepted per station and the exam advances exactly once, after the
+  academy accepted the save. Grading uses the pin fixed when the station
+  opened (`bell.landmark`, `bell.specimen`), not whatever the student
+  selected meanwhile, and a station whose specimen is still loading cannot
+  be answered. Every reply carries the exam's run number and its own
+  pending record: a reply for a finished or restarted exam changes nothing.
+  A save the academy refused or the bridge failed is shown as such
+  ("Cevap kaydedilemedi: …") with "Tekrar dene" and "Kaydetmeden geç"; the
+  retry sends the same `submission_id`, and `record_anatomy_answer` answers
+  a repeated id from a bounded memory without moving mastery again, so a
+  reply lost on the way cannot double-count. The results list marks an
+  answer that was never saved.
+- **Finishing an exam twice moved the difficulty twice.** `finish_exam`
+  guarded the mastery updates with `finished_at` but recomputed and applied
+  the adaptive difficulty on every call (3 → 4 → 5 for one perfect paper),
+  and it saved the attempt before adding the adaptive verdict, so the
+  returned result — reloaded from the store — never carried the
+  explanation. Finalization now runs once per attempt under the academy
+  lock and inside one store transaction (`MedicalStore.transaction`):
+  mastery, the analysis with its adaptive verdict, the session's
+  difficulty and the exam's status are committed together or not at all,
+  a repeated request for a finished attempt returns the stored result (its
+  own previous/suggested/reason, never recomputed from the session's later
+  difficulty) and emits no second completion event, and a genuinely new
+  attempt at the same exam is finalized on its own. Immediate-feedback
+  sittings still record each answer once, as it is given.
+- **A reminder whose delivery failed was gone for good.** `claim_due`
+  marked reminders delivered before delivering them, and the watch
+  swallowed a raising callback, so a reminder due while the centre was
+  unavailable was attempted once and vanished. The reminder store now
+  leases what it hands out: `claim_due` (one immediate transaction, so
+  concurrent pollers never take the same reminder) stamps a claim token and
+  counts the attempt; `acknowledge` marks delivery only when the token
+  still holds; `release` gives a failed claim back with the error and a
+  growing delay (30 s doubling to 15 min); after five failures the reminder
+  stays in the active list as "teslim edilemedi" and in
+  `list_undeliverable()` rather than being retried forever; a claim nobody
+  settled expires with its 120 s lease and is handed out again; cancelling
+  reaches a waiting, claimed or retrying reminder alike. `ReminderWatch`
+  settles claims when the source offers `acknowledge`/`release` and
+  otherwise keeps the older contract, so scheduled routines (which move a
+  routine to its next slot as they claim it) are unchanged; the classic
+  desktop loop settles claims the same way. The guarantee is stated
+  precisely: at-least-once delivery to the callback and exactly-once
+  acknowledgment per claim token. Delivery in Nova means the notification
+  centre accepted the entry; the native toast is a courtesy whose failure is
+  not a failed delivery. The reminder's id is the entry's reference, and
+  `_deliver_reminder` asks the centre (`find`) before publishing, so a
+  reminder handed out again after a crash or an expired lease is not shown
+  twice. Existing databases migrate in place (`ALTER TABLE` for the six
+  lifecycle columns, repeatable, nothing deleted; active, cancelled and
+  delivered rows keep their meaning).
+
+Regression coverage: `tests/test_nova_web.py` (QuickJS with deferred
+requests: one answer per station across click/Enter/bell races, failed and
+rejected saves with retry and skip, finishing and restarting while a save is
+pending, grading against the station's own pin, an unloaded station),
+`tests/test_medical_exams.py` (3 → 4 → 4, an unsuccessful paper lowered
+once, the verdict in the returned and the reloaded record, a verdict kept
+after the session changes, a new attempt on its own, immediate feedback
+counted once, four concurrent finalizations with one completion event,
+short and unanswered papers, disabled adaptive difficulty, a failure
+mid-finalization rolled back, a repeated bell-ringer submission recorded
+once), `tests/test_reminder_delivery.py` (a controllable clock and temporary
+databases: success, failure then retry, bounded back-off and exhaustion,
+restart after claim, restart after the centre accepted the entry,
+concurrent pollers and loops, cancellation at every stage, migration of the
+old schema, the routine store under the watch), `tests/test_notifications.py`
+(the watch acknowledging and releasing, a source without leases, settling
+errors, the centre's `find`) and `tests/test_ui_nova.py` (a repeated
+hand-out shown once, a broken toast not a failed delivery, a real reminder
+service acknowledged through the bridge). Verification: the whole suite
+through `scripts/verify.py` on this machine; no live Windows end-to-end
+run (real toasts, a real bell-ringer sitting in WebView2) was performed, and
+none is claimed.
+
+Recorded, not done — outside this repair: full-body anatomy beyond the
+regions listed under "Not yet built" in `docs/MEDICAL_ACADEMY.md`, general
+keyboard/mouse automation and general safe PowerShell, plugin process
+isolation, and any provider migration remain follow-up work.
 
 ## The committee papers (8 September 2026)
 

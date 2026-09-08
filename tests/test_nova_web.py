@@ -823,3 +823,240 @@ def test_a_scene_with_a_palette_is_drawn_and_hidden_structure_by_structure() -> 
     assert report["afterToggle"] == {"frontale": False, "occipitale": True}
     assert report["colours"]["frontale"] == [1, 0.5, 0] and report["colours"]["occipitale"] == report["bone"]
     assert 'data-layer="bone"' in report["kindChips"] and "sağ taraf" in report["kindChips"]
+
+
+# ---------------------------------------------------------------------------
+# the bell-ringer's submissions, executed in QuickJS with deferred requests
+# ---------------------------------------------------------------------------
+
+# Timers are recorded, not run, so a test rings the bell itself; every
+# academy request is a promise the test resolves or rejects by hand.
+BELL_STUBS = """
+let TIMERS = [];
+function setInterval(fn, ms) { const id = TIMERS.length + 1; TIMERS.push({ id, fn }); return id; }
+function clearInterval(id) { TIMERS = TIMERS.filter((timer) => timer.id !== id); }
+function TICK(count) { for (let i = 0; i < (count || 1); i += 1) TIMERS.slice().forEach((timer) => timer.fn()); }
+const TOASTS = [];
+function toast(text, kind) { TOASTS.push({ text, kind }); }
+"""
+
+BELL_SETUP = """
+const STRUCTURES = {
+  scapula: { structure_id: "scapula", canonical: "Scapula", turkish: "Kürek kemiği", landmarks: [{ landmark_id: "acromion", latin: "Acromion", turkish: "Akromion" }] },
+  humerus: { structure_id: "humerus", canonical: "Humerus", turkish: "Kol kemiği", landmarks: [{ landmark_id: "caput_humeri", latin: "Caput humeri", turkish: "Humerus başı" }] },
+};
+// Math.random() === 0 reverses a two-item pool, so the stations are scapula then humerus.
+const POOL = [{ structure_id: "humerus", landmark_id: "caput_humeri" }, { structure_id: "scapula", landmark_id: "acromion" }];
+Math.random = () => 0;
+Lab.draw = () => {};
+Lab.select = async (id) => { Lab.structure = STRUCTURES[id]; };
+Lab.structure = STRUCTURES.scapula;
+const REQUESTS = [];
+Medical.request = (action, params) => new Promise((resolve, reject) => { REQUESTS.push({ action, params: JSON.parse(JSON.stringify(params)), resolve, reject }); });
+function snapshot() {
+  const bell = Lab.bell;
+  return JSON.stringify({
+    run: bell ? bell.run : null,
+    index: bell ? bell.index : null,
+    current: bell ? bell.current : null,
+    loading: bell ? bell.loading : null,
+    pending: bell ? !!bell.pending : null,
+    failed: bell ? bell.failed : null,
+    answers: bell ? bell.answers.map((a) => ({ given: a.given, correct: a.correct, saved: a.saved, timedOut: a.timedOut, skipped: a.skipped, latin: a.latin, structure: a.structure })) : null,
+    requests: REQUESTS.map((r) => r.params),
+    toasts: TOASTS.map((t) => t.text),
+    timers: TIMERS.length,
+  });
+}
+"""
+
+
+def bell_context():
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(BELL_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    context.eval(BELL_SETUP)
+    return context
+
+
+def drain(context) -> None:
+    """Run every settled promise continuation."""
+    for _ in range(500):
+        if not context.execute_pending_job():
+            return
+
+
+def bell(context) -> dict:
+    return json.loads(context.eval("snapshot()"))
+
+
+def test_a_bell_ringer_answer_is_saved_once_and_advances_once() -> None:
+    context = bell_context()
+    context.eval("Lab.beginBellRinger(POOL, 60)")
+    drain(context)
+    state = bell(context)
+    assert state["index"] == 0 and state["current"] == {"structure_id": "scapula", "landmark_id": "acromion"}
+    assert state["timers"] == 1 and state["loading"] is None
+
+    context.eval('void Lab.answerStation("acromion")')
+    state = bell(context)
+    assert state["pending"] is True and state["current"] is None and state["timers"] == 0
+    assert state["answers"] == [{"given": "acromion", "correct": True, "saved": False, "timedOut": False, "skipped": False, "latin": "Acromion", "structure": "Scapula"}]
+    assert len(state["requests"]) == 1
+    request = state["requests"][0]
+    assert request["structure_id"] == "scapula" and request["landmark_id"] == "acromion" and request["correct"] is True
+    assert request["submission_id"].startswith("1-0-")
+
+    context.eval("REQUESTS[0].resolve({ ok: true, mastery: [] })")
+    drain(context)
+    state = bell(context)
+    assert state["index"] == 1 and state["current"] == {"structure_id": "humerus", "landmark_id": "caput_humeri"}
+    assert state["pending"] is False and state["answers"][0]["saved"] is True
+    assert len(state["requests"]) == 1 and state["toasts"] == []
+    assert context.eval("Lab.structure.structure_id") == "humerus"
+
+
+def test_repeated_clicks_and_enter_on_one_station_submit_it_once() -> None:
+    context = bell_context()
+    context.eval("Lab.beginBellRinger(POOL, 60)")
+    drain(context)
+
+    # Click, click, Enter — the second and third find the station claimed.
+    context.eval('void Lab.answerStation("acromion"); void Lab.answerStation("acromion"); void Lab.answerStation("acromion")')
+    state = bell(context)
+    assert len(state["answers"]) == 1 and len(state["requests"]) == 1
+
+    context.eval("REQUESTS[0].resolve({ ok: true, mastery: [] })")
+    drain(context)
+    state = bell(context)
+    assert state["index"] == 1, "advanced exactly once"
+    assert len(state["answers"]) == 1 and len(state["requests"]) == 1
+
+
+def test_the_bell_and_a_manual_answer_close_together_count_one_answer() -> None:
+    context = bell_context()
+    context.eval("Lab.beginBellRinger(POOL, 60)")
+    drain(context)
+
+    # The clock runs out in the same turn as the student presses Cevapla.
+    context.eval('TICK(60); void Lab.answerStation("acromion")')
+    state = bell(context)
+    assert len(state["answers"]) == 1 and state["answers"][0]["timedOut"] is True
+    assert len(state["requests"]) == 1 and state["requests"][0]["correct"] is False
+    assert state["timers"] == 0, "the station's timer stopped with the claim"
+
+    context.eval("REQUESTS[0].resolve({ ok: true })")
+    drain(context)
+    state = bell(context)
+    assert state["index"] == 1 and len(state["answers"]) == 1
+    # A late tick from the old station cannot touch the new one.
+    context.eval("TIMERS.length = 0; void Lab.answerStation(\"\", { timedOut: true })")
+    assert len(bell(context)["answers"]) == 2 and bell(context)["answers"][1]["timedOut"] is True
+
+
+def test_a_failed_save_is_reported_and_retried_without_a_second_record() -> None:
+    context = bell_context()
+    context.eval("Lab.beginBellRinger(POOL, 60)")
+    drain(context)
+    context.eval('void Lab.answerStation("acromion")')
+
+    context.eval('REQUESTS[0].resolve({ ok: false, error: "Depo kilitli." })')
+    drain(context)
+    state = bell(context)
+    assert state["index"] == 0 and state["pending"] is True, "nothing advanced"
+    assert state["failed"] == {"error": "Depo kilitli."}
+    assert state["toasts"] == ["Cevap kaydedilemedi: Depo kilitli."]
+    assert state["answers"][0]["saved"] is False and len(state["answers"]) == 1
+
+    context.eval("Lab.retryStation()")
+    state = bell(context)
+    assert len(state["requests"]) == 2 and len(state["answers"]) == 1
+    assert state["requests"][1]["submission_id"] == state["requests"][0]["submission_id"], "the retry names the same submission"
+    assert state["failed"] is None
+
+    context.eval("REQUESTS[1].resolve({ ok: true, mastery: [] })")
+    drain(context)
+    state = bell(context)
+    assert state["index"] == 1 and state["answers"][0]["saved"] is True and state["pending"] is False
+
+    # A rejected request (the bridge threw) reads the same way, and the
+    # student may go on with the station left unrecorded.
+    context.eval('void Lab.answerStation("caput humeri")')
+    context.eval('REQUESTS[2].reject(new Error("Köprü koptu"))')
+    drain(context)
+    state = bell(context)
+    assert state["failed"]["error"] == "Köprü koptu" and state["index"] == 1
+    context.eval("const LAST = Lab.bell; Lab.skipSaving()")
+    drain(context)
+    assert bell(context)["run"] is None, "the last station settled ends the exam"
+    assert json.loads(context.eval("JSON.stringify(LAST.answers.map((a) => a.saved))")) == [True, False]
+    assert len(json.loads(context.eval("JSON.stringify(REQUESTS.map((r) => r.params))"))) == 3
+
+
+def test_finishing_the_exam_while_a_save_is_pending_leaves_the_late_reply_inert() -> None:
+    context = bell_context()
+    context.eval("Lab.beginBellRinger(POOL, 60)")
+    drain(context)
+    context.eval('void Lab.answerStation("acromion")')
+
+    context.eval("const OLD = Lab.bell; Lab.finishBellRinger()")
+    assert bell(context)["run"] is None
+    assert context.eval("OLD.answers[0].saved") == "pending" and context.eval("OLD.pending") is None
+
+    context.eval("REQUESTS[0].resolve({ ok: true, mastery: [] })")
+    drain(context)
+    state = bell(context)
+    assert state["run"] is None and len(state["requests"]) == 1 and state["toasts"] == []
+
+
+def test_a_new_exam_started_before_the_old_reply_is_not_touched_by_it() -> None:
+    context = bell_context()
+    context.eval("Lab.beginBellRinger(POOL, 60)")
+    drain(context)
+    context.eval('void Lab.answerStation("acromion")')
+
+    context.eval("Lab.beginBellRinger(POOL, 60)")
+    drain(context)
+    fresh = bell(context)
+    assert fresh["run"] == 2 and fresh["index"] == 0 and fresh["answers"] == []
+
+    context.eval("REQUESTS[0].resolve({ ok: true, mastery: [] })")
+    drain(context)
+    state = bell(context)
+    assert state["run"] == 2 and state["index"] == 0 and state["answers"] == []
+    assert state["current"] == {"structure_id": "scapula", "landmark_id": "acromion"} and state["pending"] is False
+    assert len(state["requests"]) == 1
+    # The second exam answers and advances on its own account.
+    context.eval('void Lab.answerStation("acromion")')
+    assert bell(context)["requests"][1]["submission_id"].startswith("2-0-")
+
+
+def test_a_station_is_graded_against_its_own_pin_whatever_is_selected() -> None:
+    context = bell_context()
+    context.eval("Lab.beginBellRinger(POOL, 60)")
+    drain(context)
+    # The student clicks another bone in the list while the station is open.
+    context.eval("Lab.structure = STRUCTURES.humerus")
+
+    context.eval('void Lab.answerStation("caput humeri")')
+    state = bell(context)
+    assert state["answers"][0] == {"given": "caput humeri", "correct": False, "saved": False, "timedOut": False, "skipped": False, "latin": "Acromion", "structure": "Scapula"}
+    assert state["requests"][0]["structure_id"] == "scapula" and state["requests"][0]["landmark_id"] == "acromion"
+    assert state["requests"][0]["correct"] is False
+
+
+def test_a_station_still_loading_its_specimen_cannot_be_answered() -> None:
+    context = bell_context()
+    context.eval("Lab.structure = STRUCTURES.humerus; Lab.beginBellRinger(POOL, 60)")
+    state = bell(context)
+    assert state["loading"] == {"structure_id": "scapula", "landmark_id": "acromion"} and state["current"] == state["loading"]
+
+    assert context.eval('Lab.answerStation("acromion")') is not None  # a promise of false
+    drain(context)
+    state = bell(context)
+    assert state["answers"] == [] and state["requests"] == [] and state["loading"] is None
+
+    context.eval('void Lab.answerStation("acromion")')
+    assert len(bell(context)["answers"]) == 1 and bell(context)["answers"][0]["correct"] is True

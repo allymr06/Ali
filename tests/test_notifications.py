@@ -294,3 +294,78 @@ def test_store_failures_never_break_the_centre(tmp_path) -> None:
     assert centre.dismiss(entry.notification_id) is True
     assert centre.clear() == 0
     assert broken.load(10) == [] and broken.save(entry) is False
+
+
+# ---------------------------------------------------------------------------
+# leased sources: the watch settles what it was handed
+# ---------------------------------------------------------------------------
+
+
+class LeasedReminders(FakeReminders):
+    """A source that leases its items, like ReminderService."""
+
+    def __init__(self, batches=None) -> None:
+        super().__init__(batches)
+        self.acknowledged: list[tuple[str, str]] = []
+        self.released: list[tuple[str, str, str]] = []
+
+    def acknowledge(self, reminder_id: str, claim_token: str) -> bool:
+        self.acknowledged.append((reminder_id, claim_token))
+        return True
+
+    def release(self, reminder_id: str, claim_token: str, *, error=None):
+        self.released.append((reminder_id, claim_token, f"{type(error).__name__}: {error}"))
+        return {"reminder_id": reminder_id, "attempts": 1, "exhausted": False}
+
+
+def test_poll_once_acknowledges_delivered_claims_and_releases_failed_ones() -> None:
+    source = LeasedReminders([[
+        {"reminder_id": "1", "text": "a", "claim_token": "t1"},
+        {"reminder_id": "2", "text": "bad", "claim_token": "t2"},
+        {"reminder_id": "3", "text": "c", "claim_token": "t3"},
+    ]])
+
+    def deliver(reminder: dict[str, str]) -> None:
+        if reminder["text"] == "bad":
+            raise ValueError("cannot show")
+
+    assert ReminderWatch(source, deliver).poll_once() == 2
+    assert source.acknowledged == [("1", "t1"), ("3", "t3")]
+    assert source.released == [("2", "t2", "ValueError: cannot show")]
+
+
+def test_a_source_that_leases_nothing_is_polled_as_before() -> None:
+    """The routine store hands out no claim tokens and has no acknowledge:
+    the watch delivers and asks nothing back."""
+    source = FakeReminders([[{"reminder_id": "r", "text": "a"}]])
+    delivered: list[str] = []
+    assert ReminderWatch(source, lambda item: delivered.append(item["text"])).poll_once() == 1
+    assert delivered == ["a"] and not hasattr(source, "acknowledge")
+
+
+def test_a_settling_error_never_reaches_the_watch_thread() -> None:
+    class Brittle(LeasedReminders):
+        def acknowledge(self, reminder_id, claim_token):
+            raise RuntimeError("store gone")
+
+        def release(self, reminder_id, claim_token, *, error=None):
+            raise RuntimeError("store gone")
+
+    source = Brittle([[{"reminder_id": "1", "text": "a", "claim_token": "t"}, {"reminder_id": "2", "text": "bad", "claim_token": "u"}]])
+
+    def deliver(reminder):
+        if reminder["text"] == "bad":
+            raise ValueError("no")
+
+    assert ReminderWatch(source, deliver).poll_once() == 1
+
+
+def test_the_centre_finds_an_entry_by_kind_and_reference() -> None:
+    centre = NotificationCenter()
+    entry = centre.publish("reminder", "Hatırlatıcı", "Su iç", reference="r1")
+    centre.publish("system", "Sistem", "başka", reference="r1")
+
+    assert centre.find("reminder", "r1") is entry
+    assert centre.find("reminder", "r2") is None
+    assert centre.find("reminder", None) is None and centre.find("reminder", "  ") is None
+    # The store keeps the reference, so a restarted centre still finds it.

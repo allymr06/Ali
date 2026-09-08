@@ -7,8 +7,10 @@ the curated data drawn as a diagram. These tests hold it to that.
 
 from __future__ import annotations
 
+import copy
 import inspect
 import json
+import re
 
 import pytest
 
@@ -1504,3 +1506,205 @@ def test_the_lower_limb_vessels_mirror_the_upper_limb() -> None:
         return counts
     assert limb_vessels("lower_limb") == {"artery": 4, "vein": 2}
     assert limb_vessels("upper_limb") == {"artery": 4, "vein": 2}
+
+
+# ---------------------------------------------------------------------------
+# the Z-Anatomy asset pipeline: a development-time export, a validating install
+# ---------------------------------------------------------------------------
+
+
+def z_pack(tmp_path, *, mutate=None):
+    """A synthetic export in the shape the Blender exporter writes.
+
+    One small triangulated box per allowlisted structure, with the manifest the
+    installer expects: hashes, provenance, licensing, the source frame, and the
+    landmark anchors the atlas annotations projected onto each bone.
+    """
+    import hashlib as _hashlib
+
+    from scripts.z_anatomy_source import ATTRIBUTION, LANDMARKS, LICENSE, OBJECTS, REVISION, SCENES, SOURCE
+
+    directory = tmp_path / "export"
+    directory.mkdir(parents=True)
+    entries = []
+    for structure_id, names in OBJECTS.items():
+        lines = ["# synthetic", "v 0 0 0", "v 1 0 0", "v 1 1 0", "v 0 1 1",
+                 "vn 0 0 1", "vn 0 0 1", "vn 0 0 1", "vn 0 0 1",
+                 "f 1//1 2//2 3//3", "f 1//1 3//3 4//4"]
+        text = "\n".join(lines) + "\n"
+        path = directory / f"{structure_id}.obj"
+        path.write_text(text, encoding="utf-8")
+        anchors = {
+            landmark_id: {"anchor": [0.5, 0.5, 0.25], "confidence": "approximate",
+                          "method": f"Z-Anatomy annotation {name}; nearest endpoint projected to source surface"}
+            for landmark_id, name in LANDMARKS.get(structure_id, {}).items()
+        }
+        entries.append({
+            "structure_id": structure_id, "file": f"{structure_id}.obj", "license": LICENSE, "source": SOURCE,
+            "attribution": ATTRIBUTION, "side": "right", "up_axis": "z", "landmarks": anchors,
+            "sha256": _hashlib.sha256(path.read_bytes()).hexdigest(),
+            "provenance": {"dataset": "Z-Anatomy", "revision": REVISION, "objects": names,
+                           "vertices": 4, "triangles": 2,
+                           "geometry": "source evaluated mesh; no added subdivision or invented anatomical detail"},
+        })
+    # A deep copy: a mutation in a rejection case must not reach the module's
+    # own scene list and quietly change what a later test compares against.
+    pack = {"assets": entries, "scenes": copy.deepcopy(SCENES)}
+    if mutate is not None:
+        mutate(pack, directory)
+    (directory / "manifest.json").write_text(json.dumps(pack, ensure_ascii=False), encoding="utf-8")
+    return directory
+
+
+def test_the_atlas_allowlist_is_answerable_by_the_curriculum_data() -> None:
+    """Every structure and pin the exporter would emit must be nameable.
+
+    An anchor the lab cannot name is an unlabelled dot on a bone; a structure
+    the curriculum does not know cannot carry a card, a quiz or a topic.
+    """
+    from scripts.z_anatomy_source import LANDMARKS, OBJECTS, SCENES
+
+    structures, _terms, _source = load_anatomy_data()
+    known = {item.structure_id: {mark.landmark_id for mark in item.landmarks} for item in structures}
+
+    assert set(OBJECTS) <= set(known), set(OBJECTS) - set(known)
+    for structure_id, marks in LANDMARKS.items():
+        assert structure_id in OBJECTS, structure_id
+        assert set(marks) <= known[structure_id], (structure_id, set(marks) - known[structure_id])
+    # A scene may only show what the pack carries, and the two scenes are disjoint.
+    scene_ids = [scene["scene_id"] for scene in SCENES]
+    assert len(scene_ids) == len(set(scene_ids))
+    seen: set[str] = set()
+    for scene in SCENES:
+        wanted = set(scene["structure_ids"])
+        assert wanted <= set(OBJECTS) and not wanted & seen
+        seen |= wanted
+    # One source object belongs to one structure: no mesh is exported twice.
+    used = [name for names in OBJECTS.values() for name in names]
+    assert len(used) == len(set(used))
+    kinds = {item.structure_id: item.kind for item in structures}
+    assert {kinds[structure_id] for structure_id in OBJECTS} == {"bone", "muscle", "nerve", "artery", "vein"}
+
+
+def test_an_installed_pack_keeps_its_provenance_and_never_overwrites_a_mesh(tmp_path) -> None:
+    """Installing is additive: a new immutable directory, an atomic manifest.
+
+    The pack that was exported is the pack that is served — hashes, licence,
+    attribution, source frame and pins survive into what the lab reads.
+    """
+    from scripts.install_z_anatomy import install
+    from scripts.z_anatomy_source import OBJECTS
+
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    # An earlier pack from another dataset must survive untouched.
+    (assets / "manifest.json").write_text(json.dumps({
+        "assets": [{"structure_id": "atlas", "file": "atlas.obj", "license": "CC", "source": "BodyParts3D", "up_axis": "y"}],
+        "scenes": [{"scene_id": "vertebral_column", "title": "Omurga", "structure_ids": ["atlas"]}],
+    }), encoding="utf-8")
+    (assets / "atlas.obj").write_text(CUBE, encoding="utf-8")
+
+    snapshot = install(z_pack(tmp_path), assets)
+
+    assert snapshot is not None and snapshot.is_file(), "the previous manifest is kept for rollback"
+    manifest = json.loads((assets / "manifest.json").read_text(encoding="utf-8"))
+    by_id = {entry["structure_id"]: entry for entry in manifest["assets"]}
+    assert set(by_id) == set(OBJECTS) | {"atlas"}, "the other dataset's entry is kept"
+    humerus = by_id["humerus"]
+    assert humerus["file"].startswith("z-anatomy-") and humerus["file"].endswith("/humerus.obj")
+    assert humerus["up_axis"] == "z" and humerus["side"] == "right"
+    assert "Z-Anatomy" in humerus["attribution"] and "BodyParts3D" in humerus["attribution"]
+    assert humerus["provenance"]["objects"] == ["Humerus.r"] and humerus["provenance"]["triangles"] == 2
+    assert humerus["landmarks"]["tuberculum_majus"]["confidence"] == "approximate"
+    assert {scene["scene_id"] for scene in manifest["scenes"]} == {"vertebral_column", "upper_limb_right", "lower_limb_right"}
+
+    registry = AnatomyAssetRegistry(assets)
+    assert registry.problems == []
+    mesh = registry.load_mesh("n_axillaris")
+    assert mesh["triangle_count"] == 2 and mesh["up_axis"] == "z"
+    scene = next(item for item in registry.scenes() if item["scene_id"] == "upper_limb_right")
+    assert len(scene["available"]) == len(scene["structure_ids"]) == 30
+
+    # A second install writes a second directory and leaves the first bytes alone.
+    first = sorted(path.name for path in assets.glob("z-anatomy-*"))
+    digest = (assets / by_id["humerus"]["file"]).read_bytes()
+    install(z_pack(tmp_path / "again"), assets)
+    second = sorted(path.name for path in assets.glob("z-anatomy-*"))
+    assert len(second) == len(first) + 1
+    assert (assets / by_id["humerus"]["file"]).read_bytes() == digest, "an installed mesh is immutable"
+
+
+@pytest.mark.parametrize(
+    "name, mutate",
+    [
+        ("checksum", lambda pack, directory: (directory / "humerus.obj").write_text("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n", encoding="utf-8")),
+        ("revision", lambda pack, directory: pack["assets"][0]["provenance"].update({"revision": "0" * 40})),
+        ("objects", lambda pack, directory: pack["assets"][0]["provenance"].update({"objects": ["Scapula.l"]})),
+        ("licence", lambda pack, directory: pack["assets"][0].pop("license")),
+        ("attribution", lambda pack, directory: pack["assets"][0].update({"attribution": ""})),
+        ("frame", lambda pack, directory: pack["assets"][0].update({"up_axis": "y"})),
+        ("side", lambda pack, directory: pack["assets"][0].update({"side": "left"})),
+        ("triangles", lambda pack, directory: pack["assets"][0]["provenance"].update({"triangles": 99})),
+        ("file", lambda pack, directory: pack["assets"][0].update({"file": "../humerus.obj"})),
+        ("scenes", lambda pack, directory: pack["scenes"][0].update({"structure_ids": pack["scenes"][0]["structure_ids"] + ["atlas"]})),
+        ("incomplete", lambda pack, directory: pack["assets"].pop()),
+        ("pin_outside", lambda pack, directory: pack["assets"][0]["landmarks"].update({"fossa_supraspinata": {"anchor": [40.0, 0.0, 0.0], "confidence": "approximate", "method": "x"}})),
+    ],
+)
+def test_a_pack_that_does_not_match_its_reviewed_source_is_refused(tmp_path, name, mutate) -> None:
+    """Every claim in the manifest is checked against the bytes and the source."""
+    from scripts.install_z_anatomy import validate_pack
+
+    with pytest.raises(ValueError):
+        validate_pack(z_pack(tmp_path, mutate=mutate))
+
+
+def test_a_pin_the_curriculum_cannot_name_is_refused(tmp_path) -> None:
+    """Source fidelity cuts both ways: an anchor with no landmark to label it
+    is not installed, and neither is a structure the data does not know."""
+    from scripts.install_z_anatomy import validate_pack
+
+    def unknown_pin(pack, directory):
+        pack["assets"][0]["landmarks"]["margo_imaginarius"] = {"anchor": [0.5, 0.5, 0.25], "confidence": "approximate", "method": "x"}
+
+    with pytest.raises(ValueError, match="curriculum data does not define"):
+        validate_pack(z_pack(tmp_path, mutate=unknown_pin))
+
+
+def test_a_custom_scene_may_not_mix_two_coordinate_frames(tmp_path) -> None:
+    """Bones from one atlas and nerves from another would look aligned and be
+    wrong; a scene that spans both frames stops the install."""
+    from scripts.install_z_anatomy import install
+
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "manifest.json").write_text(json.dumps({
+        "assets": [{"structure_id": "atlas", "file": "atlas.obj", "license": "CC", "source": "BodyParts3D"}],
+        "scenes": [{"scene_id": "mine", "title": "Karışık", "structure_ids": ["atlas", "humerus"]}],
+    }), encoding="utf-8")
+    (assets / "atlas.obj").write_text(CUBE, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="mixes source frames"):
+        install(z_pack(tmp_path), assets)
+
+
+def test_the_atlas_pipeline_never_reaches_the_running_application() -> None:
+    """Blender is a build-time tool. Nothing the app imports may need it, and
+    reading the exporter must not pull bpy into the test interpreter."""
+    import importlib
+    import pathlib
+    import sys
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    offenders = [
+        path.relative_to(root).as_posix()
+        for path in (root / "app").rglob("*.py")
+        if re.search(r"^\s*(import|from)\s+(bpy|mathutils)\b", path.read_text(encoding="utf-8"), re.MULTILINE)
+    ]
+    assert offenders == [], offenders
+
+    module = importlib.import_module("scripts.export_z_anatomy")
+    assert "bpy" not in sys.modules, "the exporter imports Blender only inside the export call"
+    source = pathlib.Path(module.__file__).read_text(encoding="utf-8")
+    assert re.search(r"^\s+import bpy$", source, re.MULTILINE), "bpy stays inside the function"
+    assert "use_scripts=False" in source and "use_scripts_auto_execute" in source, "the atlas is opened as data, not as code"

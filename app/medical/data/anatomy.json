@@ -814,6 +814,12 @@
           "turkish": "Kürenin 2/3'ü kadar baş; fovea capitis femoris'e lig. capitis femoris tutunur"
         },
         {
+          "landmark_id": "fovea_capitis_femoris",
+          "latin": "Fovea capitis femoris",
+          "turkish": "Caput femoris'in tepesine yakın küçük çukur; lig. capitis femoris buraya tutunur",
+          "note": "Çocukta a. capitis femoris (a. obturatoria dalı) bu bağ içinde başa ulaşır; erişkinde katkısı azalır"
+        },
+        {
           "landmark_id": "collum_femoris",
           "latin": "Collum femoris",
           "turkish": "Başı gövdeye bağlayan boyun; gövde ile ~125° açı (angulus inclinationis) yapar",

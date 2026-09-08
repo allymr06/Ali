@@ -720,6 +720,182 @@ def test_the_lab_stage_is_black_and_its_tissues_matte_and_distinct() -> None:
     assert all(0 <= channel <= 1 for kind in kinds for channel in colours[kind])
 
 
+def test_lab_isolation_preserves_layer_choices_and_only_draws_selected_structure() -> None:
+    context = pytest.importorskip("quickjs").Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    context.eval('Lab.scheduleDraw = () => {}; function toast() {}')
+    report = json.loads(context.eval('''
+      (() => {
+        const bone = {structure_id: "bone", kind: "bone"};
+        const vein = {structure_id: "vein", kind: "vein"};
+        Lab.scene = {items: [bone, vein], visible: new Set(["bone"])};
+        Lab.structure = {structure_id: "vein"};
+        Lab.toggleIsolate();
+        const during = [Lab.itemVisible(bone), Lab.itemVisible(vein)];
+        Lab.toggleIsolate();
+        const after = [Lab.itemVisible(bone), Lab.itemVisible(vein)];
+        Lab.structure = {structure_id: "not-in-scene"};
+        Lab.toggleIsolate();
+        return JSON.stringify({during, after, invalid: Lab.isolated});
+      })()
+    '''))
+    assert report == {"during": [False, True], "after": [True, False], "invalid": False}
+
+
+def test_lab_drawing_buffer_is_sharp_bounded_and_not_reallocated_on_every_draw() -> None:
+    context = pytest.importorskip("quickjs").Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    report = json.loads(context.eval('''
+      (() => {
+        let devicePixelRatio = 1;
+        globalThis.devicePixelRatio = devicePixelRatio;
+        let width = 900, height = 600, writes = 0, w = 0, h = 0;
+        const canvas = {getBoundingClientRect: () => ({width, height}),
+          get width() { return w; }, set width(v) { w = v; writes++; },
+          get height() { return h; }, set height(v) { h = v; writes++; }};
+        Lab.sizeCanvas(canvas); const normal = [w, h];
+        Lab.sizeCanvas(canvas); const unchanged = writes;
+        width = 7680; height = 4320; globalThis.devicePixelRatio = 3;
+        Lab.sizeCanvas(canvas); const large = [w, h];
+        return JSON.stringify({normal, unchanged, large});
+      })()
+    '''))
+    assert report["normal"] == [1350, 900]
+    assert report["unchanged"] == 2
+    assert report["large"][0] * report["large"][1] <= 8_000_000
+    assert max(report["large"]) <= 4096
+
+
+def test_lab_camera_presets_fit_portrait_views_and_ignore_unknown_names() -> None:
+    context = pytest.importorskip("quickjs").Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    report = json.loads(context.eval('''
+      (() => {
+        Lab.scheduleDraw = () => {};
+        Lab.mesh = {bounds: {min: [-1,-1,-1], max: [1,1,1]}};
+        Lab.setView("front"); const front = Lab.camera.distance;
+        CANVAS.getBoundingClientRect = () => ({width: 300, height: 900});
+        Lab.setView("side"); const narrow = Lab.camera.distance;
+        const before = JSON.stringify(Lab.camera);
+        Lab.setView("untrusted-name");
+        return JSON.stringify({front, narrow, unchanged: before === JSON.stringify(Lab.camera)});
+      })()
+    '''))
+    assert report["narrow"] > report["front"] > 0.8
+    assert report["unchanged"]
+
+
+@pytest.mark.parametrize("native", [True, False])
+def test_lab_fullscreen_roundtrip_handles_native_and_rejected_api(native: bool) -> None:
+    context = pytest.importorskip("quickjs").Context()
+    context.eval('''
+      const classes = new Set(); let moved = false; let returned = false;
+      const button = {setAttribute(k,v) {this[k]=v;}, focus() {}};
+      const stage = {classList: {contains: k => classes.has(k), add: k => classes.add(k), remove: k => classes.delete(k)}, before() {}};
+      const document = {fullscreenElement: null, body: {appendChild() {moved=true;}},
+        createComment: () => ({replaceWith() {returned=true;}}),
+        async exitFullscreen() {this.fullscreenElement=null;}};
+      function $(s) {return s === "#lab-stage" ? stage : s === "#lab-fullscreen" ? button : null;}
+      function $$(s) {return [];}
+      function toast() {}
+    ''')
+    context.eval(JS_SOURCES["js/medical.js"])
+    context.eval("Lab.scheduleDraw = () => {};")
+    context.eval("stage.requestFullscreen = async () => {" + (
+        "document.fullscreenElement=stage;" if native else 'throw new Error("denied");'
+    ) + "}; void Lab.toggleFullscreen();")
+    while context.execute_pending_job():
+        pass
+    assert context.eval('button["aria-pressed"]') == "true"
+    assert context.eval("moved") is (not native)
+    context.eval("void Lab.toggleFullscreen();")
+    while context.execute_pending_job():
+        pass
+    assert context.eval('button["aria-pressed"]') == "false"
+    assert context.eval("Lab.fullscreenBusy") is False
+    assert context.eval("returned") is (not native)
+
+
+def test_lab_webgl_failure_does_not_recurse_or_discard_registered_mesh() -> None:
+    context = pytest.importorskip("quickjs").Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    context.eval('''
+      Lab.mesh = {positions: [1,2,3]}; Lab.scene = {items: []};
+      Lab.ensureGL = () => null; Lab.drawSchematic = () => {};
+      Lab.draw = () => {throw new Error("recursive draw");};
+      Lab.drawMesh();
+    ''')
+    assert context.eval("Lab.mesh.positions.length") == 3
+    assert context.eval("CANVAS.hidden") is True
+
+
+def test_lab_labels_are_separated_without_moving_the_anatomical_anchor() -> None:
+    context = pytest.importorskip("quickjs").Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    report = json.loads(context.eval('''
+      (() => {
+        const occupied = [], point = {x: 200, y: 100}, rect = {width: 800, height: 600};
+        const labels = Array.from({length: 10}, () => placeLabLabel(point, 180, rect, occupied));
+        return JSON.stringify({labels, point, outside: placeLabLabel({x:-20,y:100}, 180, rect, occupied)});
+      })()
+    '''))
+    assert report["point"] == {"x": 200, "y": 100}
+    assert report["outside"] is None
+    ys = sorted(label["y"] for label in report["labels"])
+    assert all(b - a >= 28 for a, b in zip(ys, ys[1:]))
+
+
+def test_lab_isolated_mesh_and_labels_use_selected_bounds_not_whole_scene() -> None:
+    context = pytest.importorskip("quickjs").Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    context.eval('''
+      const MESH = {bounds: {min:[10,20,30], max:[11,21,31]}, up_axis:"z"};
+      Lab.scene = {bounds:{min:[0,0,0],max:[100,100,100]}, items:[{structure_id:"bone",mesh:MESH}]};
+      Lab.structure = {structure_id:"bone"}; Lab.isolated = true;
+    ''')
+    assert context.eval("Lab.viewMesh() === MESH") is True
+    context.eval("Lab.isolated = false;")
+    assert context.eval("Lab.viewMesh().bounds.max[0]") == 100
+
+
+def test_lab_redraws_are_coalesced_per_animation_frame() -> None:
+    context = pytest.importorskip("quickjs").Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    context.eval('''
+      let calls = 0, draws = 0, callback;
+      function requestAnimationFrame(fn) { calls++; callback=fn; return calls; }
+      Lab.draw = () => {draws++;};
+      for (let i=0;i<100;i++) Lab.scheduleDraw();
+    ''')
+    assert context.eval("calls") == 1
+    context.eval("callback();")
+    assert context.eval("draws") == 1
+    assert context.eval("Lab.frame") == 0
+
+
+@pytest.mark.parametrize("axis,expected", [("y", [0, -1, 0]), ("z", [0, 0, 1])])
+def test_lab_vertex_normals_rotate_with_geometry(axis: str, expected: list[int]) -> None:
+    context = pytest.importorskip("quickjs").Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    context.eval('''
+      const uploads = [];
+      Lab.gl = {createBuffer: () => ({}), bindBuffer() {}, bufferData(t, data) {uploads.push(Array.from(data));}};
+      const mesh = {positions:[0,0,0, 1,0,0, 0,0,1], indices:[0,1,2],
+        normals:[0,-1,0], normal_indices:[0,0,0], bounds:{min:[0,0,0], max:[1,1,1]}};
+    ''')
+    context.eval("mesh.up_axis = " + json.dumps(axis) + "; Lab.buildBuffersFor(mesh, meshSpace(mesh));")
+    actual = json.loads(context.eval("JSON.stringify(uploads[1])"))
+    assert actual == expected * 3
+
+
 def test_the_lab_hides_its_schematic_map_by_attribute_so_the_canvas_gets_the_mouse() -> None:
     """An SVG has no `hidden` property. Assigning one hid nothing: the
     transparent map stayed over the canvas and took every drag and click.
@@ -1180,3 +1356,27 @@ def test_the_study_screens_are_declared_wired_and_confirmed() -> None:
     # A prerequisite the model or the student proposes is confirmed or rejected by the student, by name.
     for marker in ("data-edge-confirm", "data-edge-reject", '"concept_search"', '"prerequisite_suggest"', 'provenance: "student"'):
         assert marker in study_js, marker
+
+
+def test_hidden_really_hides_every_panel_the_page_toggles() -> None:
+    """A class that sets `display` outranks the `hidden` attribute.
+
+    The narration panel was declared `hidden` and shown anyway, because
+    `.med-narration { display: flex }` won: it took 142 px from every Medical
+    screen, including the Anatomy Lab's stage. Any class on an element the page
+    hides must either leave `display` alone or carry its own `[hidden]` rule.
+    """
+    classes: set[str] = set()
+    # The attribute itself, never aria-hidden or a name that merely ends in it.
+    for tag in re.findall(r"<[a-zA-Z][^>]*(?<![-\w])hidden(?=[\s>=])[^>]*>", HTML):
+        for group in re.findall(r'class="([^"]+)"', tag):
+            classes.update(group.split())
+    assert "med-narration" in classes, "the sample this test was written for must still be in the page"
+
+    unguarded = []
+    for name in sorted(classes):
+        sets_display = re.search(rf"^\.{re.escape(name)}\s*\{{[^}}]*\bdisplay\s*:", CSS, re.MULTILINE)
+        guarded = re.search(rf"^\.{re.escape(name)}\[hidden\]\s*\{{[^}}]*display\s*:\s*none", CSS, re.MULTILINE)
+        if sets_display and not guarded:
+            unguarded.append(name)
+    assert unguarded == [], f"these classes override the hidden attribute: {unguarded}"

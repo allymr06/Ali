@@ -694,3 +694,30 @@ pinned by a test that fails on the unfixed code:
 Two pre-existing flakes were repaired at the same time: the source-review
 quarantine test no longer depends on a shuffled option letter, and the
 desktop UI pump test waits on the pump instead of racing a one-second clock.
+
+## Atlas pipeline coverage (9 September 2026)
+
+`tests/test_medical_anatomy.py` covers the Z-Anatomy pipeline without Blender
+and without the atlas, by building synthetic export packs:
+
+- every structure and every landmark the allowlist would export is nameable by
+  the curriculum data, the two scenes are disjoint and stay inside the
+  allowlist, no source object is exported twice, and the five systems (bone,
+  muscle, nerve, artery, vein) are all represented;
+- an install keeps another dataset's entries, writes a new immutable directory,
+  leaves an installed mesh byte-identical on the next install, keeps a manifest
+  snapshot, and produces a manifest the asset registry loads with its licence,
+  attribution, frame and approximate pins intact;
+- twelve rejections: a mesh that does not match its checksum, a different
+  revision, different source objects, a missing licence or attribution, the
+  wrong frame or side, a triangle count that disagrees with the file, a path
+  outside the pack, altered scenes, an incomplete allowlist, a pin outside its
+  bone, and a pin the curriculum cannot name;
+- a scene that would mix two coordinate frames stops the install;
+- no module under `app/` imports `bpy` or `mathutils`, importing the exporter
+  does not import Blender, and the exporter opens the blend as data
+  (`use_scripts=False`, automatic script execution refused).
+
+- the `hidden` attribute is honoured: no class on an element the page hides may
+  set `display` without a matching `[hidden]` rule (`test_nova_web.py`). The
+  narration panel failed this and was showing empty on every Medical screen.

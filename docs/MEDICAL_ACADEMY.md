@@ -26,7 +26,7 @@ Seven first-year subjects, curated as data rather than code:
 ```text
 app/medical/
   data/curriculum.json    107 topics across the seven subjects
-  data/anatomy.json       60 structures, 109 landmarks, 86 Latin terms
+  data/anatomy.json       127 structures, 278 landmarks, 86 Latin terms
   data/concepts.json      ~200 learnable concepts and their relations
   data/prerequisites.json 63 curriculum-order prerequisite links, each with its reason
   models.py               every persisted record, plus serialization
@@ -512,6 +512,74 @@ its method, the lab draws it with "≈", and a landmark no rule can place (a
 groove, a crest) gets no pin at all. A pin placed by hand outranks a derived
 one on re-import.
 
+### A second atlas: Z-Anatomy (nerves in the same frame)
+
+BodyParts3D has no peripheral nerves, which is why the nerves of the arm and
+leg were schematic for so long. [Z-Anatomy](https://github.com/Z-Anatomy/Models-of-human-anatomy)
+does have them, in the same body as its bones, muscles and vessels, under
+CC BY-SA 4.0 over the same BodyParts3D lineage. Its distribution is a Blender
+file, which is why the pipeline is split in three, and why **Blender is a
+build-time tool only**: JARVIS never launches it, never imports `bpy`, and the
+lab runs on machines that have never had it installed (a test asserts both).
+
+```
+Z-Anatomy.zip (pinned revision, SHA-256 checked)
+  → scripts/export_z_anatomy.py   run inside Blender, factory startup, autoexec off
+  → <export>/*.obj + manifest.json    world-space triangles, hashes, provenance
+  → scripts/install_z_anatomy.py  validated, versioned, atomic install
+  → <medical directory>/anatomy_assets/z-anatomy-<token>/…
+  → the lab, through the same manifest every other asset uses
+```
+
+`scripts/z_anatomy_source.py` is the reviewed part: the pinned revision, the
+archive and blend checksums, the licence and attribution text, the exact
+source object names of 37 structures (9 bones, 14 muscles, 8 nerves, 4
+arteries, 2 veins) and of the atlas's own landmark annotations, and the two
+scenes they form. Nothing outside that allowlist is read.
+
+**Coordinate integrity.** Every object is evaluated in Blender and written in
+*world* space with its own normals, so bones, muscles, vessels and nerves keep
+the spatial relationship the atlas gives them; nothing is nudged into place by
+eye. The frame is recorded once per entry (`up_axis: z`, `side: right`) and the
+viewer converts it in one step, the same conversion the BodyParts3D pack uses.
+An install refuses a scene that would mix structures from two frames.
+
+**What the export may not do.** It adds no subdivision, no displacement and no
+smoothing: a fossa, a groove or a tubercle appears only if the source mesh has
+it. Curve-based nerves and vessels are the atlas author's own bevelled
+geometry, not trajectories inferred by JARVIS. The blend is opened with
+`use_scripts=False` and refuses to run at all while Blender's automatic script
+execution is on, so the file is read as data, never as code.
+
+**Landmarks.** Z-Anatomy ships annotation objects (`… .j`) that point at named
+features. The exporter takes the annotation's own endpoint, projects it onto
+the nearest point of that bone's surface, and refuses it if the hook names a
+different bone or the distance exceeds 3.5 % of the bone's extent. Each pin is
+stored with `"confidence": "approximate"` and a method line that names the
+annotation and the distance, so the lab can draw it as "≈" and say where it
+came from. A landmark the curriculum data does not define is refused rather
+than installed as an unlabelled dot.
+
+**Installing.** The installer re-reads the export, checks every SHA-256, the
+triangle counts, the licence, the attribution, the frame, the provenance and
+each pin against its bone's bounding box, then writes a *new* immutable
+directory and swaps the manifest atomically, keeping a snapshot of the
+previous one. Meshes already installed are never overwritten; entries from
+other datasets are kept. Stop JARVIS before running it:
+
+```
+"<blender>" --factory-startup --disable-autoexec -b --python scripts/export_z_anatomy.py -- <Z-Anatomy.blend> <export dir>
+python scripts/install_z_anatomy.py <export dir> --assets "%LOCALAPPDATA%\JARVIS\medical\anatomy_assets"
+```
+
+**Status.** Exported and installed on 9 September 2026 with Blender 3.6.23
+(portable, verified against blender.org's checksum, kept outside the project):
+37 structures, 148 000 triangles, 15 source pins, 12 MB of OBJ. The lab's
+`upper_limb_right` scene is now 5 bones, 14 muscles, 4 arteries, 2 veins and
+**5 nerves**, and `lower_limb_right` is 4 bones and 3 nerves — the first nerve
+geometry the lab has ever had. The head, spine and thorax scenes keep their
+BodyParts3D meshes; the two frames never meet in one scene.
+
 ### The scene
 
 The lab opens the scene rather than one bone: every mesh of the scene in the
@@ -983,3 +1051,36 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
   changed is recorded in `docs/PROJECT_STATE.md`. It ran on a copy of the
   study store; the vision pass had described no page in it, so specimens
   there carry no model description.
+
+## Lab inspection controls (8 September 2026)
+
+The Nova Anatomy Lab now provides a fullscreen stage with an explicit exit
+button and Escape. The browser Fullscreen API is attempted on the user's click;
+unsupported WebViews display an announced, reversible expanded in-app stage.
+No native privilege or bridge method is added. Camera and layer choices survive
+entry and exit. Front/back/side/top presets and Fit provide repeatable views.
+Actions opening a separate lesson/quiz card leave fullscreen; expanded-mode
+keyboard focus stays within the inspection controls until Escape or exit.
+These are model-frame views, not a diagnostic orientation guarantee for arbitrary
+third-party meshes.
+
+Isolate displays the selected scene structure, normalizes to its own bounds,
+and fits the camera. Returning restores the user's layer visibility choices.
+Geometry and landmark pins share that same transform. Labels are spaced apart
+and linked to their original anchors; off-screen/overcrowded labels are omitted.
+Approximate anchors remain explicitly marked. Source mesh resolution is unchanged:
+rendering does not invent anatomical detail.
+
+Lighting is adjustable (80–160%); tissue colours remain matte. Imported vertex
+normals now follow the same z-up rotation as geometry, correcting misdirected
+lighting on BodyParts3D meshes. Drawing buffers
+use 1.5x minimum supersampling where budget allows, capped at 8 million pixels
+and the GPU renderbuffer limit. Unchanged buffers are not resized on every draw.
+Pointer/resize updates are coalesced through requestAnimationFrame (display-paced,
+not a guaranteed 120 FPS). WebGL loss preserves source data, shows an honest
+schematic, and recreates GPU buffers on restoration without recursive drawing.
+
+Regression coverage: `tests/test_nova_web.py` exercises fullscreen success and
+rejection roundtrips, isolation, camera fit, resolution budget, redraw coalescing,
+label separation and nonrecursive WebGL failure. Live Windows checks supplement
+these deterministic tests; see PROJECT_STATE for the latest validation results.

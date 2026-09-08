@@ -1932,6 +1932,116 @@ const Lab = {
   camera: { rotation: null, distance: 2.6, panX: 0, panY: 0 },
   dragging: null,
   frame: 0,
+  isolated: false,
+  exposure: 1.15,
+  fullscreenBusy: false,
+
+  scheduleDraw() {
+    if (this.frame) return;
+    this.frame = requestAnimationFrame(() => { this.frame = 0; this.draw(); });
+  },
+
+  syncFullscreen() {
+    const stage = $("#lab-stage"), button = $("#lab-fullscreen");
+    const active = !!stage && (document.fullscreenElement === stage || stage.classList.contains("expanded"));
+    if (button) {
+      button.setAttribute("aria-pressed", String(active));
+      button.textContent = active ? "Küçült · Esc" : "Tam ekran";
+    }
+    this.scheduleDraw();
+  },
+
+  async toggleFullscreen() {
+    const stage = $("#lab-stage");
+    if (!stage || this.fullscreenBusy) return;
+    this.fullscreenBusy = true;
+    try {
+      if (document.fullscreenElement === stage) await document.exitFullscreen();
+      else if (stage.classList.contains("expanded")) {
+        this.stageMarker.replaceWith(stage);
+        this.stageMarker = null;
+        stage.classList.remove("expanded");
+        $("#lab-fullscreen").focus({ preventScroll: true });
+      } else {
+        try {
+          if (!stage.requestFullscreen) throw new Error("Fullscreen unavailable");
+          await stage.requestFullscreen();
+        } catch (_error) {
+          // Some desktop WebViews reject the browser API. A reversible move
+          // to body avoids clipping by transformed/scrolling shell ancestors.
+          this.stageMarker = document.createComment("lab-stage-position");
+          stage.before(this.stageMarker);
+          document.body.appendChild(stage);
+          stage.classList.add("expanded");
+          toast("Tam ekran desteklenmiyor; uygulama içi geniş görünüm açıldı.");
+        }
+        $("#lab-fullscreen").focus({ preventScroll: true });
+      }
+    } catch (_error) {
+      toast("Ekran boyutu değiştirilemedi; yeniden deneyin.", true);
+    } finally { this.fullscreenBusy = false; this.syncFullscreen(); }
+  },
+
+  setView(name) {
+    const angles = { front: [0, 0], back: [Math.PI, 0], side: [Math.PI / 2, 0], top: [0, Math.PI / 2] };
+    if (name !== "fit" && !angles[name]) return;
+    if (angles[name]) this.camera.rotation = rotationFromAngles(...angles[name]);
+    const rect = $("#lab-canvas").getBoundingClientRect();
+    const mesh = this.viewMesh();
+    if (mesh && mesh.bounds) {
+      const b = mesh.bounds;
+      const extents = [0, 1, 2].map((i) => b.max[i] - b.min[i]);
+      const radius = Math.hypot(...extents) / (2 * (Math.max(...extents) || 1));
+      const halfFov = Math.atan(Math.tan(0.45) * Math.min(1, rect.width / Math.max(1, rect.height)));
+      this.camera.distance = clamp(radius / Math.sin(halfFov) * 1.12, 0.8, 12);
+    }
+    this.camera.panX = this.camera.panY = 0;
+    this.scheduleDraw();
+  },
+
+  toggleIsolate() {
+    if (!this.isolated && (!this.scene || !this.structure || !this.scene.items.some((item) => item.structure_id === this.structure.structure_id))) {
+      toast("Önce sahnede bir yapıyı tıklayarak seçin."); return;
+    }
+    this.isolated = !this.isolated;
+    const button = $("#lab-isolate");
+    if (button) {
+      button.setAttribute("aria-pressed", String(this.isolated));
+      button.textContent = this.isolated ? "Katmanlara dön" : "Seçileni yalnız göster";
+    }
+    this.releaseSceneBuffers();
+    this.setView("fit");
+  },
+
+  viewMesh() {
+    if (!this.scene) return this.mesh;
+    const selected = this.isolated && this.structure && this.scene.items.find((item) => item.structure_id === this.structure.structure_id);
+    return selected ? selected.mesh : { bounds: this.scene.bounds, up_axis: this.scene.upAxis };
+  },
+
+  releaseSceneBuffers() {
+    if (!this.scene) return;
+    this.scene.items.forEach((item) => {
+      if (item.buffers && this.gl && !this.gl.isContextLost()) {
+        this.gl.deleteBuffer(item.buffers.position); this.gl.deleteBuffer(item.buffers.normal);
+      }
+      item.buffers = null;
+    });
+  },
+
+  sizeCanvas(canvas) {
+    const rect = canvas.getBoundingClientRect();
+    // Supersampling makes thin vessels readable on 1x screens. Keep the
+    // drawing buffer bounded on 4K/HiDPI displays and GPU-limited systems.
+    const limit = this.renderBufferLimit || 4096;
+    const scale = Math.min(Math.max(devicePixelRatio || 1, 1.5), 2.5,
+      Math.sqrt(8000000 / Math.max(1, rect.width * rect.height)),
+      limit / Math.max(1, rect.width, rect.height));
+    const width = Math.max(1, Math.floor(rect.width * scale));
+    const height = Math.max(1, Math.floor(rect.height * scale));
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
+  },
 
   async open() {
     if (!this.hierarchy.length) {
@@ -1968,6 +2078,8 @@ const Lab = {
   async openScene(sceneId) {
     const scene = this.scenes.find((item) => item.scene_id === sceneId);
     if (!scene) return;
+    if (this.isolated) this.toggleIsolate();
+    this.releaseSceneBuffers();
     const ids = scene.available || [];
     // A scene with a palette is told apart structure by structure (a skull is
     // all bone): its chips and its visibility set are per structure, not per kind.
@@ -2018,6 +2130,8 @@ const Lab = {
   },
 
   leaveScene() {
+    if (this.isolated) this.toggleIsolate();
+    this.releaseSceneBuffers();
     const current = this.structure ? this.structure.structure_id : null;
     this.scene = null;
     this.renderLayers();
@@ -2037,6 +2151,7 @@ const Lab = {
      colours structures one by one. */
   itemVisible(item) {
     if (!this.scene) return true;
+    if (this.isolated) return !!this.structure && item.structure_id === this.structure.structure_id;
     return this.scene.palette ? this.scene.visible.has(item.structure_id) : this.scene.visible.has(item.kind);
   },
 
@@ -2114,6 +2229,10 @@ const Lab = {
     this.renderList($("#lab-search") ? $("#lab-search").value : "");
     this.renderInfo();
     if (this.scene && (this.scene.items.some((item) => item.structure_id === structureId) || structureId === this.scene.card)) {
+      if (this.isolated) {
+        if (!this.scene.items.some((item) => item.structure_id === structureId)) this.toggleIsolate();
+        this.releaseSceneBuffers(); this.setView("fit");
+      }
       // The region stays on screen; the chosen structure is lit within it
       // (the scene's own card lights nothing and explains everything).
       this.renderLayers();
@@ -2121,7 +2240,10 @@ const Lab = {
       if (quiz) this.startQuiz();
       return;
     }
-    if (this.scene) { this.scene = null; this.renderLayers(); }
+    if (this.scene) {
+      if (this.isolated) this.toggleIsolate();
+      this.releaseSceneBuffers(); this.scene = null; this.renderLayers();
+    }
     this.mesh = null;
     if (this.structure.model && this.structure.model.available) {
       const mesh = await Medical.request("mesh", { structure_id: structureId });
@@ -2331,7 +2453,7 @@ const Lab = {
     const fragment = compile(gl.FRAGMENT_SHADER, `
       precision mediump float;
       varying vec3 vNormal;
-      uniform vec3 uColor; uniform float uFlat;
+      uniform vec3 uColor; uniform float uFlat; uniform float uExposure;
       void main() {
         if (uFlat > 0.5) { gl_FragColor = vec4(uColor, 1.0); return; }
         vec3 n = normalize(vNormal);
@@ -2340,6 +2462,7 @@ const Lab = {
         float facing = max(n.z, 0.0);
         float grazing = pow(1.0 - facing, 3.0);
         float shade = (0.20 + 0.62 * key + 0.18 * fill) * (1.0 - 0.45 * grazing);
+        shade = min(shade * uExposure, 1.0);
         gl_FragColor = vec4(uColor * shade, 1.0);
       }`);
     if (!vertex || !fragment) return null;
@@ -2349,6 +2472,7 @@ const Lab = {
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return null;
     gl.enable(gl.DEPTH_TEST);
+    this.renderBufferLimit = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE);
     this.gl = gl;
     this.program = program;
     this.locations = {
@@ -2359,6 +2483,7 @@ const Lab = {
       model: gl.getUniformLocation(program, "uModel"),
       colour: gl.getUniformLocation(program, "uColor"),
       flat: gl.getUniformLocation(program, "uFlat"),
+      exposure: gl.getUniformLocation(program, "uExposure"),
     };
     return gl;
   },
@@ -2395,8 +2520,10 @@ const Lab = {
         const normalIndex = normalIndices[triangle + corner];
         if (normals.length && normalIndex !== undefined && normalIndex >= 0) {
           outNormals[base] = normals[normalIndex * 3];
-          outNormals[base + 1] = normals[normalIndex * 3 + 1];
-          outNormals[base + 2] = normals[normalIndex * 3 + 2];
+          // The normal must undergo the same z-up rotation as the vertex;
+          // otherwise highlights describe a different surface orientation.
+          outNormals[base + 1] = normals[normalIndex * 3 + (space.zUp ? 2 : 1)];
+          outNormals[base + 2] = space.zUp ? -normals[normalIndex * 3 + 1] : normals[normalIndex * 3 + 2];
         } else {
           outNormals[base] = face[0] / length;
           outNormals[base + 1] = face[1] / length;
@@ -2419,8 +2546,11 @@ const Lab = {
     if (!gl || !canvas) {
       const notice = $("#lab-notice");
       if (notice) { notice.hidden = false; notice.textContent = "Bu ortamda WebGL kullanılamıyor; ilişki haritası gösteriliyor."; }
-      this.mesh = null;
-      this.draw();
+      setHidden(canvas, true);
+      setHidden($("#lab-schematic"), false);
+      this.drawSchematic();
+      const overlay = $("#lab-overlay");
+      if (overlay) overlay.innerHTML = "";
       return;
     }
     if (this.scene) { this.drawScene(gl, canvas, { flat: false }); return; }
@@ -2429,14 +2559,12 @@ const Lab = {
       if (this.buffers) this.buffers.meshId = this.structure.structure_id;
     }
     if (!this.buffers) return;
-    const dpr = Math.min(devicePixelRatio || 1, 2);
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = Math.max(1, Math.round(rect.width * dpr));
-    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    this.sizeCanvas(canvas);
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.useProgram(this.program);
+    gl.uniform1f(this.locations.exposure, this.exposure);
     const aspect = canvas.width / Math.max(1, canvas.height);
     const projection = perspective(0.9, aspect, 0.05, 40);
     const view = lookAtView(this.camera);
@@ -2464,15 +2592,13 @@ const Lab = {
   drawScene(gl, canvas, { flat }) {
     const scene = this.scene;
     if (!scene || !scene.bounds) return;
-    const space = meshSpace({ bounds: scene.bounds, up_axis: scene.upAxis });
-    const dpr = Math.min(devicePixelRatio || 1, 2);
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = Math.max(1, Math.round(rect.width * dpr));
-    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const space = meshSpace(this.viewMesh());
+    this.sizeCanvas(canvas);
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.useProgram(this.program);
+    gl.uniform1f(this.locations.exposure, this.exposure);
     const aspect = canvas.width / Math.max(1, canvas.height);
     gl.uniformMatrix4fv(this.locations.projection, false, perspective(0.9, aspect, 0.05, 40));
     gl.uniformMatrix4fv(this.locations.view, false, lookAtView(this.camera));
@@ -2490,7 +2616,7 @@ const Lab = {
       } else {
         const base = this.itemColour(item);
         // The chosen structure is lifted towards white, keeping its hue.
-        const lit = item.structure_id === selected ? base.map((value) => value + (1 - value) * 0.38) : base;
+        const lit = item.structure_id === selected ? base.map((value) => value + (1 - value) * 0.12) : base;
         gl.uniform3fv(this.locations.colour, lit);
       }
       this.drawBuffers(gl, item.buffers);
@@ -2527,9 +2653,10 @@ const Lab = {
     // the vertices, so it has to travel through the same normalization as
     // the geometry (meshSpace) before it is projected. Projecting it raw
     // puts a Latin name over a part of the bone the mesh never claimed.
-    const space = meshSpace(this.scene ? { bounds: this.scene.bounds, up_axis: this.scene.upAxis } : mesh);
+    const space = meshSpace(this.viewMesh());
     const meta = mesh.landmark_meta || {};
     const parts = [];
+    const occupied = [];
     const station = this.bell && this.bell.current ? this.bell.current : null;
     (this.structure.landmarks || []).forEach((landmark) => {
       const anchor = anchors[landmark.landmark_id];
@@ -2548,9 +2675,13 @@ const Lab = {
         if (station.landmark_id === landmark.landmark_id) parts.push(`<span class="lab-pin station" style="${at}">${this.bell.index + 1}</span>`);
         return;
       }
-      if (this.detailed) parts.push(`<span class="lab-pin ${approx ? "approx" : ""}" style="${at}"></span>`);
+      const labelPoint = placeLabLabel(projected, Math.min(220, landmark.latin.length * 7 + 28), rect, occupied);
+      if (!labelPoint) return;
+      parts.push(`<span class="lab-pin ${approx ? "approx" : ""}" style="${at}"></span>`);
+      const dx = labelPoint.x - projected.x, dy = labelPoint.y - projected.y;
+      if (Math.hypot(dx, dy) > 1) parts.push(`<span class="lab-leader" style="${at};width:${Math.hypot(dx, dy).toFixed(1)}px;transform:rotate(${Math.atan2(dy, dx)}rad)"></span>`);
       parts.push(`<span class="lab-label ${this.detailed ? "detailed" : ""} ${approx ? "approx" : ""} ${this.highlight.includes(landmark.landmark_id) ? "active" : ""}" data-label="${esc(landmark.landmark_id)}"
-        style="${at}" title="${approx ? "Yaklaşık: kemiğin geometrisinden türetildi" : ""}">${esc(landmark.latin)}</span>`);
+        style="left:${labelPoint.x.toFixed(1)}px; top:${labelPoint.y.toFixed(1)}px" title="${esc(landmark.latin)}${approx ? " · Yaklaşık: kemiğin geometrisinden türetildi" : ""}">${esc(landmark.latin)}</span>`);
     });
     overlay.innerHTML = parts.join("") + (this.pinCard ? this.pinCardMarkup() : "");
     $$("[data-label]", overlay).forEach((node) => node.addEventListener("click", (event) => {
@@ -2911,7 +3042,45 @@ const Lab = {
 
   bind() {
     const canvas = $("#lab-canvas");
-    if (!canvas) return;
+    if (!canvas || this.bound) return;
+    this.bound = true;
+    const fullscreen = $("#lab-fullscreen");
+    if (fullscreen) fullscreen.addEventListener("click", () => this.toggleFullscreen());
+    document.addEventListener("fullscreenchange", () => this.syncFullscreen());
+    const stage = $("#lab-stage");
+    if (stage) stage.addEventListener("click", (event) => {
+      // These actions open cards/pages outside the inspection stage. Exit
+      // first so their result cannot land invisibly behind fullscreen.
+      if ((document.fullscreenElement === stage || stage.classList.contains("expanded")) &&
+          event.target.closest("#lab-quiz, #lab-bell, #lab-movement, #lab-teach, [data-pin-doc]")) this.toggleFullscreen();
+    }, true);
+    if (stage) stage.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && stage.classList.contains("expanded")) { event.preventDefault(); event.stopPropagation(); this.toggleFullscreen(); }
+      if (event.key === "Tab" && stage.classList.contains("expanded")) {
+        const controls = Array.from(stage.querySelectorAll('button, input, [tabindex="0"]')).filter((node) => !node.disabled && node.getClientRects().length);
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+      if (event.key.toLowerCase() === "f" && !event.ctrlKey && !event.altKey && !event.metaKey && !/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) {
+        event.preventDefault(); this.toggleFullscreen();
+      }
+    });
+    $$("[data-lab-view]").forEach((button) => button.addEventListener("click", () => this.setView(button.dataset.labView)));
+    const isolate = $("#lab-isolate");
+    if (isolate) isolate.addEventListener("click", () => this.toggleIsolate());
+    const exposure = $("#lab-exposure");
+    if (exposure) exposure.addEventListener("input", () => { this.exposure = clamp(Number(exposure.value) / 100, 0.8, 1.6); this.scheduleDraw(); });
+    if (typeof ResizeObserver !== "undefined") {
+      this.resizeObserver = new ResizeObserver(() => this.scheduleDraw());
+      this.resizeObserver.observe(canvas);
+    }
+    canvas.addEventListener("webglcontextlost", (event) => { event.preventDefault(); this.scheduleDraw(); });
+    canvas.addEventListener("webglcontextrestored", () => {
+      this.gl = this.program = this.buffers = null;
+      if (this.scene) this.scene.items.forEach((item) => { item.buffers = null; });
+      this.scheduleDraw();
+    });
     canvas.addEventListener("pointerdown", (event) => {
       this.dragging = { x: event.clientX, y: event.clientY, pan: event.shiftKey || event.button === 1 || event.button === 2, startX: event.clientX, startY: event.clientY, moved: 0 };
       canvas.classList.add("dragging");
@@ -2944,8 +3113,7 @@ const Lab = {
       } else {
         this.turn(dx * 0.008, dy * 0.008);
       }
-      this.drawMesh();
-      this.drawLabels();
+      this.scheduleDraw();
     });
     const release = (event) => {
       const drag = this.dragging;
@@ -2964,8 +3132,7 @@ const Lab = {
     canvas.addEventListener("wheel", (event) => {
       event.preventDefault();
       this.camera.distance = clamp(this.camera.distance * (1 + Math.sign(event.deltaY) * 0.12), 0.8, 12);
-      this.drawMesh();
-      this.drawLabels();
+      this.scheduleDraw();
     }, { passive: false });
   },
 };
@@ -3007,6 +3174,22 @@ function setHidden(node, flag) {
   if (!node) return;
   if (typeof node.toggleAttribute === "function") node.toggleAttribute("hidden", !!flag);
   node.hidden = !!flag;
+}
+
+/* Spread nearby labels without moving their anatomical pins. A dense or
+   off-screen label is omitted rather than covering another name. */
+function placeLabLabel(point, width, rect, occupied) {
+  if (point.x < 0 || point.x > rect.width || point.y < 0 || point.y > rect.height) return null;
+  const half = Math.min(width, Math.max(0, rect.width - 16)) / 2;
+  const x = Math.max(half + 8, Math.min(rect.width - half - 8, point.x));
+  for (let step = 0; step < 40; step++) {
+    const offset = Math.ceil(step / 2) * 30 * (step % 2 ? 1 : -1);
+    const y = point.y + offset;
+    if (y < 16 || y > rect.height - 20) continue;
+    if (occupied.some((box) => Math.abs(box.y - y) < 28 && Math.abs(box.x - x) < box.half + half + 6)) continue;
+    occupied.push({x, y, half}); return {x, y};
+  }
+  return null;
 }
 
 function meshSpace(mesh) {

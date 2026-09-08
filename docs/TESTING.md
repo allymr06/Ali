@@ -620,3 +620,53 @@ The Medical Academy regression coverage (`tests/test_medical_*.py`) includes:
   background folder import with its report and the quiet batch notification,
   the pause gate, mining reported to the page, narration state and commands,
   and the voice session and the narration refusing to open over each other.
+
+## Medical Academy expansion coverage (8 September 2026)
+
+- the store's second schema (`test_medical_store.py`): the migration applied
+  once and recorded, records saved, listed by kind and subject key, updated
+  and deleted, media round-tripped, `transaction()` rolling back together;
+- understanding (`test_medical_understanding.py`): confidence validated and
+  stored, a repeated submission id recorded once, reasoning sampled two per
+  exam and always on an open finding, the rule classification, a
+  contradictory reasoning opening a hypothesis while the mark stays right,
+  two distinct pieces of evidence supporting a finding while two guesses do
+  not, challenge/dismiss/reopen with history, the diagnostic question hiding
+  its expected answer and its verdicts, the repair session's five steps and
+  the transfer answer, resolution only after the delayed follow-up,
+  invalidation withdrawing evidence, the assessment without a model;
+- prerequisites (`test_medical_prerequisites.py`, `test_medical_study.py`):
+  seeded edges with provenance, suggestions pending until confirmed, a cycle
+  refused, a concept named from a Turkish fragment, the diagnosis asking at
+  most three bank questions, skip, shorten, redirect, the located path with
+  estimates and the objective, and the honest fallback without prerequisites;
+- source support (`test_medical_review.py`): every status from the review
+  verdicts, the gate keeping supported items and quarantining the rest with
+  counts, the batch limit, stale and unavailable sources by hash, imported
+  keys untouched, flags of every kind, invalidation correcting mastery and
+  keeping the attempt, generation with the gate on and off;
+- the planner (`test_medical_planner.py`): scope inferred and confirmed,
+  reading logged as studied not demonstrated, the six coverage states, a day
+  never over budget, missed days, overload with numbers and the uncovered
+  list, estimates blended from actual durations and long items split,
+  replans keeping completed and manual work, the reminder, "Bugün";
+- histology (`test_medical_histology.py`): a specimen needing a basis for its
+  name, the crop rendered and cached, the source change detected, sessions
+  that hide the answer and show each specimen once, identification with
+  folding, the explanation graded apart from the identification, the timed
+  blank, repeated specimens reported;
+- the connected journey and the bridge (`test_medical_study.py`,
+  `test_ui_nova.py`): scope → today → confidence → finding → diagnosis →
+  repair → coverage across a restart, a paper marked at the end recording its
+  events once, invalidation through the workflow, malformed calls failing
+  closed, sync and async study actions, confirmation for destructive ones;
+- the page (`test_nova_web.py`, QuickJS): confidence chips and their locked
+  state, the reasoning box, the support chip's "puansız", "Bugün" with a
+  labelled estimate and the overload in words, coverage chips only for
+  states that occur, a specimen hidden in a session and revealed after, the
+  results' repeated-specimen caveat, reasoning prompts only for wrong answers
+  with an event, a finding rendering its diagnostic question but never its
+  expected answer; and the static gates: the three screens declared, the
+  tabs, the answer's confidence and submission id, the flag in three places,
+  destructive study actions confirmed, study jobs dispatched by action, and
+  the prerequisite name box with confirm and reject.

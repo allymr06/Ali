@@ -74,6 +74,7 @@ WEB_ASSETS: tuple[str, ...] = (
     "css/components.css",
     "css/screens.css",
     "css/medical.css",
+    "css/study.css",
     "js/foundation.js",
     "js/bridge.js",
     "js/presence.js",
@@ -82,6 +83,7 @@ WEB_ASSETS: tuple[str, ...] = (
     "js/activity.js",
     "js/panels.js",
     "js/medical.js",
+    "js/study.js",
     "js/main.js",
 )
 WEB_RELATIVE_PATH = PurePath("app", "ui", "nova", "web")

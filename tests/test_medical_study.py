@@ -189,3 +189,31 @@ def test_unknown_and_malformed_study_calls_fail_closed(academy) -> None:
         instance.study.call("histology_add", {"document_id": "missing", "page_number": 1, "region": {"x": 0, "y": 0, "w": 1, "h": 1}})
     assert instance.study.call("plan_today", {})["today"]["plan"] is None
     assert instance.study.call("histology_overview", {})["empty_state"]
+
+
+def test_a_student_names_a_prerequisite_and_the_graph_keeps_its_provenance(academy) -> None:
+    instance = academy(None)
+    study = instance.study
+
+    # The name box: a Turkish alias or a fragment of the name finds the concept.
+    found = study.call("concept_search", {"text": "dinlenim"})["concepts"]
+    assert any(item["concept_id"] == RMP for item in found) and all("subject_label" in item for item in found)
+    assert study.call("concept_search", {"text": "d"})["concepts"] == []
+
+    # The student's own suggestion is pending until confirmed, and carries its provenance.
+    nernst = next(item for item in study.call("prerequisites", {"concept_id": RMP})["prerequisites"] if item["depth"] == 1)
+    edge = study.call("prerequisite_suggest", {"concept_id": AP, "requires": nernst["concept_id"], "provenance": "student", "note": "Öğrenci önerdi."})["edge"]
+    assert edge["status"] == "pending" and edge["provenance_label"] == "Öğrenci önerdi"
+    pending = study.call("prerequisites", {"concept_id": AP})["pending"]
+    assert [item["edge_id"] for item in pending] == [edge["edge_id"]]
+    confirmed = study.call("prerequisite_confirm", {"edge_id": edge["edge_id"]})["edge"]
+    assert confirmed["status"] == "reviewed"
+    direct = [item for item in study.call("prerequisites", {"concept_id": AP})["prerequisites"] if item["depth"] == 1]
+    assert any(item["concept_id"] == nernst["concept_id"] and item["provenance"] == "student" for item in direct)
+
+    # A link that would close a cycle is refused at confirmation, never stored as reviewed.
+    backwards = study.call("prerequisite_suggest", {"concept_id": RMP, "requires": AP, "provenance": "student"})["edge"]
+    with pytest.raises(ValueError, match="döngü"):
+        study.call("prerequisite_confirm", {"edge_id": backwards["edge_id"]})
+    with pytest.raises(ValueError):
+        study.call("prerequisite_suggest", {"concept_id": AP, "requires": RMP, "provenance": "guess"})

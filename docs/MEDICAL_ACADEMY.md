@@ -28,6 +28,7 @@ app/medical/
   data/curriculum.json    107 topics across the seven subjects
   data/anatomy.json       60 structures, 109 landmarks, 86 Latin terms
   data/concepts.json      ~200 learnable concepts and their relations
+  data/prerequisites.json 63 curriculum-order prerequisite links, each with its reason
   models.py               every persisted record, plus serialization
   text.py                 Turkish/Latin folding, chunking, page ranges, similarity
   catalog.py              the curriculum, addressed by dotted topic ids
@@ -44,6 +45,12 @@ app/medical/
   generation.py           question generation and exam assembly
   professor.py            exam import and evidence-based style profiling
   learning.py             mastery, spaced review, insights
+  understanding.py        confidence-aware answer events, misconception findings, repair
+  prerequisites.py        the prerequisite graph with provenance; prerequisite diagnosis
+  review.py               source-support review, the student's flag, invalidation
+  planner.py              the exam-date plan, curriculum coverage, the "Bugün" view
+  histology.py            histology specimens cut from page figures; practicals
+  study.py                the connected study workflow the bridge dispatches
   anatomy.py              the Anatomy Lab: structures, quizzes, 3D assets
   intents.py              deterministic medical intent parsing
   context.py              the persistent study session
@@ -717,6 +724,167 @@ with two ways on: "Tekrar dene" resends the same submission id, which
 twice, and "Kaydetmeden geç" moves on with the station marked unsaved in the
 results.
 
+## The connected study workflow
+
+`StudyWorkflow` (`app/medical/study.py`) composes five services over the same
+store, learning model and curriculum, and names every operation the page can
+ask for: `SYNC_ACTIONS` answer from the store, `ASYNC_ACTIONS` need the model
+and run as bridge jobs that report back with a `job_report` push (`job:
+"study"`, dispatched by `action`), and `CONFIRMED_ACTIONS` (`invalidate_question`,
+`plan_delete`, `histology_delete`) refuse a call without `confirmed: true`.
+The Nova page adds three tabs — **Plan**, **Anlama**, **Histoloji** — two
+dashboard cards (**Bugün**, **Anlama**), and touches the exam runner, the
+results, the question bank and the library page (`js/study.js`, `css/study.css`).
+
+### Confidence and reasoning with every answer
+
+An answer may carry `confidence` — `sure`, `unsure` or `guess` ("Eminim /
+Kararsızım / Tahmin ettim", chips above the options) — and a `submission_id`,
+so a repeated click or a retried call records it once. `UnderstandingEngine`
+stores one *event* per answered question: the key, the confidence, the
+reasoning, where it came from (exam, check, diagnosis, repair, histology) and a
+rule-based classification (`correct_supported`, `correct_unsupported`,
+`correct_contradictory`, `wrong_low_confidence`, `wrong_high_confidence`).
+
+Reasoning is asked sparingly. In a paper with immediate feedback the runner
+asks "Kısaca neden?" after the answer for at most two questions per exam,
+chosen by a stable hash (a quarter of the questions qualify), and always when
+the concept already has an open finding. A paper marked at the end records its
+events once when it is finished, and the results offer a reasoning box for the
+first five wrong answers. Reasoning is judged by one bounded model call
+(`REASONING_ASSESSMENT_SCHEMA`, one attempt): supports, contradicts, unclear,
+with the suspected misconception quoted from the student's own words. The
+verdict names its assessor; without a model the reasoning is kept and marked
+unassessed. Neither the reasoning nor its verdict changes the exam mark.
+
+### Misconception findings and their repair
+
+A *finding* is a statement about one concept ("Yükselen fazı K+ girişi
+sanıyor") with the evidence behind it. One piece of evidence opens a
+*hypothesis*; two distinct pieces (a plain low-confidence wrong answer counts
+0.7, a confident wrong answer or contradictory reasoning 1.0, a diagnostic
+answer 2) make it *supported*. The student can challenge (`disputed`), dismiss
+or reopen it, each with a note in the finding's history. A short open-ended
+diagnostic question can be asked (model call; its expected answer and rubric
+stay in the record and are never rendered) and the answer confirms the finding,
+leaves it, or — twice refuted — withdraws it.
+
+A *repair session* has five steps: the problem in words, the lecture passage
+retrieved for the concept with its page chips, a short explanation (model, or a
+pointer to the passage when there is none — labelled), a *transfer* question
+generated in a different context with its similarity to the original stated,
+and a delayed follow-up: the concept is scheduled in the review queue three
+days later. Answering the transfer question right marks the finding
+`repair_demonstrated`; only a correct answer on that concept at least two days
+later, in an exam, a check or a histology practical, *resolves* it
+(`confirm_follow_ups`, run when a paper is finished). Invalidating a question
+withdraws the evidence that rested on it, and a finding left without valid
+evidence is withdrawn too.
+
+### Prerequisites with provenance, and the prerequisite diagnosis
+
+`PrerequisiteGraph` holds *concept requires concept* edges. Sixty-three ship in
+`data/prerequisites.json` as reviewed curriculum-order links, each with the
+reason it matters. New edges arrive as suggestions — imported from material,
+proposed by the model, or named by the student in the Anlama screen (a name box
+backed by `concept_search`) — and stay *pending* until the student confirms
+them; a confirmation that would close a cycle is refused with the path that
+causes it. Every edge shows where it came from. Lookups walk two levels and use
+reviewed edges only.
+
+When a concept keeps failing (a supported finding, or a weak mastery row with
+three attempts or more) the Anlama screen offers "Ön koşulu teşhis et". The
+diagnosis says what it is doing ("X konusuna dönmeden önce şu temel kavramı
+kontrol edelim"), takes at most three nearest, weakest-known prerequisites,
+asks at most three answer-keyed bank questions (skippable; "Kısalt" jumps to
+the nearest), and locates the foundation: a path back to the objective with
+one activity per step, a labelled estimate and "Orijinal hedefe dön" at the
+end. A concept with no recorded prerequisites, or prerequisites without bank
+questions, says so and lists what the student can do instead.
+
+### The exam-date plan and "Bugün"
+
+A plan names an exam and its date (a date, in the student's own zone), the
+scope (subjects, topics, documents, page ranges — inferred from the library
+when none is given, and then shown as a proposal that must be confirmed
+before any planning), the minutes available per weekday, the days that are
+not, optional weights and priorities, and a morning reminder delivered
+through the reminders service. Coverage classifies every topic in scope:
+*unstudied*, *studied_unassessed* (a page was opened — reading logs count as
+studied, never as demonstrated), *assessed_limited*, *demonstrated* (strong
+mastery, reasoning that held up, no open finding), *due_review*,
+*misconception* (an open supported finding). From those states the planner
+lays out one day at a time within the day's budget and never above it, up to
+fourteen days ahead, with the reason and an estimated duration on every
+activity. Estimates start from a default per kind and blend in the minutes
+activities actually took; an activity longer than the day is split and says
+so. Planned, started, skipped, completed and missed are five different
+states; nothing completes on a timer. When the scope cannot fit the remaining
+budget, the plan says so with the numbers and lists what stays uncovered.
+Replanning — a new day, a changed budget, a day off, a changed scope, or on
+request — keeps completed and manual activities.
+
+"Bugün" (a dashboard card and the Plan screen) shows the next activity with
+its estimate labelled as one, and Başla / Bitti / Atla; starting a repair
+opens the finding, starting a prerequisite check opens the diagnosis, a short
+test asks JARVIS for one on that topic, a reading opens the library.
+
+### Histology practicals from the student's own pages
+
+A *specimen* is a rectangle drawn on a page of an imported document ("Histoloji
+örneği seç" on the library page): the crop is rendered afresh from the PDF at
+2× and cached in the store's `media` table; the page itself is not touched, and
+no microscopy image is ever generated. A specimen's name and features are
+recorded with their *basis* — the student confirmed them, or they come from a
+caption on the page; the vision pass's description is kept as a description
+and never becomes the answer. Stain and magnification stay "bilinmiyor" until
+recorded. Only a specimen with an adequate basis is *eligible* for a scored
+practical; the rest are study-only and say so. The source document's hash is
+kept so a changed or deleted document is reported on the specimen.
+
+A session (study, or timed at 15–300 s, default 60) shows up to ten
+specimens, least-seen first and never the same image twice, hides the answer
+until it is given, and records two outcomes: the identification (name or
+Latin, matched with Turkish/Latin folding) and the explanation (assessed by
+one model call for scored items: specific, partial, generic, wrong; unassessed
+without a model). A timed answer that runs out counts as a blank. Exposures are
+tracked and the results say when repeated specimens inflated the score. Scored
+answers feed mastery and the understanding events; "Karıştırılanlarla kıyasla"
+puts the recorded features of confusable specimens side by side.
+
+### Source support, the student's flag, and invalidation
+
+Every generated question with a source passage gets a *support status*:
+`source_supported`, `needs_review`, `conflicting_evidence`,
+`insufficient_evidence`, `unresolved` (the model was unavailable or the batch
+limit was reached), `stale` (the source changed), `unavailable` (the source
+was deleted), `not_applicable` (no passage: study content), `imported` (a
+professor's or the student's own key, kept untouched and never reviewed),
+`invalidated`. With `JARVIS_MEDICAL_SOURCE_REVIEW` on (the default) a new
+paper is gated: at most twelve items are reviewed by one bounded model call
+each (`SUPPORT_REVIEW_SCHEMA`), the source-supported ones are kept and the rest
+stay in the bank with their status, and the paper's notes say how many were
+left out and why. The bank shows the status on every question ("puansız" when
+it is not source-supported) with "Kaynağı incele" to review or re-review.
+
+"Soruda hata olabilir" — in the runner, in the results and in the bank — files
+a flag of one of four kinds (disputed key, several defensible answers, source
+mismatch, figure problem) with an optional note; it never edits the question.
+"Geçersiz say" (confirmed, with a reason) keeps the attempt as history, marks
+the question invalid, subtracts its answers from mastery, withdraws the
+understanding evidence that rested on it and keeps it out of new papers.
+
+### Storage
+
+Schema version 2 adds a `records` table (kind, subject key, JSON body, created
+and updated stamps) and a `media` table for rendered crops; the migration runs
+once on open and is recorded. Record kinds: `understanding_event`,
+`misconception`, `repair`, `understanding_check`, `prerequisite`,
+`prerequisite_diagnosis`, `support_review`, `question_flag`, `study_plan`,
+`plan_activity`, `study_log`, `histology_specimen`, `histology_session`.
+Every submission with an id is idempotent; a second call returns the stored
+record.
+
 ## Safety and privacy
 
 - Educational by default. Ordinary anatomy, histology or exam questions get
@@ -779,3 +947,23 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
   purpose.
 - Presentations are read only through the installed PowerPoint; there is no
   bundled renderer, so a machine without Office keeps its decks as PDFs.
+- The study workflow's model steps — the reasoning verdict, the diagnostic
+  question, the repair explanation and transfer question, the source review
+  and the histology explanation grade — need the provider; without it each
+  records what it could not do and the flow continues. Source review at
+  generation spends up to twelve extra calls per paper, which matters on the
+  free-tier quota; `JARVIS_MEDICAL_SOURCE_REVIEW=false` turns it off and every
+  new question then stays `needs_review` and unscored until reviewed by hand.
+- A plan's weights and priorities have no editor yet (the defaults apply);
+  a proposed scope is confirmed as a whole or replaced by creating the plan
+  with subjects chosen. A reading activity opens the library rather than a
+  particular page, because the plan knows topics, not which page teaches
+  them.
+- Histology masks (a region hidden on a crop) have store support but no
+  drawing tool yet; a specimen needs a rendered page, so a text-only
+  document gives no crop. Identification is matched against the recorded
+  name and Latin name only — a synonym the student uses is a wrong answer
+  until it is recorded as an alias on the specimen.
+- The five features were verified with a scripted model in the test suite
+  and in the static demo page with stubbed bridge replies; a live pass in the
+  native window against Gemini has not been done yet.

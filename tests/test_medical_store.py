@@ -454,8 +454,8 @@ def test_a_session_is_defaulted_before_it_is_saved_and_keyed_after() -> None:
 
 
 def test_a_reopened_store_holds_the_same_records_and_the_same_counts(tmp_path) -> None:
-    tables = ("documents", "pages", "chunks", "notes", "questions", "exams", "attempts", "mastery", "professors")
-    assert MedicalStore().summary() == dict.fromkeys(tables, 0) | {"persistent": False}
+    tables = ("documents", "pages", "chunks", "notes", "questions", "exams", "attempts", "mastery", "professors", "records")
+    assert MedicalStore().summary() == dict.fromkeys(tables, 0) | {"persistent": False, "schema_version": store_module.SCHEMA_VERSION}
 
     path = tmp_path / "state" / "medical.sqlite3"
     store = MedicalStore(path)
@@ -475,7 +475,8 @@ def test_a_reopened_store_holds_the_same_records_and_the_same_counts(tmp_path) -
     store.save_mastery(ConceptMastery("c1", attempts=2, correct=1))
     store.save_professor(ProfessorProfile("p1", "Ahmet"))
     store.save_session(StudySession(subject="anatomy"))
-    counts = dict.fromkeys(tables, 1) | {"pages": 2, "persistent": True}
+    store.save_record("misconception", "m1", {"concept_id": "c1", "status": "hypothesis"}, subject_key="c1")
+    counts = dict.fromkeys(tables, 1) | {"pages": 2, "persistent": True, "schema_version": store_module.SCHEMA_VERSION}
     assert store.summary() == counts
     store.close()
     store.close()  # closing twice is harmless
@@ -509,3 +510,78 @@ def test_the_store_module_carries_no_unused_timestamp_parser() -> None:
     assert not hasattr(store_module, "parse_timestamp")  # timestamp parsing belongs to the model builders
     assert document_from_dict({"document_id": "d1", "title": "T", "file_name": "f.pdf", "sha256": "s",
                                "imported_at": BASE.isoformat()}).imported_at == BASE
+
+
+# ---------------------------------------------------------------------------
+# versioned migration, study records and media
+# ---------------------------------------------------------------------------
+
+
+def test_a_version_one_store_migrates_in_place_and_keeps_its_rows(tmp_path) -> None:
+    import sqlite3
+
+    path = tmp_path / "old.sqlite3"
+    with sqlite3.connect(path) as connection:
+        for statement in store_module._SCHEMA:
+            connection.execute(statement)
+        connection.execute("INSERT INTO meta (key, value) VALUES ('schema_version', '1')")
+        connection.execute("INSERT INTO mastery (concept_id, body) VALUES ('c1', ?)", (json.dumps({"concept_id": "c1", "attempts": 3, "correct": 2}),))
+
+    store = MedicalStore(path)
+
+    assert store.migrations_applied == [2] and store.schema_version == store_module.SCHEMA_VERSION
+    assert store.get_mastery("c1").attempts == 3, "the old rows are untouched"
+    with sqlite3.connect(path) as connection:
+        names = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert {"records", "media"} <= names
+    store.close()
+
+    again = MedicalStore(path)
+    assert again.migrations_applied == [] and again.schema_version == store_module.SCHEMA_VERSION, "a second open is a no-op"
+    again.close()
+
+
+def test_a_store_written_by_a_newer_jarvis_keeps_its_version(tmp_path) -> None:
+    path = tmp_path / "future.sqlite3"
+    first = MedicalStore(path)
+    first.set_meta("schema_version", store_module.SCHEMA_VERSION + 5)
+    first.close()
+
+    store = MedicalStore(path)
+
+    assert store.migrations_applied == [] and store.schema_version == store_module.SCHEMA_VERSION + 5
+    store.save_record("plan", "p1", {"name": "Komite 1"})
+    assert store.get_record("plan", "p1")["name"] == "Komite 1"
+
+
+def test_study_records_are_kept_by_kind_and_subject_and_keep_their_creation_time() -> None:
+    store = MedicalStore()
+    first = store.save_record("understanding_event", "ev1", {"concept_ids": ["c1"], "correct": False}, subject_key="c1")
+    store.save_record("understanding_event", "ev2", {"concept_ids": ["c2"], "correct": True}, subject_key="c2")
+    store.save_record("misconception", "m1", {"concept_id": "c1"}, subject_key="c1")
+
+    assert first["record_id"] == "ev1" and first["kind"] == "understanding_event" and first["created_at"] == first["updated_at"]
+    assert [item["record_id"] for item in store.list_records("understanding_event")] == ["ev2", "ev1"]
+    assert [item["record_id"] for item in store.list_records("understanding_event", subject_key="c1")] == ["ev1"]
+    assert [item["record_id"] for item in store.list_records("understanding_event", newest_first=False)] == ["ev1", "ev2"]
+    assert store.count_records("understanding_event") == 2 and store.count_records("misconception", subject_key="c9") == 0
+
+    updated = store.save_record("understanding_event", "ev1", {"concept_ids": ["c1"], "correct": False, "note": "x"}, subject_key="c1")
+    assert updated["created_at"] == first["created_at"] and updated["updated_at"] >= first["updated_at"]
+    assert store.get_record("understanding_event", "ev1")["note"] == "x"
+    assert store.get_record("misconception", "ev1") is None, "a record is found under its own kind only"
+    assert store.delete_record("understanding_event", "ev1") is True and store.delete_record("understanding_event", "ev1") is False
+    import pytest
+
+    with pytest.raises(ValueError):
+        store.save_record("", "x", {})
+
+
+def test_media_round_trips_and_is_gone_when_deleted() -> None:
+    store = MedicalStore()
+    png = bytes.fromhex("89504e470d0a1a0a") + bytes(range(20))
+    store.put_media("crop-1", "histology_crop", png)
+
+    assert store.get_media("crop-1") == png
+    assert store.get_media("crop-2") is None
+    assert store.delete_media("crop-1") is True and store.get_media("crop-1") is None

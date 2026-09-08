@@ -489,3 +489,108 @@ def concept_extraction_prompt(title: str, page_texts: list[tuple[int, str]]) -> 
         parts.append(f"--- Page {page_number} ---")
         parts.append(text.strip()[:2500])
     return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# understanding and repair
+# ---------------------------------------------------------------------------
+
+
+def reasoning_assessment_prompt(
+    *,
+    stem: str,
+    options: Iterable[tuple[str, str]],
+    correct_key: str | None,
+    answer_key: str | None,
+    correct: bool | None,
+    confidence: str,
+    reasoning: str,
+    explanation: str,
+    evidence_text: str,
+) -> str:
+    option_lines = "\n".join(f"{key}) {text}" for key, text in options)
+    return (
+        "A first-year medical student answered a multiple-choice question and wrote, in Turkish, why they chose their answer. "
+        "Judge the reasoning, not the letter: the mark is already decided.\n"
+        "verdict: 'supported' when the explanation gives the right reason for the correct answer; 'contradictory' when it states "
+        "something the correct explanation or the source contradicts (even if the chosen letter is right); 'insufficient' when it is "
+        "too short or too vague to judge; 'off_topic' when it is about something else. Never call a guess or a blank reason contradictory.\n"
+        "suspected_misconception: one Turkish sentence naming the specific misunderstanding the words show, empty when there is none. "
+        "quote: the student's own words that show it (verbatim, short). assessment_confidence: how sure you are from these words alone. "
+        "diagnostic_question: when the words are ambiguous, one short Turkish question that would tell the misunderstanding apart; else empty. "
+        "note: one Turkish sentence for the student, plain and kind.\n\n"
+        f"Question: {stem}\n{option_lines}\n"
+        f"Correct key: {correct_key or 'unknown'}; student's key: {answer_key or 'none'}; marked correct: {correct}.\n"
+        f"Student's confidence: {confidence}.\n"
+        f"Student's explanation: {reasoning}\n"
+        f"Reference explanation: {explanation or '(none)'}\n"
+        f"Source excerpts: {evidence_text or '(none given)'}\n"
+    )
+
+
+def diagnostic_question_prompt(concept_name: str, statement: str, evidence_lines: Iterable[str]) -> str:
+    lines = "\n".join(f"- {line}" for line in evidence_lines if line)
+    return (
+        "Write ONE short diagnostic question, in Turkish, that tells apart the suspected misunderstanding below from a correct "
+        "understanding of the concept. It must be answerable in one or two sentences, must not reveal which idea is right, and must not "
+        "reuse the wording of the evidence. Give the expected correct answer and a one-line rubric for judging a reply.\n\n"
+        f"Concept: {concept_name}\nSuspected misunderstanding: {statement}\nEvidence so far:\n{lines or '- (none)'}\n"
+    )
+
+
+def diagnostic_assessment_prompt(question: str, expected_answer: str, rubric: str, statement: str, answer: str) -> str:
+    return (
+        "A student replied to a short diagnostic question. Decide whether the reply confirms the suspected misunderstanding, refutes it "
+        "(shows the correct idea), or is unclear. Judge only from the reply; do not assume more than it says.\n"
+        f"Diagnostic question: {question}\nExpected answer: {expected_answer or '(not given)'}\nRubric: {rubric or '(none)'}\n"
+        f"Suspected misunderstanding: {statement}\nStudent's reply: {answer}\n"
+        "note: one Turkish sentence for the student."
+    )
+
+
+def repair_explanation_prompt(concept_name: str, statement: str, evidence_lines: Iterable[str], passage_text: str) -> str:
+    lines = "\n".join(f"- {line}" for line in evidence_lines if line)
+    return (
+        "Write a short, targeted explanation in Turkish (6-10 sentences) for a first-year medical student who holds the misunderstanding "
+        "below. Name the misunderstanding plainly in the first sentence, then give the correct principle, then one concrete contrast that "
+        "shows why the wrong idea fails, and end with one sentence on how to recognise the situation next time. Use official Latin "
+        "anatomical terms. Stay within the passage when one is given; say so when it does not cover a point. No disclaimers, no headings.\n\n"
+        f"Concept: {concept_name}\nMisunderstanding: {statement}\nWhat the student wrote or chose:\n{lines or '- (none)'}\n"
+        f"Course passage: {passage_text or '(none available)'}\n"
+    )
+
+
+def transfer_directive(concept_name: str, statement: str, original_stems: Iterable[str]) -> str:
+    stems = "; ".join(_stem for _stem in original_stems if _stem)
+    return (
+        f"TRANSFER QUESTION. The student misunderstood: {statement} (concept: {concept_name}). Write a question that requires the same "
+        "principle applied in a DIFFERENT context (another organ, scenario, patient situation or example), so that the misunderstanding "
+        "would lead to a wrong option. Do not reuse the setting or the wording of these earlier questions: "
+        f"{stems or '(none)'}. One clear key; the explanation must state the principle explicitly."
+    )
+
+
+def support_review_prompt(*, stem: str, options: Iterable[tuple[str, str]], correct_key: str, explanation: str, evidence_text: str, figure_text: str) -> str:
+    option_lines = "\n".join(f"{key}) {text}" for key, text in options)
+    return (
+        "Review a generated exam question against the cited course passage ONLY. Do not use your own medical knowledge to decide what is "
+        "true; decide what the passage supports. evidence_supports_key: does the passage state or clearly imply that the marked key is "
+        "correct? explanation_follows_evidence: does the explanation rest on the passage? alternative_defensible_option: a second option "
+        "that the passage would also let a careful student defend under this exact wording (empty when none). "
+        "relies_on_outside_information: true when answering needs facts the passage does not give. figure_supports_identification: for a "
+        "figure question, whether the figure description supports the identification asked for. conflict_with_evidence: any statement in "
+        "the question that the passage contradicts (empty when none). reasoning: two Turkish sentences.\n\n"
+        f"Question: {stem}\n{option_lines}\nMarked key: {correct_key}\nExplanation: {explanation}\n"
+        f"Cited passage(s):\n{evidence_text or '(none)'}\nFigure description: {figure_text or '(none)'}\n"
+    )
+
+
+def histology_explanation_prompt(*, specimen_label: str, supported_features: Iterable[str], student_explanation: str) -> str:
+    features = "; ".join(item for item in supported_features if item)
+    return (
+        "A student identified a histology specimen and explained which visible features led to the answer. Judge the explanation "
+        "against the recorded features only: 'specific' when it names features that are recorded for this specimen, 'partial' when "
+        "some are right, 'generic' when it could describe any tissue, 'wrong' when it names features that contradict the record. "
+        "List the features the student named that match the record. note: one Turkish sentence.\n\n"
+        f"Specimen: {specimen_label}\nRecorded features: {features or '(none recorded)'}\nStudent's explanation: {student_explanation}\n"
+    )

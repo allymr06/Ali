@@ -83,6 +83,15 @@ def test_a_folder_becomes_a_lecture_set_with_tags_subjects_and_an_honest_report(
     assert listed["set_id"] == record["set_id"] and listed["documents_total"] == 5
     assert listed["ready"] == 0 and listed["pending"] == 5 and listed["failed"] == 0
     assert listed["subjects"] == [{"subject": "anatomy", "label": "Anatomi", "count": 2}, {"subject": "histology", "label": "Histoloji", "count": 1}]
+    assert listed["committees"] == [{
+        "committee": "Komite 4",
+        "number": 4,
+        "count": 3,
+        "lessons": [
+            {"lesson": "Anatomi", "count": 2, "document_ids": [documents["Anatomi 1 - Terminoloji"].document_id, documents["Anatomi 2 - Kemikler"].document_id]},
+            {"lesson": "Histoloji ve Embriyoloji", "count": 1, "document_ids": [documents["Histoloji 3 - Epitel"].document_id]},
+        ],
+    }], "HUP is intentionally outside the committee catalogue"
     assert academy.dashboard()["lecture_sets"][0]["name"] == "dersler"
     assert academy.lecture_set("nope") is None
     detail = academy.lecture_set(record["set_id"])

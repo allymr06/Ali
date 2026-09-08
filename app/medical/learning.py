@@ -154,6 +154,21 @@ class LearningEngine:
             updated.append(mastery)
         return updated
 
+    def schedule_review(self, concept_id: str, at: datetime, *, reason: str = "", subject: str = "") -> ConceptMastery:
+        """Bring a concept's next review forward to ``at`` (never later).
+
+        The repair loop uses it for the delayed follow-up: the concept lands
+        in the review queue on that day whatever its level said, and the row
+        says why.
+        """
+        mastery = self._store.get_mastery(concept_id) or ConceptMastery(concept_id=concept_id, subject=subject)
+        if mastery.next_review_at is None or at < mastery.next_review_at:
+            mastery.next_review_at = at
+        if reason:
+            mastery.reason = (mastery.reason + " " + reason).strip() if reason not in mastery.reason else mastery.reason
+        self._store.save_mastery(mastery)
+        return mastery
+
     # ------------------------------------------------------------------
     # queries
     # ------------------------------------------------------------------

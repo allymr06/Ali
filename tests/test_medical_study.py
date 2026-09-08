@@ -233,6 +233,8 @@ def test_a_student_names_a_prerequisite_and_the_graph_keeps_its_provenance(acade
     assert confirmed["status"] == "reviewed"
     direct = [item for item in study.call("prerequisites", {"concept_id": AP})["prerequisites"] if item["depth"] == 1]
     assert any(item["concept_id"] == nernst["concept_id"] and item["provenance"] == "student" for item in direct)
+    # Every row the page shows names its provenance in Turkish, never the raw key.
+    assert {item["provenance_label"] for item in direct} <= {"Öğrenci önerdi", "Müfredat sırası (gözden geçirilmiş)", "Ders materyalinde belirtilmiş", "Model önerisi"}
 
     # A link that would close a cycle is refused at confirmation, never stored as reviewed.
     backwards = study.call("prerequisite_suggest", {"concept_id": RMP, "requires": AP, "provenance": "student"})["edge"]

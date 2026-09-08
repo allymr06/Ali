@@ -175,7 +175,7 @@ class PrerequisiteGraph:
                     continue
                 seen.add(edge.requires)
                 chain = path + [edge.requires]
-                found.append({"concept_id": edge.requires, "name": self.name(edge.requires), "subject": self.subject(edge.requires), "depth": level + 1, "via": current, "provenance": edge.provenance, "status": edge.status, "note": edge.note, "path": chain, "edge_id": edge.edge_id})
+                found.append({"concept_id": edge.requires, "name": self.name(edge.requires), "subject": self.subject(edge.requires), "depth": level + 1, "via": current, "provenance": edge.provenance, "provenance_label": PROVENANCE_LABELS_TR.get(edge.provenance, edge.provenance), "status": edge.status, "note": edge.note, "path": chain, "edge_id": edge.edge_id})
                 queue.append((edge.requires, level + 1, chain))
         return found
 
@@ -254,7 +254,7 @@ class PrerequisiteGraph:
             "known": self.known(concept_id),
             "prerequisites": self.prerequisites_of(concept_id),
             "pending": [{**edge.to_dict(), "requires_name": self.name(edge.requires)} for edge in self.edges_for(concept_id, reviewed_only=False) if edge.status == "pending"],
-            "dependents": [{"concept_id": edge.concept_id, "name": self.name(edge.concept_id), "provenance": edge.provenance} for edge in self.dependents_of(concept_id)],
+            "dependents": [{"concept_id": edge.concept_id, "name": self.name(edge.concept_id), "provenance": edge.provenance, "provenance_label": PROVENANCE_LABELS_TR.get(edge.provenance, edge.provenance)} for edge in self.dependents_of(concept_id)],
         }
 
 

@@ -595,7 +595,10 @@ The Medical Academy regression coverage (`tests/test_medical_*.py`) includes:
   professor-style paper drawing on that lecturer's own lectures; a published
   book keeping its questions while its editors stay out of the lecturer list,
   and a lecturer read from a described cover slide but never from a portrait
-  inside a lecture;
+  inside a lecture; an exam system's export parsed with its owner, department,
+  committee, key suffix and the student's mark, every question filed under its
+  own owner with the paper's key, and a scanned paper transcribed (an outage
+  leaving the page untouched) and then mined like a text one;
 - sesli anlatım (`test_medical_narration.py`): the script from the model
   validated and clamped to the pages it was given, the material read as it
   stands without a model, a failed batch falling back with a note; the player

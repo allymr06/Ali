@@ -664,6 +664,7 @@ const Medical = {
           <button type="button" class="btn btn-ghost small" data-act="exam">Soru üret</button>
           <button type="button" class="btn btn-ghost small" data-act="narrate" title="Dersi sesli anlatır; istediğin yerde durdurup soru sorabilirsin">Sesli anlat</button>
           ${doc.visual_pages_pending ? `<button type="button" class="btn btn-ghost small" data-act="continue" title="Bekleyen şekil sayfalarını betimletir">Şekilleri incele</button>` : ""}
+          ${doc.ready && doc.page_count && !doc.chunk_count ? `<button type="button" class="btn btn-ghost small" data-act="continue" title="Taranmış sayfaları modele okutur; metin, arama, sorular ve anlatım bundan sonra çalışır">Metne çevir (OCR)</button>` : ""}
           <button type="button" class="btn btn-ghost small" data-act="process">Yeniden işle</button>
           <button type="button" class="btn btn-ghost small" data-act="delete">Sil</button>
         </div>
@@ -1604,6 +1605,7 @@ const Medical = {
     if (String(payload.job) === "narration_script") { toast("Anlatım metni hazır.", "ok"); return; }
     if (String(payload.job) === "continue") {
       const parts = [`${Number(payload.described) || 0} şekil betimlendi`, `${Number(payload.analysed) || 0} belge analiz edildi`];
+      if (payload.transcribed) parts.unshift(`${payload.transcribed} taranmış sayfa okundu`);
       toast(`Sürdürme bitti: ${parts.join(", ")}.${payload.stopped ? " " + payload.stopped : ""}`, payload.stopped ? "" : "ok");
       return;
     }

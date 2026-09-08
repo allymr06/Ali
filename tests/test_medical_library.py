@@ -414,3 +414,106 @@ def test_a_lecturer_named_only_on_a_pictured_cover_is_read_from_the_figure(acade
     document.professor_id = None
     academy.store.save_document(document)
     assert academy.professor_for_document(document) is None
+
+
+
+# ---------------------------------------------------------------------------
+# an exam export: every question to its own owner, keys from the paper's marks
+# ---------------------------------------------------------------------------
+
+EXPORT = (
+    "KOMITE 5\n\n1. soru:\nEklem tipi art. sellaris olan ve discus articularis taşıyan eklem hangisidir?\nSoru Sahibi : RABET GÖZİL\nAnabilimdalı : Anatomi\n\n"
+    "A) Art. sternoclavicularis-Doğru Seçenek\nB) Art. acromioclavicularis-Öğrencinin işaretlediği\nC) Skapulotorakal eklem\nD) Artt. costochondrales\nE) Artt. costotransversaria\n\n"
+    " 2. soru:\nSulcus arteriae vertebralis hangi kemikte bulunur?\nSoru Sahibi : HAKKI YEŞİLYURT\nAnabilimdalı : Anatomi\n\n"
+    "A) Os occipitale\nB) Os temporale\nC) Os sphenoidale\nD) Atlas-Doğru Seçenek\nE) Axis\n\n"
+    " 3. soru:\nHangi yapı sadece servikal vertebralarda bulunur?\nSoru Sahibi : HAKKI YEŞİLYURT\nAnabilimdalı : Anatomi\n\n"
+    "A) Foramen vertebrale\nB) Foramen transversarium-Doğru Seçenek\nC) Processus transversus\nD) Incisura vertebralis inferior\nE) Processus articularis superior\n"
+    "KOMITE 1\n\n29. soru:\nAlkanların genel formülü hangisidir?\nSoru Sahibi : CUMHUR BİLGİ\nAnabilimdalı : Tıbbi Biyokimya\n\n"
+    "A) CnH2n+2-Doğru Seçenek\nB) CnH2n-2\nC) CnH2n+1\nD) CnH2n-1\nE) CnH2n\n"
+)
+
+
+def test_an_exam_export_files_every_question_under_its_own_owner_with_the_papers_key(academy, tmp_path) -> None:
+    root = tmp_path / "cikmislar"
+    root.mkdir()
+    (root / "Anatomi Tüm Komiteler Çıkmış.txt").write_text(EXPORT, encoding="utf-8")
+    # A lecturer already known from a lecture merges with the owner line's spelling.
+    known = academy.profiler.profile("Prof. Dr. Rabet Gözil", [], subject="anatomy")
+    academy.store.save_professor(known)
+    record = academy.import_folder(str(root), name="Çıkmış sorular")
+    asyncio.run(academy.process_lecture_set(record["set_id"]))
+
+    report = academy.mine_questions(set_id=record["set_id"])
+
+    assert report["papers"] == ["Anatomi Tüm Komiteler Çıkmış"] and report["unattributed"] == []
+    by_name = {entry["name"]: entry for entry in report["professors"]}
+    assert set(by_name) == {"Prof. Dr. Rabet Gözil", "Hakkı Yeşilyurt", "Cumhur Bilgi"}
+    assert by_name["Hakkı Yeşilyurt"]["questions_added"] == 2 and by_name["Cumhur Bilgi"]["questions_added"] == 1
+    assert report["questions_added"] == 4 and report["without_key"] == 0
+    assert len(academy.store.list_professors()) == 3, "the owner line merged into the known lecturer instead of a second profile"
+    document = academy.store.list_documents()[0]
+    assert document.professor_id is None, "a paper with many owners belongs to nobody as a whole"
+
+    gozil = academy.store.get_professor(known.profile_id)
+    questions = academy.store.get_questions(gozil.question_ids)
+    assert len(questions) == 1 and questions[0].correct_key == "A" and questions[0].origin == "imported_exam"
+    assert {"çıkmış", "Komite 5", "Anatomi"} <= set(questions[0].tags)
+    assert questions[0].metadata["owner"] == "RABET GÖZİL" and questions[0].metadata["student_marked"] == "B" and questions[0].metadata["committee"] == "5"
+    assert questions[0].subject == "anatomy"
+    assert "çıkmış sınav kâğıtlarından" in gozil.notes
+    bilgi = next(profile for profile in academy.store.list_professors() if profile.name == "Cumhur Bilgi")
+    assert bilgi.subject == "biochemistry", "the department line names the subject"
+    assert academy.store.get_questions(bilgi.question_ids)[0].correct_key == "A"
+    # The style profile now rests on keyed questions and says so honestly.
+    payload = academy.professor(gozil.profile_id)
+    assert payload["sample_size"] == 1 and payload["confidence"] == "limited"
+    assert any("çıkmış" in note for note in report["notes"])
+
+
+def test_scanned_pages_are_transcribed_and_then_mined_like_any_paper(tmp_path) -> None:
+    from tests.test_medical_documents import make_pdf
+
+    class OcrGateway:
+        def __init__(self) -> None:
+            self.mode = "ok"
+            self.calls = 0
+
+        async def generate(self, request, context, **kwargs):
+            from app.providers.base import ProviderUnavailableError
+
+            self.calls += 1
+            if self.mode == "outage":
+                raise ProviderUnavailableError("503 overloaded")
+            return SimpleNamespace(text=EXPORT)
+
+    gateway = OcrGateway()
+    academy = create_medical_academy(settings=SimpleNamespace(medical_directory=str(tmp_path / "m"), medical_office_conversion=False), provider_gateway=gateway)
+    try:
+        source = tmp_path / "Fizyoloji Tüm Komiteler Çıkmış.pdf"
+        source.write_bytes(make_pdf([("", True), ("", True)]))
+        document, _ = academy.import_document(str(source))
+        processed = academy.pipeline.process(document.document_id)
+        assert processed.status == DocumentStatus.READY and processed.chunk_count == 0
+        assert academy._needs_ocr(processed) is True
+
+        gateway.mode = "outage"
+        read = asyncio.run(academy.transcribe_document(document.document_id, pace_seconds=0, retry_wait_seconds=0))
+        assert read["transcribed"] == 0 and read["stopped"] and "kota" in read["stopped"]
+        assert all(page.char_count == 0 for page in academy.store.get_pages(document.document_id)), "an outage leaves the page as it was"
+
+        gateway.mode = "ok"
+        outcome = asyncio.run(academy.continue_processing(document_id=document.document_id, vision=False, analysis=False))
+        assert outcome["continue"]["transcribed"] == 2 and outcome["continue"]["stopped"] is None
+        refreshed = academy.store.get_document(document.document_id)
+        assert refreshed.chunk_count > 0 and "taranmış metin" in refreshed.tags
+        assert academy._needs_ocr(refreshed) is False
+        assert "Sulcus arteriae vertebralis" in academy.store.get_page(document.document_id, 1).text
+        # The transcribed paper mines like a text one; the questions remember they came from a scan.
+        report = academy.mine_questions(document_ids=[document.document_id])
+        assert report["questions_added"] == 4 and report["papers"] == [refreshed.title]
+        question = academy.store.query_questions(limit=10)[0]
+        assert question.metadata.get("ocr") is True and question.correct_key is not None
+        # A second pass has nothing to read.
+        assert asyncio.run(academy.continue_processing(document_id=document.document_id, vision=False, analysis=False))["continue"]["queued"] == 0
+    finally:
+        academy.close()

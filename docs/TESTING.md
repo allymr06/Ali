@@ -751,3 +751,24 @@ and without the atlas, by building synthetic export packs:
   one), a linked structure keeps its own id and name while gaining the
   lesson's sections and naming that lesson, an unlinked one keeps its plain
   source card, and the lesson itself is unchanged.
+
+## Tray and window-thread coverage (10 September 2026)
+
+`tests/test_ui_tray.py` pins the deadlock that stopped the desktop shortcut
+from reopening a hidden window:
+
+- the `closing` callback returns `False` at once and touches the window not at
+  all; the hide, the tray notice and the bridge's own push all happen on
+  another thread, and the test fails if anything evaluates JavaScript on the
+  thread that delivered the event;
+- pressing close repeatedly queues one hide;
+- an activation signal that arrives while the hide is still queued runs after
+  it, so the window ends up visible rather than hidden;
+- `WindowWorker` itself: one job per key while one is pending, a failure
+  reported to its owner instead of swallowed, the thread surviving that
+  failure, and a stopped worker refusing further work;
+- the existing tray, pause, navigation and exit paths still hold, and a build
+  without a tray still closes normally and releases the controller.
+
+All three fail on the unfixed code (two by assertion, one because there is no
+worker to exercise).

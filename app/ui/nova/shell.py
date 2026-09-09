@@ -47,6 +47,7 @@ from datetime import date, datetime
 from enum import Enum
 from math import isfinite
 from pathlib import Path, PurePath
+from queue import SimpleQueue
 from threading import Lock, RLock
 from typing import Any
 from uuid import UUID, uuid4
@@ -494,6 +495,80 @@ def _message_field(message: Any, name: str) -> Any:
     return getattr(message, name, None)
 
 
+class WindowWorker:
+    """One thread for work that must not run on the window's UI thread.
+
+    pywebview delivers ``closing``, ``minimized`` and the other window events
+    on the WinForms UI thread, and a bridge push has to evaluate JavaScript on
+    that same thread. Doing either inline means the UI thread waits for itself:
+    the window disappears into the tray and never comes back, and the next
+    launch hands its activation signal to an instance that can no longer
+    answer. Everything that touches the window from a UI callback is left
+    here instead.
+
+    One thread and one queue, so a hide and a show can never overtake each
+    other, and a job already waiting under the same key is not queued twice —
+    hammering the close button schedules one hide.
+    """
+
+    def __init__(self, on_error: Callable[[str, BaseException], None] | None = None) -> None:
+        self._queue: "SimpleQueue[tuple[str, Callable[[], None]] | None]" = SimpleQueue()
+        self._on_error = on_error
+        self._lock = Lock()
+        self._pending: set[str] = set()
+        self._thread: threading.Thread | None = None
+        self._stopped = False
+        self._idle = threading.Event()
+        self._idle.set()
+
+    def submit(self, key: str, job: Callable[[], None]) -> bool:
+        """Queue ``job``; ``False`` when one under ``key`` is already waiting."""
+        with self._lock:
+            if self._stopped or key in self._pending:
+                return False
+            self._pending.add(key)
+            self._idle.clear()
+            if self._thread is None:
+                self._thread = threading.Thread(target=self._run, name="nova-window", daemon=True)
+                self._thread.start()
+        self._queue.put((key, job))
+        return True
+
+    def _run(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is None:
+                return
+            key, job = item
+            try:
+                job()
+            except Exception as exc:  # never kill the thread: report and go on
+                if self._on_error is not None:
+                    try:
+                        self._on_error(key, exc)
+                    except Exception:
+                        pass
+            finally:
+                with self._lock:
+                    self._pending.discard(key)
+                    if not self._pending:
+                        self._idle.set()
+
+    def wait_idle(self, timeout: float = 5.0) -> bool:
+        return self._idle.wait(timeout)
+
+    def stop(self, timeout: float = 5.0) -> None:
+        with self._lock:
+            if self._stopped:
+                return
+            self._stopped = True
+            thread = self._thread
+        if thread is None:
+            return
+        self._queue.put(None)
+        thread.join(timeout)
+
+
 class NovaBridge:
     """The ``pywebview`` JS API: every UI action lands here.
 
@@ -521,6 +596,18 @@ class NovaBridge:
         # that is still holding this lock inside submit_command/start_voice.
         self._lock = RLock()
         self._push_lock = Lock()
+        # The window's UI thread, learned from the first event it delivers.
+        # A push raised on that thread is deferred instead of evaluated, or
+        # the thread would wait for the JavaScript result it has to deliver.
+        self._ui_thread_id: int | None = None
+        self._window_worker = WindowWorker(
+            lambda key, exc: self._record_ui_event(
+                "window.worker_failed",
+                "A window job failed off the UI thread.",
+                job=key,
+                error=type(exc).__name__,
+            )
+        )
         self._stream_buffer: list[str] = []
         self._stream_last_flush = 0.0
         self._command_future: Future[Any] | None = None
@@ -555,6 +642,17 @@ class NovaBridge:
     def _attach(self, window: webview.Window) -> None:
         self._window = window
 
+    def _note_ui_thread(self) -> None:
+        """Remember the thread pywebview delivers window events on."""
+        self._ui_thread_id = threading.get_ident()
+
+    def _defer(self, key: str, job: Callable[[], None]) -> bool:
+        """Run ``job`` off the UI thread; ``False`` if one is already queued.
+
+        A lifecycle hook for :func:`launch_nova`, not part of the page's API.
+        """
+        return self._window_worker.submit(key, job)
+
     def _push(self, kind: str, payload: Any = None) -> None:
         window = self._window
         if window is None or not self._ready or self._closing:
@@ -563,6 +661,19 @@ class NovaBridge:
             {"kind": kind, "payload": _jsonable(payload)},
             ensure_ascii=True,
         )
+        if self._ui_thread_id is not None and threading.get_ident() == self._ui_thread_id:
+            # Evaluating here would block the thread that has to run the
+            # script. A window event that records a diagnostic — hiding to
+            # the tray, minimising — reaches this line, and inline it hangs
+            # the whole application.
+            self._window_worker.submit(f"push:{kind}:{len(message)}", lambda: self._evaluate_push(message))
+            return
+        self._evaluate_push(message)
+
+    def _evaluate_push(self, message: str) -> None:
+        window = self._window
+        if window is None or self._closing:
+            return
         with self._push_lock:
             try:
                 window.evaluate_js(
@@ -1735,6 +1846,7 @@ class NovaBridge:
             if acquired:
                 self._lock.release()
         self._detach_observers()
+        self._window_worker.stop()
         for decision in pending:
             if not decision.done():
                 decision.set_result(False)
@@ -2831,6 +2943,19 @@ class NovaTrayActions:
 
     def open(self) -> None:
         self._window.show()
+        # show() makes a minimised window visible without lifting it off the
+        # taskbar, so the shortcut looked dead when JARVIS had been minimised
+        # rather than closed. restore() puts it back to Normal.
+        restore = getattr(self._window, "restore", None)
+        if callable(restore):
+            try:
+                restore()
+            except Exception as exc:
+                self._bridge._record_ui_event(
+                    "window.restore_failed",
+                    "The window could not be restored from its minimised state.",
+                    error=type(exc).__name__,
+                )
         try:
             native = getattr(self._window, "native", None)
             if native is not None and hasattr(native, "BeginInvoke"):
@@ -3006,24 +3131,40 @@ def launch_nova(
         hook = getattr(window.events, event_name, None)
         if hook is None:
             continue
+
+        def note(*_args: Any, visible: bool = visible) -> None:
+            # These arrive on the UI thread; the bridge needs to know which
+            # one that is before it evaluates anything on it.
+            bridge._note_ui_thread()
+            bridge._set_window_visible(visible)
+
         try:
-            hook += (lambda *_args, visible=visible: bridge._set_window_visible(visible))
+            hook += note
         except Exception:
             pass
     hidden_notice_shown = False
 
-    def on_closing() -> bool | None:
+    def hide_to_tray() -> None:
         nonlocal hidden_notice_shown
+        actions.hide()
+        if not hidden_notice_shown:
+            hidden_notice_shown = True
+            tray.notify(WINDOW_TITLE, TRAY_HIDDEN_NOTICE)
+
+    def on_closing() -> bool | None:
+        # Runs on the window's UI thread. Hiding here would take the bridge
+        # through a diagnostic push and back into JavaScript on this very
+        # thread, which then waits for itself: the window goes to the tray
+        # and never returns, and the next launch's activation signal reaches
+        # an instance that can no longer answer it. Cancel first, hide after.
+        bridge._note_ui_thread()
         if (
             close_to_tray
             and tray is not None
             and tray.active
             and not actions.exiting
         ):
-            actions.hide()
-            if not hidden_notice_shown:
-                hidden_notice_shown = True
-                tray.notify(WINDOW_TITLE, TRAY_HIDDEN_NOTICE)
+            bridge._defer("window:hide", hide_to_tray)
             return False  # cancel: the tray keeps JARVIS alive
         return None
 
@@ -3051,7 +3192,11 @@ def launch_nova(
                 tray = None
                 actions.service = None
         if activation_watch is not None:
-            activation_watch(actions.open)
+            # A second launch signals this one to come back. The show goes
+            # through the same queue as the hide, so a relaunch that arrives
+            # while the window is still on its way to the tray cannot be
+            # overtaken by it and leave nothing on screen.
+            activation_watch(lambda: bridge._defer("window:show", actions.open))
         webview.start(**start_options)
     finally:
         release()

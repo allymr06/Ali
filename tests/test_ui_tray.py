@@ -326,8 +326,13 @@ def test_launch_nova_wires_the_tray_pause_navigation_and_exit(monkeypatch, tmp_p
         tray = backend.controller
         # Boot the page so pushes are delivered.
         created["js_api"].boot()
-        # 1. Closing the window hides it to the tray instead of exiting.
+        # 1. Closing the window cancels the close at once and leaves the
+        # hiding to the window worker: on the real backend this callback runs
+        # on the UI thread, and hiding there deadlocks the application.
+        bridge = created["js_api"]
         assert closing_handlers[0]() is False
+        assert calls == [], "the close callback must not touch the window itself"
+        assert bridge._window_worker.wait_idle(5.0)
         assert calls[-1] == "hide"
         assert "notify:JARVIS" in backend.events
         assert tray.state.window_visible is False
@@ -339,17 +344,20 @@ def test_launch_nova_wires_the_tray_pause_navigation_and_exit(monkeypatch, tmp_p
         tray.select(TrayItem.PAUSE)
         assert controller.paused is True
         assert created["js_api"].submit_command("x")["ok"] is False
+        assert bridge._window_worker.wait_idle(5.0)
         assert any('"kind": "paused"' in script for script in scripts)
         tray.select(TrayItem.PAUSE)
         assert controller.paused is False
         # 4. "Tanılama" opens the window on that screen.
         tray.select(TrayItem.DIAGNOSTICS)
         assert calls[-1] == "show"
+        assert bridge._window_worker.wait_idle(5.0)
         assert any('"screen": "diagnostics"' in script for script in scripts)
         # 4b. "Sesli mod" opens the voice screen; without a voice service
         # the failure is reported through the tray, never swallowed.
         tray.select(TrayItem.VOICE)
         assert calls[-1] == "show"
+        assert bridge._window_worker.wait_idle(5.0)
         assert any('"screen": "voice"' in script for script in scripts)
         assert any(event.startswith("notify:") for event in backend.events[1:])
         assert tray.state.window_visible is True
@@ -595,3 +603,130 @@ def test_winforms_backend_starts_refreshes_and_stops() -> None:
     finally:
         backend.stop()
     assert backend._icon is None and backend._form is None
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the tray is a Windows feature")
+def test_closing_leaves_the_ui_thread_free_and_a_relaunch_brings_the_window_back(monkeypatch, tmp_path) -> None:
+    """The window went to the tray and never came back.
+
+    pywebview raises ``closing`` on the WinForms UI thread, and the hide took
+    the bridge through a diagnostic push into ``evaluate_js`` — which needs
+    that same thread. The application waited for itself: the tray icon stayed,
+    the window did not, and the next launch handed its activation signal to an
+    instance that could no longer answer. So the callback must cancel the
+    close and touch nothing itself, the work must happen on another thread,
+    and a relaunch arriving while the hide is still queued must still end with
+    a window on screen.
+    """
+    app = application()
+    controller = DesktopController(app)
+    closing_handlers: list = []
+    closed_handlers: list = []
+    events: list[tuple[str, int]] = []
+    backends: list[FakeBackend] = []
+    activation: list = []
+    ui_thread = threading.get_ident()
+    evaluated = threading.Event()
+
+    def evaluate(script: str) -> None:
+        # Stand in for the real backend: evaluating on the UI thread is the
+        # deadlock, so the test refuses to be called there at all.
+        assert threading.get_ident() != ui_thread, "a push must never be evaluated on the UI thread"
+        evaluated.set()
+
+    fake_window = SimpleNamespace(
+        events=SimpleNamespace(closing=_Hook(closing_handlers), closed=_Hook(closed_handlers)),
+        evaluate_js=evaluate,
+        show=lambda: events.append(("show", threading.get_ident())),
+        hide=lambda: events.append(("hide", threading.get_ident())),
+        destroy=lambda: events.append(("destroy", threading.get_ident())),
+        native=None,
+    )
+    created: dict = {}
+
+    def factory(tray_controller, icon_path):
+        backend = FakeBackend(tray_controller, icon_path)
+        backends.append(backend)
+        return backend
+
+    def start(**options):
+        bridge = created["js_api"]
+        bridge.boot()
+        tray = backends[0].controller
+
+        # 1. The close is cancelled at once and nothing has touched the window.
+        assert closing_handlers[0]() is False
+        assert events == []
+
+        # 2. Closing again while the first hide is still queued adds no second
+        # hide: one close, one hide, however hard the button is pressed.
+        assert closing_handlers[0]() is False
+        assert closing_handlers[0]() is False
+
+        # 3. A second launch arrives before the hide has run. Both go through
+        # the one queue, so the order holds and the window ends up visible.
+        activation[0]()
+        assert bridge._window_worker.wait_idle(5.0)
+        names = [name for name, _ident in events]
+        assert names == ["hide", "show"], names
+        assert all(ident != ui_thread for _name, ident in events), "the window was touched on the UI thread"
+        assert tray.state.window_visible is True
+        assert evaluated.wait(5.0), "the deferred push still reached the page"
+
+        for handler in closed_handlers:
+            handler()
+
+    def create_window(title, **kwargs):
+        created.update(kwargs, title=title)
+        return fake_window
+
+    monkeypatch.setattr(shell.webview, "create_window", create_window)
+    monkeypatch.setattr(shell.webview, "start", start)
+    monkeypatch.setattr(shell, "webview_storage_directory", lambda: tmp_path / "webview")
+
+    shell.launch_nova(
+        controller,
+        None,
+        settings=SimpleNamespace(tray_enabled=True, tray_close_to_tray=True),
+        activation_watch=activation.append,
+        tray_backend_factory=factory,
+    )
+
+    assert backends[0].events[-1] == "stop"
+    assert controller._runner is None
+
+
+def test_the_window_worker_runs_one_job_per_key_and_reports_failures() -> None:
+    """One queue, one thread: repeats collapse, a failing job is recorded and
+    the thread survives it."""
+    problems: list[tuple[str, str]] = []
+    worker = shell.WindowWorker(lambda key, exc: problems.append((key, type(exc).__name__)))
+    try:
+        started = threading.Event()
+        release = threading.Event()
+        done: list[str] = []
+
+        def slow() -> None:
+            started.set()
+            release.wait(5.0)
+            done.append("slow")
+
+        assert worker.submit("hide", slow) is True
+        assert started.wait(5.0)
+        assert worker.submit("hide", lambda: done.append("second")) is False, "a queued key is not queued twice"
+        release.set()
+        assert worker.wait_idle(5.0)
+        assert done == ["slow"]
+
+        def boom() -> None:
+            raise RuntimeError("no window")
+
+        assert worker.submit("hide", boom) is True
+        assert worker.wait_idle(5.0)
+        assert problems == [("hide", "RuntimeError")], "a failure is reported, not swallowed"
+        assert worker.submit("hide", lambda: done.append("after")) is True
+        assert worker.wait_idle(5.0)
+        assert done == ["slow", "after"], "the thread survived the failure"
+    finally:
+        worker.stop()
+    assert worker.submit("hide", lambda: done.append("late")) is False, "a stopped worker takes no more work"

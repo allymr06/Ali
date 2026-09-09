@@ -177,6 +177,43 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The window that went to the tray and never came back (10 September 2026)
+
+Closing JARVIS hid it to the tray, and from then on the desktop shortcut did
+nothing: the second launch found the running instance, signalled it and
+exited, and no window appeared. The instance was not crashed — it was waiting
+for itself.
+
+pywebview raises `closing` on the WinForms UI thread. The handler hid the
+window, which told the bridge the window had become unattended, which recorded
+a diagnostic, which the bridge pushes to the page — and a push evaluates
+JavaScript, which the EdgeChromium backend can only run on that same UI
+thread. The thread blocked on a semaphore it alone could release. The
+activation signal from the next launch then queued behind it in
+`SingleInstanceGuard.watch → NovaTrayActions.open → window.show → Invoke`, and
+waited there. Read-only stacks (py-spy, no locals) showed both chains.
+
+The repair is one thread. `WindowWorker` owns a single queue for work that
+must not run on the UI thread: the closing handler now cancels the close and
+returns at once, leaving the hide and the tray notice to that thread; a push
+raised on the UI thread — a window event recording a diagnostic — is deferred
+to it instead of evaluated inline; and the activation signal's show goes
+through the same queue, so a relaunch arriving while the hide is still on its
+way cannot be overtaken by it. A job whose key is already waiting is not
+queued twice, a failing job is recorded rather than swallowed, and the thread
+survives it.
+
+A second fault was hiding behind the first: `window.show()` makes a minimised
+window visible without lifting it off the taskbar, so the shortcut looked dead
+for a minimised window too. `NovaTrayActions.open` now calls pywebview's
+`restore()` as well.
+
+Verified on this machine with the shipped shortcut and a real `WM_CLOSE`, not
+a harness: open from the shortcut, close, open again — three rounds, each time
+the same process, responding, one instance — then minimise and reopen. The
+deadlocked instance from before the fix could not be shut down normally (its
+UI thread was blocked) and was stopped; nothing else was touched.
+
 ## The study workflow in the live window (9 September 2026)
 
 The five features were driven in the running Nova window against Gemini, on a

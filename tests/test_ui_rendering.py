@@ -21,8 +21,10 @@ from app.ui.models import ChatMessage, UIScreen
 
 
 # Tk pumps its events when it gets a slice of the machine; every wait here
-# is a patience, never a performance claim.
-UI_PUMP_TIMEOUT = 15.0
+# is a patience, never a performance claim. Fifteen seconds was not enough
+# while a WebGL scene of 664k triangles was being driven on the same box, and
+# the test still fails if the pump never applies the completion at all.
+UI_PUMP_TIMEOUT = 60.0
 
 
 def _tk_root() -> tk.Tk:

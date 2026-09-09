@@ -1708,3 +1708,41 @@ def test_the_atlas_pipeline_never_reaches_the_running_application() -> None:
     source = pathlib.Path(module.__file__).read_text(encoding="utf-8")
     assert re.search(r"^\s+import bpy$", source, re.MULTILINE), "bpy stays inside the function"
     assert "use_scripts=False" in source and "use_scripts_auto_execute" in source, "the atlas is opened as data, not as code"
+
+
+def test_full_atlas_install_adds_source_cards_without_replacing_curated_lessons(tmp_path, monkeypatch):
+    from app.medical import atlas
+    from app.medical.catalog import Curriculum
+    from scripts.install_z_anatomy import install
+    card = next(c for c in atlas.catalog() if c["object"] == "Scaphoid bone.r")
+    monkeypatch.setattr(atlas, "catalog", lambda: (card,))
+    directory = z_pack(tmp_path)
+    path = directory / "manifest.json"
+    pack = json.loads(path.read_text(encoding="utf-8"))
+    extra = copy.deepcopy(pack["assets"][0])
+    extra.update(structure_id=card["structure_id"], file=card["structure_id"] + ".obj", landmarks={})
+    extra["provenance"]["objects"] = [card["object"]]
+    (directory / extra["file"]).write_bytes((directory / "scapula.obj").read_bytes())
+    pack["assets"].append(extra)
+    pack["full_atlas"] = True
+    pack["scenes"].extend(atlas.scenes())
+    path.write_text(json.dumps(pack), encoding="utf-8")
+    install(directory, tmp_path / "installed")
+    structures, _, _ = load_anatomy_data()
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=tmp_path / "installed")
+    assert lab.describe(card["structure_id"])["has_model"] is True
+    assert lab.describe("humerus")["landmarks"]
+    assert lab.assets.load_mesh(card["structure_id"])["triangle_count"] == 2
+    empty = AnatomyLab(structures, Curriculum(), assets_directory=tmp_path / "empty")
+    assert empty.get(card["structure_id"]) is None
+
+
+def test_installer_rejects_invalid_normal_indices_even_with_valid_checksum(tmp_path):
+    import hashlib
+    from scripts.install_z_anatomy import validate_pack
+    def bad_normal(pack, directory):
+        path = directory / "scapula.obj"
+        path.write_text(path.read_text().replace("1//1", "1//99"))
+        pack["assets"][0]["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    with pytest.raises(ValueError, match="normal index"):
+        validate_pack(z_pack(tmp_path, mutate=bad_normal))

@@ -485,6 +485,8 @@ body.light .lab-label { background: rgba(255, 255, 255, 0.96); color: #182332; }
 .lab-pin-card .lab-pin-docs { margin-top: 8px; display: grid; gap: 4px; }
 .lab-pin-card .lab-pin-doc { text-align: left; padding: 4px 8px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface-2); color: var(--ink-2); cursor: pointer; font-size: var(--text-xs); }
 /* Bell-ringer: the station strip over the view. */
+.lab-scene-picker { display: flex; align-items: center; gap: 0.6rem; min-width: 0; max-width: 100%; font-size: var(--text-sm); }
+.lab-scene-picker select { min-width: 0; max-width: 100%; flex: 1; padding: 0.45rem; border: 1px solid var(--line-2); border-radius: var(--radius-2); background: var(--surface-2); color: var(--ink-1); font: inherit; color-scheme: dark; }
 .lab-bell[hidden] { display: none; }
 .lab-bell { position: absolute; left: 12px; right: 12px; top: 12px; z-index: 4; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: color-mix(in srgb, var(--surface-1) 88%, transparent); }
 .lab-bell .lab-bell-timer { min-width: 52px; font-variant-numeric: tabular-nums; font-weight: 700; }

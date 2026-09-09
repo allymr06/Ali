@@ -743,6 +743,46 @@ def test_lab_isolation_preserves_layer_choices_and_only_draws_selected_structure
     assert report == {"during": [False, True], "after": [True, False], "invalid": False}
 
 
+def test_scene_loading_discards_old_replies_and_finishes_partial_failures():
+    context = pytest.importorskip("quickjs").Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    context.eval('''
+      const pendingMeshes = [];
+      Medical.request = (action, params) => new Promise(resolve => pendingMeshes.push(resolve));
+      Lab.renderLayers = Lab.draw = Lab.resetCamera = () => {};
+      Lab.select = async () => {};
+      Lab.scenes = [{scene_id:"old", available:["old-bone"]}, {scene_id:"new", available:["new-bone","missing"]}];
+      const meshReply = {ok:true,mesh:{positions:[0,0,0],bounds:{min:[0,0,0],max:[1,1,1]}}};
+      void Lab.openScene("old"); void Lab.openScene("new");
+      pendingMeshes[0](meshReply);
+    ''')
+    while context.execute_pending_job():
+        pass
+    assert context.eval("Lab.scene.items.length") == 0
+    context.eval("pendingMeshes[1](meshReply); pendingMeshes[2]({ok:false});")
+    while context.execute_pending_job():
+        pass
+    report = json.loads(context.eval('JSON.stringify({ids:Lab.scene.items.map(i=>i.structure_id), total:Lab.scene.total, failed:Lab.scene.failed, bounds:!!Lab.scene.bounds})'))
+    assert report == {"ids": ["new-bone"], "total": 1, "failed": 1, "bounds": True}
+
+
+def test_scene_with_no_readable_models_stops_loading():
+    context = pytest.importorskip("quickjs").Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    context.eval('''
+      Medical.request = async () => ({ok:false});
+      Lab.renderLayers = Lab.draw = () => {};
+      Lab.scenes = [{scene_id:"missing",available:["no-file"]}];
+      void Lab.openScene("missing");
+    ''')
+    while context.execute_pending_job():
+        pass
+    assert context.eval("Lab.scene === null")
+    assert "yüklenemedi" in context.eval("Lab.meshNotice")
+
+
 def test_lab_drawing_buffer_is_sharp_bounded_and_not_reallocated_on_every_draw() -> None:
     context = pytest.importorskip("quickjs").Context()
     context.eval(LAB_DOM_STUBS)
@@ -1380,3 +1420,16 @@ def test_hidden_really_hides_every_panel_the_page_toggles() -> None:
         if sets_display and not guarded:
             unguarded.append(name)
     assert unguarded == [], f"these classes override the hidden attribute: {unguarded}"
+
+
+def test_notification_cards_wrap_without_flex_shrinking_and_scene_picker_is_readable():
+    head = section(CSS, ".notify-head {", "}")
+    item = section(CSS, ".notify-item {", "}")
+    listing = section(CSS, ".notify-list {", "}")
+    assert "flex-wrap: wrap" in head and "flex: none" in head
+    assert "flex: none" in item and "overflow-wrap: anywhere" in item
+    assert "white-space: normal" in item and "min-width: 0" in item
+    assert "overflow-y: auto" in listing and "min-height: 0" in listing
+    picker = section(CSS, ".lab-scene-picker select {", "}")
+    assert "background: var(--surface-2)" in picker
+    assert "color: var(--ink-1)" in picker

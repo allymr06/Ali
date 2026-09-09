@@ -721,3 +721,28 @@ and without the atlas, by building synthetic export packs:
 - the `hidden` attribute is honoured: no class on an element the page hides may
   set `display` without a matching `[hidden]` rule (`test_nova_web.py`). The
   narration panel failed this and was showing empty on every Medical screen.
+
+## Bilateral atlas expansion (9 September 2026)
+
+- `test_atlas_catalog.py`: bilateral carpals/tarsals, metacarpals/metatarsals
+  and phalanges, representative face/neck/lower-limb muscles and nerve/vessel
+  names, unique IDs and one bounded discovery scene per object. Negative
+  classification covers annotations, teeth, cavities, tendons, ligaments and
+  retinacula. An unpinned blend is refused before Blender is imported.
+- `test_medical_anatomy.py`: a full-pack addition becomes visible only when
+  installed, preserves curated lesson/landmark content, and rejects invalid
+  normal references even when the file checksum is valid.
+- `test_nova_web.py`: delayed old-scene replies cannot contaminate a new scene;
+  partial/total model failures settle instead of leaving permanent loading.
+- `test_windows_packaging.py`: smoke reports must include atlas_catalog.json,
+  which the existing JSON data collection already bundles. No installer is
+  distributed by this change.
+- Real pinned source inventory was regenerated with portable Blender 4.5.9
+  with embedded scripts disabled; the rebuilt catalogue was byte-identical.
+  Geometry validation checks every active file, not just representative scenes.
+  Live visual checks supplement this; they are not a clinical accuracy audit.
+  Verified in a real isolated Nova window: eight long Turkish notifications
+  including unbroken filenames, region picker contrast, left-hand muscles,
+  right-foot bones, right head/face muscles, fullscreen and Escape exit.
+  All 1,634 active meshes passed the pack validator (75 scenes, 7,563,067
+  triangles); model-by-model clinical visual review is not claimed.

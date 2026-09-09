@@ -18,7 +18,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.medical.anatomy import MAX_OBJ_BYTES, parse_obj  # noqa: E402
 from app.medical.terminology import load_anatomy_data  # noqa: E402
-from scripts.z_anatomy_source import OBJECTS, REVISION, SCENES, SOURCE  # noqa: E402
+from scripts.z_anatomy_source import FULL_ATTRIBUTION, OBJECTS, REVISION, SCENES, SOURCE  # noqa: E402
+
+
+def specification(full: bool = False) -> tuple[dict, list, dict]:
+    objects, scenes, sides = dict(OBJECTS), list(SCENES), {sid: "right" for sid in OBJECTS}
+    if full:
+        from app.medical.atlas import catalog, scenes as atlas_scenes
+        objects.update({c["structure_id"]: [c["object"]] for c in catalog()})
+        sides.update({c["structure_id"]: c["side"] for c in catalog()})
+        scenes.extend(atlas_scenes())
+    return objects, scenes, sides
 
 
 def curated_landmarks() -> dict[str, set[str]]:
@@ -34,11 +44,14 @@ def curated_landmarks() -> dict[str, set[str]]:
 def validate_pack(directory: Path) -> tuple[dict, dict[str, bytes]]:
     pack = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     entries = pack["assets"]
-    if len(entries) != len(OBJECTS) or {e["structure_id"] for e in entries} != set(OBJECTS):
+    objects, scenes, sides = specification(pack.get("full_atlas") is True)
+    if len(entries) != len(objects) or {e["structure_id"] for e in entries} != set(objects):
         raise ValueError("Incomplete or duplicate atlas allowlist.")
-    if pack["scenes"] != SCENES:
+    if pack["scenes"] != scenes:
         raise ValueError("Unexpected scene definition.")
     curated = curated_landmarks()
+    if pack.get("full_atlas") is True:
+        curated.update({sid: set() for sid in objects if sid.startswith("za_")})
     files = {}
     for entry in entries:
         sid = entry["structure_id"]
@@ -52,15 +65,17 @@ def validate_pack(directory: Path) -> tuple[dict, dict[str, bytes]]:
         data = path.read_bytes()
         if hashlib.sha256(data).hexdigest() != entry["sha256"]:
             raise ValueError("Mesh checksum mismatch.")
-        if entry["source"] != SOURCE or entry["provenance"]["revision"] != REVISION or entry["provenance"]["objects"] != OBJECTS[sid]:
+        if entry["source"] != SOURCE or entry["provenance"]["revision"] != REVISION or entry["provenance"]["objects"] != objects[sid]:
             raise ValueError("Source provenance mismatch.")
-        if not entry.get("license") or not entry.get("attribution") or entry.get("side") != "right" or entry.get("up_axis") != "z":
+        if not entry.get("license") or not entry.get("attribution") or entry.get("side") != sides[sid] or entry.get("up_axis") != "z":
             raise ValueError("Missing licensing or coordinate frame.")
         mesh = parse_obj(data.decode("utf-8"))
         if not all(math.isfinite(v) for v in mesh["positions"] + mesh["normals"]):
             raise ValueError("Nonfinite geometry.")
         if any(i < 0 or i >= mesh["vertex_count"] for i in mesh["indices"]):
             raise ValueError("Invalid mesh index.")
+        if any(i < -1 or i >= len(mesh["normals"]) // 3 for i in mesh["normal_indices"]):
+            raise ValueError("Invalid normal index.")
         if mesh["triangle_count"] != entry["provenance"]["triangles"]:
             raise ValueError("Geometry count mismatch.")
         for landmark_id, pin in entry.get("landmarks", {}).items():
@@ -70,11 +85,14 @@ def validate_pack(directory: Path) -> tuple[dict, dict[str, bytes]]:
             if len(point) != 3 or any(not math.isfinite(v) or v < mesh["bounds"]["min"][i] - 1e-6 or v > mesh["bounds"]["max"][i] + 1e-6 for i, v in enumerate(point)):
                 raise ValueError("Landmark outside its source bone.")
         files[entry["file"]] = data
+        if pack.get("full_atlas") is True:
+            entry["attribution"] = FULL_ATTRIBUTION
     return pack, files
 
 
 def install(directory: Path, assets: Path) -> Path | None:
     pack, files = validate_pack(directory)
+    objects, scenes, _sides = specification(pack.get("full_atlas") is True)
     assets.mkdir(parents=True, exist_ok=True)
     if assets.is_symlink() or assets.is_junction():
         raise ValueError("Asset destination cannot be a link.")
@@ -93,13 +111,13 @@ def install(directory: Path, assets: Path) -> Path | None:
     for entry in pack["assets"]:
         entry["file"] = f"{version_name}/{entry['file']}"
     merged = dict(previous)
-    merged["assets"] = [e for e in previous.get("assets", []) if e["structure_id"] not in OBJECTS] + pack["assets"]
-    replaced_scenes = {s["scene_id"] for s in SCENES}
-    merged["scenes"] = [s for s in previous.get("scenes", []) if s["scene_id"] not in replaced_scenes] + SCENES
+    merged["assets"] = [e for e in previous.get("assets", []) if e["structure_id"] not in objects] + pack["assets"]
+    replaced_scenes = {s["scene_id"] for s in scenes}
+    merged["scenes"] = [s for s in previous.get("scenes", []) if s["scene_id"] not in replaced_scenes] + scenes
     # Do not silently mix frames in a user's custom scene.
     for scene in merged["scenes"]:
         ids = set(scene["structure_ids"])
-        if ids & set(OBJECTS) and not ids <= set(OBJECTS):
+        if ids & set(objects) and not ids <= set(objects):
             raise ValueError(f"Custom scene mixes source frames: {scene['scene_id']}")
     snapshot = assets / f"manifest-before-z-anatomy-{token}.json" if original else None
     if snapshot:

@@ -107,7 +107,7 @@ def verify_smoke_report(
         "screens": 11,
         "nova_assets": sorted(NOVA_WEB_ASSETS),
         "medical": True,
-        "medical_data": ["anatomy.json", "concepts.json", "curriculum.json"],
+        "medical_data": ["anatomy.json", "atlas_catalog.json", "concepts.json", "curriculum.json"],
     }
     mismatches = {
         key: (report.get(key), expected)

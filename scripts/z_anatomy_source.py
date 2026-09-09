@@ -12,6 +12,7 @@ ATTRIBUTION = (
     "Adaptation: selected right-side objects, world-space triangulated OBJ export, "
     "source annotation endpoints projected to bone surfaces."
 )
+FULL_ATTRIBUTION = ATTRIBUTION.replace("selected right-side objects", "selected bilateral and unpaired objects") + " Cranial nerves: Cranial Nerves and Foramina — University of Dundee, CAHID — CC BY 4.0."
 
 UPPER = {
     "scapula": ["Scapula.r"], "clavicula": ["Clavicle.r"],

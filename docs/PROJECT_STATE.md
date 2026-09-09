@@ -17,7 +17,32 @@ Last verified: 9 September 2026
   An earlier concurrent desktop/test run hit the classic Tk event-pump test's
   one-second deadline; both subsequent full runs passed without live UI input.
   No mesh sources, medical records, permission engine or provider config changed.
-  Changes remain uncommitted; no push or distribution performed.
+  These earlier changes were merged in PR #29 (`cdb36c7`). No distribution
+  was performed.
+
+- Current milestone: bilateral atlas coverage and notification layout repair
+  (9 September 2026). The pinned source now supplies 1,597 additional named
+  model cards: 210 bone, 475 muscle, 253 nerve, 427 artery and 232 vein objects.
+  Counts include left/right and separately modelled parts, not unique organs.
+  The active full pack contains 1,634 OBJ files (including the original 37)
+  and 75 scenes. A final classification review excluded 24 ligament/retinaculum
+  objects that the source groups with muscles; their files remain recoverable
+  but are not presented as muscles or active pack entries.
+  Final pack validation passed: 1,634 models, 75 scenes, 7,563,067 triangles.
+  Regenerating metadata from the pinned blend and TA2 table produced a
+  byte-identical catalogue. Live Windows/WebView2 checks confirmed long
+  notification wrapping/scrolling, the dark regional picker, left-hand muscles,
+  right-foot bones, right head/face muscles, fullscreen and Escape exit.
+  Installed locally in a new immutable asset directory with manifest snapshots.
+  The 127 curated lesson cards are retained; supplemental cards appear only
+  when their models are installed. Regional scenes are bounded to 80 models,
+  requests run in batches of four, stale scene responses are discarded and
+  missing models terminate loading with an explicit partial/failure notice.
+  Long notification text now wraps, cards do not shrink into one another and
+  the panel scrolls. No provider, permission or memory boundary was changed.
+  Coverage is the requested systems available in this pinned atlas, not every
+  possible anatomical branch or a guarantee of diagnostic mesh accuracy.
+  Detailed clinical facts and landmark pins are not invented for new cards.
 
 - Completed implementation milestone: Phase 17 — Windows packaging and installer
 - Completed validation milestone: Phase 18 — final audit and delivery evidence

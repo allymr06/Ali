@@ -1003,16 +1003,18 @@ See `docs/CONFIGURATION.md` for the `JARVIS_MEDICAL_*` variables.
   downloaded by the student and imported with `scripts/import_bodyparts3d.py`;
   until then the lab is schematic. The importer ships mappings for five scenes
   (the right upper limb, the braincase, the full cranium, the vertebral column
-  and the thoracic cage); another region needs a mapping of its own.
-- Peripheral nerves have no mesh in BodyParts3D 4.0, so nerve cards keep the
-  schematic map, and pins derived from the shape stay marked approximate until
-  someone who knows confirms them by hand.
+  and the thoracic cage). The optional Z-Anatomy pipeline below adds bilateral
+  bones, muscles, nerves and vessels. Geometry remains local, not in Git.
+- Peripheral nerves have no mesh in BodyParts3D 4.0; Z-Anatomy supplies actual
+  source nerve meshes/curves. Missing assets retain the schematic map. Pins
+  projected onto source surfaces remain explicitly approximate.
 - Covered: the head and neck (skull, cranial nerves, craniovertebral and jaw
   joints, carotid system), the trunk (vertebral column, thoracic cage,
   abdominal wall) and both limbs (bones, joints, muscles, nerves, vessels).
-  Not covered yet: the pelvis and perineum in detail, the visceral organs
-  (heart, lungs, abdominal viscera), the muscles of the face, and the
-  intrinsic muscles of the hand and foot. The dated entries in
+  Curated teaching content is not exhaustive for the pelvis/perineum and
+  visceral organs. The full atlas now includes source face, neck and intrinsic
+  hand/foot muscle geometry, but those discovery cards do not invent detailed
+  clinical lessons. Visceral organ geometry is outside this expansion. Entries in
   `docs/PROJECT_STATE.md` record each region as it was added.
 - Image-based question *generation* needs an image whose provenance is known;
   imported image questions keep their picture reference but new items are
@@ -1084,3 +1086,43 @@ Regression coverage: `tests/test_nova_web.py` exercises fullscreen success and
 rejection roundtrips, isolation, camera fit, resolution budget, redraw coalescing,
 label separation and nonrecursive WebGL failure. Live Windows checks supplement
 these deterministic tests; see PROJECT_STATE for the latest validation results.
+
+## Bilateral source atlas (9 September 2026)
+
+`app/medical/data/atlas_catalog.json` records 1,597 source objects and explicit
+exclusion reasons for helpers, attachments and structures outside bones,
+muscles, nerves, arteries and veins. It includes both hands' and feet's bones,
+head/neck and lower-limb muscles and available nerve/vessel branches. Names use
+the pinned atlas's TA2 table where matched; unmatched names retain source
+English rather than fabricated Latin. The catalogue is metadata, not geometry.
+
+Reproduce using the revision and SHA-256 pins in `scripts/z_anatomy_source.py`:
+
+1. Obtain `Z-Anatomy.zip`, extract `Startup.blend`, and obtain `TA2.csv` from
+   that same source revision. Verify archive and blend hashes against the pins.
+2. With Blender (tested portable 4.5.9), run `--background --factory-startup
+   --disable-autoexec --python-exit-code 1 --python scripts/inventory_z_anatomy.py
+   -- <Startup.blend> <new-inventory.json>`. The helper verifies the blend hash
+   before opening and refuses to overwrite an inventory.
+3. Generate a candidate catalogue using `python scripts/build_atlas_catalog.py
+   <inventory.json> <TA2.csv> <new-catalog.json>`. Review its diff against the
+   checked-in catalogue before replacing metadata and exporting geometry.
+4. Run Blender with the same startup flags and `--python
+   scripts/export_z_anatomy.py -- <Startup.blend> <new-export-directory> --full`.
+   Omitting `--full` preserves the original 37-model export.
+5. Run `python scripts/install_z_anatomy.py <export-directory> --assets
+   <LOCALAPPDATA>/JARVIS/medical/anatomy_assets`. The installer
+   validates exact objects/scenes, hashes, provenance and face/normal indices,
+   copies into a new versioned directory, snapshots the existing manifest and
+   atomically switches the manifest. Restart JARVIS to refresh installed cards.
+
+The full pack has 1,634 active model files and 75 scenes including the
+two original scenes. Other datasets' scene entries are preserved. The regional
+selector avoids an oversized row of buttons; each scene has at most 80 models.
+The UI loads four models concurrently and handles rapid switching and failures.
+No subdivision, invented surface anatomy or claimed 120-FPS guarantee is added.
+
+Attribution: Z-Anatomy CC BY-SA 4.0, underlying BodyParts3D/DBCLS CC BY-SA 2.1
+Japan; Cranial Nerves and Foramina, University of Dundee CAHID, CC BY 4.0.
+The manifest carries these credits. Source:
+https://github.com/Z-Anatomy/Models-of-human-anatomy/tree/b22c56c340eaf72d8031e5c364b6ceb38da44cd6

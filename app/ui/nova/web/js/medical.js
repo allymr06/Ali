@@ -2066,13 +2066,15 @@ const Lab = {
   /* ── scenes: a region's licensed meshes as one view ─────────────── */
 
   kindOf(structureId) {
+    if (this.kindIndexSource === this.hierarchy && this.kindIndex) return this.kindIndex.get(structureId) || { kind: "", canonical: structureId, turkish: "" };
+    this.kindIndexSource = this.hierarchy;
+    this.kindIndex = new Map();
     for (const region of this.hierarchy || []) {
       for (const kind of region.kinds || []) {
-        const hit = (kind.structures || []).find((item) => item.structure_id === structureId);
-        if (hit) return { kind: kind.kind, canonical: hit.canonical, turkish: hit.turkish };
+        for (const hit of kind.structures || []) this.kindIndex.set(hit.structure_id, { kind: kind.kind, canonical: hit.canonical, turkish: hit.turkish });
       }
     }
-    return { kind: "", canonical: structureId, turkish: "" };
+    return this.kindIndex.get(structureId) || { kind: "", canonical: structureId, turkish: "" };
   },
 
   async openScene(sceneId) {
@@ -2094,17 +2096,33 @@ const Lab = {
     this.quiz = null;
     this.renderLayers();
     this.draw();
-    for (const structureId of ids) {
-      if (!this.scene || this.scene.scene_id !== scene.scene_id) return;   // the student moved on
-      const result = await Medical.request("mesh", { structure_id: structureId });
-      if (result.ok === false || !result.mesh || !result.mesh.positions) continue;
-      const meta = this.kindOf(structureId);
-      this.scene.items.push({ structure_id: structureId, kind: meta.kind, canonical: meta.canonical, mesh: result.mesh, buffers: null });
-      if (!this.scene.attribution) this.scene.attribution = result.mesh.attribution || result.mesh.license || "";
+    const loadingScene = this.scene;
+    loadingScene.failed = 0;
+    // Bounded concurrency; identity is checked AFTER each await, including
+    // reopening the same scene while an earlier request is still pending.
+    for (let offset = 0; offset < ids.length; offset += 4) {
+      if (this.scene !== loadingScene) return;
+      const group = ids.slice(offset, offset + 4);
+      const results = await Promise.allSettled(group.map((structureId) => Medical.request("mesh", { structure_id: structureId })));
+      if (this.scene !== loadingScene) return;
+      results.forEach((settled, index) => {
+        const result = settled.status === "fulfilled" ? settled.value : null;
+        if (!result || result.ok === false || !result.mesh || !result.mesh.positions) { loadingScene.failed += 1; return; }
+        const structureId = group[index], meta = this.kindOf(structureId);
+        loadingScene.items.push({ structure_id: structureId, kind: meta.kind, canonical: meta.canonical, mesh: result.mesh, buffers: null });
+        if (!loadingScene.attribution) loadingScene.attribution = result.mesh.attribution || result.mesh.license || "";
+      });
       const notice = $("#lab-notice");
-      if (notice) { notice.hidden = false; notice.textContent = `Sahne yükleniyor · ${this.scene.items.length}/${this.scene.total}`; }
+      if (notice) { notice.hidden = false; notice.textContent = `Sahne yükleniyor · ${Math.min(offset + 4, ids.length)}/${ids.length}`; }
     }
-    if (!this.scene || this.scene.scene_id !== scene.scene_id) return;
+    if (this.scene !== loadingScene) return;
+    loadingScene.total = loadingScene.items.length;
+    if (!loadingScene.total) {
+      this.scene = null;
+      this.meshNotice = "Bu sahnenin modelleri yüklenemedi. Atlas dosyalarını kontrol edin.";
+      this.renderLayers(); this.draw(); return;
+    }
+    if (loadingScene.failed) loadingScene.note += ` · ${loadingScene.failed} model yüklenemedi`;
     // Every BodyParts3D mesh shares one body frame, so the scene is placed
     // once, on the union of its bounds, and the meshes keep their relations.
     const bounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
@@ -2168,7 +2186,10 @@ const Lab = {
     if (!this.scenes.length) { host.innerHTML = ""; return; }
     const sceneChips = [`<button type="button" class="lab-layer ${this.scene ? "" : "active"}" data-scene="">Tek yapı</button>`]
       .concat(this.scenes.map((scene) => `<button type="button" class="lab-layer ${this.scene && this.scene.scene_id === scene.scene_id ? "active" : ""}" data-scene="${esc(scene.scene_id)}">${esc(scene.title)}</button>`));
-    const parts = [`<span class="lab-layer-group">${sceneChips.join("")}</span>`];
+    const picker = this.scenes.length > 10
+      ? `<label class="lab-scene-picker">Bölge ve katman <select id="lab-scene-select" aria-label="Anatomi sahnesi"><option value="">Tek yapı</option>${this.scenes.map((s) => `<option value="${esc(s.scene_id)}" ${this.scene && this.scene.scene_id === s.scene_id ? "selected" : ""}>${esc(s.title)}</option>`).join("")}</select></label>`
+      : `<span class="lab-layer-group">${sceneChips.join("")}</span>`;
+    const parts = [picker];
     if (this.scene) {
       const css = (colour) => `rgb(${colour.map((value) => Math.round(value * 255)).join(",")})`;
       let layers;
@@ -2184,6 +2205,8 @@ const Lab = {
       parts.push(`<span class="lab-layer-note">${this.scene.items.length} yapı · ${esc(this.scene.note || "sağ taraf")} · tıkla: kart</span>`);
     }
     host.innerHTML = parts.join("");
+    const pickerControl = $("#lab-scene-select", host);
+    if (pickerControl) pickerControl.addEventListener("change", () => pickerControl.value ? this.openScene(pickerControl.value) : this.leaveScene());
     $$("[data-scene]", host).forEach((node) => node.addEventListener("click", () => {
       if (node.dataset.scene) this.openScene(node.dataset.scene);
       else this.leaveScene();
@@ -2354,7 +2377,7 @@ const Lab = {
       const loading = this.scene.items.length < this.scene.total || !this.scene.bounds;
       notice.textContent = loading
         ? `Sahne yükleniyor · ${this.scene.items.length}/${this.scene.total}`
-        : `3B sahne: ${this.scene.title} · ${this.scene.attribution || "lisanslı model"}`;
+        : `3B sahne: ${this.scene.title}${this.scene.failed ? ` · ${this.scene.failed} model yüklenemedi` : ""} · ${this.scene.attribution || "lisanslı model"}`;
       if (!loading) { this.drawMesh(); this.drawLabels(); }
       return;
     }

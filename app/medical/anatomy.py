@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from app.medical.catalog import Curriculum
-from app.medical.models import AnatomyStructure, Landmark
+from app.medical.models import AnatomyStructure, Landmark, structure_from_dict
 from app.medical.text import fold, normalize, tokens
 
 KIND_LABELS_TR = {
@@ -378,6 +378,12 @@ class AnatomyLab:
         self._structures: dict[str, AnatomyStructure] = {item.structure_id: item for item in structures}
         self._curriculum = curriculum
         self._assets = AnatomyAssetRegistry(assets_directory)
+        if assets_directory is not None:
+            from app.medical.atlas import catalog, structure_card
+            for item in catalog():
+                entry = self._assets.entry(item["structure_id"])
+                if entry and entry.get("available"):
+                    self._structures.setdefault(item["structure_id"], structure_from_dict(structure_card(item)))
         self._source_note = source_note
         self._inbound: dict[str, list[tuple[str, str]]] = {}
         for structure in self._structures.values():

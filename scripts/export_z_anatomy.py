@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from z_anatomy_source import ATTRIBUTION, BLEND_SHA256, LANDMARKS, LICENSE, OBJECTS, REVISION, SCENES, SOURCE  # noqa: E402
+from z_anatomy_source import ATTRIBUTION, FULL_ATTRIBUTION, BLEND_SHA256, LANDMARKS, LICENSE, OBJECTS, REVISION, SCENES, SOURCE  # noqa: E402
 
 
 def dependencies(obj: object) -> list[object]:
@@ -66,9 +66,20 @@ def export_scene(bpy: object, wanted: set[str]) -> object:
     return scene
 
 
-def export(source: Path, destination: Path) -> None:
+def export(source: Path, destination: Path, *, full: bool = False) -> None:
     import bpy
     from mathutils.bvhtree import BVHTree
+
+    objects = dict(OBJECTS)
+    attribution = FULL_ATTRIBUTION if full else ATTRIBUTION
+    scenes = list(SCENES)
+    cards = {}
+    if full:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from app.medical.atlas import catalog, scenes as atlas_scenes
+        cards = {c["structure_id"]: c for c in catalog()}
+        objects.update({sid: [card["object"]] for sid, card in cards.items()})
+        scenes.extend(atlas_scenes())
 
     if bpy.context.preferences.filepaths.use_scripts_auto_execute:
         raise RuntimeError("Embedded scripts must be disabled.")
@@ -83,17 +94,17 @@ def export(source: Path, destination: Path) -> None:
     # Fail rather than overwrite an earlier export/snapshot.
     destination.mkdir(parents=True, exist_ok=False)
     bpy.ops.wm.open_mainfile(filepath=str(source), use_scripts=False)
-    missing = [name for names in OBJECTS.values() for name in names if name not in bpy.data.objects]
+    missing = [name for names in objects.values() for name in names if name not in bpy.data.objects]
     missing += [name for marks in LANDMARKS.values() for name in marks.values() if name not in bpy.data.objects]
     if missing:
         raise ValueError(f"Pinned atlas objects missing: {missing}")
-    wanted = {name for names in OBJECTS.values() for name in names}
+    wanted = {name for names in objects.values() for name in names}
     wanted |= {name for marks in LANDMARKS.values() for name in marks.values()}
     scene = export_scene(bpy, wanted)
     with bpy.context.temp_override(scene=scene):
         graph = bpy.context.evaluated_depsgraph_get()
     assets = []
-    for sid, names in OBJECTS.items():
+    for sid, names in objects.items():
         vertices, normals, triangles = [], [], []
         for name in names:
             obj = bpy.data.objects[name]
@@ -132,7 +143,7 @@ def export(source: Path, destination: Path) -> None:
                     evaluated.to_mesh_clear()
         path = destination / f"{sid}.obj"
         with path.open("x", encoding="utf-8", newline="\n") as stream:
-            stream.write(f"# {ATTRIBUTION}\n# {SOURCE}\n")
+            stream.write(f"# {attribution}\n# {SOURCE}\n")
             for v in vertices:
                 stream.write("v " + " ".join(f"{c:.9g}" for c in v) + "\n")
             for n in normals:
@@ -140,15 +151,16 @@ def export(source: Path, destination: Path) -> None:
             for triangle in triangles:
                 stream.write("f " + " ".join(f"{i + 1}//{i + 1}" for i in triangle) + "\n")
         assets.append({"structure_id": sid, "file": path.name, "license": LICENSE, "source": SOURCE,
-                       "attribution": ATTRIBUTION, "side": "right", "up_axis": "z", "landmarks": anchors,
+                       "attribution": attribution, "side": cards.get(sid, {}).get("side", "right"), "up_axis": "z", "landmarks": anchors,
                        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                        "provenance": {"dataset": "Z-Anatomy", "revision": REVISION, "objects": names,
                                       "vertices": len(vertices), "triangles": len(triangles),
                                       "geometry": "source evaluated mesh; no added subdivision or invented anatomical detail"}})
         print(f"EXPORTED {sid}: {len(triangles)} triangles, {len(anchors)} source pins", flush=True)
-    (destination / "manifest.json").write_text(json.dumps({"assets": assets, "scenes": SCENES}, ensure_ascii=False, indent=2), encoding="utf-8")
+    (destination / "manifest.json").write_text(json.dumps({"assets": assets, "scenes": scenes, "full_atlas": full}, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":
-    source_path, output_path = sys.argv[sys.argv.index("--") + 1:]
-    export(Path(source_path), Path(output_path))
+    args = sys.argv[sys.argv.index("--") + 1:]
+    source_path, output_path = args[:2]
+    export(Path(source_path), Path(output_path), full="--full" in args[2:])

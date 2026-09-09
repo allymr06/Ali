@@ -746,3 +746,8 @@ and without the atlas, by building synthetic export packs:
   right-foot bones, right head/face muscles, fullscreen and Escape exit.
   All 1,634 active meshes passed the pack validator (75 scenes, 7,563,067
   triangles); model-by-model clinical visual review is not claimed.
+- atlas structures linked to curated lessons (`test_atlas_catalog.py`): the
+  kind must agree (the tibial artery keeps the artery card, not the muscle
+  one), a linked structure keeps its own id and name while gaining the
+  lesson's sections and naming that lesson, an unlinked one keeps its plain
+  source card, and the lesson itself is unchanged.

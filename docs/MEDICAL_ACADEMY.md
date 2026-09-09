@@ -580,6 +580,19 @@ python scripts/install_z_anatomy.py <export dir> --assets "%LOCALAPPDATA%\JARVIS
 geometry the lab has ever had. The head, spine and thorax scenes keep their
 BodyParts3D meshes; the two frames never meet in one scene.
 
+**Lessons behind the atlas structures.** The atlas gives geometry and the
+source name; the curriculum gives the teaching. Where both describe the same
+structure — an exact match of the Latin, the English, or either without its
+`musculus`/`nervus`/`arteria`/`vena`/`os`/`right`/`left` prefix, **and the same
+kind** — the atlas structure is shown the curated card: 176 of the 1,597 carry
+one of 83 lessons. The kind guard is not decoration: "Anterior tibial artery"
+matches the *muscle* card for tibialis anterior by name alone, which would put
+a muscle's origin and insertion on an artery. The card keeps the structure's
+own name and opens with the lesson it is showing ("Ders kartı: Musculi
+adductores…"), so a group card is never mistaken for one written about that
+single muscle. The other 1,421 keep their plain source card, which says to use
+the lesson cards for detail.
+
 ### The scene
 
 The lab opens the scene rather than one bone: every mesh of the scene in the

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import random
 from collections.abc import Iterable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -379,11 +380,33 @@ class AnatomyLab:
         self._curriculum = curriculum
         self._assets = AnatomyAssetRegistry(assets_directory)
         if assets_directory is not None:
-            from app.medical.atlas import catalog, structure_card
+            from app.medical.atlas import catalog, curated_links, structure_card
+            links = curated_links()
             for item in catalog():
                 entry = self._assets.entry(item["structure_id"])
-                if entry and entry.get("available"):
-                    self._structures.setdefault(item["structure_id"], structure_from_dict(structure_card(item)))
+                if not entry or not entry.get("available") or item["structure_id"] in self._structures:
+                    continue
+                lesson = self._structures.get(links.get(item["structure_id"], ""))
+                if lesson is None:
+                    self._structures[item["structure_id"]] = structure_from_dict(structure_card(item))
+                    continue
+                # The atlas supplies the mesh and the source name; the
+                # curriculum supplies the teaching. The card keeps the
+                # structure's own name and says which lesson it is showing, so
+                # a group card ("Musculi adductores") is never mistaken for a
+                # card written about this one muscle.
+                card = structure_card(item)
+                self._structures[item["structure_id"]] = replace(
+                    lesson,
+                    structure_id=item["structure_id"],
+                    canonical=item["canonical"],
+                    region=item["region"],
+                    source=card["source"],
+                    facts={
+                        **lesson.facts,
+                        "high_yield": [f"Ders kartı: {lesson.canonical}. Model kaynak atlastan gelir.", *lesson.facts.get("high_yield", [])],
+                    },
+                )
         self._source_note = source_note
         self._inbound: dict[str, list[tuple[str, str]]] = {}
         for structure in self._structures.values():

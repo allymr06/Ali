@@ -4,6 +4,22 @@ Last verified: 9 September 2026
 
 ## Current status
 
+- Review of PRs #30/#31 (9 September 2026): reproduced and repaired group
+  lesson facts being inherited by individual muscles (including generated
+  quiz answers), source English-name replacement, and late selection/mesh
+  replies replacing a newer selection or clearing a newly opened scene.
+  Of 176 atlas-to-lesson links, 144 primary-name matches inherit teaching;
+  32 synonym-only matches retain a related-lesson link, without inherited
+  group facts or quizzes. Ambiguous aliases are refused deterministically.
+  No mesh files, user study records or security/core boundaries were changed.
+  Verification: `scripts/verify.py` passed (2,472 passed, 6 skipped, 278.95 s),
+  including dependency integrity and compilation. Targeted anatomy/atlas/Nova
+  tests: 156 passed. A read-only check of the installed atlas loaded all 1,597
+  supplemental cards (1,724 including curated cards), kept rectus femoris's
+  actual model available, and verified its group reference and empty quiz.
+  This review used deterministic windowless UI regressions; no new live
+  microphone/provider qualification or clinical visual accuracy claim is made.
+
 - Anatomy Lab inspection upgrade (8 September 2026): fullscreen/expanded stage,
   camera presets and Fit, isolated structure inspection, bounded supersampling,
   adjustable matte lighting, separated labels and WebGL-loss recovery implemented.

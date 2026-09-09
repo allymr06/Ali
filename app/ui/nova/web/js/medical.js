@@ -2080,6 +2080,7 @@ const Lab = {
   async openScene(sceneId) {
     const scene = this.scenes.find((item) => item.scene_id === sceneId);
     if (!scene) return;
+    this.selectionRevision = (this.selectionRevision || 0) + 1;
     if (this.isolated) this.toggleIsolate();
     this.releaseSceneBuffers();
     const ids = scene.available || [];
@@ -2148,6 +2149,7 @@ const Lab = {
   },
 
   leaveScene() {
+    this.selectionRevision = (this.selectionRevision || 0) + 1;
     if (this.isolated) this.toggleIsolate();
     this.releaseSceneBuffers();
     const current = this.structure ? this.structure.structure_id : null;
@@ -2243,7 +2245,9 @@ const Lab = {
   },
 
   async select(structureId, { highlight = [], quiz = false } = {}) {
+    const revision = this.selectionRevision = (this.selectionRevision || 0) + 1;
     const result = await Medical.request("structure", { structure_id: structureId });
+    if (revision !== this.selectionRevision) return;
     if (result.ok === false) { toast(result.error || "Yapı açılamadı.", true); return; }
     this.structure = result.structure;
     this.highlight = highlight;
@@ -2270,6 +2274,7 @@ const Lab = {
     this.mesh = null;
     if (this.structure.model && this.structure.model.available) {
       const mesh = await Medical.request("mesh", { structure_id: structureId });
+      if (revision !== this.selectionRevision) return;
       if (mesh.ok !== false && mesh.mesh && mesh.mesh.positions) this.mesh = mesh.mesh;
       // A registered model that cannot be read is a different fact from no model
       // at all, and only this reply knows which one happened.

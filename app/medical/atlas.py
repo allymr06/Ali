@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
+
+from app.medical.text import fold
 
 CATALOG = Path(__file__).with_name("data") / "atlas_catalog.json"
 SOURCE = "https://github.com/Z-Anatomy/Models-of-human-anatomy/tree/b22c56c340eaf72d8031e5c364b6ceb38da44cd6"
@@ -30,6 +33,47 @@ def scenes() -> list[dict]:
                                    "region": chunk[0]["region"], "structure_ids": [c["structure_id"] for c in chunk],
                                    "note": "Z-Anatomy atlası · adlar kaynak terminolojisinden alınmıştır. Ayrıntılar model çözünürlüğüyle sınırlıdır."})
     return result
+
+
+PREFIX = re.compile(r"^(musculus|nervus|arteria|vena|os|right|left)\s+", re.I)
+
+
+def _names(item: dict) -> set[str]:
+    latin = item["canonical"].rsplit(" · ", 1)[0]
+    english = item["english"]
+    return {fold(name) for name in (latin, english, PREFIX.sub("", latin), PREFIX.sub("", english)) if fold(name)}
+
+
+@lru_cache(maxsize=1)
+def curated_links() -> dict[str, str]:
+    """Atlas structures that are the same anatomy as a curated lesson card.
+
+    The atlas gives geometry and the source name; the curriculum gives the
+    teaching. Where both describe the same structure the student should get
+    the lesson, so an exact name match — of the Latin, the English, or either
+    without its "musculus/nervus/arteria/vena/os/right/left" prefix — links
+    them. The kind must agree: without that guard "Anterior tibial artery"
+    matches the *muscle* card for tibialis anterior, which would put a
+    muscle's origin and insertion on an artery. A near match is no match; an
+    unlinked structure keeps its plain source card.
+    """
+    from app.medical.terminology import load_anatomy_data
+
+    curated, _terms, _source = load_anatomy_data()
+    by_kind: dict[str, dict[str, str]] = {}
+    for structure in curated:
+        table = by_kind.setdefault(structure.kind, {})
+        for name in (structure.canonical, structure.english, *structure.synonyms):
+            if name:
+                table.setdefault(fold(name), structure.structure_id)
+    links: dict[str, str] = {}
+    for item in catalog():
+        table = by_kind.get(item["kind"], {})
+        for name in _names(item):
+            if name in table:
+                links[item["structure_id"]] = table[name]
+                break
+    return links
 
 
 def structure_card(item: dict) -> dict:

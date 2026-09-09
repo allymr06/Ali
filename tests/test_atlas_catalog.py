@@ -67,3 +67,75 @@ def test_inventory_rejects_unpinned_source_before_importing_blender(tmp_path):
     with pytest.raises(ValueError, match="pinned atlas"):
         inventory(source, destination)
     assert not destination.exists()
+
+
+def test_a_lesson_is_linked_only_when_the_kind_agrees_too():
+    """The atlas name alone is not enough to hand a structure someone's lesson.
+
+    "Anterior tibial artery" matches the curated *muscle* tibialis anterior by
+    name; without the kind guard the artery would be shown a muscle's origin,
+    insertion and innervation.
+    """
+    from app.medical.atlas import catalog, curated_links
+    from app.medical.terminology import load_anatomy_data
+
+    curated, _terms, _source = load_anatomy_data()
+    kinds = {item.structure_id: item.kind for item in curated}
+    cards = {c["structure_id"]: c for c in catalog()}
+    links = curated_links()
+
+    assert links, "the curriculum and the atlas do describe some of the same structures"
+    for atlas_id, lesson_id in links.items():
+        assert kinds[lesson_id] == cards[atlas_id]["kind"], (cards[atlas_id]["english"], lesson_id)
+
+    artery = next(c for c in catalog() if c["english"] == "Anterior tibial artery")
+    assert kinds[links[artery["structure_id"]]] == "artery"
+    assert links[artery["structure_id"]] != "m_tibialis_anterior"
+
+
+def test_a_linked_structure_teaches_the_lesson_and_still_says_what_it_is(tmp_path):
+    """The mesh and the name stay the atlas's; the teaching comes from the
+    curriculum, and the card names the lesson it is showing so a group card is
+    never mistaken for one written about this single structure."""
+    import json
+
+    from app.medical.anatomy import MANIFEST_NAME, AnatomyLab
+    from app.medical.atlas import catalog, curated_links
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    structures, _terms, note = load_anatomy_data()
+    lessons = {item.structure_id: item for item in structures}
+    links = curated_links()
+    linked_id, lesson_id = next((a, c) for a, c in links.items() if lessons[c].kind == "muscle" and lessons[c].facts.get("origin"))
+    cards = {c["structure_id"]: c for c in catalog()}
+    unlinked_id = next(sid for sid in cards if sid not in links)
+
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    entries = []
+    for structure_id in (linked_id, unlinked_id):
+        (assets / f"{structure_id}.obj").write_text("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n", encoding="utf-8")
+        entries.append({"structure_id": structure_id, "file": f"{structure_id}.obj", "license": "CC BY-SA 4.0", "source": "Z-Anatomy"})
+    (assets / MANIFEST_NAME).write_text(json.dumps({"assets": entries, "scenes": []}), encoding="utf-8")
+
+    lab = AnatomyLab(structures, Curriculum(), assets_directory=assets, source_note=note)
+
+    linked = lab.describe(linked_id)
+    lesson = lessons[lesson_id]
+    assert linked["structure_id"] == linked_id and linked["canonical"] == cards[linked_id]["canonical"]
+    assert {"Origo", "Insertio", "Innervatio"} <= {section["label"] for section in linked["sections"]}
+    high_yield = next(section["items"] for section in linked["sections"] if section["key"] == "high_yield")
+    assert high_yield[0].startswith(f"Ders kartı: {lesson.canonical}")
+    assert linked["topic_path"], "the lesson's topic travels with it"
+
+    # An atlas structure the curriculum does not teach keeps its plain card.
+    plain = lab.describe(unlinked_id)
+    assert [section["key"] for section in plain["sections"]] == ["high_yield"]
+    assert "ders kartlarını kullanın" in plain["sections"][0]["items"][0]
+
+    # The lesson itself is untouched: same id, same name, no atlas line.
+    original = lab.describe(lesson_id)
+    assert original["canonical"] == lesson.canonical
+    first = next((s["items"][0] for s in original["sections"] if s["key"] == "high_yield"), "")
+    assert not first.startswith("Ders kartı:")

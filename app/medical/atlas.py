@@ -44,6 +44,34 @@ def _names(item: dict) -> set[str]:
     return {fold(name) for name in (latin, english, PREFIX.sub("", latin), PREFIX.sub("", english)) if fold(name)}
 
 
+def same_lesson_subject(item: dict, lesson: object) -> bool:
+    """Synonyms can name members of a group, not just equivalent subjects.
+
+    Require a primary-name match before copying teaching facts. A synonym-only
+    match remains a useful reference but is not evidence of identical anatomy.
+    """
+    return item["kind"] == lesson.kind and bool(_names(item) & _names({
+        "canonical": lesson.canonical, "english": lesson.english,
+    }))
+
+
+def match_curated_links(cards: tuple[dict, ...], curated: list) -> dict[str, str]:
+    """Refuse ambiguous same-kind aliases instead of choosing by set/file order."""
+    by_kind: dict[str, dict[str, set[str]]] = {}
+    for structure in curated:
+        table = by_kind.setdefault(structure.kind, {})
+        for name in (structure.canonical, structure.english, *structure.synonyms):
+            if name:
+                table.setdefault(fold(name), set()).add(structure.structure_id)
+    links = {}
+    for item in cards:
+        table = by_kind.get(item["kind"], {})
+        candidates = set().union(*(table.get(name, set()) for name in _names(item)))
+        if len(candidates) == 1:
+            links[item["structure_id"]] = next(iter(candidates))
+    return links
+
+
 @lru_cache(maxsize=1)
 def curated_links() -> dict[str, str]:
     """Atlas structures that are the same anatomy as a curated lesson card.
@@ -60,20 +88,7 @@ def curated_links() -> dict[str, str]:
     from app.medical.terminology import load_anatomy_data
 
     curated, _terms, _source = load_anatomy_data()
-    by_kind: dict[str, dict[str, str]] = {}
-    for structure in curated:
-        table = by_kind.setdefault(structure.kind, {})
-        for name in (structure.canonical, structure.english, *structure.synonyms):
-            if name:
-                table.setdefault(fold(name), structure.structure_id)
-    links: dict[str, str] = {}
-    for item in catalog():
-        table = by_kind.get(item["kind"], {})
-        for name in _names(item):
-            if name in table:
-                links[item["structure_id"]] = table[name]
-                break
-    return links
+    return match_curated_links(catalog(), curated)
 
 
 def structure_card(item: dict) -> dict:

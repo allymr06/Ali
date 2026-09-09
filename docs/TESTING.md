@@ -751,3 +751,22 @@ and without the atlas, by building synthetic export packs:
   one), a linked structure keeps its own id and name while gaining the
   lesson's sections and naming that lesson, an unlinked one keeps its plain
   source card, and the lesson itself is unchanged.
+
+## Post-merge atlas review (9 September 2026)
+
+- A real-catalogue rectus femoris regression reproduced the quadriceps
+  group's origin/action being assigned to that individual model. It now
+  retains only a related-lesson link and cannot generate group-fact quiz
+  answers under the individual muscle's name. Primary-name matches still
+  inherit lesson sections and preserve the source English name.
+- Ambiguous same-kind aliases are rejected for both catalogue orders; a
+  wrong-kind candidate cannot interfere with a unique valid match.
+- Three deterministic async regressions reproduced late structure replies,
+  late mesh replies and structure replies arriving after a scene change.
+  A selection generation guard now rejects each stale reply. These are
+  windowless tests with deferred test responses, not live provider calls.
+- Review verification: `scripts/verify.py` completed with 2,472 passed and
+  6 skipped in 278.95 seconds; dependency integrity and compilation passed.
+  Targeted atlas/anatomy/Nova checks: 156 passed. Read-only installed-atlas
+  acceptance loaded all 1,597 supplemental cards and verified the real rectus
+  model, source identity, related group lesson and absence of misleading quiz.

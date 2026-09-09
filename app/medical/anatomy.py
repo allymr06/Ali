@@ -380,7 +380,7 @@ class AnatomyLab:
         self._curriculum = curriculum
         self._assets = AnatomyAssetRegistry(assets_directory)
         if assets_directory is not None:
-            from app.medical.atlas import catalog, curated_links, structure_card
+            from app.medical.atlas import catalog, curated_links, same_lesson_subject, structure_card
             links = curated_links()
             for item in catalog():
                 entry = self._assets.entry(item["structure_id"])
@@ -390,18 +390,27 @@ class AnatomyLab:
                 if lesson is None:
                     self._structures[item["structure_id"]] = structure_from_dict(structure_card(item))
                     continue
-                # The atlas supplies the mesh and the source name; the
-                # curriculum supplies the teaching. The card keeps the
-                # structure's own name and says which lesson it is showing, so
-                # a group card ("Musculi adductores") is never mistaken for a
-                # card written about this one muscle.
                 card = structure_card(item)
+                if not same_lesson_subject(item, lesson):
+                    # Group membership is a link, not a license to assign the
+                    # entire group's origin/action to one muscle or its quiz.
+                    card["facts"]["high_yield"].append(
+                        f"İlgili ders: {lesson.canonical}. Bu ders birden fazla yapıyı kapsayabilir; tekil modelin bilgisi olarak kullanılmaz."
+                    )
+                    card["relations"] = [{"relation": "related_lesson", "target": lesson.structure_id}]
+                    card["topic_id"] = lesson.topic_id
+                    self._structures[item["structure_id"]] = structure_from_dict(card)
+                    continue
+                # Keep the atlas identity, while attributing the inherited text
+                # separately from the geometry's licence/source.
                 self._structures[item["structure_id"]] = replace(
                     lesson,
                     structure_id=item["structure_id"],
                     canonical=item["canonical"],
+                    english=item["english"],
+                    turkish=f"{lesson.turkish} · {item['canonical'].rsplit(' · ', 1)[-1]}",
                     region=item["region"],
-                    source=card["source"],
+                    source=card["source"] + f" Ders içeriği: {lesson.source}",
                     facts={
                         **lesson.facts,
                         "high_yield": [f"Ders kartı: {lesson.canonical}. Model kaynak atlastan gelir.", *lesson.facts.get("high_yield", [])],

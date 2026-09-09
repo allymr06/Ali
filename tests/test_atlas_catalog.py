@@ -107,7 +107,7 @@ def test_a_linked_structure_teaches_the_lesson_and_still_says_what_it_is(tmp_pat
     structures, _terms, note = load_anatomy_data()
     lessons = {item.structure_id: item for item in structures}
     links = curated_links()
-    linked_id, lesson_id = next((a, c) for a, c in links.items() if lessons[c].kind == "muscle" and lessons[c].facts.get("origin"))
+    linked_id, lesson_id = next((a, c) for a, c in links.items() if c == "m_brachialis")
     cards = {c["structure_id"]: c for c in catalog()}
     unlinked_id = next(sid for sid in cards if sid not in links)
 
@@ -124,6 +124,7 @@ def test_a_linked_structure_teaches_the_lesson_and_still_says_what_it_is(tmp_pat
     linked = lab.describe(linked_id)
     lesson = lessons[lesson_id]
     assert linked["structure_id"] == linked_id and linked["canonical"] == cards[linked_id]["canonical"]
+    assert linked["english"] == cards[linked_id]["english"]
     assert {"Origo", "Insertio", "Innervatio"} <= {section["label"] for section in linked["sections"]}
     high_yield = next(section["items"] for section in linked["sections"] if section["key"] == "high_yield")
     assert high_yield[0].startswith(f"Ders kartı: {lesson.canonical}")
@@ -139,3 +140,50 @@ def test_a_linked_structure_teaches_the_lesson_and_still_says_what_it_is(tmp_pat
     assert original["canonical"] == lesson.canonical
     first = next((s["items"][0] for s in original["sections"] if s["key"] == "high_yield"), "")
     assert not first.startswith("Ders kartı:")
+
+
+def test_group_lesson_is_a_reference_not_facts_or_quiz_for_one_muscle(tmp_path):
+    import json
+    from app.medical.anatomy import AnatomyLab
+    from app.medical.catalog import Curriculum
+    from app.medical.terminology import load_anatomy_data
+
+    card = next(c for c in catalog() if c["object"] == "Rectus femoris muscle.r")
+    sid = card["structure_id"]
+    (tmp_path / "rectus.obj").write_text("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n")
+    (tmp_path / "manifest.json").write_text(json.dumps({"assets": [{
+        "structure_id": sid, "file": "rectus.obj", "license": "CC BY-SA 4.0",
+        "source": "Z-Anatomy"}], "scenes": []}))
+    lab = AnatomyLab(load_anatomy_data()[0], Curriculum(), assets_directory=tmp_path)
+    model = lab.get(sid)
+    assert "origin" not in model.facts, "a whole quadriceps origin is not rectus femoris's origin"
+    assert model.english == "Rectus femoris muscle"
+    assert not lab.quiz(sid), "group facts must not become single-muscle exam answers"
+    assert any(r["target"] == "m_quadriceps_femoris" for r in model.relations)
+    assert lab.get("m_quadriceps_femoris").facts["origin"]
+
+
+def test_ambiguous_aliases_do_not_choose_a_lesson_by_iteration_order():
+    from dataclasses import replace
+    from app.medical.atlas import match_curated_links
+    from app.medical.models import AnatomyStructure
+
+    one = AnatomyStructure("one", "One", "muscle", "upper_limb", "Bir", "First", synonyms=["Shared"])
+    two = replace(one, structure_id="two", canonical="Two", english="Second")
+    cards = ({"structure_id": "atlas", "canonical": "Shared", "english": "Shared", "kind": "muscle"},)
+    assert match_curated_links(cards, [one, two]) == {}
+    assert match_curated_links(cards, [two, one]) == {}
+    assert match_curated_links(cards, [one, replace(two, kind="artery")]) == {"atlas": "one"}
+
+
+def test_synonym_group_members_never_inherit_facts_for_the_whole_group():
+    from app.medical.atlas import curated_links, same_lesson_subject
+    from app.medical.terminology import load_anatomy_data
+
+    lessons = {s.structure_id: s for s in load_anatomy_data()[0]}
+    links = curated_links()
+    for source in ("Rectus femoris muscle.r", "Adductor brevis.l", "Soleus muscle.r", "Iliacus muscle.l"):
+        card = next(c for c in catalog() if c["object"] == source)
+        assert not same_lesson_subject(card, lessons[links[card["structure_id"]]])
+    card = next(c for c in catalog() if c["object"] == "Brachialis muscle.l")
+    assert same_lesson_subject(card, lessons[links[card["structure_id"]]])

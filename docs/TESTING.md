@@ -772,3 +772,50 @@ from reopening a hidden window:
 
 All three fail on the unfixed code (two by assertion, one because there is no
 worker to exercise).
+
+## The user test of 13 September 2026 and what pins its repairs
+
+`docs/qa/2026-09-13-tip-akademisi/TEST_RAPORU.md` recorded eighteen findings
+from a real WebView2 session; `DUZELTME_RAPORU.md` beside it records the
+repair and the live re-test. The regressions live in
+`tests/test_medical_scoring.py` and page-side in `tests/test_nova_web.py`:
+
+- the scoring decision table (key from a person, cited source, no source,
+  reviewed statuses, invalidation) and the reviewer gate following the
+  setting without ever scoring an unsourced or invalid item;
+- a practice paper with a study-only question: shown and explained, no
+  mastery, no understanding event, listed under *Değerlendirme dışı* with
+  the reason, finishing twice changes nothing; a paper of only study items
+  has no percentage; a simulation applies the same decision once; a finished
+  paper keeps the decision of its day after an invalidation;
+- blanks are not wrong answers and a concept is weak only on answered
+  questions; the analysis applies a scoring map and reports what it left out;
+- bank selection honours the document and page range, the professor and the
+  figure switch, excludes study items unless asked, and says why it is empty;
+  a paper is named and listed for what it holds; the bank view pages through a
+  stable order with the matched total;
+- histology: exact concept or a stable own id; the side list and the detail
+  hide a specimen under a timed test; a name printed inside the crop keeps
+  the specimen out of the blind test until it is masked; a late answer is
+  late;
+- the understanding check reports a pending assessment rather than a
+  verdict; a note asked from another subject's document follows the document
+  and is refused when the model says the pages do not cover the topic; a
+  reading activity names its sources in order;
+- the lab quiz describes a landmark the model cannot point at, and atlas
+  concept ids are named through the lab;
+- the job ledger: duplicates, timeouts, interruptions, a paper as a job, a
+  second click answered with the first;
+- the repair: unscored evidence removed, histology relinked, results
+  recomputed, and nothing applied twice.
+
+Page tests (QuickJS): the timed specimen hidden in every markup, the exam
+list and result counting what was built and what counted, bank paging,
+professor folding and source buttons, Esc leaving fullscreen before the
+home-screen shortcut and the folding lab notice, the library panel keeping
+room for its list, and the job-state push handled.
+
+Live, on a repaired copy of the tester's database with the real model: the
+flows in `DUZELTME_RAPORU.md`. Not covered: a physical keyboard (access to
+the desktop was declined, so Esc was injected through the browser input
+pipeline), microphone and voice, and a clinical review of the 718 questions.

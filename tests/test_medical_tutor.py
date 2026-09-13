@@ -24,6 +24,7 @@ from app.medical.catalog import Curriculum
 from app.medical.context import MAX_QUESTIONS, SessionManager, StudyContext
 from app.medical.intents import MedicalIntent, StudyCommand
 from app.medical.models import (
+    QuestionOrigin,
     DepthLevel,
     DocumentChunk,
     KnowledgeSource,
@@ -158,6 +159,8 @@ def bank(academy, count: int = 3, *, correct: str = "B") -> list[str]:
             correct_key=correct,
             explanation="Gerekce soru bankasinda kayitli durur.",
             concept_ids=[f"topic:{ARM}"],
+            # Keyed by a person, so the scoring policy counts it.
+            origin=QuestionOrigin.MANUAL,
         )
         academy.store.save_question(question)
         ids.append(question.question_id)

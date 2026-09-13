@@ -1580,18 +1580,26 @@ class NovaBridge:
             operation = academy.compare_document(text("document_id"), page_from=number("page_from"), page_to=number("page_to"))
             message = "Belge standart bilgiyle karşılaştırılıyor."
         elif name == "create_note":
-            operation = academy.generate_notes(
-                mode=text("mode", "medical.short_notes"),
-                subject=text("subject") or None,
-                topic_id=text("topic_id") or None,
-                document_ids=[str(item) for item in (payload.get("document_ids") or [])],
-                page_from=number("page_from"),
-                page_to=number("page_to"),
-                depth=text("depth", "standard"),
-            )
+            request = {
+                "mode": text("mode", "medical.short_notes"),
+                "subject": text("subject") or None,
+                "topic_id": text("topic_id") or None,
+                "document_ids": [str(item) for item in (payload.get("document_ids") or [])],
+                "page_from": number("page_from"),
+                "page_to": number("page_to"),
+                "depth": text("depth", "standard"),
+            }
+            running = academy.running_job("create_note", request)
+            if running is not None:
+                return {"ok": True, "started": False, "duplicate": True, "job": _jsonable(running), "message": "Bu not zaten hazırlanıyor; bitince listede görünecek."}
+            operation = academy.generate_notes_job(**request)
             message = "Not hazırlanıyor."
         elif name == "create_exam":
-            operation = academy.generate_exam(dict(payload.get("config") or {}))
+            request = dict(payload.get("config") or {})
+            running = academy.running_job("create_exam", request)
+            if running is not None:
+                return {"ok": True, "started": False, "duplicate": True, "job": _jsonable(running), "message": "Bu sınav zaten hazırlanıyor; bitince açılacak."}
+            operation = academy.generate_exam_job(request)
             message = "Sınav hazırlanıyor."
         elif name == "import_questions":
             operation = academy.import_questions(

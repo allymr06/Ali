@@ -253,7 +253,11 @@ def test_a_professor_style_exam_draws_on_that_professors_own_lectures(academy, t
     exam = asyncio.run(academy.generate_exam({"professor_id": ayla.profile_id, "from_bank": True, "question_count": 5}))
 
     assert exam["config"]["professor_id"] == ayla.profile_id
-    assert any("hocanın kendi ders notları (2 belge)" in note for note in exam["notes"])
+    # A bank paper takes the professor's own keyed questions; her lecture files
+    # are evidence for a paper the model writes, not a filter that would keep
+    # her imported questions (which cite no page) out of this one.
+    assert any("hoca: " in note and "Ayla" in note for note in exam["notes"])
+    assert exam["config"]["document_ids"] == []
     assert exam["config"]["subjects"] == ["anatomy"], "the professor's subject stands in for an unchosen one"
 
 

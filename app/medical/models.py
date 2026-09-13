@@ -524,6 +524,10 @@ class ExamConfig:
     one_at_a_time: bool = True
     title: str = ""
     wrong_only: bool = False
+    # Bank papers take only questions the scoring policy can mark; with this
+    # on, study-only items (no source, unreviewed, conflicting) may fill the
+    # paper too — shown as such, never scored.
+    include_unscored: bool = False
 
 
 @dataclass(slots=True)

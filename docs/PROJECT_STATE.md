@@ -177,6 +177,45 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Medical Academy: the user test of 13 September 2026 repaired (14 September 2026)
+
+An eighteen-finding user test of the Academy on 96e5f41 (report under
+`docs/qa/2026-09-13-tip-akademisi/`) was reproduced on a copy of the tester's
+database and repaired end to end; `DUZELTME_RAPORU.md` beside the report has
+the per-finding status and the live evidence.
+
+- **One scoring decision.** A question the bank itself labelled *puansız* had
+  been scored, learned and read as a finding. `review.rule_decision` (and the
+  reviewer's `decision`) is now the only judge, applied by the bank picker,
+  the paper, the answer, the finish, the analysis and the learning record;
+  study-only items are shown, explained and listed under *Değerlendirme dışı*.
+  Blanks are blanks, not weak concepts. A paper is named for what it holds.
+  `scripts/repair_medical_learning.py` corrected the derived summaries from
+  the source records with a backup and a ledger.
+- **Histology.** Exact concept matching (kübik ≠ yassı), the answer hidden on
+  every screen during a timed session, a printed answer detected from the
+  PDF text layer with a mask that hides it, a session clock of its own.
+- **Bank papers.** Document, page range, professor and figure filters applied;
+  an empty result explained; study items only on request; the form keeps its
+  draft; the effective context shown before generation, with the document
+  taking precedence over a stale session topic and a note refused when the
+  pages do not cover the topic.
+- **Reach and honesty.** The bank pages through all 718 questions; a
+  professor's questions fold thirty at a time; sources are buttons that open
+  the page; statuses and concept names are Turkish and readable; badges
+  follow the events; date and time fields follow the theme (contrast 16.5:1).
+- **Anatomy Lab.** Esc leaves either kind of fullscreen and stays on the lab;
+  the licence line folds; a landmark the model has no pin for is asked by its
+  description, never as "the pinned structure".
+- **Jobs.** A paper or note the model writes has an identity and a visible
+  end state that survives reload and restart, with a retry; the unresolved
+  test case turned out to be a paper whose only question the source review
+  quarantined — now a row with the reason, not a faded toast.
+
+Open: a physical keyboard for the fullscreen Esc (desktop control was
+declined; the browser input pipeline was used), voice, and a clinical review
+of every question.
+
 ## The window that went to the tray and never came back (10 September 2026)
 
 Closing JARVIS hid it to the tray, and from then on the desktop shortcut did

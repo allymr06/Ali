@@ -478,11 +478,39 @@ def analyse_attempt(
     *,
     curriculum: Any | None = None,
     mastery_levels: dict[str, str] | None = None,
+    scoring: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Score plus useful breakdowns; deterministic and explainable."""
+    """Score plus useful breakdowns; deterministic and explainable.
+
+    ``scoring`` is the scoring decision per question id (see
+    ``review.rule_decision``): only a question it marks ``scored`` enters the
+    score, the breakdowns and the concept evidence. Without it every keyed
+    question counts, which is what the unit tests of this module build.
+    A question the student did not answer is evidence of nothing: it is
+    counted as blank, never as a wrong answer to a concept.
+    """
     by_id = {question.question_id: question for question in questions}
     ordered = [by_id[question_id] for question_id in exam.question_ids if question_id in by_id]
-    gradable = [question for question in ordered if question.has_answer_key]
+    decisions = scoring or {}
+    unscored: list[dict[str, Any]] = []
+    gradable: list[Question] = []
+    for question in ordered:
+        if not question.has_answer_key:
+            continue
+        decision = decisions.get(question.question_id)
+        if decision is not None and not decision.get("scored", True):
+            answer = attempt.answers.get(question.question_id)
+            answered = answer is not None and answer.answer_key is not None
+            unscored.append({
+                "question_id": question.question_id,
+                "status": str(decision.get("status", "")),
+                "label": str(decision.get("label", "")),
+                "reason": str(decision.get("reason", "")),
+                "answered": answered,
+                "correct": (grade(question, answer.answer_key) if answered else None),
+            })
+            continue
+        gradable.append(question)
     correct_ids: list[str] = []
     wrong_ids: list[str] = []
     unanswered_ids: list[str] = []
@@ -520,24 +548,35 @@ def analyse_attempt(
     by_topic = breakdown(topic_label)
     by_difficulty = breakdown(lambda q: (str(int(q.difficulty)), DIFFICULTY_LABELS_TR.get(int(q.difficulty), str(q.difficulty))))
 
+    # A concept is judged on the questions the student answered. "total" is
+    # that answered count (the denominator of "1/2"); blanks are listed apart
+    # so a paper left half empty never reads as a list of weak concepts.
     concept_stats: dict[str, dict[str, Any]] = {}
     for question in gradable:
         names = list(question.concept_ids) or [f"topic:{question.topic_id or 'unknown'}"]
         label = str(question.metadata.get("concept_name") or "")
         for concept_id in names:
-            stats = concept_stats.setdefault(concept_id, {"concept_id": concept_id, "label": label or concept_id, "total": 0, "correct": 0, "question_ids": []})
-            stats["total"] += 1
+            stats = concept_stats.setdefault(concept_id, {"concept_id": concept_id, "label": label or concept_id, "total": 0, "correct": 0, "wrong": 0, "unanswered": 0, "question_ids": []})
             stats["question_ids"].append(question.question_id)
+            if question.question_id in unanswered_ids:
+                stats["unanswered"] += 1
+                continue
+            stats["total"] += 1
             if question.question_id in correct_ids:
                 stats["correct"] += 1
+            else:
+                stats["wrong"] += 1
     weak: list[dict[str, Any]] = []
     strong: list[dict[str, Any]] = []
+    unassessed: list[dict[str, Any]] = []
     levels = mastery_levels or {}
     for stats in concept_stats.values():
-        accuracy = stats["correct"] / stats["total"] if stats["total"] else 0.0
-        stats["accuracy"] = round(accuracy, 3)
+        accuracy = stats["correct"] / stats["total"] if stats["total"] else None
+        stats["accuracy"] = round(accuracy, 3) if accuracy is not None else None
         stats["mastery"] = levels.get(stats["concept_id"], "unknown")
-        if stats["total"] >= 1 and accuracy < 0.5:
+        if not stats["total"]:
+            unassessed.append(stats)
+        elif stats["wrong"] >= 1 and accuracy < 0.5:
             weak.append(stats)
         elif stats["total"] >= 2 and accuracy == 1.0:
             strong.append(stats)
@@ -577,7 +616,13 @@ def analyse_attempt(
         "correct": len(correct_ids),
         "incorrect": len(wrong_ids),
         "unanswered": len(unanswered_ids),
-        "ungradable": len(ordered) - total,
+        "ungradable": len(ordered) - total - len(unscored),
+        # What the policy kept out of the score, each with its reason, and
+        # the ids it kept in: the paper can say which was which.
+        "unscored": unscored,
+        "unscored_answered": sum(1 for item in unscored if item["answered"]),
+        "scored_question_ids": [question.question_id for question in gradable],
+        "unassessed_concepts": unassessed[:12],
         "by_subject": by_subject,
         "by_topic": by_topic,
         "by_difficulty": by_difficulty,

@@ -65,10 +65,13 @@ class StudyWorkflow:
         self.understanding = UnderstandingEngine(store, learning, concepts, curriculum, model, academy.retriever, generator=academy.generator, emit=academy._emit)
         self.prerequisites = PrerequisiteGraph(concepts, store)
         self.diagnosis = PrerequisiteDiagnosis(self.prerequisites, store, learning, self.understanding, curriculum)
-        self.reviewer = SourceSupportReviewer(store, model)
+        self.reviewer = SourceSupportReviewer(store, model, gate=source_review)
         self.source_review = bool(source_review)
         if self.source_review:
             academy.generator._reviewer = self.reviewer
+        # One scoring decision for the whole academy: the bank picker, the
+        # paper, the answer and the analysis all ask the reviewer.
+        academy.generator.scoring = self.reviewer.decision
         self.planner = StudyPlanner(store, curriculum, concepts, learning, self.understanding, self.prerequisites, remind=remind, emit=academy._emit)
         self.histology = HistologyBank(store, academy.pipeline, learning, self.understanding, concepts, model)
         self.SYNC_ACTIONS: dict[str, Callable[[Mapping[str, Any]], Any]] = {
@@ -81,6 +84,7 @@ class StudyWorkflow:
             "understanding_reopen": lambda payload: {"finding": self.understanding.finding_payload(self.understanding.reopen(_text(payload, "finding_id"), _text(payload, "note")))},
             "understanding_check_start": lambda payload: {"check": self.understanding.start_check(concept_id=_optional(payload, "concept_id"), topic_id=_optional(payload, "topic_id"), subject=_optional(payload, "subject"))},
             "understanding_check_answer": lambda payload: {"check": self.understanding.answer_check(_text(payload, "check_id"), _optional(payload, "answer_key"), confidence=_optional(payload, "confidence"), reasoning=_text(payload, "reasoning"), submission_id=_optional(payload, "submission_id"))},
+            "understanding_check": lambda payload: {"check": self.understanding.check_payload(self.understanding.check(_text(payload, "check_id")))},
             "understanding_explain": lambda payload: {"event": self.explain(_text(payload, "event_id"), _text(payload, "reasoning"))},
             "repair_get": lambda payload: {"session": self.understanding.repair(_text(payload, "session_id"))},
             "repair_step": lambda payload: {"session": self.understanding.complete_step(_text(payload, "session_id"), _text(payload, "step"))},
@@ -123,7 +127,10 @@ class StudyWorkflow:
             "plan_today": lambda payload: {"today": self.planner.today_view(_optional(payload, "plan_id"))},
             "plan_coverage": lambda payload: {"coverage": self.planner.coverage(_text(payload, "plan_id"))},
             "plan_replan": lambda payload: {"plan": self.planner.replan(_text(payload, "plan_id"), reason=_text(payload, "reason", "öğrenci istedi"))},
-            "plan_activity_start": lambda payload: {"activity": self.planner.start(_text(payload, "activity_id")), "today": self.planner.today_view(_optional(payload, "plan_id"))},
+            "plan_activity_start": lambda payload: {"activity": self.planner.start(_text(payload, "activity_id")), "today": self.planner.today_view(_optional(payload, "plan_id")), "sources": self.planner.activity_sources(_text(payload, "activity_id"))},
+            "plan_activity_sources": lambda payload: {"sources": self.planner.activity_sources(_text(payload, "activity_id"))},
+            "note_context": lambda payload: {"context": self._academy.note_context(subject=_optional(payload, "subject"), topic_id=_optional(payload, "topic_id"), document_ids=_items(payload, "document_ids"))},
+            "jobs": lambda payload: {"jobs": self._academy.jobs.recent(limit=_number(payload, "limit", 30))},
             "plan_activity_complete": lambda payload: {"activity": self.planner.complete(_text(payload, "activity_id"), minutes=(_number(payload, "minutes") or None)), "today": self.planner.today_view(_optional(payload, "plan_id"))},
             "plan_activity_skip": lambda payload: {"activity": self.planner.skip(_text(payload, "activity_id"), _text(payload, "note")), "today": self.planner.today_view(_optional(payload, "plan_id"))},
             "plan_manual": lambda payload: {"activity": self.planner.add_manual(_text(payload, "plan_id"), day=_text(payload, "day"), title=_text(payload, "title"), minutes=_number(payload, "minutes", 15), topic_id=_optional(payload, "topic_id"), kind=_text(payload, "kind", "read"))},
@@ -135,7 +142,8 @@ class StudyWorkflow:
             "histology_update": lambda payload: {"specimen": self.histology.payload(self.histology.update_specimen(_text(payload, "specimen_id"), _mapping(payload, "fields")), reveal=True)},
             "histology_confirm": lambda payload: {"specimen": self.histology.payload(self.histology.confirm_label(_text(payload, "specimen_id"), _text(payload, "label"), latin=_text(payload, "latin"), features=(_items(payload, "features") if "features" in payload else None), stain=(_text(payload, "stain") if "stain" in payload else None), magnification=(_text(payload, "magnification") if "magnification" in payload else None)), reveal=True)},
             "histology_delete": lambda payload: {"deleted": self.histology.delete_specimen(_text(payload, "specimen_id")), **self.histology.overview()},
-            "histology_crop": lambda payload: {"specimen_id": _text(payload, "specimen_id"), "image": self.histology.crop_data_url(_text(payload, "specimen_id"))},
+            "histology_crop": lambda payload: self._crop(_text(payload, "specimen_id"), bool(payload.get("masked"))),
+            "histology_hide_answer": lambda payload: {"specimen": self._specimen(self.histology.hide_printed_answer(_text(payload, "specimen_id"))["specimen_id"])},
             "histology_mask_add": lambda payload: {"mask": self.histology.add_mask(_text(payload, "specimen_id"), kind=_text(payload, "kind", "rect"), points=list(payload.get("points") or []), label=_text(payload, "label")), "specimen": self._specimen(_text(payload, "specimen_id"))},
             "histology_mask_remove": lambda payload: {"specimen": self.histology.payload(self.histology.remove_mask(_text(payload, "specimen_id"), _text(payload, "mask_id")), reveal=True)},
             "histology_source": lambda payload: {"source": self.histology.source(_text(payload, "specimen_id"))},
@@ -263,7 +271,12 @@ class StudyWorkflow:
         specimen = self.histology.specimen(specimen_id)
         if specimen is None:
             raise ValueError("Örnek bulunamadı.")
-        return self.histology.payload(specimen, reveal=True)
+        # While a timed session still asks about it, no screen shows its name.
+        return self.histology.payload(specimen, reveal=specimen_id not in self.histology.under_test())
+
+    def _crop(self, specimen_id: str, masked: bool) -> dict[str, Any]:
+        under_test = specimen_id in self.histology.under_test()
+        return {"specimen_id": specimen_id, "masked": masked or under_test, "image": self.histology.crop_data_url(specimen_id, masked=masked or under_test)}
 
     def _session(self, session: dict[str, Any] | None) -> dict[str, Any] | None:
         return self.histology.session_payload(session) if session is not None else None

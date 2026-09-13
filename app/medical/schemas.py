@@ -159,6 +159,7 @@ NOTES_SCHEMA: dict[str, Any] = {
         "markdown": _string(12000),
         "key_terms": _array(_string(120), max_items=60),
         "cited_pages": _array({"type": "integer", "minimum": 1}, max_items=200),
+        "source_covers_topic": {"type": "boolean"},
     },
     "required": ["title", "markdown"],
 }

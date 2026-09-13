@@ -595,6 +595,22 @@ function bindKeyboard() {
     if (event.ctrlKey && event.shiftKey && key === "c") { event.preventDefault(); Context.toggle(); }
     if (event.ctrlKey && event.shiftKey && key === "n") { event.preventDefault(); Notify.toggle(); }
     if (event.key === "Escape" && Notify.open) { event.preventDefault(); Notify.set(false); return; }
+    // A real fullscreen element (the Anatomy Lab stage) comes first: Esc
+    // closes it and nothing else; the home screen is not where a student
+    // pressing Esc over a bone expects to land.
+    if (event.key === "Escape" && document.fullscreenElement) {
+      event.preventDefault();
+      if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+      return;
+    }
+    // The in-app fallback for a WebView that refused the API is the same
+    // case: Esc closes the expanded lab stage and stops there.
+    const expandedStage = document.querySelector(".lab-stage.expanded");
+    if (event.key === "Escape" && expandedStage) {
+      event.preventDefault();
+      if (typeof Lab !== "undefined" && Lab && typeof Lab.toggleFullscreen === "function") Lab.toggleFullscreen();
+      return;
+    }
     if (event.ctrlKey && event.shiftKey && key === "b") { event.preventDefault(); setRailCollapsed(!State.railCollapsed); }
     if (event.key === "Escape" && !activeApproval && !confirmOpen) {
       if (VoiceStage.active) toggleVoice();

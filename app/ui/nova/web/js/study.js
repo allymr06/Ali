@@ -399,6 +399,17 @@ const Study = {
     </div>`;
   },
 
+  /* What is known about the explanation right now: still with the model,
+     assessed, or not assessable. "Gerekçe yok ya da tahmin" is a verdict and
+     is shown only once there is one. */
+  assessmentStateMarkup(result) {
+    const status = result.assessment_status || (result.classification ? "done" : "not_needed");
+    if (status === "pending") return `<span class="chip accent">Gerekçe değerlendiriliyor…</span> <span class="faint">Sonuç birkaç saniye içinde burada görünür; cevabın ve gerekçen kaydedildi.</span>`;
+    if (status === "unavailable") return `<span class="chip warn">Gerekçe değerlendirilemedi</span> <span class="faint">${esc(result.assessment_note || "Model yanıt vermedi; gerekçe kaydedildi.")}</span> <button type="button" class="btn btn-ghost small" data-check-retry="${esc(result.event_id || "")}">Yeniden dene</button>`;
+    const classification = { classification: result.classification, classification_label: result.classification_label };
+    return `<span class="chip ${String(result.classification || "").startsWith("wrong") || result.classification === "correct_contradictory" ? "warn" : "ok"}">${esc(this.classificationLabel(classification))}</span>${result.suspected_misconception ? ` <span class="faint">olası yanlış anlama: ${esc(result.suspected_misconception)}</span>` : ""}`;
+  },
+
   checkMarkup(check) {
     if (!check) return "";
     const question = check.question || {};
@@ -408,7 +419,7 @@ const Study = {
       <div class="mq-stem">${esc(question.stem || "")}</div>
       ${result ? "" : this.confidenceChips(null)}
       ${studyOptions(question.options, { chosen: result ? result.answer_key : null, correctKey: result ? question.correct_key : null, revealed: !!result })}
-      ${result ? `<div class="med-explain">${esc(question.explanation || "")}<br><span class="chip">${esc(this.classificationLabel({ classification: result.classification }))}</span></div>`
+      ${result ? `<div class="med-explain">${esc(question.explanation || "")}<br>${this.assessmentStateMarkup(result)}</div>`
         : `<textarea class="study-textarea" data-check-text rows="2" maxlength="1200" placeholder="Neden bu şık? (zorunlu)"></textarea>
            <div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-primary small" data-check-send>Cevapla</button><button type="button" class="btn btn-ghost small" data-check-close>Vazgeç</button></div>`}
       ${result ? '<div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-ghost small" data-check-close>Kapat</button></div>' : ""}
@@ -416,10 +427,17 @@ const Study = {
   },
 
   specimenRow(specimen, { active = false } = {}) {
+    if (specimen.masked) {
+      // A specimen a timed session still asks about: the row says only that.
+      return `<button type="button" class="med-row ${active ? "active" : ""}" data-specimen="${esc(specimen.specimen_id)}" aria-label="Sınavdaki örnek (adı gizli)">
+        <span class="med-row-title">Sınavdaki örnek · adı gizli</span>
+        <span class="med-row-side"><span class="chip accent">sınav sürüyor</span></span>
+        <span class="med-row-meta">kaynak ve ad oturum bitince görünür</span></button>`;
+    }
     return `<button type="button" class="med-row ${active ? "active" : ""}" data-specimen="${esc(specimen.specimen_id)}">
       <span class="med-row-title">${esc(specimen.label || "(adsız örnek)")}</span>
       <span class="med-row-side"><span class="chip ${specimen.status === "eligible" ? "ok" : specimen.status === "unreadable" ? "bad" : ""}">${esc(specimen.status_label)}</span></span>
-      <span class="med-row-meta">${esc(specimen.document_title || "")} · s. ${specimen.page_number}${specimen.source_changed ? ' · <span class="warn-text">kaynak değişti</span>' : ""}</span></button>`;
+      <span class="med-row-meta">${esc(specimen.document_title || "")} · s. ${specimen.page_number}${specimen.source_changed ? ' · <span class="warn-text">kaynak değişti</span>' : ""}${specimen.status === "study_only" && specimen.status_reason ? ` · <span class="warn-text">${esc(specimen.status_reason)}</span>` : ""}</span></button>`;
   },
 
   specimenMarkup(specimen, { reveal = true } = {}) {
@@ -434,11 +452,19 @@ const Study = {
          ${features ? `<h4 class="study-h4">Ayırt edici özellikler</h4><ul class="study-features">${features}</ul>` : '<p class="med-review-note">Özellik kaydedilmedi.</p>'}
          ${specimen.model_description ? `<div class="med-explain"><h4>Model betimlemesi (cevap değil)</h4>${esc(specimen.model_description)}</div>` : ""}
          ${specimen.caption_excerpt ? `<div class="med-explain"><h4>Sayfa metni</h4>${esc(specimen.caption_excerpt)}</div>` : ""}
-         ${specimen.notes ? `<div class="med-explain">${esc(specimen.notes)}</div>` : ""}`
+         ${specimen.notes ? `<div class="med-explain">${esc(specimen.notes)}</div>` : ""}
+         ${specimen.status === "study_only" && specimen.status_reason ? `<p class="med-review-note warn-text">${esc(specimen.status_reason)}</p>` : ""}
+         ${specimen.answer_visible && !(specimen.masks || []).length ? `<div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-ghost small" data-specimen-act="hide" title="Sayfanın metin katmanında adın yazdığı yerler kırpma üzerinde gri kutuyla örtülür; sayfa ve asıl kırpma değişmez">Görseldeki adı gizle</button></div>` : ""}
+         ${(specimen.masks || []).length ? `<p class="med-review-note">${specimen.masks.length} maske: sınavda görsel maskeli gösterilir.</p>` : ""}`
       : `<div class="med-chips">${specimen.stain ? `<span class="chip">boya: ${esc(specimen.stain)}</span>` : ""}<span class="chip">${esc(specimen.status_label)}</span></div>`;
+    // While the answer is hidden the caption is too: a document called
+    // "Epitel Doku" would name the tissue family.
+    const caption = reveal && !specimen.masked
+      ? `${esc(specimen.document_title || "")} · s. ${specimen.page_number}${specimen.source_changed ? " · kaynak belge değişti" : ""}`
+      : "kaynak gizli · oturum bitince görünür";
     return `<div class="study-specimen">
-      <div class="study-crop" data-crop="${esc(specimen.specimen_id)}"><span class="mq-figure-wait">Görüntü yükleniyor…</span></div>
-      <figcaption class="faint">${esc(specimen.document_title || "")} · s. ${specimen.page_number}${specimen.source_changed ? " · kaynak belge değişti" : ""}</figcaption>
+      <div class="study-crop" data-crop="${esc(specimen.specimen_id)}" data-crop-masked="${reveal && !specimen.masked ? "0" : "1"}"><span class="mq-figure-wait">Görüntü yükleniyor…</span></div>
+      <figcaption class="faint">${caption}</figcaption>
       ${answerBlock}</div>`;
   },
 
@@ -666,7 +692,14 @@ const Study = {
       const question = (Medical.exam.questions || []).find((item) => item.question_id === event.question_id);
       if (question) question.assessment = event;
     }
-    if (this.check && this.check.result && this.check.result.event_id === event.event_id) { this.check.result.classification = event.classification; }
+    if (this.check && this.check.result && this.check.result.event_id === event.event_id) {
+      const assessment = event.assessment || {};
+      this.check.result.classification = event.classification;
+      this.check.result.classification_label = event.classification_label || this.classificationLabel(event);
+      this.check.result.assessment_status = assessment.status || "done";
+      this.check.result.assessment_note = assessment.note || "";
+      this.check.result.suspected_misconception = assessment.suspected_misconception || "";
+    }
     toast(`Gerekçe değerlendirildi: ${note}`, String(event.classification || "").startsWith("wrong") || event.classification === "correct_contradictory" ? "" : "ok");
     if (this.viewIs("exam")) Medical.renderRunner();
     if (this.viewIs("understanding")) this.openUnderstanding();
@@ -738,9 +771,50 @@ const Study = {
     if (!item) return;
     if (item.kind === "repair") { Medical.show("understanding"); await this.openUnderstanding(); const finding = (this.understanding && this.understanding.findings || []).find((entry) => entry.concept_id === item.concept_id || entry.topic_id === item.topic_id); if (finding) this.openFinding(finding.finding_id); return; }
     if (item.kind === "prerequisite") { Medical.show("understanding"); if (item.concept_id) this.startDiagnosis(item.concept_id, "Plandaki ön koşul kontrolü"); return; }
-    if (item.kind === "read") { Medical.show("library"); toast(`${item.title}: ilgili belgeyi Kütüphane'den aç; okuduğun sayfalar plana işlenir.`, "ok"); return; }
+    if (item.kind === "read") { await this.openReading(item, result.sources); return; }
     if (item.kind === "recap") { Medical.quickAsk(`${item.title} konusunu kısaca hatırlat`); return; }
     Medical.quickAsk(`${item.title} konusundan 5 soruluk kısa test hazırla`);
+  },
+
+  /* A reading goes to its material: the plan's own document at its pages,
+     or the library document filed under the topic; two or more are offered
+     by name; none leaves the search filled with the topic and says so. The
+     document that happened to be open before is closed either way. */
+  async openReading(item, sources) {
+    const documents = (sources && sources.documents) || [];
+    Medical.show("library");
+    Medical.document = null;
+    Medical.page = null;
+    const search = $("#med-doc-search");
+    if (documents.length === 1) {
+      if (search) search.value = "";
+      Medical.renderDocuments();
+      const opened = await Medical.openDocument(documents[0].document_id);
+      if (opened && documents[0].page_from) await Medical.openPage(Number(documents[0].page_from));
+      toast(`${item.title}: ${documents[0].title}${documents[0].page_from ? ` s. ${documents[0].page_from}` : ""} açıldı; okuduğun sayfalar plana işlenir.`, "ok");
+      return;
+    }
+    if (documents.length > 1) {
+      Medical.renderDocument();
+      const chosen = await this.dialog({
+        title: `${item.title} · kaynak seç`,
+        okLabel: "AÇ",
+        html: `<p class="med-review-note">Bu konu için birden çok belge var; hangisinden okuyacaksın?</p>
+          <select id="study-reading-choice" class="mem-edit">${documents.map((doc) => `<option value="${esc(doc.document_id)}|${doc.page_from || 0}">${esc(doc.title)}${doc.page_from ? ` · s. ${doc.page_from}–${doc.page_to || "son"}` : ""} (${esc(doc.reason)})</option>`).join("")}</select>`,
+        collect: (host) => host.querySelector("#study-reading-choice").value,
+      });
+      if (!chosen) return;
+      const [documentId, page] = String(chosen).split("|");
+      if (search) search.value = "";
+      Medical.renderDocuments();
+      const opened = await Medical.openDocument(documentId);
+      if (opened && Number(page)) await Medical.openPage(Number(page));
+      return;
+    }
+    if (search) search.value = (sources && sources.search) || item.title || "";
+    Medical.renderDocuments();
+    Medical.renderDocument();
+    toast(`${item.title} için kaynak eşleşmedi: Kütüphane'de aramadan bir belge seç; okuduğun sayfalar plana işlenir.`, "");
   },
 
   /* ── plan view ───────────────────────────────────────────────── */
@@ -1158,6 +1232,12 @@ const Study = {
       }
     });
     $$("[data-check-close]", host).forEach((node) => node.addEventListener("click", () => { this.check = null; this.openUnderstanding(); }));
+    $$("[data-check-retry]", host).forEach((node) => node.addEventListener("click", async () => {
+      const started = await this.request("understanding_assess", { event_id: node.dataset.checkRetry });
+      if (started.ok === false) { toast(started.error || "Değerlendirme başlatılamadı.", true); return; }
+      if (this.check && this.check.result) { this.check.result.assessment_status = "pending"; this.renderUnderstandingDetail(); }
+      toast(started.message || "Gerekçe yeniden değerlendiriliyor.", "ok");
+    }));
   },
 
   /* ── histology view ───────────────────────────────────────────── */
@@ -1190,10 +1270,15 @@ const Study = {
   },
 
   async openSpecimen(specimenId) {
+    const underTest = ((this.histology && this.histology.under_test) || []).includes(specimenId);
+    if (this.session && this.session.status === "open" && underTest) {
+      toast("Bu örnek süreli oturumda: adı ve kaynağı oturum bitince görünür.", true);
+      return;
+    }
     const result = await this.request("histology_specimen", { specimen_id: specimenId });
     if (result.ok === false) { toast(result.error || "Örnek okunamadı.", true); return; }
     this.specimen = result.specimen;
-    this.session = null;
+    if (!(this.session && this.session.status === "open")) this.session = null;
     this.renderSpecimens();
     this.renderSpecimenDetail();
   },
@@ -1202,12 +1287,14 @@ const Study = {
     const nodes = $$("[data-crop]", host);
     for (const node of nodes) {
       const id = node.dataset.crop;
-      let image = this.cropCache.get(id);
+      const masked = node.dataset.cropMasked === "1";
+      const key = `${id}:${masked ? "m" : "p"}`;
+      let image = this.cropCache.get(key);
       if (!image) {
-        const result = await this.request("histology_crop", { specimen_id: id });
+        const result = await this.request("histology_crop", { specimen_id: id, masked });
         if (result.ok === false || !result.image) { node.innerHTML = `<span class="mq-figure-wait">${esc((result && result.error) || "Görüntü üretilemedi: kaynak sayfa yok.")}</span>`; continue; }
         image = result.image;
-        this.cropCache.set(id, image);
+        this.cropCache.set(key, image);
       }
       node.innerHTML = `<img src="${image}" alt="Histoloji örneği">`;
     }
@@ -1282,6 +1369,15 @@ const Study = {
       await this.openHistology();
       return;
     }
+    if (action === "hide") {
+      const result = await this.request("histology_hide_answer", { specimen_id: specimen.specimen_id });
+      if (result.ok === false) { toast(result.error || "Ad gizlenemedi.", true); return; }
+      this.specimen = result.specimen;
+      this.cropCache.delete(`${specimen.specimen_id}:m`);
+      toast(`${result.specimen.status_label}${result.specimen.masks && result.specimen.masks.length ? ` · ${result.specimen.masks.length} maske` : " · görselde ad bulunamadı; bölgeyi daralt"}.`, result.specimen.status === "eligible" ? "ok" : "");
+      await this.openHistology();
+      return;
+    }
     if (action === "unreadable") {
       const result = await this.request("histology_update", { specimen_id: specimen.specimen_id, fields: { unreadable: specimen.status !== "unreadable" } });
       if (result.ok === false) { toast(result.error || "Güncellenemedi.", true); return; }
@@ -1295,8 +1391,10 @@ const Study = {
       const result = await this.request("histology_delete", { specimen_id: specimen.specimen_id, confirmed: true });
       if (result.ok === false) { toast(result.error || "Silinemedi.", true); return; }
       this.specimen = null;
-      this.cropCache.delete(specimen.specimen_id);
+      this.cropCache.delete(`${specimen.specimen_id}:p`);
+      this.cropCache.delete(`${specimen.specimen_id}:m`);
       await this.openHistology();
+      Medical.refreshCounts();
     }
   },
 
@@ -1455,10 +1553,11 @@ const Study = {
       const features = $("#study-region-features").value.split("\n").map((line) => line.trim()).filter(Boolean);
       const result = await this.request("histology_add", { document_id: documentId, page_number: pageNumber, region, label, latin: $("#study-region-latin").value.trim(), basis, stain: $("#study-region-stain").value.trim() || null, magnification: $("#study-region-mag").value.trim() || null, features });
       if (result.ok === false) { toast(result.error || "Örnek kaydedilemedi.", true); return; }
-      toast(`Örnek kaydedildi: ${result.specimen.status_label}.`, "ok");
+      toast(`Örnek kaydedildi: ${result.specimen.status_label}${result.specimen.status_reason ? " · " + result.specimen.status_reason : ""}.`, result.specimen.status === "eligible" ? "ok" : "");
       host.innerHTML = "";
       this.endRegionSelect();
       this.histology = null;
+      Medical.refreshCounts();
     });
   },
 

@@ -245,7 +245,7 @@ def bank(academy, count: int = 3) -> None:
     for index in range(count):
         academy.store.save_question(Question(question_id=f"q{index}", subject="anatomy", topic_id=ARM, stem=stems[index % 3],
                                              options=[QuestionOption(key, text) for key, text in zip("ABCD", OPTIONS)], correct_key="B",
-                                             explanation="Gerekce kayitli.", concept_ids=[f"topic:{ARM}"]))
+                                             explanation="Gerekce kayitli.", concept_ids=[f"topic:{ARM}"], origin=QuestionOrigin.MANUAL))
 
 
 def plan(academy, text: str, **kwargs):

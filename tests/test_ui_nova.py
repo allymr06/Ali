@@ -2581,7 +2581,7 @@ def test_an_exam_answer_carries_confidence_over_the_bridge(booted) -> None:
 
     academy = booted.app.medical
     for index in range(2):
-        academy.store.save_question(Question(question_id=f"qb{index}", subject="anatomy", stem=f"Scapula sorusu {index}: hangi çıkıntı acromion ile eklem yapar?", options=[QuestionOption("A", "Clavicula"), QuestionOption("B", "Humerus")], correct_key="A", explanation="Clavicula.", topic_id="anatomy.musculoskeletal.upper_limb.shoulder"))
+        academy.store.save_question(Question(question_id=f"qb{index}", subject="anatomy", stem=f"Scapula sorusu {index}: hangi çıkıntı acromion ile eklem yapar?", options=[QuestionOption("A", "Clavicula"), QuestionOption("B", "Humerus")], correct_key="A", explanation="Clavicula.", topic_id="anatomy.musculoskeletal.upper_limb.shoulder", origin="manual"))
     paper = asyncio.run(academy.generate_exam({"from_bank": True, "question_count": 2, "subjects": ["anatomy"], "randomize": False, "immediate_feedback": True}))
     exam_id = paper["exam_id"]
     assert booted.bridge.medical_call("start_exam", {"exam_id": exam_id})["ok"] is True

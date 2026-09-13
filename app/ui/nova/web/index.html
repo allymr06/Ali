@@ -466,6 +466,7 @@
                   <button id="med-import-folder" class="btn btn-ghost small" type="button" title="Bir klasördeki tüm ders dosyalarını (PDF, PPT, PPTX, metin) tek ders seti olarak ekler">Klasör ekle</button>
                   <button id="med-doc-refresh" class="icon-btn small" type="button" title="Yenile"></button>
                 </div>
+                <div id="med-set-head" class="med-set-head" hidden><span class="kicker">Ders setleri</span><button id="med-set-toggle" class="btn btn-ghost small" type="button" aria-expanded="true">Daralt</button></div>
                 <div id="med-set-list" class="med-set-list"></div>
                 <label class="search med-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l6 6"/></svg><input id="med-doc-search" type="text" placeholder="Belge ara…" spellcheck="false"></label>
                 <div id="med-doc-list" class="med-list"></div>
@@ -492,8 +493,10 @@
                   <button id="med-note-add" class="btn btn-primary small" type="submit">Not hazırla</button>
                 </div>
                 <p class="settings-note">Notlar seçili konudan ve belgelerden üretilir; kullanılan her sayfa kaynak olarak işaretlenir.</p>
+                <p id="med-note-context" class="med-context" aria-live="polite"></p>
               </form>
             </div>
+            <div id="med-note-jobs" class="med-jobs" aria-live="polite"></div>
             <div id="med-note-list" class="med-note-list"></div>
           </section>
 
@@ -521,13 +524,17 @@
                   <label class="switch-row small"><span>Yalnız yanlışlarım</span><input id="med-exam-wrong" class="switch" type="checkbox"></label>
                   <label class="switch-row small" title="Yüklediğin ders notlarındaki şekil sayfalarından soru; JARVIS kendi anatomi görseli üretmez"><span>Görselli sorular</span><input id="med-exam-images" class="switch" type="checkbox" checked></label>
                   <label class="switch-row small"><span>Süreli (dk)</span><input id="med-exam-timed" type="number" min="0" max="240" value="0"></label>
+                  <label class="switch-row small" title="Bankadan derlerken kaynaksız ya da kaynak desteği doğrulanmamış soruları da alır; bunlar gösterilir ve açıklanır ama puana ve öğrenme kaydına girmez"><span>Puansız soruları da al</span><input id="med-exam-unscored" class="switch" type="checkbox"></label>
                 </div>
+                <p id="med-exam-context" class="med-context" aria-live="polite"></p>
                 <div class="btn-row">
-                  <button id="med-exam-bank" class="btn btn-ghost small" type="button">Bankadan derle</button>
+                  <button id="med-exam-bank" class="btn btn-ghost small" type="button" title="Bankadan derlemede belge, sayfa aralığı, hoca, zorluk, görsel ve yanlış süzgeçleri uygulanır; şık sayısı ve bilgi önceliği sorunun aslından gelir">Bankadan derle</button>
                   <button id="med-exam-create" class="btn btn-primary" type="submit">Sınav hazırla</button>
                 </div>
+                <p class="settings-note">Bankadan derlemede şık sayısı ve bilgi önceliği uygulanmaz; belge, sayfa, hoca, zorluk, görsel ve yanlış süzgeçleri uygulanır.</p>
               </form>
             </div>
+            <div id="med-exam-jobs" class="med-jobs" aria-live="polite"></div>
             <div id="med-exam-list" class="med-list med-exam-list"></div>
             <div id="med-exam-runner" class="med-runner" hidden></div>
           </section>
@@ -601,7 +608,7 @@
                     <label class="med-field"><span>Sınav tarihi</span><input id="med-plan-date" type="date"></label>
                   </div>
                   <div class="med-form-row">
-                    <label class="med-field"><span>Dersler (boş bırakılırsa belgelerden önerilir)</span><select id="med-plan-subjects" multiple size="4" aria-label="Dersler"></select></label>
+                    <label class="med-field"><span>Dersler · Ctrl ile birden çok seç (boş: belgelerden önerilir)</span><select id="med-plan-subjects" multiple size="4" aria-label="Dersler (Ctrl ile birden çok seçilir)"></select></label>
                     <label class="med-field"><span>Günlük süre (dk)</span><input id="med-plan-minutes" type="number" min="5" max="600" value="45"></label>
                   </div>
                   <div class="med-switches">

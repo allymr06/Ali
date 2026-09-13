@@ -1433,3 +1433,167 @@ def test_notification_cards_wrap_without_flex_shrinking_and_scene_picker_is_read
     picker = section(CSS, ".lab-scene-picker select {", "}")
     assert "background: var(--surface-2)" in picker
     assert "color: var(--ink-1)" in picker
+
+
+# ---------------------------------------------------------------------------
+# 13 September 2026: what the user test found on the page
+# ---------------------------------------------------------------------------
+
+MEDICAL_DOM_STUBS = """
+const HOSTS = {};
+function fakeNode(selector) {
+  return HOSTS[selector] || (HOSTS[selector] = {innerHTML: "", textContent: "", hidden: false, value: "", disabled: false, dataset: {}, title: "",
+    classList: {toggle() {}, contains() { return false; }, add() {}, remove() {}}, options: [], checked: false,
+    addEventListener() {}, setAttribute() {}, focus() {}, querySelector() { return null; }, appendChild() {}});
+}
+$ = (selector) => fakeNode(selector);
+function fmtRelative() { return "az önce"; }
+function fmtDuration() { return "1 dk"; }
+function tr(value) { return String(value || "").toUpperCase(); }
+function medPercent(value) { return "%" + Math.round(value * 100); }
+function bridgeReady() { return true; }
+function showScreen() {}
+const Motion = {allowed() { return false; }, rise() {}};
+"""
+
+
+def medical_context():
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(STUDY_STUBS)
+    context.eval(MEDICAL_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    context.eval(JS_SOURCES["js/study.js"])
+    context.eval("Medical.state = {session: {options: {subjects: [{value: 'histology', label: 'Histoloji'}]}}};")
+    return context
+
+
+def test_the_page_keeps_a_timed_specimen_hidden_everywhere() -> None:
+    result = json.loads(study_context().eval("""
+      (() => JSON.stringify({
+        row: Study.specimenRow({specimen_id: "hs1", masked: true, status: "eligible", status_label: "Puanlı sınava uygun"}),
+        shown: Study.specimenRow({specimen_id: "hs1", label: "Tek katlı kübik epitel", status: "study_only", status_label: "Yalnız çalışma", status_reason: "Cevap görselin üzerinde yazıyor", document_title: "Histoloji 3 - Epitel Doku", page_number: 34}),
+        hidden: Study.specimenMarkup({specimen_id: "hs1", masked: true, status: "eligible", status_label: "Puanlı sınava uygun", document_title: "Histoloji 3 - Epitel Doku", page_number: 34}, {reveal: false}),
+        revealed: Study.specimenMarkup({specimen_id: "hs1", label: "Tek katlı kübik epitel", basis: "page_caption", basis_label: "Sayfadaki başlık", status: "study_only", status_label: "Yalnız çalışma", status_reason: "Cevap görselin üzerinde yazıyor: kör sınava girmez.", answer_visible: true, masks: [], document_title: "Histoloji 3 - Epitel Doku", page_number: 34}, {reveal: true}),
+        pending: Study.assessmentStateMarkup({assessment_status: "pending", classification: "correct_unsupported", event_id: "ev1"}),
+        unavailable: Study.assessmentStateMarkup({assessment_status: "unavailable", assessment_note: "Model yanıt vermedi.", event_id: "ev1"}),
+        done: Study.assessmentStateMarkup({assessment_status: "done", classification: "correct_supported", classification_label: "Doğru cevap, gerekçe destekliyor"}),
+      }))()
+    """))
+    # The side list names neither the tissue nor the lecture while the session asks about it.
+    assert "adı gizli" in result["row"] and "kübik" not in result["row"] and "Epitel" not in result["row"]
+    assert "Cevap görselin üzerinde" in result["shown"], "a study-only specimen says why"
+    # Hidden markup carries no title, no page number, no name; the caption is a placeholder.
+    assert "Epitel Doku" not in result["hidden"] and "34" not in result["hidden"] and "kaynak gizli" in result["hidden"]
+    assert 'data-crop-masked="1"' in result["hidden"] and 'data-crop-masked="0"' in result["revealed"]
+    assert "Görseldeki adı gizle" in result["revealed"] and "kör sınava girmez" in result["revealed"]
+    # A pending assessment is pending; a verdict is a verdict; a failure can be retried.
+    assert "değerlendiriliyor" in result["pending"] and "tahmin" not in result["pending"]
+    assert "data-check-retry" in result["unavailable"] and "Model yanıt vermedi" in result["unavailable"]
+    assert "gerekçe destekliyor" in result["done"]
+
+
+def test_the_exam_list_and_result_count_what_was_built_and_what_counted() -> None:
+    context = medical_context()
+    context.eval("""
+      Medical.exams = [
+        {exam_id: "e1", title: "Karbonhidrat metabolizması · 8 soru", status: "completed", status_label: "Tamamlandı", percent: 0, question_count: 8, requested_count: 10, scored_count: 8, created_at: "2026-09-13T10:00:00Z", config: {difficulty: 3}},
+        {exam_id: "e2", title: "Deneme", status: "ready", status_label: "Hazır", percent: null, question_count: 3, requested_count: 3, scored_count: 2, created_at: "2026-09-13T10:00:00Z", config: {difficulty: 3}},
+        {exam_id: "e3", title: "Çalışma", status: "completed", status_label: "Tamamlandı", percent: null, question_count: 2, requested_count: 2, scored_count: 0, created_at: "2026-09-13T10:00:00Z", config: {difficulty: 3}},
+      ];
+      Medical.renderExamList();
+      Medical.exam = {exam_id: "e3", title: "Çalışma", attempt: {finished_at: "2026-09-13T10:05:00Z", attempt_id: "a1"}, config: {}, notes: [],
+        questions: [{question_id: "g1", stem: "S1", answer: "A", correct: true, options: [], scoring: {scored: false, status: "not_applicable", label: "Kaynaksız (yalnız çalışma)", reason: "Kaynak pasaj yok."}}],
+        analysis: {percent: null, score: null, total: 0, correct: 0, incorrect: 0, unanswered: 0, unscored: [{question_id: "g1", label: "Kaynaksız (yalnız çalışma)", reason: "Kaynak pasaj yok.", answered: true, correct: true}], unscored_answered: 1, unassessed_concepts: [{concept_id: "c", label: "Glikoliz", unanswered: 1}], weak_concepts: [], by_topic: [], by_subject: [], by_difficulty: []}};
+      Medical.loadFigures = () => {};
+      Medical.renderResult(fakeNode("#result"));
+    """)
+    listing = context.eval('HOSTS["#med-exam-list"].innerHTML')
+    assert "8 soru · 10 istendi" in listing and "3 soru · 2 puanlı" in listing
+    assert ">puansız<" in listing and "READY" not in listing and "Hazır" in listing, "no raw status, a completed paper with no scored question is not %0"
+    result = context.eval('HOSTS["#result"].innerHTML')
+    assert "Değerlendirme dışı" in result and "puanlı soru yok" in result and "%0" not in result
+    assert "Kaynaksız (yalnız çalışma)" in result and "doğru cevapladın" in result
+    assert "Cevaplanmadı" in result and "Glikoliz · 1 boş" in result and "med-unscored" in result
+
+
+def test_the_bank_pages_the_professor_folds_and_sources_are_buttons() -> None:
+    context = medical_context()
+    context.eval("""
+      Medical.bank = {matched: 716, counts: {total: 717}, questions: [
+        {question_id: "q1", subject_label: "Biyokimya", origin: "generated", difficulty: 3, has_answer_key: true, options: [{key: "A", text: "x"}], correct_key: "A", stem: "Soru", references: [{document_id: "d1", page_number: 34, title: "Biyokimya 7"}], support: {status: "not_applicable", label: "Kaynaksız (yalnız çalışma)", scored: false}, scoring: {scored: false, status: "not_applicable", label: "Kaynaksız (yalnız çalışma)", reason: "Kaynak pasaj yok."}, problems: [], flags: 0, invalidated: false},
+      ]};
+      Medical.renderBank();
+      Medical.notes = [{note_id: "n1", title: "Not", content: "x", references: [{document_id: "d1", page_number: 34, title: "Histoloji 3 - Epitel Doku"}], created_at: "2026-09-13T10:00:00Z"}];
+      Medical.renderNotes();
+      Medical.professor = {profile_id: "p1", name: "Burcu Baba", sample_size: 59, features: [], answer_distribution: {}, documents: [], average_options: 5, average_stem_words: 20,
+        questions: Array.from({length: 59}, (_, index) => ({question_id: "pq" + index, origin: "imported_exam", has_answer_key: true, correct_key: "A", stem: "Soru " + index, options: []}))};
+      Medical.renderProfessor();
+    """)
+    bank = context.eval('HOSTS["#med-bank-list"].innerHTML')
+    assert "data-bank-more" in bank and "715 soru daha" in bank and 'data-source="d1|34"' in bank and "med-unscored" in bank
+    assert "1 / 716 gösteriliyor · toplam 717" in context.eval('HOSTS["#med-bank-count"].textContent')
+    notes = context.eval('HOSTS["#med-note-list"].innerHTML')
+    assert '<button type="button" class="chip" data-source="d1|34"' in notes and "s. 34" in notes
+    professor = context.eval('HOSTS["#med-prof-detail"].innerHTML')
+    assert professor.count("mb-stem") == 30 and "30 soru daha göster" in professor and "29 soru daha" in professor
+    context.eval("Medical.profShown = 60; Medical.renderProfessor();")
+    assert context.eval('HOSTS["#med-prof-detail"].innerHTML').count("mb-stem") == 59
+
+
+def test_escape_leaves_real_fullscreen_before_anything_else_and_the_lab_notice_folds() -> None:
+    shell = JS_SOURCES["js/shell.js"]
+    home = shell.index('if (event.key === "Escape" && !activeApproval && !confirmOpen)')
+    fullscreen = shell.index('if (event.key === "Escape" && document.fullscreenElement)')
+    assert fullscreen < home, "the fullscreen exit is checked before the home-screen escape"
+    assert "exitFullscreen" in shell[fullscreen:home]
+    medical = JS_SOURCES["js/medical.js"]
+    assert 'stage.classList.contains("expanded") || document.fullscreenElement === stage' in medical
+    context = medical_context()
+    context.eval("""
+      Lab.setNotice("3B model · CC BY-SA 4.0", "Z-Anatomy — CC BY-SA 4.0; https://example.org/atlas");
+    """)
+    notice = context.eval('HOSTS["#lab-notice"].innerHTML')
+    assert notice.startswith("3B model · CC BY-SA 4.0") and "ln-detail" in notice and "example.org" in notice
+    assert "white-space: nowrap" in re.search(r"\.lab-notice \{[^}]*\}", CSS).group(0), "one line until opened"
+    assert ".lab-notice.open" in CSS
+    quiz = json.loads(context.eval("""
+      (() => {
+        Lab.structure = {structure_id: "scapula", landmarks: []};
+        Lab.draw = () => {};
+        Lab.quiz = {questions: [{stem: "Scapula üzerindeki şu yapının Latince adı nedir: Spina scapulae?", landmark_id: "spina", pinned: false, highlight: null, options: [{key: "A", text: "Spina scapulae"}], correct_key: "A"}], index: 0, correct: 0};
+        Lab.renderQuiz();
+        return JSON.stringify({info: HOSTS["#lab-info"].innerHTML, highlight: Lab.highlight});
+      })()
+    """))
+    assert "işaret yok" in quiz["info"] and quiz["highlight"] == []
+
+
+def test_the_library_panel_keeps_room_for_the_document_list() -> None:
+    assert ".med-doc-panel .med-set-list { flex: 0 1 auto; max-height: 32vh; overflow-y: auto; min-height: 0; }" in CSS
+    assert ".med-doc-panel .med-list { flex: 1 1 9rem; min-height: 9rem; }" in CSS
+    assert 'id="med-set-toggle"' in HTML and ".med-doc-panel .med-set-list.collapsed { display: none; }" in CSS
+    # The date and time inputs and the multi-select follow the theme.
+    assert 'input[type="date"], .med-form input[type="time"]' in CSS and "color-scheme: dark;" in CSS and "body.light .med-form select[multiple] { color-scheme: light; }" in CSS
+    assert "Ctrl ile birden çok seç" in HTML
+    assert 'id="med-exam-unscored"' in HTML and 'id="med-exam-jobs"' in HTML and 'id="med-note-jobs"' in HTML and 'id="med-exam-context"' in HTML
+
+
+def test_the_page_handles_job_state_pushes_and_duplicate_starts() -> None:
+    context = medical_context()
+    context.eval("""
+      const toasts = [];
+      toast = (text, tone) => toasts.push([String(text), tone]);
+      Medical.refreshCounts = async () => {};
+      Medical.onPush({kind: "job_state", job: {job_id: "j1", kind: "create_exam", kind_label: "Sınav hazırlama", title: "Histoloji", status: "running", status_label: "Hazırlanıyor", started_at: "2026-09-13T10:00:00Z", request: {topic_ids: ["histology"]}}});
+      const running = HOSTS["#med-exam-jobs"].innerHTML;
+      Medical.onPush({kind: "job_state", job: {job_id: "j1", kind: "create_exam", kind_label: "Sınav hazırlama", title: "Histoloji", status: "timeout", status_label: "Zaman aşımı", error: "300 saniye içinde tamamlanmadı; sağlayıcı yanıt vermedi.", started_at: "2026-09-13T10:00:00Z", request: {topic_ids: ["histology"]}}});
+      globalThis.REPORT = JSON.stringify({running, failed: HOSTS["#med-exam-jobs"].innerHTML, toasts});
+    """)
+    report = json.loads(context.eval("REPORT"))
+    assert "Hazırlanıyor" in report["running"] and "data-job-retry" not in report["running"]
+    assert "Zaman aşımı" in report["failed"] and "data-job-retry" in report["failed"] and "sağlayıcı yanıt vermedi" in report["failed"]
+    # The failure is toasted once, by the bridge's job_failed push; the state push only keeps the row on screen.
+    assert report["toasts"] == []
+    assert "job_state" in JS_SOURCES["js/medical.js"], "the push kind the ledger emits is handled"

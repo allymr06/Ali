@@ -34,6 +34,8 @@ const MED_ORIGIN_TR = {
 };
 const MED_STATUS_TONE = { ready: "ok", failed: "bad", pending: "", reading: "accent", extracting: "accent", analyzing_visuals: "accent", indexing: "accent" };
 const MED_LEVEL_TONE = { weak: "bad", moderate: "warn", strong: "ok", unknown: "" };
+const MED_EXAM_STATUS_TR = { ready: "Hazır", in_progress: "Sürüyor", completed: "Tamamlandı" };
+const MED_JOB_STATUS_TONE = { running: "accent", done: "ok", failed: "bad", timeout: "bad", interrupted: "warn" };
 const MED_DIFFICULTY = [
   [1, "1 · Kolay"], [2, "2 · Kolay-orta"], [3, "3 · Orta"], [4, "4 · Orta-zor"], [5, "5 · Zor"],
 ];
@@ -83,6 +85,29 @@ const Medical = {
   get available() { return !!(State.medical && State.medical.available); },
 
   /* ── plumbing ──────────────────────────────────────────────────── */
+
+  /* A subject key ("histology") as the page names it ("Histoloji"): the
+     session's option list is the one source, so nothing is invented for an
+     unknown key — it is shown as it is. */
+  subjectLabel(key) {
+    if (!key) return "";
+    const options = ((this.state && this.state.session && this.state.session.options) || {}).subjects || [];
+    const found = options.find((item) => String(item.value) === String(key));
+    return found ? found.label : String(key);
+  },
+
+  /* Counts for the tab badges and the dashboard cards, refreshed after the
+     event that changed them — without re-rendering the forms the student is
+     typing in. */
+  async refreshCounts() {
+    const result = await this.request("state");
+    if (result.ok === false || !this.state) return;
+    this.state.counts = result.counts || this.state.counts;
+    this.state.study = result.study || this.state.study;
+    this.state.recent_exams = result.recent_exams || this.state.recent_exams;
+    this.markTabs();
+    if (this.view === "dashboard") this.renderDashboard();
+  },
 
   async request(action, params) {
     if (!bridgeReady()) return { ok: false, error: "Çekirdek köprüsü hazır değil." };
@@ -509,6 +534,11 @@ const Medical = {
     const host = $("#med-set-list");
     if (!host) return;
     const sets = this.lectureSets || [];
+    const head = $("#med-set-head");
+    if (head) head.hidden = !sets.length;
+    host.classList.toggle("collapsed", !!this.setsCollapsed);
+    const toggle = $("#med-set-toggle");
+    if (toggle) { toggle.textContent = this.setsCollapsed ? `Ders setlerini göster (${sets.length})` : "Daralt"; toggle.setAttribute("aria-expanded", String(!this.setsCollapsed)); }
     if (!sets.length) { host.innerHTML = ""; return; }
     host.innerHTML = sets.map((set) => {
       const progress = this.setProgress && this.setProgress.set_id === set.set_id ? this.setProgress : null;
@@ -630,8 +660,24 @@ const Medical = {
     }
     host.innerHTML = shown.map((item) => `<button type="button" class="med-row ${this.document && this.document.document_id === item.document_id ? "active" : ""}" data-doc="${esc(item.document_id)}">
       <span class="med-row-title">${esc(item.title)}</span><span class="med-row-side">${item.page_count || 0} s.</span>
-      <span class="med-row-meta"><span class="chip ${MED_STATUS_TONE[item.status] || ""}">${esc(item.status_label)}</span>${item.subject ? esc(item.subject) : ""}${item.source_format ? `<span class="chip">${esc(item.source_format.toUpperCase())}</span>` : ""}${(item.tags || []).slice(1, 3).map((tag) => esc(tag)).join(" · ")}</span></button>`).join("");
+      <span class="med-row-meta"><span class="chip ${MED_STATUS_TONE[item.status] || ""}">${esc(item.status_label)}</span>${item.subject ? `<span>${esc(this.subjectLabel(item.subject))}</span>` : ""}${item.source_format ? `<span class="chip">${esc(item.source_format.toUpperCase())}</span>` : ""}${(item.tags || []).slice(1, 3).map((tag) => `<span>${esc(tag)}</span>`).join("")}</span></button>`).join("");
     $$("[data-doc]", host).forEach((node) => node.addEventListener("click", () => this.openDocument(node.dataset.doc)));
+  },
+
+  toggleSets() {
+    this.setsCollapsed = !this.setsCollapsed;
+    try { localStorage.setItem("nova.medical.setsCollapsed", this.setsCollapsed ? "1" : "0"); } catch (_error) { /* storage may be unavailable */ }
+    this.renderLectureSets();
+  },
+
+  /* A source reference ("s. 34") opens exactly that page of that document; a
+     document that is gone says so instead of opening whatever was last open. */
+  async openSource(documentId, pageNumber) {
+    this.show("library");
+    const opened = await this.openDocument(documentId);
+    if (!opened) { toast(`Kaynak belge bulunamadı (silinmiş olabilir): s. ${pageNumber || "?"}`, true); return false; }
+    if (pageNumber) await this.openPage(Number(pageNumber));
+    return true;
   },
 
   async importFolder() {
@@ -660,11 +706,12 @@ const Medical = {
 
   async openDocument(documentId, { quiet = false } = {}) {
     const result = await this.request("document", { document_id: documentId });
-    if (result.ok === false) { if (!quiet) toast(result.error || "Belge açılamadı.", true); return; }
+    if (result.ok === false) { if (!quiet) toast(result.error || "Belge açılamadı.", true); return false; }
     this.document = result.document;
     this.page = null;
     this.renderDocuments();
     this.renderDocument();
+    return true;
   },
 
   renderDocument() {
@@ -688,7 +735,7 @@ const Medical = {
         </div>
         ${doc.error ? `<div class="med-explain" style="border-color: rgba(var(--bad-rgb),.5)">${esc(doc.error)}</div>` : ""}
         <div class="med-chips">
-          ${doc.subject ? `<span class="chip accent">${esc(doc.subject)}</span>` : ""}
+          ${doc.subject ? `<span class="chip accent">${esc(this.subjectLabel(doc.subject))}</span>` : ""}
           ${doc.source_format ? `<span class="chip" title="Sunum PowerPoint ile PDF'e çevrildi">${esc(doc.source_format.toUpperCase())} sunumu</span>` : ""}
           <span class="chip">${doc.page_count} sayfa</span>
           <span class="chip">${doc.chunk_count} parça</span>
@@ -758,12 +805,13 @@ const Medical = {
       toast("Belge silindi.", "ok");
       return;
     }
-    if (action === "notes") { this.show("notes"); const select = $("#med-note-document"); if (select) select.value = doc.document_id; return; }
+    if (action === "notes") { this.show("notes"); const select = $("#med-note-document"); if (select) select.value = doc.document_id; this.renderContext("note"); return; }
     if (action === "narrate") { if (!doc.ready) { toast("Belge henüz işlenmedi.", true); return; } Narration.start(doc.document_id); return; }
     if (action === "exam") {
       this.show("exam");
       const select = $("#med-exam-document");
       if (select) select.value = doc.document_id;
+      this.renderContext("exam");
       return;
     }
     if (action === "continue") {
@@ -819,10 +867,48 @@ const Medical = {
     if (documents.ok !== false) this.documents = documents.documents || [];
     const select = $("#med-note-document");
     if (select) {
+      // A list refresh must not throw away the document the student picked.
+      const chosen = select.value;
       select.innerHTML = `<option value="">— belgesiz (konudan) —</option>` +
         this.documents.filter((item) => item.ready).map((item) => `<option value="${esc(item.document_id)}">${esc(item.title)}</option>`).join("");
+      if (chosen && this.documents.some((item) => item.document_id === chosen)) select.value = chosen;
     }
     this.renderNotes();
+    this.renderContext("note");
+    this.loadJobs();
+  },
+
+  /* The subject, topic, document and pages a note or paper will actually use,
+     said before anything is generated. When the chosen document belongs to
+     another subject the line says so and offers to follow the document. */
+  async renderContext(kind) {
+    const host = $(kind === "note" ? "#med-note-context" : "#med-exam-context");
+    if (!host) return;
+    const session = (this.state && this.state.session) || {};
+    const labels = session.labels || {};
+    const documentId = ($(kind === "note" ? "#med-note-document" : "#med-exam-document") || {}).value || "";
+    const from = Number(($(kind === "note" ? "#med-note-from" : "#med-exam-from") || {}).value) || 0;
+    const to = Number(($(kind === "note" ? "#med-note-to" : "#med-exam-to") || {}).value) || 0;
+    let context = null;
+    if (documentId) {
+      const result = await this.request("note_context", { subject: session.subject || null, topic_id: session.topic_id || null, document_ids: [documentId] });
+      if (result.ok !== false) context = result.context;
+    }
+    const subject = context ? context.subject_label : (labels.subject && labels.subject !== "Ders seçilmedi" ? labels.subject : "");
+    const topic = context ? context.topic_label : (labels.topic && labels.topic !== "Konu seçilmedi" ? labels.topic : "");
+    const document = context && context.documents.length ? context.documents[0].title : "";
+    const pages = document ? (from || to ? ` s. ${from || 1}–${to || "son"}` : " (tüm sayfalar)") : "";
+    const parts = [subject || "ders seçilmedi", topic || "konu seçilmedi"].filter(Boolean);
+    let markup = `<b>Kullanılacak:</b> ${esc(parts.join(" › "))}${document ? ` · ${esc(document)}${esc(pages)}` : " · belgesiz"}`;
+    if (context && context.switched) {
+      markup += `<br><span class="mc-warn">${esc(context.note)}</span> <button type="button" class="btn btn-ghost small" data-context-follow="${esc(context.subject)}" data-context-topic="${esc(context.topic_id || "")}">Oturumu belgeye göre ayarla</button>`;
+    }
+    host.innerHTML = markup;
+    $$("[data-context-follow]", host).forEach((node) => node.addEventListener("click", async () => {
+      await this.updateSession("subject", node.dataset.contextFollow);
+      if (node.dataset.contextTopic) await this.updateSession("topic_id", node.dataset.contextTopic);
+      this.renderContext(kind);
+    }));
   },
 
   renderNotes() {
@@ -838,10 +924,11 @@ const Medical = {
         ${note.topic_label ? `<span class="chip">${esc(note.topic_label)}</span>` : ""}
         <span class="chip">${esc(fmtRelative(note.created_at))}</span></div>
       <div class="med-note-body">${renderMarkdown(note.content)}</div>
-      ${(note.references || []).length ? `<div class="med-chips">${note.references.map((ref) => `<span class="chip" title="${esc(ref.title)}">s. ${ref.page_number}</span>`).join("")}</div>` : ""}
+      ${(note.references || []).length ? `<div class="med-chips">${note.references.map((ref) => `<button type="button" class="chip" data-source="${esc(ref.document_id + "|" + ref.page_number)}" title="${esc(ref.title || ref.document_id)} · sayfayı Kütüphane'de aç">${esc(ref.title ? ref.title.slice(0, 28) + (ref.title.length > 28 ? "…" : "") : "kaynak")} · s. ${ref.page_number}</button>`).join("")}</div>` : ""}
       <div class="btn-row"><button type="button" class="btn btn-ghost small" data-delete="${esc(note.note_id)}">Sil</button></div>
     </div>`).join("");
     $$("[data-delete]", host).forEach((node) => node.addEventListener("click", () => this.deleteNote(node.dataset.delete)));
+    $$("[data-source]", host).forEach((node) => node.addEventListener("click", () => { const [documentId, page] = node.dataset.source.split("|"); this.openSource(documentId, Number(page)); }));
   },
 
   async createNote(event) {
@@ -858,7 +945,8 @@ const Medical = {
       depth: session.depth || "standard",
     });
     if (result.ok === false) { toast(result.error || "Not hazırlanamadı.", true); return; }
-    toast(result.message || "Not hazırlanıyor.", "ok");
+    toast(result.message || "Not hazırlanıyor.", result.duplicate ? "" : "ok");
+    this.loadJobs();
   },
 
   async deleteNote(noteId) {
@@ -869,6 +957,7 @@ const Medical = {
     if (result.ok === false) { toast(result.error || "Not silinemedi.", true); return; }
     this.notes = result.notes || [];
     this.renderNotes();
+    this.refreshCounts();
     toast("Not silindi.", "ok");
   },
 
@@ -880,36 +969,98 @@ const Medical = {
     if (documents.ok !== false) this.documents = documents.documents || [];
     this.renderExamForm();
     this.renderExamList();
+    this.renderContext("exam");
+    this.loadJobs();
+  },
+
+  /* The jobs the student started from these forms: running, finished, failed,
+     timed out or interrupted by a restart — each with a retry that re-sends
+     what was asked for. */
+  async loadJobs() {
+    const result = await this.request("jobs", { limit: 30 });
+    if (result.ok === false) return;
+    this.jobs = result.jobs || [];
+    this.renderJobs();
+  },
+
+  noteJob(job) {
+    if (!job || !job.job_id) return;
+    this.jobs = [job].concat((this.jobs || []).filter((item) => item.job_id !== job.job_id));
+    this.renderJobs();
+  },
+
+  renderJobs() {
+    const dismissed = this.dismissedJobs || (this.dismissedJobs = new Set());
+    const render = (host, kind) => {
+      if (!host) return;
+      const items = (this.jobs || []).filter((job) => job.kind === kind && !dismissed.has(job.job_id) && (job.status !== "done" || Date.now() - Date.parse(job.finished_at || 0) < 60000));
+      host.innerHTML = items.map((job) => `<div class="med-job ${esc(job.status)}" data-job="${esc(job.job_id)}">
+        <span class="chip ${MED_JOB_STATUS_TONE[job.status] || ""}">${esc(job.status_label || job.status)}</span>
+        <span class="mj-title">${esc(job.kind_label || job.kind)}${job.title ? ` · ${esc(job.title)}` : ""}</span>
+        <span class="faint">${esc(fmtRelative(job.started_at))}${job.attempt > 1 ? ` · ${job.attempt}. deneme` : ""}</span>
+        <span class="spacer"></span>
+        ${job.status === "done" && job.result && job.result.exam_id ? `<button type="button" class="btn btn-ghost small" data-job-open="${esc(job.result.exam_id)}">Aç</button>` : ""}
+        ${["failed", "timeout", "interrupted"].includes(job.status) ? `<button type="button" class="btn btn-ghost small" data-job-retry="${esc(job.job_id)}">Yeniden dene</button>` : ""}
+        ${job.status !== "running" ? `<button type="button" class="btn btn-ghost small" data-job-dismiss="${esc(job.job_id)}" title="Bu satırı kaldır">Kapat</button>` : ""}
+        ${job.error ? `<span class="mj-error">${esc(job.error)}</span>` : ""}
+      </div>`).join("");
+      $$("[data-job-open]", host).forEach((node) => node.addEventListener("click", () => { this.show("exam"); this.openExam(node.dataset.jobOpen); }));
+      $$("[data-job-retry]", host).forEach((node) => node.addEventListener("click", () => this.retryJob(node.dataset.jobRetry)));
+      $$("[data-job-dismiss]", host).forEach((node) => node.addEventListener("click", () => { dismissed.add(node.dataset.jobDismiss); this.renderJobs(); }));
+    };
+    render($("#med-exam-jobs"), "create_exam");
+    render($("#med-note-jobs"), "create_note");
+  },
+
+  async retryJob(jobId) {
+    const job = (this.jobs || []).find((item) => item.job_id === jobId);
+    if (!job) return;
+    const result = job.kind === "create_exam"
+      ? await this.request("create_exam", { config: job.request })
+      : await this.request("create_note", job.request);
+    if (result.ok === false) { toast(result.error || "Yeniden başlatılamadı.", true); return; }
+    toast(result.message || "Yeniden başlatıldı.", result.duplicate ? "" : "ok");
+    this.loadJobs();
   },
 
   renderExamForm() {
     const session = (this.state && this.state.session) || {};
     const options = session.options || {};
+    // The form is the student's draft: option lists are (re)filled with the
+    // chosen value kept, and the numbers take the session's defaults only the
+    // first time. A list refresh after "Sınav hazır" must not blank the form.
+    const first = !this.examFormReady;
+    this.examFormReady = true;
+    const keep = (node, fill) => { const chosen = node.value; fill(); if (chosen && Array.from(node.options).some((option) => option.value === chosen)) node.value = chosen; };
     const difficulty = $("#med-exam-difficulty");
     if (difficulty && !difficulty.options.length) {
       difficulty.innerHTML = MED_DIFFICULTY.map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join("");
     }
-    if (difficulty) difficulty.value = String(session.difficulty || 3);
+    if (difficulty && first) difficulty.value = String(session.difficulty || 3);
     const priority = $("#med-exam-priority");
     if (priority) {
-      priority.innerHTML = (options.knowledge_priorities || []).map((item) => `<option value="${esc(item.value)}">${esc(item.label)}</option>`).join("");
-      priority.value = session.knowledge_priority || "balanced";
+      keep(priority, () => { priority.innerHTML = (options.knowledge_priorities || []).map((item) => `<option value="${esc(item.value)}">${esc(item.label)}</option>`).join(""); });
+      if (first) priority.value = session.knowledge_priority || "balanced";
     }
     const professor = $("#med-exam-professor");
     if (professor) {
       const list = (this.state && this.state.professors) || this.professors || [];
-      professor.innerHTML = `<option value="">— hoca tarzı yok —</option>` +
-        list.map((item) => `<option value="${esc(item.profile_id)}">${esc(item.name)} (${item.sample_size} soru)</option>`).join("");
+      keep(professor, () => {
+        professor.innerHTML = `<option value="">— hoca tarzı yok —</option>` +
+          list.map((item) => `<option value="${esc(item.profile_id)}">${esc(item.name)} (${item.sample_size} soru)</option>`).join("");
+      });
     }
     const document = $("#med-exam-document");
     if (document) {
-      document.innerHTML = `<option value="">— belgesiz —</option>` +
-        this.documents.filter((item) => item.ready).map((item) => `<option value="${esc(item.document_id)}">${esc(item.title)}</option>`).join("");
+      keep(document, () => {
+        document.innerHTML = `<option value="">— belgesiz —</option>` +
+          this.documents.filter((item) => item.ready).map((item) => `<option value="${esc(item.document_id)}">${esc(item.title)}</option>`).join("");
+      });
     }
     const count = $("#med-exam-count");
-    if (count) count.value = String(session.question_count || 10);
+    if (count && first) count.value = String(session.question_count || 10);
     const optionCount = $("#med-exam-options");
-    if (optionCount) optionCount.value = String(session.option_count || 5);
+    if (optionCount && first) optionCount.value = String(session.option_count || 5);
     const note = $("#med-exam-note");
     if (note) {
       const session2 = (this.state && this.state.session && this.state.session.labels) || {};
@@ -937,6 +1088,7 @@ const Medical = {
       weak_emphasis: $("#med-exam-weak").checked,
       wrong_only: $("#med-exam-wrong").checked,
       include_images: $("#med-exam-images") ? $("#med-exam-images").checked : false,
+      include_unscored: $("#med-exam-unscored") ? $("#med-exam-unscored").checked : false,
     };
   },
 
@@ -949,7 +1101,9 @@ const Medical = {
     const result = await this.request("create_exam", { config });
     if (button) button.disabled = false;
     if (result.ok === false) { toast(result.error || "Sınav hazırlanamadı.", true); return; }
-    toast(result.message || "Sınav hazırlanıyor.", "ok");
+    // A second click on a paper still being written is told so; nothing starts twice.
+    toast(result.message || "Sınav hazırlanıyor.", result.duplicate ? "" : "ok");
+    this.loadJobs();
   },
 
   renderExamList() {
@@ -959,10 +1113,20 @@ const Medical = {
       host.innerHTML = medEmpty("Kayıtlı sınav yok", "Yukarıdaki formdan bir sınav kur ya da sohbette “bu konudan 20 soru hazırla” de.");
       return;
     }
-    host.innerHTML = this.exams.map((item) => `<button type="button" class="med-row ${this.exam && this.exam.exam_id === item.exam_id ? "active" : ""}" data-exam="${esc(item.exam_id)}">
+    host.innerHTML = this.exams.map((item) => {
+      const requested = Number(item.requested_count);
+      const scored = Number(item.scored_count);
+      const counts = [`${item.question_count} soru`];
+      if (Number.isFinite(requested) && requested !== item.question_count) counts.push(`${requested} istendi`);
+      if (Number.isFinite(scored) && scored !== item.question_count) counts.push(`${scored} puanlı`);
+      const side = item.percent === null || item.percent === undefined
+        ? (item.status === "completed" && Number.isFinite(scored) && scored === 0 ? "puansız" : (item.status_label || MED_EXAM_STATUS_TR[item.status] || tr(item.status)))
+        : "%" + item.percent;
+      return `<button type="button" class="med-row ${this.exam && this.exam.exam_id === item.exam_id ? "active" : ""}" data-exam="${esc(item.exam_id)}">
       <span class="med-row-title">${esc(item.title)}</span>
-      <span class="med-row-side">${item.percent === null || item.percent === undefined ? tr(item.status) : "%" + item.percent}</span>
-      <span class="med-row-meta">${item.question_count} soru · zorluk ${item.config.difficulty}/5 · ${esc(fmtRelative(item.created_at))}${item.config.professor_id ? " · hoca tarzı" : ""}</span></button>`).join("");
+      <span class="med-row-side">${esc(side)}</span>
+      <span class="med-row-meta">${esc(counts.join(" · "))} · zorluk ${item.config.difficulty}/5 · ${esc(fmtRelative(item.created_at))}${item.config.professor_id ? " · hoca tarzı" : ""}</span></button>`;
+    }).join("");
     $$("[data-exam]", host).forEach((node) => node.addEventListener("click", () => this.openExam(node.dataset.exam)));
   },
 
@@ -1008,12 +1172,15 @@ const Medical = {
     // What the quality filter rejected is part of the paper's honesty, so it is
     // shown with the paper rather than left in a payload nothing renders.
     const notes = (exam.notes || []).filter(Boolean);
+    const unscoredCount = questions.filter((item) => item.scoring && item.scoring.scored === false).length;
+    const scoring = question.scoring || null;
     host.innerHTML = `
       ${notes.length ? `<div class="med-note-strip">${notes.map((note) => `<span class="med-row-sub">${esc(note)}</span>`).join("")}</div>` : ""}
       <div class="med-runner-head">
         <span class="med-runner-title">${esc(exam.title)}</span>
         <span class="chip">${index + 1} / ${questions.length}</span>
         <span class="chip">${answered} yanıtlandı</span>
+        ${unscoredCount ? `<span class="chip warn" title="Kaynaksız ya da kaynak desteği doğrulanmamış sorular gösterilir ve açıklanır; puana ve öğrenme kaydına girmez">${questions.length - unscoredCount} puanlı · ${unscoredCount} yalnız çalışma</span>` : ""}
         ${exam.config.timed_seconds ? `<span id="med-timer" class="med-timer"></span>` : ""}
         <button type="button" class="btn btn-ghost small" data-run="finish">Sınavı bitir</button>
       </div>
@@ -1032,6 +1199,7 @@ const Medical = {
           <span class="chip">zorluk ${question.difficulty}/5</span>
           <span class="chip">${esc(MED_ORIGIN_TR[question.origin] || question.origin)}</span>
           ${question.topic_label ? `<span class="chip">${esc(question.topic_label)}</span>` : ""}
+          ${scoring && scoring.scored === false ? `<span class="chip warn" title="${esc(scoring.reason || "")}">puansız · ${esc(scoring.label || "")}</span>` : ""}
           <button type="button" class="chip ${question.flagged ? "warn" : ""}" data-run="flag">${question.flagged ? "İşaret kaldır" : "İşaretle"}</button>
         </div>
         ${this.figureMarkup(question)}
@@ -1176,6 +1344,7 @@ const Medical = {
     this.runner = { index: 0, finished: true };
     this.renderRunner();
     this.loadExams();
+    this.refreshCounts();
   },
 
   renderResult(host) {
@@ -1184,23 +1353,28 @@ const Medical = {
     const questions = exam.questions || [];
     const rows = (list) => (list || []).map((row) => medBar(row.accuracy === null ? 0 : row.accuracy,
       { label: row.label, value: `${row.correct}/${row.total}` })).join("");
+    const unscored = analysis.unscored || [];
+    const noScore = analysis.percent === null || analysis.percent === undefined;
     host.innerHTML = `
       <div class="med-result">
         <div class="panel med-card">
           <div class="panel-title"><span class="kicker">Sonuç</span><span class="faint">${esc(exam.title)}</span></div>
           <div class="med-score">
-            <span class="ms-value">${analysis.percent === null || analysis.percent === undefined ? "—" : "%" + analysis.percent}</span>
-            <span class="ms-note">${analysis.correct || 0} doğru · ${analysis.incorrect || 0} yanlış · ${analysis.unanswered || 0} boş${analysis.ungradable ? ` · ${analysis.ungradable} anahtarsız` : ""}${analysis.elapsed_seconds ? ` · ${fmtDuration(analysis.elapsed_seconds * 1000)}` : ""}</span>
+            <span class="ms-value">${noScore ? (unscored.length ? "Değerlendirme dışı" : "—") : "%" + analysis.percent}</span>
+            <span class="ms-note">${noScore && unscored.length ? `${unscored.length} soru yalnız çalışma içindi; puanlı soru yok` : `${analysis.correct || 0} doğru · ${analysis.incorrect || 0} yanlış · ${analysis.unanswered || 0} boş · ${analysis.total || 0} puanlı`}${unscored.length && !noScore ? ` · ${unscored.length} puansız` : ""}${analysis.ungradable ? ` · ${analysis.ungradable} anahtarsız` : ""}${analysis.elapsed_seconds ? ` · ${fmtDuration(analysis.elapsed_seconds * 1000)}` : ""}</span>
           </div>
           ${analysis.suggestion ? `<div class="med-explain"><h4>Sıradaki adım</h4>${esc(analysis.suggestion.text)}</div>` : ""}
           ${analysis.adaptive ? `<div class="med-explain"><h4>Uyarlanabilir zorluk</h4>${esc(analysis.adaptive.reason)}</div>` : ""}
+          ${unscored.length ? `<div class="med-explain med-unscored"><h4>Değerlendirme dışı (${unscored.length})</h4>Bu sorular gösterildi ve açıklandı; puana, kavram istatistiğine ve öğrenme kaydına girmedi.<ul>${unscored.map((item) => `<li>${esc(item.label)}${item.reason ? ` — ${esc(item.reason)}` : ""}${item.answered ? (item.correct ? " · doğru cevapladın" : " · yanlış cevapladın") : " · boş"}</li>`).join("")}</ul></div>` : ""}
         </div>
         <div class="med-breakdown">
           <div class="panel med-card"><div class="panel-title"><span class="kicker">Konu</span></div>${rows(analysis.by_topic) || medEmpty("Veri yok")}</div>
           <div class="panel med-card"><div class="panel-title"><span class="kicker">Zorluk</span></div>${rows(analysis.by_difficulty) || medEmpty("Veri yok")}</div>
           <div class="panel med-card"><div class="panel-title"><span class="kicker">Ders</span></div>${rows(analysis.by_subject) || medEmpty("Veri yok")}</div>
         </div>
-        ${(analysis.weak_concepts || []).length ? `<div class="panel med-card"><div class="panel-title"><span class="kicker">Zayıf kavramlar</span></div>
+        ${(analysis.unassessed_concepts || []).length ? `<div class="panel med-card"><div class="panel-title"><span class="kicker">Cevaplanmadı</span><span class="faint">boş bırakılan sorular kavram hakkında bir şey söylemez</span></div>
+          <div class="med-chips">${analysis.unassessed_concepts.map((item) => `<span class="chip">${esc(item.label)} · ${item.unanswered} boş</span>`).join("")}</div></div>` : ""}
+        ${(analysis.weak_concepts || []).length ? `<div class="panel med-card"><div class="panel-title"><span class="kicker">Zayıf kavramlar</span><span class="faint">cevaplanan sorulara göre</span></div>
           <div class="med-chips">${analysis.weak_concepts.map((item) => `<span class="chip bad">${esc(item.label)} · ${item.correct}/${item.total}</span>`).join("")}</div>
           <div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-ghost small" data-result="review">Zayıf alanları tekrar et</button>
           <button type="button" class="btn btn-ghost small" data-result="retry">Yanlışlarımı tekrar sor</button></div></div>` : ""}
@@ -1215,8 +1389,7 @@ const Medical = {
     $$("[data-ask]", host).forEach((node) => node.addEventListener("click", () => this.quickAsk(node.dataset.ask)));
     $$("[data-source]", host).forEach((node) => node.addEventListener("click", () => {
       const [documentId, page] = node.dataset.source.split("|");
-      this.show("library");
-      this.openDocument(documentId).then(() => this.openPage(Number(page)));
+      this.openSource(documentId, Number(page));
     }));
     Study.bindResults(host, exam);
   },
@@ -1242,8 +1415,10 @@ const Medical = {
   reviewQuestion(question, position) {
     const correct = question.correct === true;
     const answered = !!question.answer;
-    return `<div class="panel med-bank-item">
+    const scoring = question.scoring || null;
+    return `<div class="panel med-bank-item ${scoring && scoring.scored === false ? "med-unscored" : ""}">
       <div class="mb-meta"><span class="chip ${correct ? "ok" : answered ? "bad" : "warn"}">${position + 1} · ${correct ? "doğru" : answered ? "yanlış" : "boş"}</span>
+        ${scoring && scoring.scored === false ? `<span class="chip warn" title="${esc(scoring.reason || "")}">puansız · ${esc(scoring.label || "")}</span>` : ""}
         <span class="chip">zorluk ${question.difficulty}/5</span>${question.topic_label ? `<span class="chip">${esc(question.topic_label)}</span>` : ""}</div>
       ${this.figureMarkup(question)}
       <div class="mb-stem">${esc(question.stem)}</div>
@@ -1263,7 +1438,7 @@ const Medical = {
 
   /* ── question bank ─────────────────────────────────────────────── */
 
-  async loadBank() {
+  async loadBank({ append = false } = {}) {
     const subject = $("#med-bank-subject");
     if (subject && !subject.options.length) {
       const options = ((this.state && this.state.session && this.state.session.options) || {}).subjects || [];
@@ -1283,10 +1458,18 @@ const Medical = {
       answered: answered ? answered.value : "",
       text: $("#med-bank-search") ? $("#med-bank-search").value : "",
       limit: 120,
+      offset: append && this.bank ? (this.bank.questions || []).length : 0,
     };
+    // A filter change starts from the first page; a reply to an older filter
+    // is not appended to a newer list.
+    const token = (this.bankToken = (this.bankToken || 0) + 1);
     const result = await this.request("bank", { filters });
+    if (token !== this.bankToken) return;
     if (result.ok === false) { toast(result.error || "Soru bankası okunamadı.", true); return; }
-    this.bank = result;
+    if (append && this.bank) {
+      const seen = new Set((this.bank.questions || []).map((item) => item.question_id));
+      this.bank = { ...result, questions: (this.bank.questions || []).concat((result.questions || []).filter((item) => !seen.has(item.question_id))) };
+    } else this.bank = result;
     this.renderBank();
   },
 
@@ -1295,10 +1478,12 @@ const Medical = {
     const count = $("#med-bank-count");
     if (!host || !this.bank) return;
     const counts = this.bank.counts || {};
-    if (count) count.textContent = `${this.bank.total} gösteriliyor · toplam ${counts.total || 0}`;
     const questions = this.bank.questions || [];
+    const matched = Number.isFinite(Number(this.bank.matched)) ? Number(this.bank.matched) : questions.length;
+    if (count) count.textContent = `${questions.length} / ${matched} gösteriliyor · toplam ${counts.total || 0}`;
     if (!questions.length) { host.innerHTML = medEmpty("Bu süzgeçle soru yok"); return; }
-    host.innerHTML = questions.map((question) => `<div class="panel med-bank-item" data-question="${esc(question.question_id)}">
+    const more = matched > questions.length ? `<div class="med-load-more"><button type="button" class="btn btn-ghost small" data-bank-more>Daha fazla yükle</button><span class="faint">${matched - questions.length} soru daha</span></div>` : "";
+    host.innerHTML = questions.map((question) => `<div class="panel med-bank-item ${question.scoring && question.scoring.scored === false ? "med-unscored" : ""}" data-question="${esc(question.question_id)}">
       <div class="mb-meta">
         <span class="chip accent">${esc(question.subject_label)}</span>
         <span class="chip">${esc(MED_ORIGIN_TR[question.origin] || question.origin)}</span>
@@ -1321,8 +1506,10 @@ const Medical = {
       <div class="mb-options">${(question.options || []).map((option) =>
         `<span class="${option.key === question.correct_key ? "ok" : ""}">${esc(option.key)}) ${esc(option.text)}</span>`).join("")}</div>
       ${question.explanation ? `<div class="med-explain">${esc(question.explanation)}</div>` : ""}
-      ${(question.references || []).length ? `<div class="mb-meta">${question.references.map((ref) => `<span class="chip">${esc(ref.title)} · s. ${ref.page_number}</span>`).join("")}</div>` : ""}
-    </div>`).join("");
+      ${(question.references || []).length ? `<div class="mb-meta">${question.references.map((ref) => `<button type="button" class="chip" data-source="${esc(ref.document_id + "|" + ref.page_number)}" title="${esc(ref.title || ref.document_id)} · sayfayı Kütüphane'de aç">${esc(ref.title || "kaynak")} · s. ${ref.page_number}</button>`).join("")}</div>` : ""}
+    </div>`).join("") + more;
+    $$("[data-bank-more]", host).forEach((node) => node.addEventListener("click", () => { node.disabled = true; this.loadBank({ append: true }); }));
+    $$("[data-source]", host).forEach((node) => node.addEventListener("click", () => { const [documentId, page] = node.dataset.source.split("|"); this.openSource(documentId, Number(page)); }));
     $$("[data-remove]", host).forEach((node) => node.addEventListener("click", () => this.deleteQuestion(node.dataset.remove)));
     $$("[data-key]", host).forEach((node) => node.addEventListener("change", () => this.setAnswerKey(node.dataset.key, node.value)));
     $$("[data-review]", host).forEach((node) => node.addEventListener("click", () => Study.reviewQuestion(node.dataset.review)));
@@ -1336,6 +1523,7 @@ const Medical = {
     const result = await this.request("delete_question", { question_id: questionId, confirmed: true });
     if (result.ok === false) { toast(result.error || "Soru silinemedi.", true); return; }
     this.loadBank();
+    this.refreshCounts();
   },
 
   async setAnswerKey(questionId, key) {
@@ -1472,12 +1660,16 @@ const Medical = {
         : medEmpty("Henüz özellik gözlemlenmedi", "Sınav yükleyince oranlar burada belirir.")}
         ${profile.sample_size && profile.sample_size < 10 ? '<p class="settings-note">Örneklem küçük: bu oranlar bir eğilim değil, yalnızca gözlemdir.</p>' : ""}
       </div>
-      ${(profile.questions || []).length ? `<div class="panel med-card"><div class="panel-title"><span class="kicker">Yüklenen sorular</span><span class="faint">${profile.questions.length}</span></div>
-        <div class="med-bank-list">${profile.questions.slice(0, 30).map((question) => `<div class="panel med-bank-item">
-          <div class="mb-meta"><span class="chip">${esc(MED_ORIGIN_TR[question.origin] || question.origin)}</span>${question.has_answer_key ? `<span class="chip ok">anahtar: ${esc(question.correct_key)}</span>` : '<span class="chip warn">anahtar yok</span>'}</div>
+      ${(profile.questions || []).length ? `<div class="panel med-card"><div class="panel-title"><span class="kicker">Yüklenen sorular</span><span class="faint">${Math.min(this.profShown || 30, profile.questions.length)} / ${profile.questions.length}</span></div>
+        <div class="med-bank-list">${profile.questions.slice(0, this.profShown || 30).map((question) => `<div class="panel med-bank-item">
+          <div class="mb-meta"><span class="chip">${esc(MED_ORIGIN_TR[question.origin] || question.origin)}</span>${question.has_answer_key ? `<span class="chip ok">anahtar: ${esc(question.correct_key)}</span>` : '<span class="chip warn">anahtar yok</span>'}${question.figure ? '<span class="chip violet">şekilli</span>' : ""}</div>
+          ${this.figureMarkup(question)}
           <div class="mb-stem">${esc(question.stem)}</div>
           <div class="mb-options">${(question.options || []).map((option) => `<span class="${option.key === question.correct_key ? "ok" : ""}">${esc(option.key)}) ${esc(option.text)}</span>`).join("")}</div>
-        </div>`).join("")}</div></div>` : ""}`;
+        </div>`).join("")}</div>
+        ${profile.questions.length > (this.profShown || 30) ? `<div class="med-load-more"><button type="button" class="btn btn-ghost small" data-prof-more>30 soru daha göster</button><span class="faint">${profile.questions.length - (this.profShown || 30)} soru daha</span></div>` : ""}</div>` : ""}`;
+    this.loadFigures(host);
+    $$("[data-prof-more]", host).forEach((node) => node.addEventListener("click", () => { this.profShown = (this.profShown || 30) + 30; this.renderProfessor(); }));
     $$("[data-prof-act]", host).forEach((node) => node.addEventListener("click", () => this.professorAction(node.dataset.profAct)));
     $$("[data-prof-doc]", host).forEach((node) => node.addEventListener("click", () => { this.show("library"); this.openDocument(node.dataset.profDoc); }));
   },
@@ -1627,6 +1819,7 @@ const Medical = {
       return;
     }
     if (kind === "exam_ready" || kind === "exam_finished") {
+      this.refreshCounts();
       if (kind === "exam_ready" && payload.exam_id && payload.open) {
         // The student asked for a paper, from chat or from the form: put it in
         // front of them rather than a toast that points at a list.
@@ -1640,8 +1833,18 @@ const Medical = {
       return;
     }
     if (kind === "note_ready") {
+      this.refreshCounts();
+      if (payload.context_switched && payload.context_note) toast(payload.context_note, "");
       if (State.screen === "medical" && this.view === "notes") this.loadNotes();
       else toast(`Not hazır: ${payload.title}`, "ok");
+      return;
+    }
+    if (kind === "job_state") {
+      // A paper or a note the student started: its state is shown where it
+      // was started, and a failure is a visible row, not a toast that fades.
+      // The failure itself is toasted by the bridge's job_failed push; here the
+      // row is what stays on screen after the toast has gone.
+      this.noteJob(payload.job);
       return;
     }
     if (kind === "professor_updated") {
@@ -1948,7 +2151,26 @@ const Lab = {
       button.setAttribute("aria-pressed", String(active));
       button.textContent = active ? "Küçült · Esc" : "Tam ekran";
     }
+    // Leaving fullscreen must leave the student on the lab, not on the home
+    // screen, and with nothing left over the stage.
+    if (!active && State.screen === "medical" && Medical.view !== "anatomy") { Medical.show("anatomy"); }
     this.scheduleDraw();
+  },
+
+  /* The licence and source line: one short line over the model, the whole
+     attribution a click away. The attribution is never dropped, only folded. */
+  setNotice(short, detail = "") {
+    const notice = $("#lab-notice");
+    if (!notice) return;
+    notice.hidden = false;
+    notice.dataset.detail = detail || "";
+    notice.classList.toggle("has-detail", !!detail);
+    notice.innerHTML = `${esc(short)}${detail ? `<span class="ln-more">${notice.classList.contains("open") ? "gizle" : "ayrıntı"}</span><span class="ln-detail">${esc(detail)}</span>` : ""}`;
+    notice.title = detail ? "Lisans ve kaynak ayrıntısı için tıkla" : "";
+    if (!notice.dataset.bound) {
+      notice.dataset.bound = "1";
+      notice.addEventListener("click", () => { if (!notice.dataset.detail) return; notice.classList.toggle("open"); const more = notice.querySelector(".ln-more"); if (more) more.textContent = notice.classList.contains("open") ? "gizle" : "ayrıntı"; });
+    }
   },
 
   async toggleFullscreen() {
@@ -2373,19 +2595,16 @@ const Lab = {
     if (this.scene) {
       setHidden(canvas, false);
       setHidden(schematic, true);
-      notice.hidden = false;
       const loading = this.scene.items.length < this.scene.total || !this.scene.bounds;
-      notice.textContent = loading
-        ? `Sahne yükleniyor · ${this.scene.items.length}/${this.scene.total}`
-        : `3B sahne: ${this.scene.title}${this.scene.failed ? ` · ${this.scene.failed} model yüklenemedi` : ""} · ${this.scene.attribution || "lisanslı model"}`;
+      if (loading) this.setNotice(`Sahne yükleniyor · ${this.scene.items.length}/${this.scene.total}`);
+      else this.setNotice(`3B sahne: ${this.scene.title}${this.scene.failed ? ` · ${this.scene.failed} model yüklenemedi` : ""}`, this.scene.attribution || "lisanslı model");
       if (!loading) { this.drawMesh(); this.drawLabels(); }
       return;
     }
     if (this.mesh) {
       setHidden(canvas, false);
       setHidden(schematic, true);
-      notice.hidden = false;
-      notice.textContent = `3B model: ${model.license || "lisans belirtilmemiş"} · ${model.source || ""}${model.attribution ? " · " + model.attribution : ""}`;
+      this.setNotice(`3B model · ${model.license || "lisans belirtilmemiş"}`, `${model.source || ""}${model.attribution ? " · " + model.attribution : ""}`.trim());
       this.drawMesh();
       this.drawLabels();
       return;
@@ -2393,10 +2612,9 @@ const Lab = {
     setHidden(canvas, true);
     setHidden(schematic, false);
     this.drawSchematic();
-    notice.hidden = false;
-    notice.textContent = this.meshNotice
+    this.setNotice(this.meshNotice
       || (model && model.reason)
-      || "Bu yapı için lisanslı 3B model kayıtlı değil; ilişki haritası gösteriliyor. Anatomik doğruluk gösterişten önce gelir.";
+      || "Bu yapı için lisanslı 3B model kayıtlı değil; ilişki haritası gösteriliyor. Anatomik doğruluk gösterişten önce gelir.");
     const overlay = $("#lab-overlay");
     if (overlay) overlay.innerHTML = "";
   },
@@ -2696,6 +2914,12 @@ const Lab = {
         // During a bell-ringer only the station's pin is on screen, unnamed:
         // the number is the question, the name is the answer.
         if (station.landmark_id === landmark.landmark_id) parts.push(`<span class="lab-pin station" style="${at}">${this.bell.index + 1}</span>`);
+        return;
+      }
+      if (this.quiz && this.quiz.index < this.quiz.questions.length) {
+        // The quiz asks for a name: the labels would print it. Only the
+        // asked pin is drawn, as a marker, until the quiz is over.
+        if (this.highlight.includes(landmark.landmark_id)) parts.push(`<span class="lab-pin station" style="${at}">?</span>`);
         return;
       }
       const labelPoint = placeLabLabel(projected, Math.min(220, landmark.latin.length * 7 + 28), rect, occupied);
@@ -3030,9 +3254,12 @@ const Lab = {
         <button type="button" class="btn btn-ghost small" data-quiz="close">Karta dön</button></div>`;
     } else {
       const question = quiz.questions[quiz.index];
-      this.highlight = question.landmark_id ? [question.landmark_id] : [];
+      // A pin is highlighted only when the model carries one for this landmark;
+      // a question asked by description points at nothing.
+      this.highlight = question.highlight ? [question.highlight] : [];
       this.draw();
       host.innerHTML = `<h2>Quiz</h2><div class="lab-tr">${quiz.index + 1} / ${quiz.questions.length}</div>
+        ${question.landmark_id && question.pinned === false ? '<p class="settings-note">Bu modelde bu yapı için işaret yok: soru tanımdan sorulur, modelde bir nokta gösterilmez.</p>' : ""}
         <div class="mq-stem" style="font-size:var(--text-md)">${esc(question.stem)}</div>
         <div class="med-options">${question.options.map((option) => `<button type="button" class="med-option" data-quiz-option="${esc(option.key)}">
           <span class="mo-key">${esc(option.key)}</span><span>${esc(option.text)}</span></button>`).join("")}</div>
@@ -3078,7 +3305,10 @@ const Lab = {
           event.target.closest("#lab-quiz, #lab-bell, #lab-movement, #lab-teach, [data-pin-doc]")) this.toggleFullscreen();
     }, true);
     if (stage) stage.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && stage.classList.contains("expanded")) { event.preventDefault(); event.stopPropagation(); this.toggleFullscreen(); }
+      // Esc leaves either kind of fullscreen — the browser's own or the
+      // in-app fallback — and stops there: the shell must not also send the
+      // student to the home screen from behind a stage that is still open.
+      if (event.key === "Escape" && (stage.classList.contains("expanded") || document.fullscreenElement === stage)) { event.preventDefault(); event.stopPropagation(); this.toggleFullscreen(); }
       if (event.key === "Tab" && stage.classList.contains("expanded")) {
         const controls = Array.from(stage.querySelectorAll('button, input, [tabindex="0"]')).filter((node) => !node.disabled && node.getClientRects().length);
         const first = controls[0], last = controls[controls.length - 1];
@@ -3324,6 +3554,11 @@ function bindMedical() {
   if (importFolderBtn) importFolderBtn.addEventListener("click", () => Medical.importFolder());
   const docSearch = $("#med-doc-search");
   if (docSearch) docSearch.addEventListener("input", () => Medical.renderDocuments());
+  const setToggle = $("#med-set-toggle");
+  if (setToggle) setToggle.addEventListener("click", () => Medical.toggleSets());
+  try { Medical.setsCollapsed = localStorage.getItem("nova.medical.setsCollapsed") === "1"; } catch (_error) { Medical.setsCollapsed = false; }
+  ["med-note-document", "med-note-from", "med-note-to"].forEach((id) => { const node = $("#" + id); if (node) node.addEventListener("change", () => Medical.renderContext("note")); });
+  ["med-exam-document", "med-exam-from", "med-exam-to"].forEach((id) => { const node = $("#" + id); if (node) node.addEventListener("change", () => Medical.renderContext("exam")); });
   const docRefresh = $("#med-doc-refresh");
   if (docRefresh) { docRefresh.innerHTML = icon("refresh"); docRefresh.addEventListener("click", () => Medical.loadDocuments()); }
   const noteForm = $("#med-note-form");

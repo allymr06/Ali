@@ -114,6 +114,8 @@ def question(question_id: str, **overrides) -> Question:
         "options": [QuestionOption("A", "Capitulum humeri"), QuestionOption("B", "Trochlea humeri")],
         "correct_key": "A",
         "explanation": "Gerekce kayitli.",
+        # Keyed by a person: the scoring policy counts it, a sourceless model draft it would not.
+        "origin": QuestionOrigin.MANUAL,
     }
     fields.update(overrides)
     return Question(question_id=question_id, **fields)

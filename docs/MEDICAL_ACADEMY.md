@@ -584,13 +584,19 @@ BodyParts3D meshes; the two frames never meet in one scene.
 source name; the curriculum gives the teaching. Where both describe the same
 structure — an exact match of the Latin, the English, or either without its
 `musculus`/`nervus`/`arteria`/`vena`/`os`/`right`/`left` prefix, **and the same
-kind** — the atlas structure is shown the curated card: 176 of the 1,597 carry
-one of 83 lessons. The kind guard is not decoration: "Anterior tibial artery"
+kind** — the atlas structure can use the curated card. Of 176 links, 144
+primary-name matches inherit teaching and 32 synonym-only matches expose a
+related-lesson link instead. A synonym can name a member of a group (rectus
+femoris in the quadriceps lesson), so copying that group's origin/action into
+the individual model or its quiz would be incorrect. Ambiguous aliases are
+refused, independent of catalogue/set iteration order.
+The kind guard is not decoration: "Anterior tibial artery"
 matches the *muscle* card for tibialis anterior by name alone, which would put
 a muscle's origin and insertion on an artery. The card keeps the structure's
-own name and opens with the lesson it is showing ("Ders kartı: Musculi
-adductores…"), so a group card is never mistaken for one written about that
-single muscle. The other 1,421 keep their plain source card, which says to use
+own source name and English name, adds side to the Turkish lesson label and
+attributes teaching separately from mesh provenance. Related group lessons
+open through the relationships section; their facts are not scored as facts
+about the single muscle. The other 1,421 keep their plain source card, which says to use
 the lesson cards for detail.
 
 ### The scene

@@ -783,6 +783,44 @@ def test_scene_with_no_readable_models_stops_loading():
     assert "yüklenemedi" in context.eval("Lab.meshNotice")
 
 
+@pytest.mark.parametrize("interruption", ["selection", "scene", "mesh"])
+def test_late_structure_or_mesh_reply_cannot_replace_newer_selection(interruption):
+    context = pytest.importorskip("quickjs").Context()
+    context.eval(LAB_DOM_STUBS)
+    context.eval(JS_SOURCES["js/medical.js"])
+    context.eval('''
+      const requests = [];
+      Medical.request = (action, params) => new Promise(resolve => requests.push({action, params, resolve}));
+      Lab.renderList = Lab.renderInfo = Lab.renderLayers = Lab.draw = Lab.resetCamera = () => {};
+      Lab.scenes = [{scene_id:"new-scene",available:["new"]}];
+      const reply = id => ({ok:true,structure:{structure_id:id,model:{available:true}}});
+      void Lab.select("old");
+    ''')
+    if interruption == "mesh":
+        context.eval('requests[0].resolve(reply("old"));')
+        while context.execute_pending_job():
+            pass
+        context.eval('void Lab.select("new"); requests[2].resolve({ok:true,structure:{structure_id:"new"}});')
+    elif interruption == "selection":
+        context.eval('void Lab.select("new"); requests[1].resolve({ok:true,structure:{structure_id:"new"}});')
+    else:
+        context.eval('void Lab.openScene("new-scene");')
+    while context.execute_pending_job():
+        pass
+    if interruption == "mesh":
+        context.eval('requests[1].resolve({ok:true,mesh:{positions:[99,99,99]}});')
+    else:
+        context.eval('requests[0].resolve(reply("old"));')
+    while context.execute_pending_job():
+        pass
+    if interruption == "scene":
+        assert context.eval('Lab.scene.scene_id') == "new-scene"
+        assert context.eval('!Lab.structure || Lab.structure.structure_id !== "old"')
+    else:
+        assert context.eval('Lab.structure.structure_id') == "new"
+        assert context.eval('Lab.mesh === null')
+
+
 def test_lab_drawing_buffer_is_sharp_bounded_and_not_reallocated_on_every_draw() -> None:
     context = pytest.importorskip("quickjs").Context()
     context.eval(LAB_DOM_STUBS)

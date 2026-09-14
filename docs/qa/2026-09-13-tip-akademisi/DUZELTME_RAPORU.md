@@ -69,4 +69,4 @@ Yeni/uyarlanmış: `tests/test_medical_scoring.py` (24 test), `tests/test_nova_w
 
 `app/medical/{review,generation,questions,academy,study,histology,documents,learning,understanding,planner,prompts,schemas,anatomy,models,store}.py`, yeni `app/medical/{jobs,repair}.py`, `scripts/repair_medical_learning.py`, `app/ui/nova/shell.py`, `app/ui/nova/web/{index.html, css/medical.css, js/medical.js, js/study.js, js/shell.js}`, testler ve belgeler (`docs/MEDICAL_ACADEMY.md`, `docs/TESTING.md`, `docs/PROJECT_STATE.md`).
 
-Test toplamı: `scripts/verify.py` — 2500 test geçti, 4 atlandı (bağımlılık bütünlüğü ve derleme kapıları dâhil). Hedefli paketler (tests/test_medical*.py, test_atlas_catalog.py, test_nova_web.py, test_ui_nova.py): 1155 test.
+Test toplamı: `scripts/verify.py` — 2506 test geçti, 4 atlandı (bağımlılık bütünlüğü ve derleme kapıları dâhil). Hedefli paketler (tests/test_medical*.py, test_atlas_catalog.py, test_nova_web.py, test_ui_nova.py): 1155 test.

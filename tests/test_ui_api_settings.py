@@ -261,3 +261,44 @@ def test_runtime_settings_keep_supported_voice_providers(
 
     assert settings.voice_stt_provider == "gemini"
     assert settings.voice_tts_provider == "auto"
+
+
+def test_desktop_preferences_round_trip_and_validate(tmp_path, monkeypatch) -> None:
+    instance, _credentials, _preferences, _clients = service(tmp_path)
+
+    snapshot = instance.snapshot()
+    assert snapshot.daily_brief_notification is True
+    assert snapshot.daily_brief_time == "08:30"
+    assert snapshot.research_enabled is True
+
+    instance.save_desktop(
+        daily_brief_notification=False,
+        daily_brief_time="7:5",
+        research_enabled=False,
+    )
+    saved = instance.snapshot()
+    assert saved.daily_brief_notification is False
+    assert saved.daily_brief_time == "07:05", "the time is normalized to two digits"
+    assert saved.research_enabled is False
+
+    # A legacy file without the new keys still loads with the defaults.
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"provider": "gemini", "model": "gemini-2.5-pro", "version": 1}), encoding="utf-8")
+    legacy = instance.snapshot()
+    assert legacy.daily_brief_notification is True and legacy.research_enabled is True
+
+    with pytest.raises(ValueError, match="daily_brief_time"):
+        instance.save_desktop(daily_brief_notification=True, daily_brief_time="sabah", research_enabled=True)
+
+    # The profile drives the runtime, and an explicit environment
+    # variable keeps precedence over it, exactly like the model name.
+    monkeypatch.delenv("JARVIS_DAILY_BRIEF_TIME", raising=False)
+    monkeypatch.delenv("JARVIS_RESEARCH_ENABLED", raising=False)
+    instance.save_desktop(daily_brief_notification=True, daily_brief_time="06:45", research_enabled=False)
+    built = instance.build_runtime_settings()
+    assert built.daily_brief_time == "06:45" and built.research_enabled is False
+
+    monkeypatch.setenv("JARVIS_DAILY_BRIEF_TIME", "09:15")
+    monkeypatch.setenv("JARVIS_RESEARCH_ENABLED", "true")
+    overridden = instance.build_runtime_settings()
+    assert overridden.daily_brief_time == "09:15" and overridden.research_enabled is True

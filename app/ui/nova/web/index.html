@@ -767,6 +767,7 @@
         <nav id="settings-nav" class="settings-nav" aria-label="Ayar bölümleri">
           <button class="tab active" type="button" data-target="connection">Bağlantı</button>
           <button class="tab" type="button" data-target="appearance">Görünüm</button>
+          <button class="tab" type="button" data-target="assistant">Asistan</button>
           <button class="tab" type="button" data-target="voice">Ses</button>
           <button class="tab" type="button" data-target="vision">Görüş ve web</button>
           <button class="tab" type="button" data-target="memory">Hafıza</button>
@@ -800,6 +801,19 @@
             <label class="switch-row"><span>Hareketi azalt<small>Animasyonları durdurur; çekirdek tek karede kalır. İşletim sistemi ayarından bağımsızdır.</small></span><input type="checkbox" id="settings-motion" class="switch"></label>
             <label class="switch-row"><span>Ortam parçacıkları<small>Arka plandaki sakin toz katmanı. Kapatınca yalnızca ışık geçişleri kalır.</small></span><input type="checkbox" id="settings-ambient" class="switch"></label>
             <label class="switch-row"><span>Açık tema<small>Gündüz için aynı sistem. Koyu tema birincil tasarımdır.</small></span><input type="checkbox" id="settings-theme" class="switch"></label>
+          </div>
+          <div id="settings-assistant" class="panel settings-card">
+            <div class="panel-title"><span class="kicker">Asistan</span></div>
+            <label class="switch-row"><span>Sabah özeti bildirimi<small>Her gün ayarlı saatte günün özetini bildirim olarak gönderir. Servisleri okur; model çağrılmaz, kota harcanmaz.</small></span><input type="checkbox" id="settings-brief" class="switch"></label>
+            <label class="field" style="max-width:200px">
+              <span>Özet saati</span>
+              <input id="settings-brief-time" class="mono" type="time" value="08:30">
+            </label>
+            <label class="switch-row"><span>Web araştırması<small>Soru güncel bilgi gerektirdiğinde JARVIS webde arar ve kaynak gösterir. Kapatınca araştırma aracı hiç kaydedilmez.</small></span><input type="checkbox" id="settings-research" class="switch"></label>
+            <div id="settings-assistant-status" class="settings-status" role="status"></div>
+            <div class="btn-row">
+              <button type="button" id="settings-assistant-save" class="btn btn-primary">Kaydet</button>
+            </div>
           </div>
           <div id="settings-voice" class="panel settings-card">
             <div class="panel-title"><span class="kicker">Ses</span><span class="chip">salt okunur</span></div>

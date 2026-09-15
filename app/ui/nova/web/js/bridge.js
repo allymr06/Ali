@@ -406,8 +406,13 @@ const DemoBridge = {
     return { ok: false, error: "Demo modu: bu i\u015flem yap\u0131lmad\u0131 (" + String(action) + ")." };
   },
   async get_settings() { return { provider: "gemini", model: "gemini-2.5-pro",
-    credential_configured: true, credential_required: true }; },
+    credential_configured: true, credential_required: true,
+    daily_brief_notification: true, daily_brief_time: "08:30", research_enabled: true }; },
   async save_settings() {
+    return { ok: true, message: "Demo modu: ayarlar kaydedilmedi." };
+  },
+
+  async save_desktop_settings() {
     return { ok: true, message: "Demo modu: ayarlar kaydedilmedi." };
   },
   async test_connection() {

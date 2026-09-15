@@ -933,3 +933,16 @@ past the running window published "Günün özeti · QA Akademi 13 Eylül:
 5 gün kaldı · sırada Omuz kuşağı … · 14 kart tekrar bekliyor · 1 açık
 bulgu" within one poll interval, and the stamp file prevented a second
 send.
+
+## Assistant settings card (15 September 2026)
+
+`tests/test_ui_api_settings.py`: desktop preferences round-trip through
+the profile (times normalized to two digits), a legacy profile without
+the new keys loads with defaults, malformed times are refused, and the
+built runtime follows the profile with environment variables keeping
+precedence. `tests/test_ui_nova.py`: the bridge refuses a bad time in
+words, and a save rebuilds the runtime live - the new application
+carries the new values and web research off means the research tool is
+not registered at all. Verified live in the window: saving 07:45 with
+research off flipped the WEB indicator and the runtime immediately;
+restoring the defaults brought both back.

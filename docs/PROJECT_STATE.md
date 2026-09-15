@@ -240,6 +240,13 @@ Academy):
   (first run stays maximized); nonsense frames (too small, off-screen,
   corrupt file) fall back to defaults instead of trapping the user.
 - A native **folder picker** on the bridge serves both exports.
+- **Assistant settings in the UI** - a new Ayarlar > Asistan card
+  edits the morning brief (on/off, time) and web research (on/off)
+  without environment variables: values persist in the non-secret
+  profile next to the model choice, saving rebuilds the runtime live
+  (turning research off unregisters the tool and dims the WEB light on
+  the spot), and explicit environment variables keep precedence over
+  the profile exactly like the model name does.
 - **Morning brief notification** - once a day, at the configured local
   time (default 08:30, `JARVIS_DAILY_BRIEF_TIME` / off with
   `JARVIS_DAILY_BRIEF_NOTIFICATION=false`), one OS notification with

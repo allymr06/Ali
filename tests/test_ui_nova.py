@@ -280,6 +280,9 @@ def test_boot_returns_live_state_without_secrets(booted) -> None:
         "model": DEFAULT_GEMINI_MODEL,
         "credential_configured": True,
         "credential_required": True,
+        "daily_brief_notification": True,
+        "daily_brief_time": "08:30",
+        "research_enabled": True,
     }
     assert SECRET not in json.dumps(boot)
     assert SECRET not in json.dumps(booted.bridge.refresh())
@@ -318,6 +321,9 @@ def test_settings_snapshot_carries_only_non_secret_fields(booted) -> None:
         "model",
         "credential_configured",
         "credential_required",
+        "daily_brief_notification",
+        "daily_brief_time",
+        "research_enabled",
     }
     assert settings["credential_configured"] is True
 
@@ -2740,3 +2746,25 @@ def test_the_morning_brief_clock_and_line_are_exact_and_honest() -> None:
     for piece in ("2 hatırlatıcı", "Komite 2: 9 gün kaldı", "sırada Düzlemler", "14 kart", "1 açık bulgu", "1 açık görev"):
         assert piece in full, piece
     assert shell.brief_notification_body({}) == "Bugün için bekleyen bir şey görünmüyor."
+
+
+def test_the_bridge_saves_assistant_settings_and_applies_them_live(booted) -> None:
+    bad = booted.bridge.save_desktop_settings({"daily_brief_notification": True, "daily_brief_time": "sabah", "research_enabled": True})
+    assert bad == {"ok": False, "error": "Saat biçimi SS:DD olmalı (örn. 08:30)."}
+
+    before = booted.controller.application
+    result = booted.bridge.save_desktop_settings({
+        "daily_brief_notification": False,
+        "daily_brief_time": "07:15",
+        "research_enabled": False,
+    })
+    assert result["ok"] is True
+    assert result["settings"]["daily_brief_time"] == "07:15"
+    assert result["settings"]["research_enabled"] is False
+
+    application = booted.controller.application
+    assert application is not before, "the runtime was rebuilt with the new preferences"
+    assert application.settings.daily_brief_notification is False
+    assert application.settings.daily_brief_time == "07:15"
+    assert application.research is None, "web research off means the tool is not registered"
+    assert not application.tool_executor.contains("research_web")

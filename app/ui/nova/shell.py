@@ -3086,6 +3086,30 @@ class NovaBridge:
             "settings": self.get_settings(),
         }
 
+    def save_desktop_settings(self, payload: Any) -> dict[str, Any]:
+        """Non-secret assistant preferences: morning brief and web research."""
+        if self.api_settings is None:
+            return {"ok": False, "error": "Ayar hizmeti kullanılamıyor."}
+        data = payload if isinstance(payload, Mapping) else {}
+        try:
+            self.api_settings.save_desktop(
+                daily_brief_notification=bool(data.get("daily_brief_notification")),
+                daily_brief_time=str(data.get("daily_brief_time") or ""),
+                research_enabled=bool(data.get("research_enabled")),
+            )
+        except ValueError:
+            return {"ok": False, "error": "Saat biçimi SS:DD olmalı (örn. 08:30)."}
+        try:
+            self._rebuild_runtime()
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        self._push_snapshot()
+        return {
+            "ok": True,
+            "message": "Asistan ayarları kaydedildi ve uygulandı.",
+            "settings": self.get_settings(),
+        }
+
     def test_connection(
         self, provider: str, model: str, api_key: str
     ) -> dict[str, Any]:

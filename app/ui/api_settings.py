@@ -21,6 +21,9 @@ class APISettingsSnapshot:
     model: str
     credential_configured: bool
     credential_required: bool = True
+    daily_brief_notification: bool = True
+    daily_brief_time: str = "08:30"
+    research_enabled: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +116,29 @@ class APISettingsService:
             model=profile.model,
             credential_configured=configured,
             credential_required=credential_required,
+            daily_brief_notification=profile.daily_brief_notification,
+            daily_brief_time=profile.daily_brief_time,
+            research_enabled=profile.research_enabled,
+        )
+
+    def save_desktop(
+        self,
+        *,
+        daily_brief_notification: bool,
+        daily_brief_time: str,
+        research_enabled: bool,
+    ) -> None:
+        """Persist the non-secret assistant preferences atomically."""
+        profile = self.preferences.load()
+        self.preferences.save(
+            ProviderPreferences(
+                provider=profile.provider,
+                model=profile.model,
+                version=profile.version,
+                daily_brief_notification=daily_brief_notification,
+                daily_brief_time=daily_brief_time,
+                research_enabled=research_enabled,
+            )
         )
 
     def save(self, provider: str, model: str, api_key: str | None = None) -> None:
@@ -213,6 +239,23 @@ class APISettingsService:
             gemini_api_key=(
                 base.gemini_api_key
                 or stored_gemini_key
+            ),
+            # Assistant preferences come from the profile; an explicit
+            # environment variable keeps precedence, like the model does.
+            daily_brief_notification=(
+                base.daily_brief_notification
+                if "JARVIS_DAILY_BRIEF_NOTIFICATION" in os.environ
+                else profile.daily_brief_notification
+            ),
+            daily_brief_time=(
+                base.daily_brief_time
+                if "JARVIS_DAILY_BRIEF_TIME" in os.environ
+                else profile.daily_brief_time
+            ),
+            research_enabled=(
+                base.research_enabled
+                if "JARVIS_RESEARCH_ENABLED" in os.environ
+                else profile.research_enabled
             ),
         )
 

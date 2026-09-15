@@ -573,6 +573,11 @@ function renderSettings() {
     $("#settings-key-state").innerHTML = s.credential_configured
       ? '<span class="chip ok">anahtar kayıtlı</span>' : '<span class="chip warn">anahtar yok · deneme modu</span>';
   }
+  if (s) {
+    $("#settings-brief").checked = s.daily_brief_notification !== false;
+    $("#settings-brief-time").value = s.daily_brief_time || "08:30";
+    $("#settings-research").checked = s.research_enabled !== false;
+  }
   $("#settings-motion").checked = State.reducedMotion;
   $("#settings-ambient").checked = State.ambient;
   $("#settings-theme").checked = document.body.classList.contains("light");
@@ -715,6 +720,21 @@ async function saveSettings(event) {
   }
 }
 
+async function saveAssistantSettings() {
+  if (!bridgeReady()) return;
+  const status = $("#settings-assistant-status");
+  status.textContent = "Kaydediliyor…";
+  status.className = "settings-status";
+  const result = await call("save_desktop_settings", {
+    daily_brief_notification: $("#settings-brief").checked,
+    daily_brief_time: $("#settings-brief-time").value.trim(),
+    research_enabled: $("#settings-research").checked,
+  });
+  status.textContent = result.message || result.error || "";
+  status.className = `settings-status ${result.ok ? "ok" : "err"}`;
+  if (result.ok && result.settings) { State.settings = result.settings; renderSettings(); }
+}
+
 async function testConnection() {
   if (!bridgeReady()) return;
   settingsStatus("Bağlantı sınanıyor…");
@@ -827,6 +847,7 @@ function bindPanels() {
   $("#vision-form").addEventListener("submit", submitVision);
   $("#research-form").addEventListener("submit", submitResearch);
   $("#settings-form").addEventListener("submit", saveSettings);
+  $("#settings-assistant-save").addEventListener("click", saveAssistantSettings);
   $("#settings-test").addEventListener("click", testConnection);
   $("#settings-delete").addEventListener("click", deleteKey);
   $("#settings-motion").addEventListener("change", (event) => applyMotionPreference(event.target.checked));

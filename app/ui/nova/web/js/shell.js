@@ -298,6 +298,9 @@ const Notify = {
       showScreen(item.target);
       /* A routine's outcome lives in its own conversation: open it. */
       if (conversationId && typeof openConversation === "function") openConversation(String(conversationId));
+      /* The morning brief lands on the command centre: show it fresh,
+         not whatever the one-minute throttle still holds. */
+      if (item.kind === "brief" && typeof renderHomeBrief === "function") renderHomeBrief(true);
     } else this.render();
   },
 

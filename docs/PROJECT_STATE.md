@@ -240,6 +240,12 @@ Academy):
   (first run stays maximized); nonsense frames (too small, off-screen,
   corrupt file) fall back to defaults instead of trapping the user.
 - A native **folder picker** on the bridge serves both exports.
+- **Markdown in answers** - assistant bubbles render the safe subset
+  the model actually writes (bold, italics, inline code, simple lists,
+  heading lines) after escaping everything, so \*\*15 Mart 2026\*\* shows
+  as bold instead of asterisks and no HTML from the model or a web
+  page can ever execute. Multiplication signs stay multiplication;
+  user bubbles stay plain text.
 - **Unarchive** - a right-click on an archived conversation offers
   "arşivden çıkar" behind the usual confirm dialog; the record returns
   to the active list unchanged.

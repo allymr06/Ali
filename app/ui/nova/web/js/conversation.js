@@ -56,6 +56,41 @@ function fmtSecondsTr(seconds) {
   return `${seconds.toLocaleString("tr-TR", { minimumFractionDigits: digits, maximumFractionDigits: digits })} sn`;
 }
 
+/* ── mini-Markdown for assistant bubbles ─────────────────────────────
+   The model answers with light Markdown; showing the asterisks raw is
+   noise. This renders ONLY a safe subset - bold, italics, inline code,
+   simple lists, heading lines - after escaping everything, so no HTML
+   from the model or a web page ever executes. Anything else stays
+   literal text. */
+function renderMarkdownLite(raw) {
+  const escaped = esc(String(raw ?? ""));
+  const inline = (text) => text
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:!?]|$)/g, "$1<em>$2</em>");
+  const lines = escaped.split(/\r?\n/);
+  const parts = [];
+  let list = null; // "ul" | "ol" | null
+  const closeList = () => { if (list) { parts.push(`</${list}>`); list = null; } };
+  for (const line of lines) {
+    const bullet = /^\s*[-•] +(.*)$/.exec(line);
+    const numbered = /^\s*\d+[.)] +(.*)$/.exec(line);
+    const heading = /^\s*#{1,4} +(.*)$/.exec(line);
+    if (bullet || numbered) {
+      const kind = bullet ? "ul" : "ol";
+      if (list !== kind) { closeList(); parts.push(`<${kind}>`); list = kind; }
+      parts.push(`<li>${inline((bullet || numbered)[1])}</li>`);
+      continue;
+    }
+    closeList();
+    if (heading) { parts.push(`<div class="md-h">${inline(heading[1])}</div>`); continue; }
+    if (!line.trim()) { parts.push('<div class="md-gap"></div>'); continue; }
+    parts.push(`<div>${inline(line)}</div>`);
+  }
+  closeList();
+  return parts.join("");
+}
+
 function appendMessage(host, message, slim, { animate = true } = {}) {
   if (!host || !message || !String(message.text ?? "").trim()) return null;
   const node = el("div", `msg ${esc(message.role)}`);
@@ -65,7 +100,8 @@ function appendMessage(host, message, slim, { animate = true } = {}) {
     (roleLabel && !slim ? `<div class="msg-meta"><span class="msg-role">${roleLabel}</span>${time}</div>` : "") +
     `<div class="msg-body"></div>` +
     (message.role === "assistant" && !slim ? assuranceChips(message.metadata) : "");
-  node.querySelector(".msg-body").textContent = message.text;
+  if (message.role === "assistant") node.querySelector(".msg-body").innerHTML = renderMarkdownLite(message.text);
+  else node.querySelector(".msg-body").textContent = message.text;
   host.appendChild(node);
   if (animate) Motion.rise(node, { y: 10, duration: 360 });
   return node;
@@ -97,7 +133,7 @@ function finalizePendingBubble(message) {
       node.classList.remove("pending");
       const meta = node.querySelector(".msg-meta");
       if (meta) meta.innerHTML = `<span class="msg-role">JARVIS</span><span class="msg-time">${esc(fmtClock(new Date(message.at)))}</span>`;
-      node.querySelector(".msg-body").textContent = message.text;
+      node.querySelector(".msg-body").innerHTML = renderMarkdownLite(message.text);
       node.insertAdjacentHTML("beforeend", assuranceChips(message.metadata));
       if (State.pendingSources) {
         node.insertAdjacentHTML("beforeend", researchSourcesMarkup(State.pendingSources));

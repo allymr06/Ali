@@ -991,3 +991,12 @@ and keeps marked answers and finished-paper scoring as separate lines
 - the live QA store had 12 marked answers against 38 scored questions
 on finished papers, which one shared sentence would have turned into
 nonsense.
+
+## Markdown in assistant bubbles (15 September 2026)
+
+`tests/test_nova_web.py` (QuickJS): bold, italics, inline code and
+heading lines render with the asterisks gone; bullet and numbered
+lists open and close properly; hostile HTML and script tags from the
+model or a fetched page arrive escaped and inert; `3*4` and `a*b`
+never become emphasis; and the source pins that only assistant bubbles
+take this path while user text stays literal.

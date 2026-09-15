@@ -1775,3 +1775,39 @@ def test_answer_source_chips_show_hosts_and_escape_everything() -> None:
     assert ">kaynak<" in html, "an unparseable url still gets an honest generic chip"
     assert "<script>" not in html and "&quot;Takvimi&quot;" in html
     assert "Web kaynakları" in html
+
+
+def test_assistant_markdown_renders_the_safe_subset_and_nothing_else() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval("function esc(v) { return String(v == null ? \"\" : v).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\").replace(/\"/g, \"&quot;\"); }")
+    context.eval(section(JS_SOURCES["js/conversation.js"], "function renderMarkdownLite", "\nfunction appendMessage"))
+
+    run = lambda text: context.eval("renderMarkdownLite(" + json.dumps(text) + ")")
+
+    NL = chr(10)
+    # Bold, italics, inline code and headings render; the asterisks disappear.
+    rich = run("### Sonuc" + NL + "Sinav **15 Mart 2026** tarihinde, yani *bahar donemi* icinde. Kod: `verify.py`")
+    assert '<div class="md-h">Sonuc</div>' in rich
+    assert "<strong>15 Mart 2026</strong>" in rich and "**" not in rich
+    assert "<em>bahar donemi</em>" in rich
+    assert "<code>verify.py</code>" in rich
+
+    # Lists: bullets and numbers, closed properly, mixed with paragraphs.
+    listed = run("Plan:" + NL + "- birinci" + NL + "- ikinci" + NL + NL + "1. adim" + NL + "2. adim")
+    assert listed.count("<li>") == 4 and "<ul>" in listed and "<ol>" in listed
+    assert listed.index("</ul>") < listed.index("<ol>"), "the bullet list closes before the numbered one opens"
+
+    # Injection: model or web text can never smuggle HTML through.
+    hostile = run('<img src=x onerror=alert(1)> ve **<script>alert(2)</script>**')
+    assert "<img" not in hostile and "<script" not in hostile
+    assert "&lt;img" in hostile and "<strong>&lt;script&gt;alert(2)&lt;/script&gt;</strong>" in hostile
+
+    # Multiplication stays multiplication: no stray emphasis from 3*4 or a*b.
+    math = run("3*4 = 12 ve a*b carpimi")
+    assert "<em>" not in math
+
+    # User bubbles never go through this path at all.
+    conversation = JS_SOURCES["js/conversation.js"]
+    assert 'if (message.role === "assistant") node.querySelector(".msg-body").innerHTML = renderMarkdownLite(message.text);' in conversation
+    assert 'else node.querySelector(".msg-body").textContent = message.text;' in conversation

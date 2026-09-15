@@ -95,6 +95,10 @@ def backup_state_now(
             f"{2 * total // (1024 * 1024)} MB boş alan gerekli, "
             f"{free // (1024 * 1024)} MB var."
         )
+    # A crash between mkdir and rename leaves a .tmp folder behind;
+    # sweep the leftovers of previous runs before starting a new one.
+    for leftover in root.glob(f"{STATE_BACKUP_PREFIX}*.tmp"):
+        shutil.rmtree(leftover, ignore_errors=True)
     stamp = _utc_now().strftime(_STAMP_FORMAT)
     target = root / f"{STATE_BACKUP_PREFIX}{stamp}"
     partial = root / f"{STATE_BACKUP_PREFIX}{stamp}.tmp"

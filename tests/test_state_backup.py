@@ -89,8 +89,10 @@ def test_due_logic_and_refusals_are_honest(tmp_path) -> None:
     backup_state_now(tmp_path)
     assert state_backup_due(tmp_path) is False, "a fresh copy postpones the weekly one"
 
-    # An interrupted run leaves no half-copy in the rotation.
+    # An interrupted run leaves no half-copy in the rotation, and the
+    # next run sweeps the leftover .tmp folder entirely.
     partial = tmp_path / "state-backups" / "state-99999999-999999-999999.tmp"
     partial.mkdir(parents=True)
-    assert [row["folder"] for row in list_state_backups(tmp_path)] != [], "real copies stay listed"
     assert all(not row["folder"].endswith(".tmp") for row in list_state_backups(tmp_path))
+    backup_state_now(tmp_path)
+    assert not partial.exists(), "the stale half-copy is swept on the next run"

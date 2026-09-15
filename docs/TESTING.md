@@ -1024,3 +1024,11 @@ as the top fuzzy hits for odak/hatırlat/yedek/dışa.
 without a plan, hides past exams, says "bugün" on the day, and turns
 amber within a week. Live: the topbar showed "🎓 QA Akademi 13 Eylül ·
 5 gün" in amber against the QA store.
+
+## Drawer date groups (15 September 2026)
+
+`tests/test_nova_web.py` (QuickJS): the group label follows local
+calendar days between midnights - 23:59 yesterday is still "Dün", the
+week and month boundaries hold, and a future timestamp from clock skew
+falls back to "Bugün" instead of inventing a group. Live: the
+hundred-conversation drawer rendered under "Bugün" and "Bu ay".

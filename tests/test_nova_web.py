@@ -1825,3 +1825,21 @@ def test_the_exam_chip_speaks_turkish_and_hides_without_a_plan() -> None:
     assert json.loads(run({"name": "Komite 2", "days_left": 9})) == {"text": "🎓 Komite 2 · 9 gün", "warn": False}
     assert json.loads(run({"name": "Komite 2", "days_left": 5})) == {"text": "🎓 Komite 2 · 5 gün", "warn": True}
     assert json.loads(run({"name": "Komite 2", "days_left": 0})) == {"text": "🎓 Komite 2 · bugün", "warn": True}
+
+
+def test_drawer_groups_follow_local_calendar_days() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/conversation.js"], "function convGroupLabel", "\n\nfunction renderConversations"))
+
+    run = lambda iso, now: context.eval(
+        "convGroupLabel(" + json.dumps(iso) + ", new Date(" + json.dumps(now) + ").getTime())"
+    )
+
+    now = "2026-09-15T10:00:00"
+    assert run("2026-09-15T00:05:00", now) == "Bugün"
+    assert run("2026-09-14T23:59:00", now) == "Dün", "just before midnight is still yesterday"
+    assert run("2026-09-12T09:00:00", now) == "Bu hafta"
+    assert run("2026-09-01T09:00:00", now) == "Bu ay"
+    assert run("2026-07-01T09:00:00", now) == "Daha eski"
+    assert run("2026-09-16T09:00:00", now) == "Bugün", "a clock skew never invents a group"

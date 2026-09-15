@@ -222,6 +222,19 @@ async function sendCommand(raw) {
 
 /* ── stored conversations ─────────────────────────────────────────── */
 
+/* Which drawer group a conversation belongs to, by calendar days
+   between local midnights - so 23:59 yesterday is still "Dün". */
+function convGroupLabel(iso, now) {
+  const day = (value) => { const d = new Date(value); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const diff = Math.round((day(now || Date.now()) - day(iso)) / 86400000);
+  if (!Number.isFinite(diff) || diff < 0) return "Bugün";
+  if (diff === 0) return "Bugün";
+  if (diff === 1) return "Dün";
+  if (diff <= 7) return "Bu hafta";
+  if (diff <= 31) return "Bu ay";
+  return "Daha eski";
+}
+
 function renderConversations() {
   const host = $("#conv-items");
   if (!host) return;
@@ -231,11 +244,17 @@ function renderConversations() {
     renderChatTitle();
     return;
   }
-  host.innerHTML = items.map((item) => `
+  let group = null;
+  host.innerHTML = items.map((item) => {
+    const label = convGroupLabel(item.updated_at);
+    const heading = label !== group ? `<div class="conv-group">${label}</div>` : "";
+    group = label;
+    return `${heading}
     <button type="button" class="conv-item ${item.active ? "active" : ""}" data-id="${esc(item.conversation_id)}" title="${esc(item.title)}">
       <span class="conv-title">${esc(item.title)}</span>
       <span class="conv-meta"><span>${item.turn_count} mesaj${item.status === "archived" ? " · arşiv" : ""}</span><span>${esc(fmtRelative(item.updated_at))}</span></span>
-    </button>`).join("");
+    </button>`;
+  }).join("");
   $$(".conv-item", host).forEach((node) => {
     node.addEventListener("click", () => openConversation(node.dataset.id));
     node.addEventListener("contextmenu", async (event) => {

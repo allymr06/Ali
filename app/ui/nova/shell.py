@@ -245,6 +245,41 @@ def webview_storage_directory() -> Path:
     return default_state_directory() / "webview"
 
 
+WINDOW_GEOMETRY_FILE = "window.json"
+MIN_REMEMBERED_SIZE = (900, 600)
+
+
+def load_window_geometry(storage: Path) -> dict[str, int] | None:
+    """The window frame the user last left, when it still makes sense.
+
+    A frame smaller than the minimum or thrown far off any screen falls back
+    to the defaults rather than opening an unusable window.
+    """
+    try:
+        raw = json.loads((storage / WINDOW_GEOMETRY_FILE).read_text(encoding="utf-8"))
+        frame = {key: int(raw[key]) for key in ("x", "y", "width", "height")}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if frame["width"] < MIN_REMEMBERED_SIZE[0] or frame["height"] < MIN_REMEMBERED_SIZE[1]:
+        return None
+    if not (-32 <= frame["x"] <= 20000 and -32 <= frame["y"] <= 20000):
+        return None
+    return frame
+
+
+def save_window_geometry(storage: Path, window: Any) -> bool:
+    """Remember the frame; never let a failure here touch the close path."""
+    try:
+        frame = {"x": int(window.x), "y": int(window.y), "width": int(window.width), "height": int(window.height)}
+        if frame["width"] < MIN_REMEMBERED_SIZE[0] or frame["height"] < MIN_REMEMBERED_SIZE[1]:
+            return False
+        storage.mkdir(parents=True, exist_ok=True)
+        (storage / WINDOW_GEOMETRY_FILE).write_text(json.dumps(frame), encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
 ASSET_STAMP_FILE = "assets.stamp"
 WEBVIEW_CACHE_DIRECTORIES = ("Cache", "Code Cache")
 
@@ -1240,6 +1275,111 @@ class NovaBridge:
             return {"available": True, **_jsonable(academy.dashboard())}
         except Exception as exc:
             return {"available": False, "reason": f"Tıp Akademisi okunamadı ({type(exc).__name__})."}
+
+    def pick_folder(self) -> dict[str, Any]:
+        """The native folder picker, for any surface that saves a file."""
+        window = self._window
+        if window is None:
+            return {"ok": False, "error": "Pencere hazır değil."}
+        selection: list[Any] = []
+
+        def choose() -> None:
+            selection.append(window.create_file_dialog(webview.FOLDER_DIALOG, directory=str(Path.home())))
+
+        try:
+            _run_on_ui_thread(window, choose)
+        except Exception as exc:
+            return {"ok": False, "error": f"Klasör seçici açılamadı ({type(exc).__name__})."}
+        chosen = selection[0] if selection else None
+        if isinstance(chosen, (list, tuple)):
+            chosen = chosen[0] if chosen else None
+        return {"ok": True, "path": str(chosen) if chosen else None}
+
+    def export_conversation(self, conversation_id: Any, directory: Any) -> dict[str, Any]:
+        """One stored conversation as a Markdown file in the chosen folder."""
+        target_dir = Path(str(directory or ""))
+        if not target_dir.is_dir():
+            return {"ok": False, "error": "Klasör bulunamadı; önce bir klasör seç."}
+        try:
+            title, created, messages = self.controller.conversation_export(str(conversation_id))
+        except (KeyError, ValueError):
+            return {"ok": False, "error": "Konuşma bulunamadı."}
+        lines = [f"# {title}", "", f"*JARVIS konuşması · {created}*", ""]
+        for message in messages:
+            speaker = "Sen" if message.role == "user" else "JARVIS"
+            lines.append(f"**{speaker}:**")
+            lines.append(message.text.strip())
+            lines.append("")
+        import re as _re
+
+        stem = _re.sub(r"[^0-9A-Za-zÇĞİÖŞÜçğıöşü _.-]+", "", title).strip().replace(" ", "-")[:80] or "konusma"
+        target = target_dir / f"{stem}.md"
+        counter = 2
+        while target.exists():
+            target = target_dir / f"{stem}-{counter}.md"
+            counter += 1
+        newline = chr(10)
+        target.write_text(newline.join(lines) + newline, encoding="utf-8")
+        self._record_ui_event("conversation.exported", "A conversation was exported.")
+        return {"ok": True, "path": str(target), "file": target.name, "messages": len(messages)}
+
+    def daily_brief(self) -> dict[str, Any]:
+        """The day at a glance, read from the services that hold it.
+
+        Every section reports independently; one that cannot answer says so
+        instead of hiding the rest. Nothing here is estimated or generated.
+        """
+        application = self.controller.application
+        from app.core.interaction_policy import turkish_date
+
+        brief: dict[str, Any] = {"ok": True, "date": turkish_date()}
+        reminders = getattr(application, "reminders", None)
+        try:
+            result = reminders.list_active() if reminders is not None else None
+            brief["reminders"] = list((result.data or {}).get("reminders", []))[:4] if result is not None and result.succeeded else []
+            brief["reminders_available"] = reminders is not None
+        except Exception:
+            brief["reminders"], brief["reminders_available"] = [], False
+        routines = getattr(application, "routines", None)
+        try:
+            rows = routines.list() if routines is not None else []
+            brief["routines"] = [
+                {"name": row.get("name") or row.get("prompt", "")[:40], "schedule": row.get("schedule", ""), "next_run_local": row.get("next_run_local", "")}
+                for row in rows[:3]
+            ]
+            brief["routines_available"] = routines is not None
+        except Exception:
+            brief["routines"], brief["routines_available"] = [], False
+        try:
+            tasks = application.task_service.list(limit=100)
+            open_states = {"running", "waiting_for_input", "waiting_for_approval", "pending", "queued"}
+            brief["tasks_open"] = sum(1 for task in tasks if str(task.get("status")) in open_states)
+        except Exception:
+            brief["tasks_open"] = 0
+        try:
+            brief["notifications_unread"] = int(self._notifications.summary()["unread"])
+        except Exception:
+            brief["notifications_unread"] = 0
+        academy = self._medical()
+        medical: dict[str, Any] = {"available": academy is not None}
+        if academy is not None:
+            try:
+                block = academy.study.dashboard_block()
+                today = block.get("today") or {}
+                next_item = today.get("next") or None
+                medical["next_activity"] = {"title": next_item["title"], "kind_label": next_item.get("kind_label", "")} if next_item else None
+                medical["plan_message"] = str(today.get("message") or "")
+                medical["cards_waiting"] = int(block.get("cards_due") or 0) + int(block.get("cards_new") or 0)
+                medical["findings_open"] = int(block.get("findings_open") or 0)
+                countdowns = sorted(
+                    (academy.study.planner.summary(plan["plan_id"]) for plan in academy.study.planner.plans()),
+                    key=lambda summary: summary["days_left"],
+                )
+                medical["countdown"] = {"name": countdowns[0]["name"], "days_left": countdowns[0]["days_left"]} if countdowns else None
+            except Exception:
+                medical["available"] = False
+        brief["medical"] = medical
+        return brief
 
     def medical_pick_file(self, kind: str = "document") -> dict[str, Any]:
         """Open the native picker for a lecture document, an exam file or a
@@ -3112,15 +3252,20 @@ def launch_nova(
                 except Exception:
                     pass
 
+    geometry = load_window_geometry(storage)
     window = webview.create_window(
         WINDOW_TITLE,
         url=str(web_root / "index.html"),
         js_api=bridge,
-        width=1440,
-        height=920,
+        width=geometry["width"] if geometry else 1440,
+        height=geometry["height"] if geometry else 920,
+        x=geometry["x"] if geometry else None,
+        y=geometry["y"] if geometry else None,
         min_size=(420, 300),
         background_color="#05080f",
-        maximized=True,
+        # The first run opens maximized; after that the window comes back
+        # exactly where and how the user left it.
+        maximized=geometry is None,
         text_select=False,
     )
     bridge._attach(window)
@@ -3185,7 +3330,10 @@ def launch_nova(
             tray.notify(WINDOW_TITLE, TRAY_HIDDEN_NOTICE)
 
     def on_closing() -> bool | None:
-        # Runs on the window's UI thread. Hiding here would take the bridge
+        # Runs on the window's UI thread. Remember the frame first: both the
+        # hide-to-tray and the real close should reopen where the user was.
+        save_window_geometry(storage, window)
+        # Hiding here would take the bridge
         # through a diagnostic push and back into JavaScript on this very
         # thread, which then waits for itself: the window goes to the tray
         # and never returns, and the next launch's activation signal reaches

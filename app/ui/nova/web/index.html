@@ -66,6 +66,7 @@
       <button id="palette-btn" class="top-btn" type="button" title="Komut paleti (Ctrl+K)"></button>
       <button id="context-btn" class="top-btn" type="button" title="Bağlam paneli (Ctrl+Shift+C)"></button>
       <button id="compact-btn" class="top-btn" type="button" title="Kompakt mod"></button>
+      <button id="focus-chip" class="top-btn focus-chip" type="button" hidden title="Odak sayacı · durdurmak için tıkla"></button>
       <div class="clock" aria-hidden="true">
         <span id="clock-time">--:--</span>
         <span id="clock-date">—</span>
@@ -102,6 +103,10 @@
           <div id="home-subline" class="greeting-sub"></div>
         </div>
         <div class="home-side left">
+          <div class="home-block">
+            <div class="ctx-title"><span>Günün özeti</span></div>
+            <div id="home-brief"></div>
+          </div>
           <div class="home-block">
             <div class="ctx-title"><span>Son etkinlik</span></div>
             <div id="home-activity"></div>
@@ -148,6 +153,7 @@
           <div class="chat-toolbar">
             <button id="conv-toggle" class="btn btn-text" type="button">Konuşmalar</button>
             <span id="chat-title" class="chat-title">Yeni konuşma</span>
+            <button id="chat-export" class="btn btn-text" type="button" title="Açık konuşmayı Markdown dosyası olarak kaydeder">Dışa aktar</button>
             <button id="chat-new" class="btn btn-text" type="button" title="Yeni konuşma (Ctrl+N)">+ Yeni</button>
           </div>
           <div id="chat-scroll" class="chat-scroll">

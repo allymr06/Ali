@@ -221,6 +221,26 @@ the real window on a copy of the study store and pinned by tests
   unscored items and lists sources; nothing is overwritten. A started plan
   activity wears a live elapsed badge.
 
+The same night, on "genel JARVIS'e de" (the general shell, not only the
+Academy):
+
+- **Gunun ozeti** on the command centre — reminders, routines, open tasks,
+  unread notifications and the Academy's day (next activity, waiting cards,
+  open findings, nearest exam countdown) read live from their services;
+  a section that cannot answer says so; nothing is estimated. Rows jump to
+  their screens; the date is written in Turkish words, not the C locale.
+- **Konusma disa aktarma** — the open chat as Markdown into a picked
+  folder ("Sen:"/"JARVIS:", creation date, collision-safe filename);
+  reading for export never activates or switches the open conversation;
+  system turns stay out.
+- **Odak sayaci** — a 25-minute focus countdown as a topbar chip
+  (quick action or Ctrl+Shift+F, click to stop, chime at the end); purely
+  a clock, records nothing and claims no study time.
+- **Pencere gecmisi** — the window reopens at the frame it was closed in
+  (first run stays maximized); nonsense frames (too small, off-screen,
+  corrupt file) fall back to defaults instead of trapping the user.
+- A native **folder picker** on the bridge serves both exports.
+
 ## Medical Academy: the user test of 13 September 2026 repaired (14 September 2026)
 
 An eighteen-finding user test of the Academy on 96e5f41 (report under

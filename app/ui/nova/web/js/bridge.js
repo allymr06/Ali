@@ -186,6 +186,21 @@ const DemoBridge = {
     }, 1300);
     return { ok: true };
   },
+  async daily_brief() {
+    return { ok: true, date: "15 Eylül 2026, Pazartesi", reminders: [{ text: "Anatomi tekrarı", due_local: "09.00" }], reminders_available: true,
+      routines: [{ name: "Sabah özeti", schedule: "her gün 08:30", next_run_local: "yarın 08:30" }], routines_available: true,
+      tasks_open: 1, notifications_unread: 2,
+      medical: { available: true, next_activity: { title: "Düzlemler ve eksenler", kind_label: "Materyali oku" }, plan_message: "", cards_waiting: 12, findings_open: 1, countdown: { name: "Komite 2", days_left: 9 } } };
+  },
+
+  async pick_folder() {
+    return { ok: true, path: null };
+  },
+
+  async export_conversation() {
+    return { ok: false, error: "Demo modunda dışa aktarma yok." };
+  },
+
   async list_conversations() {
     return { ok: true, active: "demo-conv-1", conversations: (await DemoBridge.boot()).conversations };
   },

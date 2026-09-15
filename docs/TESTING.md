@@ -870,3 +870,23 @@ completion to the page.
   sheet holds no key or explanation, the answer key labels unscored items
   and lists sources, the note export keeps its references, and the bridge
   refuses a missing folder and never overwrites an existing file.
+
+## General shell: brief, export, focus, geometry (15 September 2026)
+
+In `tests/test_ui_nova.py`: window geometry round-trips through
+`window.json` while nonsense frames (too small, off any screen, corrupt
+JSON, an odd window object) fall back to defaults without touching the
+close path; conversation export writes the visible turns only (system
+turns never leak), speaks as "Sen"/"JARVIS", refuses missing folders and
+unknown ids, adds a collision suffix instead of overwriting, and never
+activates or switches the open conversation; the daily brief answers each
+section from its own service, reports availability honestly, invents no
+countdown, and writes its date in Turkish words.
+
+In `tests/test_nova_web.py` (QuickJS): the brief builder shows what
+exists, escapes reminder text, marks a week-out committee as urgent,
+renders the honest empty and quiet states, and wires each row to its
+screen; the focus clock formats remaining time exactly (half-started
+seconds round up, never negative). The demo bridge mirrors the three new
+methods without pretending demo file writes; the hidden attribute wins
+over every panel class, the topbar buttons included.

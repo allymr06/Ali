@@ -169,6 +169,19 @@ class DesktopController:
             for conversation in conversations[: max(1, limit)]
         ]
 
+    def conversation_export(self, conversation_id: str) -> tuple[str, str, list[ChatMessage]]:
+        """(title, created date, visible messages) of a stored conversation.
+
+        Reading for export never activates or switches anything: the student
+        can print an old conversation while another one stays active.
+        """
+        conversation = self.application.conversation_engine.get(UUID(str(conversation_id)))
+        return (
+            self.conversation_title(conversation),
+            conversation.created_at.astimezone().strftime("%d.%m.%Y %H:%M"),
+            self._visible_turns(conversation),
+        )
+
     def open_conversation(self, conversation_id: str) -> list[ChatMessage]:
         """Switch the shared context to a stored conversation."""
         engine = self.application.conversation_engine

@@ -1667,3 +1667,64 @@ def test_the_cards_tab_reveals_before_grading_and_speaks_turkish() -> None:
     context.eval("Cards.revealed = true;")
     assert context.eval('Cards.keydown({key: "3", target: {tagName: "DIV"}})') is True
     assert context.eval("GRADED") == "good"
+
+
+# ---------------------------------------------------------------------------
+# general JARVIS on the page: the brief builder and the focus timer
+# ---------------------------------------------------------------------------
+
+
+BRIEF_STUBS = """
+function esc(value) { return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function emptyState(title, hint) { return `<div class="empty-state">${title}|${hint}</div>`; }
+"""
+
+
+def brief_context():
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(BRIEF_STUBS)
+    context.eval(section(JS_SOURCES["js/panels.js"], "function homeBriefMarkup", "\nlet briefFetchedAt"))
+    context.eval(section(JS_SOURCES["js/shell.js"], "const Focus = {", "\nfunction bindKeyboard"))
+    return context
+
+
+def test_home_brief_markup_shows_what_exists_and_invents_nothing() -> None:
+    context = brief_context()
+    run = lambda payload: context.eval("homeBriefMarkup(" + json.dumps(payload) + ")")
+
+    assert "Özet okunamadı" in run({"ok": False})
+
+    full = run({
+        "ok": True, "date": "15 Eylül 2026, Pazartesi",
+        "reminders": [{"text": "Anatomi <b>tekrarı</b>", "due_local": "09.00"}], "reminders_available": True,
+        "routines": [{"name": "Sabah özeti", "schedule": "her gün", "next_run_local": "yarın 08:30"}], "routines_available": True,
+        "tasks_open": 2, "notifications_unread": 1,
+        "medical": {"available": True, "next_activity": {"title": "Düzlemler", "kind_label": "Materyali oku"}, "plan_message": "",
+                     "cards_waiting": 5, "findings_open": 2, "countdown": {"name": "Komite 2", "days_left": 3}},
+    })
+    for expected in ("15 Eylül 2026", "Anatomi &lt;b&gt;tekrarı&lt;/b&gt;", "09.00", "Sabah özeti", "yarın 08:30",
+                     "2 açık görev", "1 okunmamış bildirim", "Komite 2", "3 gün", "Sırada: Düzlemler",
+                     "5 kart tekrar bekliyor", "2 açık bulgu"):
+        assert expected in full, expected
+    assert "<b>" not in full, "reminder text is escaped, never injected"
+    assert 'class="hb-row warn"' in full, "a committee 3 days away is marked urgent"
+    assert 'data-brief-go="tasks"' in full and 'data-brief-medical="cards"' in full
+
+    # Nothing anywhere: an honest empty state, no invented rows.
+    empty = run({"ok": True, "date": "", "reminders": [], "reminders_available": False, "routines": [],
+                 "routines_available": False, "tasks_open": 0, "notifications_unread": 0, "medical": {"available": False}})
+    assert "Bugün için bekleyen bir şey yok" in empty
+
+    # Reminders exist as a service but none are due: said in words, not hidden.
+    quiet = run({"ok": True, "date": "x", "reminders": [], "reminders_available": True, "routines": [],
+                 "routines_available": True, "tasks_open": 0, "notifications_unread": 0, "medical": {"available": False}})
+    assert "Bugün için hatırlatıcı yok" in quiet
+
+
+def test_the_focus_clock_formats_time_exactly() -> None:
+    context = brief_context()
+    values = json.loads(context.eval(
+        "JSON.stringify([Focus.format(0), Focus.format(-500), Focus.format(1500000), Focus.format(61000), Focus.format(59400), Focus.format(3600000)])"
+    ))
+    assert values == ["0:00", "0:00", "25:00", "1:01", "1:00", "60:00"]

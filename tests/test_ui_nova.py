@@ -2614,3 +2614,80 @@ def test_the_bridge_exports_markdown_into_the_chosen_folder_without_overwriting(
     assert "Soru?" in content and "Cevap" not in content
     unknown = booted.bridge.medical_call("export_markdown", {"kind": "pdf", "directory": str(target)})
     assert unknown["ok"] is False and "Bilinmeyen dışa aktarma türü" in unknown["error"]
+
+
+# ---------------------------------------------------------------------------
+# general JARVIS: window geometry, conversation export, the daily brief
+# ---------------------------------------------------------------------------
+
+
+def test_window_geometry_is_remembered_but_never_nonsense(tmp_path) -> None:
+    storage = tmp_path / "store"
+    assert shell.load_window_geometry(storage) is None, "the first run has nothing to restore"
+
+    assert shell.save_window_geometry(storage, SimpleNamespace(x=120, y=80, width=1280, height=800)) is True
+    assert shell.load_window_geometry(storage) == {"x": 120, "y": 80, "width": 1280, "height": 800}
+
+    # A frame too small to use is not remembered; the last good one survives.
+    assert shell.save_window_geometry(storage, SimpleNamespace(x=0, y=0, width=300, height=200)) is False
+    assert shell.load_window_geometry(storage) == {"x": 120, "y": 80, "width": 1280, "height": 800}
+
+    # A frame thrown far off every screen, or a corrupt file, falls back to defaults.
+    geometry_file = storage / shell.WINDOW_GEOMETRY_FILE
+    geometry_file.write_text('{"x": -9000, "y": 40, "width": 1280, "height": 800}', encoding="utf-8")
+    assert shell.load_window_geometry(storage) is None
+    geometry_file.write_text("not json", encoding="utf-8")
+    assert shell.load_window_geometry(storage) is None
+
+    # Saving never lets an odd window object break the close path.
+    assert shell.save_window_geometry(storage, SimpleNamespace(x=None, y=None, width=None, height=None)) is False
+
+
+def test_the_bridge_exports_a_conversation_without_switching_or_leaking(booted, tmp_path) -> None:
+    engine = booted.app.conversation_engine
+    stored = engine.create()
+    exported_id = stored.conversation_id
+    stored.turns.append(ConversationTurn(exported_id, MessageRole.USER, "Böbrek nerede?"))
+    stored.turns.append(ConversationTurn(exported_id, MessageRole.ASSISTANT, "Retroperitoneal bölgede."))
+    stored.turns.append(ConversationTurn(exported_id, MessageRole.SYSTEM, "gizli sistem notu"))
+    engine.store.save(stored)
+    open_before = booted.controller.context.conversation_id
+
+    missing = booted.bridge.export_conversation(str(exported_id), str(tmp_path / "yok"))
+    assert missing == {"ok": False, "error": "Klasör bulunamadı; önce bir klasör seç."}
+    unknown = booted.bridge.export_conversation(str(uuid4()), str(tmp_path))
+    assert unknown == {"ok": False, "error": "Konuşma bulunamadı."}
+
+    first = booted.bridge.export_conversation(str(exported_id), str(tmp_path))
+    assert first["ok"] is True and first["messages"] == 2
+    text = (tmp_path / first["file"]).read_text(encoding="utf-8")
+    assert "Böbrek nerede?" in text and "**Sen:**" in text and "**JARVIS:**" in text
+    assert "gizli sistem notu" not in text, "system turns are not part of the student's transcript"
+
+    # Exporting reads the store; it never activates or switches the open conversation.
+    assert booted.controller.context.conversation_id == open_before
+
+    second = booted.bridge.export_conversation(str(exported_id), str(tmp_path))
+    assert second["ok"] is True and second["file"] != first["file"] and second["file"].endswith("-2.md")
+
+
+def test_daily_brief_reads_each_section_from_its_own_service(booted) -> None:
+    booted.app.reminders.create("Anatomi tekrarı", minutes=120)
+
+    brief = booted.bridge.daily_brief()
+
+    assert brief["ok"] is True
+    from app.core.interaction_policy import _TURKISH_MONTHS, turkish_date
+
+    assert any(month in brief["date"] for month in _TURKISH_MONTHS), "the date speaks Turkish, not the C locale"
+    assert turkish_date(datetime(2026, 9, 15, 12, 0)) == "15 Eylül 2026, Salı"
+    assert brief["reminders_available"] is True
+    assert [item["text"] for item in brief["reminders"]] == ["Anatomi tekrarı"]
+    assert all("due_local" in item for item in brief["reminders"])
+    assert brief["routines_available"] is True and brief["routines"] == []
+    assert brief["tasks_open"] == 0
+    assert brief["notifications_unread"] == booted.bridge.list_notifications()["unread"]
+    medical = brief["medical"]
+    assert medical["available"] is True
+    assert medical["cards_waiting"] == 0 and medical["findings_open"] == 0
+    assert medical["countdown"] is None, "no exam plan means no countdown, not an invented one"

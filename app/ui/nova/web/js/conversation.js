@@ -367,6 +367,18 @@ function bindConversation() {
   });
   $("#conv-new").addEventListener("click", newConversation);
   $("#chat-new").addEventListener("click", newConversation);
+  const chatExport = $("#chat-export");
+  if (chatExport) chatExport.addEventListener("click", async () => {
+    const listing = await call("list_conversations");
+    const active = listing.ok === false ? null : (listing.conversations || []).find((item) => item.active);
+    if (!active || !active.turn_count) { toast("Dışa aktarılacak bir konuşma yok; önce bir şey yaz.", true); return; }
+    const picked = await call("pick_folder");
+    if (picked.ok === false) { toast(picked.error || "Klasör seçilemedi.", true); return; }
+    if (!picked.path) return;
+    const result = await call("export_conversation", active.conversation_id, picked.path);
+    if (result.ok === false) { toast(result.error || "Dışa aktarılamadı.", true); return; }
+    toast(`Konuşma kaydedildi: ${result.file} (${result.messages} mesaj).`, "ok");
+  });
 
   $("#voice-toggle").addEventListener("click", toggleVoice);
   $("#voice-close").addEventListener("click", () => toggleVoice());

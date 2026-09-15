@@ -564,6 +564,88 @@ function handleScrollKeys(event) {
   return false;
 }
 
+/* ── focus timer ──────────────────────────────────────────────────
+   A countdown in the topbar; entirely local, honest about being one.
+   Starting sets the end time; the chip ticks; clicking stops it; the end
+   is a toast, not a claim that any work happened. */
+const Focus = {
+  endsAt: 0,
+  minutes: 0,
+  timer: 0,
+
+  format(remainingMs) {
+    const total = Math.max(0, Math.ceil(remainingMs / 1000));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+  },
+
+  start(minutes) {
+    const chosen = Math.max(1, Math.min(180, Number(minutes) || 25));
+    this.minutes = chosen;
+    this.endsAt = Date.now() + chosen * 60000;
+    clearInterval(this.timer);
+    this.timer = setInterval(() => this.tick(), 1000);
+    this.tick();
+    toast(`Odak başladı: ${chosen} dk. Sayacı durdurmak için üstteki rozete tıkla.`, "ok");
+  },
+
+  stop(finished) {
+    clearInterval(this.timer);
+    this.timer = 0;
+    const chip = $("#focus-chip");
+    if (chip) { chip.hidden = true; chip.classList.remove("done"); }
+    if (!finished && this.endsAt) {
+      const spent = Math.max(0, Math.round((this.minutes * 60000 - (this.endsAt - Date.now())) / 60000));
+      toast(`Odak durduruldu (${spent} dk geçmişti).`);
+    }
+    this.endsAt = 0;
+  },
+
+  tick() {
+    const chip = $("#focus-chip");
+    if (!chip) return;
+    const remaining = this.endsAt - Date.now();
+    chip.hidden = false;
+    if (remaining <= 0) {
+      chip.textContent = "Odak bitti";
+      chip.classList.add("done");
+      clearInterval(this.timer);
+      this.timer = 0;
+      toast(`Odak bitti: ${this.minutes} dk doldu. Kısa bir ara ver.`, "ok");
+      this.chime();
+      setTimeout(() => { if (!this.timer) this.stop(true); }, 15000);
+      this.endsAt = 0;
+      return;
+    }
+    chip.textContent = `⏳ ${this.format(remaining)}`;
+  },
+
+  chime() {
+    try {
+      const context = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.value = 660;
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.2, context.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.9);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + 1.0);
+    } catch (_error) { /* no audio device is fine */ }
+  },
+
+  toggle() {
+    if (this.timer || this.endsAt) this.stop(false);
+    else this.start(25);
+  },
+
+  bind() {
+    const chip = $("#focus-chip");
+    if (chip) chip.addEventListener("click", () => this.stop(false));
+  },
+};
+
 function bindKeyboard() {
   addEventListener("keydown", (event) => {
     if (!State.booted) return;
@@ -592,6 +674,7 @@ function bindKeyboard() {
     if (event.ctrlKey && key === "m") { event.preventDefault(); toggleVoice(); }
     if (event.ctrlKey && key === "n" && !event.shiftKey) { event.preventDefault(); newConversation(); }
     if (event.ctrlKey && event.shiftKey && key === "t") { event.preventDefault(); toggleTheme(); }
+    if (event.ctrlKey && event.shiftKey && key === "f") { event.preventDefault(); Focus.toggle(); }
     if (event.ctrlKey && event.shiftKey && key === "c") { event.preventDefault(); Context.toggle(); }
     if (event.ctrlKey && event.shiftKey && key === "n") { event.preventDefault(); Notify.toggle(); }
     if (event.key === "Escape" && Notify.open) { event.preventDefault(); Notify.set(false); return; }
@@ -626,6 +709,7 @@ const SHORTCUTS = [
   ["Ctrl + L", "Komut alanına odaklan"], ["Ctrl + M", "Sesli modu aç/kapat"],
   ["Ctrl + N", "Yeni konuşma"], ["Ctrl + ,", "Ayarlar"],
   ["Ctrl + Shift + C", "Bağlam paneli"], ["Ctrl + Shift + N", "Bildirimler"],
+  ["Ctrl + Shift + F", "25 dk odak sayacı"],
   ["Ctrl + D", "Tanılama"],
   ["Ctrl + Shift + B", "Gezinmeyi daralt/genişlet"],
   ["Ctrl + Shift + T", "Koyu/açık tema"], ["Alt + 1…9", "Ekranlar"], ["Alt + 0", "Tanılama"],

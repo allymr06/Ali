@@ -20,6 +20,7 @@ function renderSnapshot() {
   renderHomeSystem();
   renderHomeSession();
   renderHomeActivity();
+  renderHomeBrief();
   renderTasks(s.tasks || []);
   renderTools(s.tools || []);
   renderRiskBars(s.tools || []);
@@ -30,6 +31,45 @@ function renderSnapshot() {
 }
 
 /* ── command centre ───────────────────────────────────────────────── */
+
+/* ── the day at a glance ──────────────────────────────────────────
+   Read from the services that hold it; a section that cannot answer says
+   so, and nothing is estimated. Pure markup builder, testable alone. */
+function homeBriefMarkup(brief) {
+  if (!brief || brief.ok === false) return emptyState("Özet okunamadı", "Çekirdek köprüsü yanıt vermedi.");
+  const rows = [];
+  if ((brief.reminders || []).length) {
+    rows.push(...brief.reminders.map((item) => `<button type="button" class="hb-row" data-brief-go="tasks"><span class="hb-icon">⏰</span><span class="hb-text">${esc(item.text)}</span><span class="hb-side">${esc(item.due_local || "")}</span></button>`));
+  } else if (brief.reminders_available) {
+    rows.push(`<div class="hb-row muted"><span class="hb-icon">⏰</span><span class="hb-text">Bugün için hatırlatıcı yok</span></div>`);
+  }
+  (brief.routines || []).forEach((routine) => rows.push(`<button type="button" class="hb-row" data-brief-go="automation"><span class="hb-icon">🔁</span><span class="hb-text">${esc(routine.name)}</span><span class="hb-side">${esc(routine.next_run_local || routine.schedule || "")}</span></button>`));
+  if (brief.tasks_open) rows.push(`<button type="button" class="hb-row" data-brief-go="tasks"><span class="hb-icon">▶</span><span class="hb-text">${brief.tasks_open} açık görev</span></button>`);
+  if (brief.notifications_unread) rows.push(`<button type="button" class="hb-row" data-brief-notify><span class="hb-icon">🔔</span><span class="hb-text">${brief.notifications_unread} okunmamış bildirim</span></button>`);
+  const medical = brief.medical || {};
+  if (medical.available) {
+    if (medical.countdown) rows.push(`<button type="button" class="hb-row ${medical.countdown.days_left <= 7 ? "warn" : ""}" data-brief-medical="plan"><span class="hb-icon">🎓</span><span class="hb-text">${esc(medical.countdown.name)}</span><span class="hb-side">${medical.countdown.days_left} gün</span></button>`);
+    if (medical.next_activity) rows.push(`<button type="button" class="hb-row" data-brief-medical="plan"><span class="hb-icon">📖</span><span class="hb-text">Sırada: ${esc(medical.next_activity.title)}</span><span class="hb-side">${esc(medical.next_activity.kind_label || "")}</span></button>`);
+    else if (medical.plan_message) rows.push(`<div class="hb-row muted"><span class="hb-icon">📖</span><span class="hb-text">${esc(medical.plan_message)}</span></div>`);
+    if (medical.cards_waiting) rows.push(`<button type="button" class="hb-row" data-brief-medical="cards"><span class="hb-icon">🗂</span><span class="hb-text">${medical.cards_waiting} kart tekrar bekliyor</span></button>`);
+    if (medical.findings_open) rows.push(`<button type="button" class="hb-row" data-brief-medical="understanding"><span class="hb-icon">🩺</span><span class="hb-text">${medical.findings_open} açık bulgu</span></button>`);
+  }
+  if (!rows.length) return emptyState("Bugün için bekleyen bir şey yok", "Hatırlatıcılar, rutinler, görevler ve Akademi buraya düşer.");
+  return `<div class="hb-date">${esc(brief.date || "")}</div>` + rows.join("");
+}
+
+let briefFetchedAt = 0;
+async function renderHomeBrief(force) {
+  const host = $("#home-brief");
+  if (!host || State.demo) { if (host && State.demo) host.innerHTML = emptyState("Demo modu", "Özet çekirdek bağlıyken okunur."); return; }
+  if (!force && Date.now() - briefFetchedAt < 60000) return;
+  briefFetchedAt = Date.now();
+  const brief = await call("daily_brief");
+  host.innerHTML = homeBriefMarkup(brief);
+  $$("[data-brief-go]", host).forEach((node) => node.addEventListener("click", () => showScreen(node.dataset.briefGo)));
+  $$("[data-brief-notify]", host).forEach((node) => node.addEventListener("click", () => Notify.set(true)));
+  $$("[data-brief-medical]", host).forEach((node) => node.addEventListener("click", () => { showScreen("medical"); if (typeof Medical !== "undefined") Medical.show(node.dataset.briefMedical); }));
+}
 
 function renderGreeting() {
   const s = State.snapshot;
@@ -90,6 +130,7 @@ function buildQuickActions() {
     ["vision", "Ekranı incele", () => showScreen("vision"), () => !!State.snapshot?.vision_available],
     ["research", "Araştır", () => showScreen("research"), () => !!State.snapshot?.research_available],
     ["plus", "Yeni konuşma", () => newConversation(), () => true],
+    ["alarm", "25 dk odak", () => Focus.start(25), () => true],
     ["palette", "Komut paleti", () => Palette.show(), () => true],
   ];
   host.innerHTML = "";

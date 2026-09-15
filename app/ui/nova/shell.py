@@ -1729,6 +1729,8 @@ class NovaBridge:
                 filename, content = academy.export_note_markdown(text("note_id"))
             elif kind in ("exam", "exam_key"):
                 filename, content = academy.export_exam_markdown(text("exam_id"), include_answers=kind == "exam_key")
+            elif kind == "week":
+                filename, content = academy.export_week_markdown()
             else:
                 return {"ok": False, "error": f"Bilinmeyen dışa aktarma türü: {kind}"}
             target = directory / filename
@@ -2288,6 +2290,16 @@ class NovaBridge:
                 return {"ok": False, "error": blocked}
             conversation_id = self.controller.start_new_conversation()
         return {"ok": True, "conversation_id": conversation_id, "messages": []}
+
+    def unarchive_conversation(self, conversation_id: str) -> dict[str, Any]:
+        """The reverse of archiving; nothing else about the record changes."""
+        try:
+            self.controller.unarchive_conversation(str(conversation_id))
+        except KeyError:
+            return {"ok": False, "error": "Konuşma bulunamadı."}
+        except ValueError:
+            return {"ok": False, "error": "Konuşma kimliği geçersiz."}
+        return {"ok": True, "conversations": self.list_conversations()["conversations"]}
 
     def archive_conversation(self, conversation_id: str) -> dict[str, Any]:
         with self._lock:

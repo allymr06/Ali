@@ -272,6 +272,10 @@ class DesktopController:
             return True
         return False
 
+    def unarchive_conversation(self, conversation_id: str) -> None:
+        """Bring an archived conversation back to the active list."""
+        self.application.conversation_engine.activate(UUID(str(conversation_id)))
+
     def snapshot(self) -> RuntimeSnapshot:
         settings = self.application.settings
         memories = tuple(

@@ -303,6 +303,53 @@ class MedicalAcademy:
         lines.append(f"*JARVIS Tıp Akademisi · {note.created_at.date().isoformat()} tarihli not; kaynak sayfalar yukarıda.*")
         return self._safe_filename(note.title, ".md"), "\n".join(lines) + "\n"
 
+    def export_week_markdown(self) -> tuple[str, str]:
+        """(suggested file name, content) for the weekly summary.
+
+        Prints exactly what ``weekly_report`` computed from the records,
+        including its own honesty note; nothing new is derived here.
+        """
+        report = self.study.weekly_report()
+        days = report["days"]
+        totals = report["totals"]
+        first, last = days[0]["date"], days[-1]["date"]
+        lines = [f"# Haftalık çalışma özeti · {first} – {last}", ""]
+        if report.get("empty"):
+            lines += ["Bu hafta kayıtlı çalışma yok.", ""]
+        lines += ["## Toplamlar", ""]
+        accuracy = totals.get("accuracy")
+        lines += [
+            f"- Çalışma süresi: {totals['minutes']} dk",
+            # Two separate facts, kept separate: how many options were
+            # marked, and how the finished papers scored. A paper's scored
+            # total includes the questions left blank, so the two numbers
+            # must never share one sentence.
+            f"- İşaretlenen cevap: {totals['answers']}",
+            f"- Bitirilen kâğıt: {totals['papers']} · puanlı {totals['scored']} soru · doğru {totals['correct']}"
+            + (f" · doğruluk %{round(accuracy * 100)}" if accuracy is not None else ""),
+            f"- Puansız cevap: {totals['unscored_answered']} (doğruluğa girmez)",
+            f"- Kart tekrarı: {totals['cards']}",
+            f"- Bulgular: {totals['findings_opened']} açıldı, {totals['findings_resolved']} kapandı",
+            f"- Plan etkinliği: {totals['activities']['completed']} tamam, {totals['activities']['skipped']} atlandı, {totals['activities']['missed']} kaçtı",
+            f"- Seri: {report['streak_days']} gün",
+            "",
+            "## Günler",
+            "",
+            "| Gün | Dakika | Soru | Kart | Etkinlik |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+        for day in days:
+            lines.append(f"| {day['date']} | {day['minutes']} | {day['answers']} | {day['cards']} | {day['activities_done']} |")
+        lines.append("")
+        if report["countdowns"]:
+            lines += ["## Sınav geri sayımları", ""]
+            for countdown in report["countdowns"]:
+                lines.append(f"- {countdown['name']}: {countdown['days_left']} gün ({countdown['exam_date']})")
+            lines.append("")
+        lines += [f"*{report['note']}*", ""]
+        stamp = last.replace("-", "")
+        return self._safe_filename(f"haftalik-ozet-{stamp}", ".md"), chr(10).join(lines)
+
     def export_exam_markdown(self, exam_id: str, *, include_answers: bool) -> tuple[str, str]:
         """(suggested file name, content) for a paper.
 

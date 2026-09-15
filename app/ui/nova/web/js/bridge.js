@@ -416,6 +416,10 @@ const DemoBridge = {
     return { ok: true, message: "Demo modu: ayarlar kaydedilmedi." };
   },
 
+  async unarchive_conversation() {
+    return { ok: false, error: "Demo modunda arşiv işlemi yapılmaz." };
+  },
+
   async list_reminders() {
     return { ok: true, reminders: [
       { reminder_id: "demo-r1", text: "Anatomi tekrarı", due_local: "15.09 18:00", status: "waiting", attempts: 0 },

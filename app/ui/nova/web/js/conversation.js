@@ -200,7 +200,21 @@ function renderConversations() {
     node.addEventListener("contextmenu", async (event) => {
       event.preventDefault();
       const item = items.find((entry) => entry.conversation_id === node.dataset.id);
-      if (!item || item.status === "archived") return;
+      if (!item) return;
+      if (item.status === "archived") {
+        const restore = await confirmDialog({
+          title: "Arşivden çıkarılsın mı?",
+          body: `“${item.title}” yeniden aktif listeye dönecek.`,
+          confirmLabel: "ÇIKAR",
+        });
+        if (restore) {
+          const result = await call("unarchive_conversation", item.conversation_id);
+          if (result.ok === false) { toast(result.error || "Çıkarılamadı.", true); return; }
+          toast("Konuşma arşivden çıkarıldı.", "ok");
+          refreshConversations();
+        }
+        return;
+      }
       const confirmed = await confirmDialog({
         title: "Konuşma arşivlensin mi?",
         body: `“${item.title}” arşive kaldırılacak. Arşivdeki konuşmalar silinmez; listeden tekrar açılabilir.`,

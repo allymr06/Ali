@@ -980,3 +980,14 @@ only with explicit confirmation, and the list reflects each change
 (order-independent near midnight). Live: created "+90" from the
 Görevler form, saw "15.09 10:20" listed, cancelled through the real
 confirm dialog, and the honest empty state returned.
+
+## Unarchive and the weekly summary on paper (15 September 2026)
+
+`tests/test_ui_nova.py`: archive then unarchive round-trips a
+conversation's status through the bridge, and an unknown id refuses in
+words. `tests/test_medical_scoring.py`: the weekly export prints the
+empty week in words, seven day rows, the report's own honesty note,
+and keeps marked answers and finished-paper scoring as separate lines
+- the live QA store had 12 marked answers against 38 scored questions
+on finished papers, which one shared sentence would have turned into
+nonsense.

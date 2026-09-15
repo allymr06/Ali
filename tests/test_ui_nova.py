@@ -2830,3 +2830,22 @@ def test_reminders_have_a_full_surface_on_the_bridge(booted) -> None:
     cancelled = booted.bridge.cancel_reminder(target, True)
     assert cancelled["ok"] is True
     assert {row["text"] for row in booted.bridge.list_reminders()["reminders"]} == {"Fizyoloji oku"}
+
+
+def test_an_archived_conversation_can_come_back(booted) -> None:
+    engine = booted.app.conversation_engine
+    stored = engine.create()
+    stored.turns.append(ConversationTurn(stored.conversation_id, MessageRole.USER, "Arşiv testi"))
+    engine.store.save(stored)
+
+    booted.bridge.archive_conversation(str(stored.conversation_id))
+    listed = booted.bridge.list_conversations()["conversations"]
+    assert next(row for row in listed if row["conversation_id"] == str(stored.conversation_id))["status"] == "archived"
+
+    result = booted.bridge.unarchive_conversation(str(stored.conversation_id))
+    assert result["ok"] is True
+    row = next(row for row in result["conversations"] if row["conversation_id"] == str(stored.conversation_id))
+    assert row["status"] == "active"
+
+    missing = booted.bridge.unarchive_conversation(str(uuid4()))
+    assert missing == {"ok": False, "error": "Konuşma bulunamadı."}

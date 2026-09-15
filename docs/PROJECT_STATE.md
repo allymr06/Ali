@@ -240,6 +240,14 @@ Academy):
   (first run stays maximized); nonsense frames (too small, off-screen,
   corrupt file) fall back to defaults instead of trapping the user.
 - A native **folder picker** on the bridge serves both exports.
+- **Unarchive** - a right-click on an archived conversation offers
+  "arşivden çıkar" behind the usual confirm dialog; the record returns
+  to the active list unchanged.
+- **Weekly summary on paper** - the İlerleme panel's weekly report
+  exports as Markdown (kind "week" of the same export path): totals,
+  a day table, countdowns and the report's own honesty note. Marked
+  answers and finished-paper scoring stay separate facts on paper,
+  because a paper's scored total includes questions left blank.
 - **Reminders got a surface** - the Görevler screen now lists active
   reminders from the service (text, local due time, honest delivery
   states like "yeniden denenecek"), cancels one behind the same

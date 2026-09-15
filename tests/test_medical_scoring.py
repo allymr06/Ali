@@ -797,3 +797,22 @@ def test_exports_put_no_key_on_the_question_sheet_and_label_unscored_on_the_answ
     assert note.startswith("# Karbonhidrat Özeti") and "Net 2 ATP." in note and "Biyokimya 7 · s. 3" in note
     with pytest.raises(ValueError):
         instance.export_note_markdown("yok")
+
+
+def test_weekly_export_prints_only_what_the_records_hold(academy) -> None:
+    academy = academy()
+    filename, content = academy.export_week_markdown()
+
+    assert filename.startswith("haftalik-ozet-") and filename.endswith(".md")
+    assert "Bu hafta kayıtlı çalışma yok." in content, "an empty week says so on paper too"
+    assert "yalnız kayıtlardan hesaplanır" in content
+    assert "| Gün | Dakika | Soru | Kart | Etkinlik |" in content
+    assert content.count("|") >= 7 * 6, "seven day rows on the table"
+
+    academy.study.planner.log_study(activity="read", minutes=20)
+    _, busy = academy.export_week_markdown()
+    assert "Bu hafta kayıtlı çalışma yok." not in busy
+    assert "- Çalışma süresi: 20 dk" in busy
+    assert "İşaretlenen cevap:" in busy and "Bitirilen kâğıt:" in busy, (
+        "marked answers and finished-paper scoring stay separate facts"
+    )

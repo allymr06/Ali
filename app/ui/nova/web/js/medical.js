@@ -1813,6 +1813,10 @@ const Medical = {
     this.renderWeek();
   },
 
+  bindWeekExport() {
+    $("#med-week-export")?.addEventListener("click", () => this.exportMarkdown("week", {}, "Haftalık özet"));
+  },
+
   /* The last week as the records tell it: a bar per day, honest totals,
      the exam countdowns, and a streak of recorded days. */
   renderWeek() {
@@ -3697,6 +3701,7 @@ function bindMedical() {
   if (mine) mine.addEventListener("click", () => Medical.mineProfessors());
   Narration.bind();
   Study.bind();
+  Medical.bindWeekExport();
   const labSearch = $("#lab-search");
   if (labSearch) labSearch.addEventListener("input", () => Lab.renderList(labSearch.value));
   const labels = $("#lab-labels");

@@ -1035,7 +1035,11 @@ answer-key sheet carries the key, the explanation, the sources and each
 question's scoring status, so a study-only item is labelled on paper too.
 An existing file is never overwritten; a numbered sibling is written
 instead. A started plan activity shows a live "N dk sürüyor" badge,
-refreshed twice a minute.
+refreshed twice a minute. The weekly summary exports the same way
+(kind `week`, button on the İlerleme panel): totals, a day table, the
+countdowns and the report's own honesty note — with marked answers and
+finished-paper scoring kept as separate lines, because a paper's scored
+total includes questions left blank.
 
 ### One scoring decision (13 September 2026)
 

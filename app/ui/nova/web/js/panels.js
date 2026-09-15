@@ -583,6 +583,7 @@ function renderSettings() {
   $("#settings-theme").checked = document.body.classList.contains("light");
   renderConfig();
   Files.render();
+  renderStateBackups();
 }
 
 function renderConfig() {
@@ -720,6 +721,28 @@ async function saveSettings(event) {
   }
 }
 
+async function renderStateBackups() {
+  const chip = $("#settings-backup-state");
+  if (!chip || !bridgeReady()) return;
+  const summary = await call("state_backup_summary");
+  if (summary.ok === false) { chip.textContent = "okunamadı"; return; }
+  chip.textContent = summary.count
+    ? `${summary.count} kopya · son: ${fmtRelative(summary.newest_at)}`
+    : "henüz kopya yok";
+}
+
+async function runStateBackup() {
+  if (!bridgeReady()) return;
+  const button = $("#settings-backup-now");
+  button.disabled = true;
+  button.textContent = "Yedekleniyor…";
+  const result = await call("state_backup_now");
+  button.disabled = false;
+  button.textContent = "Şimdi yedekle";
+  toast(result.message || result.error, result.ok ? "ok" : true);
+  renderStateBackups();
+}
+
 async function saveAssistantSettings() {
   if (!bridgeReady()) return;
   const status = $("#settings-assistant-status");
@@ -848,6 +871,7 @@ function bindPanels() {
   $("#research-form").addEventListener("submit", submitResearch);
   $("#settings-form").addEventListener("submit", saveSettings);
   $("#settings-assistant-save").addEventListener("click", saveAssistantSettings);
+  $("#settings-backup-now").addEventListener("click", runStateBackup);
   $("#settings-test").addEventListener("click", testConnection);
   $("#settings-delete").addEventListener("click", deleteKey);
   $("#settings-motion").addEventListener("change", (event) => applyMotionPreference(event.target.checked));

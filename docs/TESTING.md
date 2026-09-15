@@ -957,3 +957,16 @@ the tooltip, escapes titles and queries, gives an unparseable URL an
 honest generic chip, and renders nothing without sources. Live: a
 fresh "Nobel 2026" research answered honestly that the prize is not
 announced until 5 October and wore five source chips.
+
+## General state backups (15 September 2026)
+
+`tests/test_state_backup.py`: every first-level state database is
+copied even while one is held open mid-write (the uncommitted row
+never leaks into the copy, quick_check passes), rotation keeps the
+newest three stamped folders, a half-written .tmp folder from an
+interrupted run is neither listed nor rotated as a backup, the weekly
+due-check respects a fresh copy, and an empty state directory refuses
+in words. `tests/test_ui_nova.py`: the bridge summary and on-demand
+backup round-trip against the isolated state directory. Live: the
+Ayarlar card's chip went from "henüz kopya yok" to "1 kopya · son: az
+önce" and a real stamped folder appeared.

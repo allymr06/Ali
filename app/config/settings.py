@@ -274,6 +274,9 @@ class Settings:
     # sending it reads services, never the model.
     daily_brief_notification: bool = True
     daily_brief_time: str = "08:30"
+    # Weekly safety copies of the general state databases (conversations,
+    # reminders, routines, notifications, memory, tasks).
+    state_auto_backup: bool = True
 
     research_enabled: bool = True
     research_provider: str = "duckduckgo"
@@ -831,6 +834,7 @@ class Settings:
                 "JARVIS_DAILY_BRIEF_NOTIFICATION", True
             ),
             daily_brief_time=os.getenv("JARVIS_DAILY_BRIEF_TIME", "08:30"),
+            state_auto_backup=_get_bool("JARVIS_STATE_AUTO_BACKUP", True),
             research_enabled=_get_bool("JARVIS_RESEARCH_ENABLED", True),
             research_provider=(
                 os.getenv("JARVIS_RESEARCH_PROVIDER", "duckduckgo").strip().casefold()

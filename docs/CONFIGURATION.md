@@ -268,6 +268,7 @@ local address rejection.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `JARVIS_DAILY_BRIEF_NOTIFICATION` | `true` | One OS notification a day with the day's summary; reads services, never the model. |
+| `JARVIS_STATE_AUTO_BACKUP` | `true` | Weekly consistent copies of the state databases (conversations, reminders, routines, notifications, memory, tasks); newest three kept. |
 | `JARVIS_DAILY_BRIEF_TIME` | `08:30` | Local send time (24-hour `HH:MM`) for the morning summary. |
 | `JARVIS_RESEARCH_ENABLED` | `true` | Registers the read-only research tool at startup. |
 | `JARVIS_RESEARCH_PROVIDER` | `duckduckgo` | Search backend: `duckduckgo` (keyless default), `gemini` (Google Search grounding over the stored key; needs grounding quota), or `searxng`. |

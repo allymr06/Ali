@@ -415,6 +415,14 @@ const DemoBridge = {
   async save_desktop_settings() {
     return { ok: true, message: "Demo modu: ayarlar kaydedilmedi." };
   },
+
+  async state_backup_summary() {
+    return { ok: true, count: 0, newest_at: null, newest_bytes: 0, databases: 0 };
+  },
+
+  async state_backup_now() {
+    return { ok: false, error: "Demo modunda yedek alınmaz." };
+  },
   async test_connection() {
     return { ok: false, message: "Demo modu: bağlantı sınaması yapılmadı." };
   },

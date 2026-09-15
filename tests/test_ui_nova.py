@@ -2790,3 +2790,15 @@ def test_a_finished_web_research_hands_the_page_its_sources(booted) -> None:
     booted.bridge._on_tool_event(event("research_web", {"question": "q", "sources": []}))
     booted.bridge._on_tool_event(event("research_web", {"question": "q", "sources": [{"title": "t", "url": "u"}]}, error="boom"))
     assert len(booted.window.payloads("research_sources")) == 1
+
+
+def test_the_bridge_backs_up_the_state_directory_on_demand(booted) -> None:
+    summary = booted.bridge.state_backup_summary()
+    assert summary["ok"] is True and summary["count"] == 0 and summary["databases"] >= 1
+
+    result = booted.bridge.state_backup_now()
+    assert result["ok"] is True and "veritabanı" in result["message"]
+    assert result["summary"]["count"] == 1
+
+    again = booted.bridge.state_backup_now()
+    assert again["ok"] is True and again["summary"]["count"] == 2

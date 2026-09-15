@@ -3111,6 +3111,84 @@ class NovaBridge:
             "settings": self.get_settings(),
         }
 
+    def state_backup_summary(self) -> dict[str, Any]:
+        """What the settings card shows about the general state backups."""
+        from app.config.paths import default_state_directory
+        from app.state_backup import state_backup_summary
+
+        try:
+            return {"ok": True, **state_backup_summary(default_state_directory())}
+        except OSError as exc:
+            return {"ok": False, "error": f"Yedek dizini okunamadı ({type(exc).__name__})."}
+
+    def state_backup_now(self) -> dict[str, Any]:
+        """One safety copy of every state database, right now."""
+        from app.config.paths import default_state_directory
+        from app.state_backup import backup_state_now
+
+        try:
+            result = backup_state_now(default_state_directory())
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        except OSError as exc:
+            return {"ok": False, "error": f"Yedek alınamadı ({type(exc).__name__})."}
+        self._record_ui_event("state.backup", "State databases were backed up.")
+        size_mb = result["bytes"] / (1024 * 1024)
+        return {
+            "ok": True,
+            "message": f"Yedek alındı: {len(result['files'])} veritabanı, {size_mb:.1f} MB.",
+            "summary": self.state_backup_summary(),
+        }
+
+    def _start_state_backup(self) -> None:
+        """The weekly clock for the general state copies.
+
+        Checks shortly after launch and then every six hours; a copy is
+        made only when the newest one is older than a week, and the
+        result lands in the notification centre, OS toast included when
+        nobody is looking.
+        """
+
+        def loop() -> None:
+            from app.config.paths import default_state_directory
+            from app.state_backup import backup_state_now, state_backup_due
+
+            delay = 120.0
+            while not self._closing:
+                time.sleep(min(delay, 30.0) if delay < 30.0 else 30.0)
+                delay -= 30.0
+                if delay > 0 or self._closing:
+                    if self._closing:
+                        return
+                    continue
+                delay = 6 * 3600.0
+                settings = getattr(self.controller.application, "settings", None)
+                if settings is None or not bool(
+                    getattr(settings, "state_auto_backup", False)
+                ):
+                    continue
+                state_dir = default_state_directory()
+                try:
+                    if not state_backup_due(state_dir):
+                        continue
+                    result = backup_state_now(state_dir)
+                except Exception:
+                    # Next window tries again; a failed backup must never
+                    # take the desktop down with it.
+                    continue
+                size_mb = result["bytes"] / (1024 * 1024)
+                self._publish(
+                    "system",
+                    "Haftalık durum yedeği alındı",
+                    f"{len(result['files'])} veritabanı, {size_mb:.1f} MB.",
+                    target="settings",
+                    dedupe_key=f"state-backup:{result['folder']}",
+                )
+
+        threading.Thread(
+            target=loop, name="nova-state-backup", daemon=True
+        ).start()
+
     def save_desktop_settings(self, payload: Any) -> dict[str, Any]:
         """Non-secret assistant preferences: morning brief and web research."""
         if self.api_settings is None:
@@ -3468,8 +3546,9 @@ def launch_nova(
     bridge._os_notifier = notify_os
     try:
         bridge._start_daily_brief(storage)
+        bridge._start_state_backup()
     except Exception:
-        # The morning summary is a convenience; launching matters more.
+        # These are conveniences; launching matters more.
         pass
     # pywebview fires ``restored`` only for a return to the Normal state;
     # a maximized window that was minimized comes back as ``maximized``.

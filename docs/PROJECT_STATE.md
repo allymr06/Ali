@@ -240,6 +240,15 @@ Academy):
   (first run stays maximized); nonsense frames (too small, off-screen,
   corrupt file) fall back to defaults instead of trapping the user.
 - A native **folder picker** on the bridge serves both exports.
+- **General state backups** - conversations, reminders, routines,
+  notifications, memory and task records (every first-level SQLite in
+  the state directory) now get the same treatment the medical store
+  already had: a weekly consistent copy via SQLite's backup API into
+  one stamped folder, newest three kept, tmp-then-rename so an
+  interrupted run never poses as a good backup, disk-space refusal in
+  words, and a "Şimdi yedekle" button with a live status chip on the
+  Ayarlar > Asistan card (`JARVIS_STATE_AUTO_BACKUP`). Restoring stays
+  manual by design.
 - **Web sources under answers** - when a chat turn runs the research
   tool, the reply wears a "Web kaynakları" chip row: the bare host of
   each source, the full title and URL in the tooltip, and a click

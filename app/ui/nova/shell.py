@@ -163,6 +163,7 @@ NOTIFICATION_TITLES: Mapping[str, str] = {
     "vision": "Görüş sonucu hazır",
     "research": "Araştırma tamamlandı",
     "observation": "Ekran gözlemi",
+    "brief": "Günün özeti",
 }
 DIAGNOSTIC_NOTIFICATION_TITLES: Mapping[str, str] = {
     "warning": "Uyarı",
@@ -246,6 +247,59 @@ def webview_storage_directory() -> Path:
 
 
 WINDOW_GEOMETRY_FILE = "window.json"
+DAILY_BRIEF_STAMP_FILE = "daily-brief.json"
+DAILY_BRIEF_POLL_SECONDS = 30.0
+
+
+def daily_brief_due(now: datetime, target: str, stamp: str | None) -> bool:
+    """True when the local clock passed today's target and nothing was sent today.
+
+    A malformed target disables the feature rather than guessing a time.
+    """
+    parts = str(target or "").strip().split(":")
+    if len(parts) != 2:
+        return False
+    try:
+        hour, minute = int(parts[0]), int(parts[1])
+    except ValueError:
+        return False
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return False
+    if stamp == now.date().isoformat():
+        return False
+    return (now.hour, now.minute) >= (hour, minute)
+
+
+def brief_notification_body(brief: Mapping[str, Any]) -> str:
+    """The day's summary as one honest notification line.
+
+    Counts what exists, in words; a day with nothing pending says so
+    instead of inventing urgency.
+    """
+    parts: list[str] = []
+    reminders = brief.get("reminders") or []
+    if reminders:
+        parts.append(f"{len(reminders)} hatırlatıcı")
+    medical = brief.get("medical") or {}
+    countdown = medical.get("countdown") or None
+    if countdown:
+        parts.append(f"{countdown.get('name')}: {countdown.get('days_left')} gün kaldı")
+    next_activity = medical.get("next_activity") or None
+    if next_activity:
+        parts.append(f"sırada {next_activity.get('title')}")
+    cards = int(medical.get("cards_waiting") or 0)
+    if cards:
+        parts.append(f"{cards} kart tekrar bekliyor")
+    findings = int(medical.get("findings_open") or 0)
+    if findings:
+        parts.append(f"{findings} açık bulgu")
+    tasks = int(brief.get("tasks_open") or 0)
+    if tasks:
+        parts.append(f"{tasks} açık görev")
+    if not parts:
+        return "Bugün için bekleyen bir şey görünmüyor."
+    return " · ".join(parts)[:220]
+
 MIN_REMEMBERED_SIZE = (900, 600)
 
 
@@ -1996,6 +2050,63 @@ class NovaBridge:
         self._warm_up_provider()
         return payload
 
+    def _start_daily_brief(self, storage: Path) -> None:
+        """The morning-summary clock; reads services, never the model.
+
+        A daemon thread wakes twice a minute, and past the configured
+        local time it sends today's summary once - the sent date is
+        stamped to disk first, so a crash can skip a morning but never
+        double-send one.
+        """
+
+        def loop() -> None:
+            stamp_path = storage / DAILY_BRIEF_STAMP_FILE
+            while not self._closing:
+                time.sleep(DAILY_BRIEF_POLL_SECONDS)
+                if self._closing:
+                    return
+                settings = getattr(self.controller.application, "settings", None)
+                if settings is None or not bool(
+                    getattr(settings, "daily_brief_notification", False)
+                ):
+                    continue
+                now = datetime.now().astimezone()
+                try:
+                    stamp = json.loads(
+                        stamp_path.read_text(encoding="utf-8")
+                    ).get("sent")
+                except (OSError, ValueError):
+                    stamp = None
+                if not daily_brief_due(
+                    now, str(getattr(settings, "daily_brief_time", "")), stamp
+                ):
+                    continue
+                try:
+                    body = brief_notification_body(self.daily_brief())
+                except Exception:
+                    continue
+                try:
+                    stamp_path.write_text(
+                        json.dumps({"sent": now.date().isoformat()}),
+                        encoding="utf-8",
+                    )
+                except OSError:
+                    # Nowhere to remember the send: skip rather than
+                    # risk a notification every half minute all day.
+                    continue
+                self._publish(
+                    "brief",
+                    NOTIFICATION_TITLES["brief"],
+                    body,
+                    target="home",
+                    alert=True,
+                    dedupe_key=f"brief:{now.date().isoformat()}",
+                )
+
+        threading.Thread(
+            target=loop, name="nova-daily-brief", daemon=True
+        ).start()
+
     def _shutdown(self) -> None:
         """Fail every pending decision closed and stop reporting.
 
@@ -3306,6 +3417,11 @@ def launch_nova(
         return "toast" if show_windows_toast(title, body) else False
 
     bridge._os_notifier = notify_os
+    try:
+        bridge._start_daily_brief(storage)
+    except Exception:
+        # The morning summary is a convenience; launching matters more.
+        pass
     # pywebview fires ``restored`` only for a return to the Normal state;
     # a maximized window that was minimized comes back as ``maximized``.
     for event_name, visible in (

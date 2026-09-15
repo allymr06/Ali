@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any
 
 NOTIFICATION_KINDS: frozenset[str] = frozenset(
-    {"reminder", "approval", "reply", "task", "diagnostic", "observation", "system"}
+    {"reminder", "approval", "reply", "task", "diagnostic", "observation", "system", "brief"}
 )
 NOTIFICATION_SEVERITIES: frozenset[str] = frozenset({"info", "warning", "error"})
 MAX_TITLE_LENGTH = 120

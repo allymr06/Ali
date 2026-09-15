@@ -920,3 +920,16 @@ the speaker and an exact excerpt, and reports zero hits honestly.
 `tests/test_nova_web.py` (QuickJS): the drawer markup escapes excerpt
 HTML, highlights the match with <mark> case-insensitively in Turkish,
 and renders the empty and error states in words.
+
+## Morning brief notification (15 September 2026)
+
+`tests/test_ui_nova.py`: the clock fires only past the target, once per
+local day, catches up after yesterday's stamp, and disables itself on
+any malformed time; the notification line counts exactly what exists
+and says in words when nothing is pending. `tests/test_settings.py`
+pins the HH:MM validation; `tests/test_notifications.py` pins the new
+"brief" notification kind. Live: with the target set a minute in the
+past the running window published "Günün özeti · QA Akademi 13 Eylül:
+5 gün kaldı · sırada Omuz kuşağı … · 14 kart tekrar bekliyor · 1 açık
+bulgu" within one poll interval, and the stamp file prevented a second
+send.

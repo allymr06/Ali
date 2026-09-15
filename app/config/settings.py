@@ -269,6 +269,12 @@ class Settings:
     # "gemini" switches to Google Search grounding (needs the stored key
     # and grounding quota); "searxng" needs a self-hosted endpoint. A
     # provider whose requirement is missing leaves research off, honestly.
+    # The morning summary: one OS notification a day, at the configured
+    # local time, with what the day actually holds. Purely informative;
+    # sending it reads services, never the model.
+    daily_brief_notification: bool = True
+    daily_brief_time: str = "08:30"
+
     research_enabled: bool = True
     research_provider: str = "duckduckgo"
     research_searxng_url: str | None = None
@@ -459,6 +465,12 @@ class Settings:
             raise ValueError("Vision image limits must be positive.")
         if self.vision_taskbar_height < 0:
             raise ValueError("vision_taskbar_height cannot be negative.")
+        brief_time = self.daily_brief_time.strip()
+        parts = brief_time.split(":")
+        if len(parts) != 2 or not all(part.isdigit() for part in parts) or not (
+            0 <= int(parts[0]) <= 23 and 0 <= int(parts[1]) <= 59
+        ):
+            raise ValueError("daily_brief_time must be HH:MM on a 24-hour clock.")
         if self.research_provider not in {"duckduckgo", "gemini", "searxng"}:
             raise ValueError(
                 "research_provider must be duckduckgo, gemini or searxng."
@@ -815,6 +827,10 @@ class Settings:
                 "JARVIS_NOTIFICATIONS_DATABASE_PATH",
                 default_state_path("jarvis_notifications.sqlite3"),
             ),
+            daily_brief_notification=_get_bool(
+                "JARVIS_DAILY_BRIEF_NOTIFICATION", True
+            ),
+            daily_brief_time=os.getenv("JARVIS_DAILY_BRIEF_TIME", "08:30"),
             research_enabled=_get_bool("JARVIS_RESEARCH_ENABLED", True),
             research_provider=(
                 os.getenv("JARVIS_RESEARCH_PROVIDER", "duckduckgo").strip().casefold()

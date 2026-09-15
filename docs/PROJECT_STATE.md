@@ -240,6 +240,15 @@ Academy):
   (first run stays maximized); nonsense frames (too small, off-screen,
   corrupt file) fall back to defaults instead of trapping the user.
 - A native **folder picker** on the bridge serves both exports.
+- **Morning brief notification** - once a day, at the configured local
+  time (default 08:30, `JARVIS_DAILY_BRIEF_TIME` / off with
+  `JARVIS_DAILY_BRIEF_NOTIFICATION=false`), one OS notification with
+  the day's actual holdings: reminders, the nearest committee
+  countdown, the next plan activity, waiting cards, open findings,
+  open tasks - or the honest "nothing pending today". Reads services,
+  never the model; the sent date is stamped to disk before publishing,
+  so a crash can skip a morning but never double-send one; a launch
+  after the target time catches up the same day.
 - **Conversation search** - a search box in the conversations drawer
   finds stored chats by what was said in them, not just titles: visible
   turns only (system notes never match), Turkish-aware folding (dotted

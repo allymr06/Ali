@@ -293,6 +293,11 @@ def test_settings_requires_search_endpoint_when_research_enabled() -> None:
         Settings(research_enabled=True, research_provider="searxng")
     with pytest.raises(ValueError, match="research_provider"):
         Settings(research_provider="bing")
+    assert Settings().daily_brief_time == "08:30"
+    with pytest.raises(ValueError, match="daily_brief_time"):
+        Settings(daily_brief_time="25:00")
+    with pytest.raises(ValueError, match="daily_brief_time"):
+        Settings(daily_brief_time="sabah")
     with pytest.raises(ValueError, match="between 1 and 10"):
         Settings(research_max_sources=11)
     with pytest.raises(ValueError, match="redirects"):

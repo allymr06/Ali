@@ -2718,3 +2718,25 @@ def test_conversation_search_finds_words_with_turkish_folding(booted, tmp_path) 
 
     nothing = booted.bridge.search_conversations("pankreas")
     assert nothing["ok"] is True and nothing["results"] == []
+
+
+def test_the_morning_brief_clock_and_line_are_exact_and_honest() -> None:
+    # Due: only past the target, only once per local day, never on nonsense.
+    base = datetime(2026, 9, 15, 8, 30)
+    assert shell.daily_brief_due(base, "08:30", None) is True
+    assert shell.daily_brief_due(base.replace(hour=8, minute=29), "08:30", None) is False
+    assert shell.daily_brief_due(base, "08:30", "2026-09-15") is False, "already sent today"
+    assert shell.daily_brief_due(base, "08:30", "2026-09-14") is True, "yesterday's stamp does not block today"
+    for broken in ("25:00", "08:61", "8h30", "", "08:30:00"):
+        assert shell.daily_brief_due(base, broken, None) is False, broken
+
+    # The line counts what exists and says when nothing does.
+    full = shell.brief_notification_body({
+        "reminders": [{"text": "Anatomi"}, {"text": "Fizyoloji"}],
+        "tasks_open": 1,
+        "medical": {"countdown": {"name": "Komite 2", "days_left": 9},
+                     "next_activity": {"title": "Düzlemler"}, "cards_waiting": 14, "findings_open": 1},
+    })
+    for piece in ("2 hatırlatıcı", "Komite 2: 9 gün kaldı", "sırada Düzlemler", "14 kart", "1 açık bulgu", "1 açık görev"):
+        assert piece in full, piece
+    assert shell.brief_notification_body({}) == "Bugün için bekleyen bir şey görünmüyor."

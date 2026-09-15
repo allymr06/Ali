@@ -416,6 +416,21 @@ const DemoBridge = {
     return { ok: true, message: "Demo modu: ayarlar kaydedilmedi." };
   },
 
+  async list_reminders() {
+    return { ok: true, reminders: [
+      { reminder_id: "demo-r1", text: "Anatomi tekrarı", due_local: "15.09 18:00", status: "waiting", attempts: 0 },
+    ] };
+  },
+
+  async create_reminder() {
+    return { ok: false, error: "Demo modunda hatırlatıcı kurulmaz." };
+  },
+
+  async cancel_reminder(_id, confirmed) {
+    if (confirmed !== true) return { ok: false, error: "İptal işlemi onaylanmadı." };
+    return { ok: false, error: "Demo modunda hatırlatıcı yok." };
+  },
+
   async state_backup_summary() {
     return { ok: true, count: 0, newest_at: null, newest_bytes: 0, databases: 0 };
   },

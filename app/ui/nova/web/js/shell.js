@@ -114,7 +114,7 @@ function showScreen(id, { focus = true } = {}) {
   if (id === "diagnostics") Diagnostics.refresh({ quiet: true });
   if (id === "memory") Memory.load();
   if (id === "integrations") Trust.refresh();
-  if (id === "tasks") { renderTasks(State.snapshot?.tasks || []); Routines.load(); }
+  if (id === "tasks") { renderTasks(State.snapshot?.tasks || []); Routines.load(); Reminders.load(); }
   if (id === "medical") Medical.open();
   if (id === "settings") Files.load();
   requestAnimationFrame(() => Engine.resize());

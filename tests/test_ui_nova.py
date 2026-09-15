@@ -2802,3 +2802,31 @@ def test_the_bridge_backs_up_the_state_directory_on_demand(booted) -> None:
 
     again = booted.bridge.state_backup_now()
     assert again["ok"] is True and again["summary"]["count"] == 2
+
+
+def test_reminders_have_a_full_surface_on_the_bridge(booted) -> None:
+    empty = booted.bridge.list_reminders()
+    assert empty == {"ok": True, "reminders": []}
+
+    refused = booted.bridge.create_reminder("", "+10")
+    assert refused["ok"] is False and refused["error"]
+
+    created = booted.bridge.create_reminder("Anatomi tekrarı", "+25")
+    assert created["ok"] is True and created["due_local"]
+
+    absolute = booted.bridge.create_reminder("Fizyoloji oku", "23:59")
+    assert absolute["ok"] is True
+
+    nonsense = booted.bridge.create_reminder("Ders", "yarın öğlen")
+    assert nonsense["ok"] is False, "free text is the chat's job; the field takes +dk or HH:MM"
+
+    rows = booted.bridge.list_reminders()["reminders"]
+    # Sorted by due time; near midnight the two could swap, so compare as a set.
+    assert {row["text"] for row in rows} == {"Anatomi tekrarı", "Fizyoloji oku"}
+    target = next(row for row in rows if row["text"] == "Anatomi tekrarı")["reminder_id"]
+
+    unconfirmed = booted.bridge.cancel_reminder(target)
+    assert unconfirmed == {"ok": False, "error": "İptal işlemi onaylanmadı."}
+    cancelled = booted.bridge.cancel_reminder(target, True)
+    assert cancelled["ok"] is True
+    assert {row["text"] for row in booted.bridge.list_reminders()["reminders"]} == {"Fizyoloji oku"}

@@ -188,6 +188,15 @@
         <h1>Görevler</h1>
         <p>Dayanıklı planlar ve adımları. Her kayıt çekirdekten canlı okunur; adım durumları gerçek yürütmeyi yansıtır.</p>
       </div>
+      <div id="reminders-panel" class="panel routines-panel">
+        <div class="panel-title"><span class="kicker">Hatırlatıcılar</span><span id="reminders-count" class="faint"></span><button id="reminders-refresh" class="icon-btn small" type="button" title="Yenile"></button></div>
+        <form id="reminder-form" class="reminder-form" autocomplete="off">
+          <input id="reminder-text" type="text" spellcheck="false" placeholder="Ne hatırlatayım?">
+          <input id="reminder-when" type="text" class="mono" spellcheck="false" placeholder="14:30 ya da +25 (dk)">
+          <button type="submit" class="btn btn-primary">Kur</button>
+        </form>
+        <div id="reminders-list" class="routine-list"></div>
+      </div>
       <div id="tasks-list" class="task-list"></div>
       <div id="routines-panel" class="panel routines-panel">
         <div class="panel-title"><span class="kicker">Rutinler</span><span id="routines-count" class="faint"></span><button id="routines-refresh" class="icon-btn small" type="button" title="Yenile"></button></div>

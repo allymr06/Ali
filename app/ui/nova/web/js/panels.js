@@ -184,6 +184,58 @@ function renderTasks(tasks) {
   host.innerHTML = tasks.map((task) => taskCardHTML(task)).join("");
 }
 
+/* ── reminders ────────────────────────────────────────────────────── */
+
+const Reminders = {
+  markup(rows) {
+    if (!rows.length) return emptyState("Aktif hatırlatıcı yok", "Yukarıdan kur ya da sohbette söyle: \"yarın 9'da anatomi tekrarı\" gibi.");
+    return rows.map((row) => `
+      <div class="routine-row">
+        <span class="routine-icon">⏰</span>
+        <span class="routine-main"><span class="routine-name">${esc(row.text)}</span>
+        <span class="routine-meta">${esc(row.due_local || "")}${row.status && row.status !== "bekliyor" ? ` · ${esc(row.status)}` : ""}</span></span>
+        <button type="button" class="btn btn-text" data-reminder-cancel="${esc(row.reminder_id)}">İptal</button>
+      </div>`).join("");
+  },
+
+  async load() {
+    const host = $("#reminders-list");
+    if (!host) return;
+    const result = await call("list_reminders");
+    if (result.ok === false) { host.innerHTML = emptyState("Hatırlatıcılar okunamadı", esc(result.error || "")); return; }
+    const rows = result.reminders || [];
+    $("#reminders-count").textContent = rows.length ? `${rows.length} aktif` : "";
+    host.innerHTML = this.markup(rows);
+    $$("[data-reminder-cancel]", host).forEach((button) => button.addEventListener("click", async () => {
+      const row = rows.find((item) => item.reminder_id === button.dataset.reminderCancel);
+      const confirmed = await confirmDialog({
+        title: "Hatırlatıcı iptal edilsin mi?",
+        body: `“${row ? row.text : ""}” bir daha bildirilmeyecek.`,
+        confirmLabel: "İPTAL ET",
+      });
+      if (!confirmed) return;
+      const done = await call("cancel_reminder", button.dataset.reminderCancel, true);
+      toast(done.message || done.error, done.ok ? "ok" : true);
+      Reminders.load();
+    }));
+  },
+
+  async create(event) {
+    event.preventDefault();
+    if (!bridgeReady()) return;
+    const text = $("#reminder-text").value.trim();
+    const when = $("#reminder-when").value.trim();
+    const result = await call("create_reminder", text, when);
+    toast(result.message || result.error, result.ok ? "ok" : true);
+    if (result.ok) { $("#reminder-text").value = ""; $("#reminder-when").value = ""; Reminders.load(); }
+  },
+
+  bind() {
+    $("#reminder-form")?.addEventListener("submit", (event) => this.create(event));
+    $("#reminders-refresh")?.addEventListener("click", () => this.load());
+  },
+};
+
 /* ── memory ───────────────────────────────────────────────────────── */
 
 const MEMORY_GROUP_ORDER = ["preference", "instruction", "goal", "project", "fact", "context"];
@@ -872,6 +924,7 @@ function bindPanels() {
   $("#settings-form").addEventListener("submit", saveSettings);
   $("#settings-assistant-save").addEventListener("click", saveAssistantSettings);
   $("#settings-backup-now").addEventListener("click", runStateBackup);
+  Reminders.bind();
   $("#settings-test").addEventListener("click", testConnection);
   $("#settings-delete").addEventListener("click", deleteKey);
   $("#settings-motion").addEventListener("change", (event) => applyMotionPreference(event.target.checked));

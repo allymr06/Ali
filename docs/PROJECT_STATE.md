@@ -240,6 +240,13 @@ Academy):
   (first run stays maximized); nonsense frames (too small, off-screen,
   corrupt file) fall back to defaults instead of trapping the user.
 - A native **folder picker** on the bridge serves both exports.
+- **Reminders got a surface** - the Görevler screen now lists active
+  reminders from the service (text, local due time, honest delivery
+  states like "yeniden denenecek"), cancels one behind the same
+  confirm dialog the rest of the app uses, and creates one from a
+  two-field form: "+25" minutes from now or "14:30" today (tomorrow if
+  already past). Free-text times stay the chat's job; the field says
+  so instead of guessing.
 - **General state backups** - conversations, reminders, routines,
   notifications, memory and task records (every first-level SQLite in
   the state directory) now get the same treatment the medical store

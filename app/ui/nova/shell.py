@@ -3111,6 +3111,58 @@ class NovaBridge:
             "settings": self.get_settings(),
         }
 
+    def _reminders(self) -> Any | None:
+        return getattr(self.controller.application, "reminders", None)
+
+    def list_reminders(self) -> dict[str, Any]:
+        """Active reminders straight from the service, waiting ones first."""
+        service = self._reminders()
+        if service is None:
+            return {"ok": False, "error": "Hatırlatıcı hizmeti kapalı."}
+        result = service.list_active()
+        if not result.succeeded:
+            return {"ok": False, "error": str(result.message or "Hatırlatıcılar okunamadı.")}
+        return {"ok": True, "reminders": _jsonable((result.data or {}).get("reminders", []))}
+
+    def create_reminder(self, text: Any, when: Any) -> dict[str, Any]:
+        """One reminder from the page: '+25' minutes from now or 'HH:MM' today.
+
+        The service owns the parsing rules and answers in Turkish; the
+        page only decides which of its two forms the input takes.
+        """
+        service = self._reminders()
+        if service is None:
+            return {"ok": False, "error": "Hatırlatıcı hizmeti kapalı."}
+        body = str(text or "").strip()
+        moment = str(when or "").strip()
+        minutes = 0
+        at = ""
+        if moment.startswith("+") and moment[1:].isdigit():
+            minutes = int(moment[1:])
+        elif moment.isdigit():
+            minutes = int(moment)
+        else:
+            at = moment
+        result = service.create(body, minutes=minutes, at=at)
+        if not result.succeeded:
+            return {"ok": False, "error": str(result.message or "Hatırlatıcı kurulamadı.")}
+        due = (result.data or {}).get("due_local", "")
+        self._record_ui_event("reminder.created", "A reminder was created from the page.")
+        return {"ok": True, "message": f"Hatırlatıcı kuruldu: {due}.", "due_local": str(due)}
+
+    def cancel_reminder(self, reminder_id: Any, confirmed: Any = False) -> dict[str, Any]:
+        """Cancel one reminder; the page asks the user first, then says so."""
+        if confirmed is not True:
+            return {"ok": False, "error": "İptal işlemi onaylanmadı."}
+        service = self._reminders()
+        if service is None:
+            return {"ok": False, "error": "Hatırlatıcı hizmeti kapalı."}
+        result = service.cancel(str(reminder_id or ""))
+        if not result.succeeded:
+            return {"ok": False, "error": str(result.message or "Hatırlatıcı iptal edilemedi.")}
+        self._record_ui_event("reminder.cancelled", "A reminder was cancelled from the page.")
+        return {"ok": True, "message": "Hatırlatıcı iptal edildi."}
+
     def state_backup_summary(self) -> dict[str, Any]:
         """What the settings card shows about the general state backups."""
         from app.config.paths import default_state_directory

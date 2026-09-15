@@ -970,3 +970,13 @@ in words. `tests/test_ui_nova.py`: the bridge summary and on-demand
 backup round-trip against the isolated state directory. Live: the
 Ayarlar card's chip went from "henüz kopya yok" to "1 kopya · son: az
 önce" and a real stamped folder appeared.
+
+## Reminders surface (15 September 2026)
+
+`tests/test_ui_nova.py`: the bridge lists active reminders as the
+service reports them, creates from "+25" and "23:59" forms, refuses
+empty text and free-text times in the service's own words, cancels
+only with explicit confirmation, and the list reflects each change
+(order-independent near midnight). Live: created "+90" from the
+Görevler form, saw "15.09 10:20" listed, cancelled through the real
+confirm dialog, and the honest empty state returned.

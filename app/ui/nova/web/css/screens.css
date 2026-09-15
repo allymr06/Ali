@@ -307,4 +307,11 @@ body.paused .core-frame canvas { opacity: 0.55; transition: opacity var(--motion
   .diag-card.span-4, .diag-card.span-6, .diag-card.span-8 { grid-column: span 12; }
   .system-chips, .clock, #compact-btn { display: none; }
   .msg { max-width: 92%; }
-}
+}
+
+/* ------ reminders on the tasks screen ------------------------------ */
+.reminder-form { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; gap: 0.5rem; margin: 0.4rem 0 0.6rem; }
+.reminder-form input { padding: 0.5rem 0.6rem; background: rgba(var(--accent-rgb), 0.05); border: 1px solid var(--line-1); border-radius: var(--radius-1); color: var(--ink-1); font-size: var(--text-sm); }
+.reminder-form input:focus { outline: none; border-color: rgba(var(--accent-rgb), 0.45); }
+.routine-row .routine-icon { width: 1.4rem; text-align: center; }
+.routine-row .routine-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }

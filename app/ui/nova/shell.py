@@ -2488,6 +2488,17 @@ class NovaBridge:
             return {"ok": False, "error": f"Analiz başlatılamadı ({exc})."}
         return {"ok": True}
 
+    def research_history(self) -> dict[str, Any]:
+        """Past research questions from the cache, newest first."""
+        research = self.controller.application.research
+        cache = getattr(research, "cache", None) if research is not None else None
+        if cache is None:
+            return {"ok": True, "items": []}
+        try:
+            return {"ok": True, "items": _jsonable(cache.recent(8))}
+        except Exception as exc:
+            return {"ok": False, "error": f"Geçmiş okunamadı ({type(exc).__name__})."}
+
     def run_research(self, query: str, max_sources: Any = 5) -> dict[str, Any]:
         normalized = str(query or "").strip()
         if not normalized:

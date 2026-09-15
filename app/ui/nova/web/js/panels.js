@@ -415,6 +415,19 @@ function renderVisionResult(ok, text, error) {
   if (State.busy) setBusy(false, READY);
 }
 
+async function renderResearchHistory() {
+  const host = $("#research-history");
+  if (!host || !bridgeReady()) return;
+  const history = await call("research_history");
+  if (history.ok === false || !(history.items || []).length) { host.innerHTML = ""; return; }
+  host.innerHTML = '<span class="msg-sources-label">Son araştırmalar</span>' + history.items.map((item) =>
+    `<button type="button" class="chip" data-history-query="${esc(item.question)}" title="${item.sources} kaynak · yeniden açar">${esc(item.question.length > 60 ? item.question.slice(0, 60) + "…" : item.question)}</button>`).join("");
+  $$("[data-history-query]", host).forEach((chip) => chip.addEventListener("click", () => {
+    $("#research-input").value = chip.dataset.historyQuery;
+    $("#research-form").requestSubmit();
+  }));
+}
+
 async function submitResearch(event) {
   event.preventDefault();
   if (State.paused) { toast(PAUSED_NOTICE, true); return; }

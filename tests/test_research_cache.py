@@ -177,3 +177,31 @@ def test_malformed_cached_json_is_discarded(tmp_path: Path) -> None:
     assert cache.get("Evidence?", 1, None) is None
     with sqlite3.connect(cache.path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM research_cache").fetchone()[0] == 0
+
+
+def test_recent_lists_the_newest_questions_for_reopening(tmp_path) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from app.research.models import ResearchReport, ResearchStage
+
+    cache = SQLiteResearchCache(tmp_path / "cache.sqlite3", ttl=timedelta(hours=1))
+    base = datetime(2026, 9, 15, 9, 0, tzinfo=timezone.utc)
+    for index, question in enumerate(["eski soru", "yeni soru"]):
+        cache.put(
+            question,
+            5,
+            None,
+            ResearchReport(question=question, sources=(), claims=(), uncertainties=(), stages=(ResearchStage.COMPLETE,)),
+            now=base + timedelta(minutes=index),
+        )
+
+    rows = cache.recent(8)
+    assert [row["question"] for row in rows] == ["yeni soru", "eski soru"]
+    assert all(row["sources"] == 0 for row in rows)
+
+    # An expired entry still appears: rerunning the question refreshes it.
+    stale_cache = SQLiteResearchCache(tmp_path / "stale.sqlite3", ttl=timedelta(seconds=1))
+    long_ago = base - timedelta(days=30)
+    stale_cache.put("bayat soru", 5, None, ResearchReport(question="bayat soru", sources=(), claims=(), uncertainties=(), stages=(ResearchStage.COMPLETE,)), now=long_ago)
+    assert stale_cache.get("bayat soru", 5, None) is None, "expired for reads"
+    assert [row["question"] for row in stale_cache.recent()] == ["bayat soru"], "still listed for reopening"

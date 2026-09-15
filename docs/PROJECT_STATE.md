@@ -240,6 +240,12 @@ Academy):
   (first run stays maximized); nonsense frames (too small, off-screen,
   corrupt file) fall back to defaults instead of trapping the user.
 - A native **folder picker** on the bridge serves both exports.
+- **Research history** - the Araştırma screen lists the newest cached
+  questions (the model's own chat-turn queries included) as chips; one
+  click refills and reruns, served instantly from the cache, expired
+  entries simply refreshing through the normal path. The command
+  palette (Ctrl+K) gains the night's features: the focus timer, a
+  reminder jump, conversation export and an on-demand state backup.
 - **Sources open in the browser** - the source chips under answers
   and the URLs in the Araştırma report are clickable: a validated
   http(s) open in the default browser (same validation as the

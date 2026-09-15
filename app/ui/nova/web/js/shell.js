@@ -117,6 +117,7 @@ function showScreen(id, { focus = true } = {}) {
   if (id === "tasks") { renderTasks(State.snapshot?.tasks || []); Routines.load(); Reminders.load(); }
   if (id === "medical") Medical.open();
   if (id === "settings") Files.load();
+  if (id === "research") renderResearchHistory();
   requestAnimationFrame(() => Engine.resize());
   Engine.wake();
 }
@@ -422,6 +423,10 @@ const Palette = {
     }
     list.push({ group: "eylem", icon: "chevron", label: State.railCollapsed ? "Gezinmeyi genişlet" : "Gezinmeyi daralt", keywords: "menü rail", run: () => setRailCollapsed(!State.railCollapsed) });
     list.push({ group: "eylem", icon: "refresh", label: "Sistem sağlığını denetle", keywords: "tanılama health", run: () => { showScreen("diagnostics"); Diagnostics.refresh(); } });
+    list.push({ group: "eylem", icon: "alarm", label: Focus.timer || Focus.endsAt ? "Odak sayacını durdur" : "25 dk odak sayacı", keywords: "odak pomodoro sayaç focus", run: () => Focus.toggle() });
+    list.push({ group: "eylem", icon: "alarm", label: "Hatırlatıcı kur", keywords: "hatırlat alarm kur reminder", run: () => { showScreen("tasks"); setTimeout(() => $("#reminder-text")?.focus(), 350); } });
+    list.push({ group: "eylem", icon: "send", label: "Konuşmayı dışa aktar (.md)", keywords: "export kaydet markdown konuşma", run: () => { showScreen("chat"); $("#chat-export")?.click(); } });
+    list.push({ group: "eylem", icon: "archive", label: "Durum yedeği al", keywords: "yedek backup güvenlik kopya", run: () => runStateBackup() });
     list.push({ group: "görünüm", icon: "motion", label: State.reducedMotion ? "Hareketi geri aç" : "Hareketi azalt", keywords: "animasyon", run: () => applyMotionPreference(!State.reducedMotion) });
     list.push({ group: "görünüm", icon: "moon", label: document.body.classList.contains("light") ? "Koyu tema" : "Açık tema", keywords: "tema light dark", run: () => toggleTheme() });
     (State.runtime?.applications || []).forEach((app) =>

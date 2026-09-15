@@ -193,6 +193,10 @@ const DemoBridge = {
       medical: { available: true, next_activity: { title: "Düzlemler ve eksenler", kind_label: "Materyali oku" }, plan_message: "", cards_waiting: 12, findings_open: 1, countdown: { name: "Komite 2", days_left: 9 } } };
   },
 
+  async research_history() {
+    return { ok: true, items: [] };
+  },
+
   async open_external() {
     return { ok: false, error: "Demo modunda tarayıcı açılmaz." };
   },
@@ -589,6 +593,7 @@ const PUSH = {
 
   research_result({ ok, report, error }) {
     renderResearch(ok, report, error);
+    renderResearchHistory();
     setBusy(false, READY);
   },
 

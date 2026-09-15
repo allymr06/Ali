@@ -1008,3 +1008,12 @@ empty input before anything reaches the launcher, opens validated
 http(s), and completes a bare domain to https. Live: the bridge
 refused file:/// in Turkish and the chip builder emits both the
 open-in-browser chips and the "rapor" chip.
+
+## Research history and palette entries (15 September 2026)
+
+`tests/test_research_cache.py`: recent() lists the newest questions
+first with their source counts, and an entry expired for reads is
+still listed for reopening. Live: the chips carried both screen-typed
+questions and the model's own chat-turn queries, one click reopened
+the cached report instantly, and the four new palette commands surface
+as the top fuzzy hits for odak/hatırlat/yedek/dışa.

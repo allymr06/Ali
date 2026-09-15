@@ -866,3 +866,7 @@ streak and countdowns) and is honestly empty; backups rotate to the newest
 copies while sparing before-repair snapshots, produce an openable database,
 postpone the weekly copy while one is fresh, refuse a full disk, and report
 completion to the page.
+- Exports (`test_medical_scoring.py`, `test_ui_nova.py`): the question
+  sheet holds no key or explanation, the answer key labels unscored items
+  and lists sources, the note export keeps its references, and the bridge
+  refuses a missing folder and never overwrites an existing file.

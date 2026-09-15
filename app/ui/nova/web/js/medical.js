@@ -932,8 +932,10 @@ const Medical = {
         <span class="chip">${esc(fmtRelative(note.created_at))}</span></div>
       <div class="med-note-body">${renderMarkdown(note.content)}</div>
       ${(note.references || []).length ? `<div class="med-chips">${note.references.map((ref) => `<button type="button" class="chip" data-source="${esc(ref.document_id + "|" + ref.page_number)}" title="${esc(ref.title || ref.document_id)} · sayfayı Kütüphane'de aç">${esc(ref.title ? ref.title.slice(0, 28) + (ref.title.length > 28 ? "…" : "") : "kaynak")} · s. ${ref.page_number}</button>`).join("")}</div>` : ""}
-      <div class="btn-row"><button type="button" class="btn btn-ghost small" data-delete="${esc(note.note_id)}">Sil</button></div>
+      <div class="btn-row"><button type="button" class="btn btn-ghost small" data-export-note="${esc(note.note_id)}" title="Yazdırmak için Markdown dosyası olarak kaydeder">Dışa aktar (.md)</button>
+        <button type="button" class="btn btn-ghost small" data-delete="${esc(note.note_id)}">Sil</button></div>
     </div>`).join("");
+    $$("[data-export-note]", host).forEach((node) => node.addEventListener("click", () => this.exportMarkdown("note", { note_id: node.dataset.exportNote }, "Not")));
     $$("[data-delete]", host).forEach((node) => node.addEventListener("click", () => this.deleteNote(node.dataset.delete)));
     $$("[data-source]", host).forEach((node) => node.addEventListener("click", () => { const [documentId, page] = node.dataset.source.split("|"); this.openSource(documentId, Number(page)); }));
   },
@@ -1113,6 +1115,17 @@ const Medical = {
     this.loadJobs();
   },
 
+  /* Write a note or a paper into a folder the student picks; the paper
+     comes in two sheets and the question sheet never carries the keys. */
+  async exportMarkdown(kind, ids, label) {
+    const picked = await call("medical_pick_file", "folder");
+    if (picked.ok === false) { toast(picked.error || "Klasör seçilemedi.", true); return; }
+    if (!picked.path) return;
+    const result = await this.request("export_markdown", { kind, directory: picked.path, ...ids });
+    if (result.ok === false) { toast(result.error || "Dışa aktarılamadı.", true); return; }
+    toast(`${label} kaydedildi: ${result.file}`, "ok");
+  },
+
   /* A timed rehearsal in the real committee's shape: the student says how
      many questions each subject asks; the paper takes only real imported
      committee questions and says what it could not fill. */
@@ -1224,6 +1237,7 @@ const Medical = {
         <span class="chip">${answered} yanıtlandı</span>
         ${unscoredCount ? `<span class="chip warn" title="Kaynaksız ya da kaynak desteği doğrulanmamış sorular gösterilir ve açıklanır; puana ve öğrenme kaydına girmez">${questions.length - unscoredCount} puanlı · ${unscoredCount} yalnız çalışma</span>` : ""}
         ${exam.config.timed_seconds ? `<span id="med-timer" class="med-timer"></span>` : ""}
+        <button type="button" class="btn btn-ghost small" data-run="export" title="Soru kâğıdını (anahtarsız) Markdown olarak kaydeder; yazdırıp kâğıtta çözebilirsin">Kâğıda aktar</button>
         <button type="button" class="btn btn-ghost small" data-run="finish">Sınavı bitir</button>
       </div>
       <div class="med-dots">${questions.map((item, position) => {
@@ -1329,6 +1343,7 @@ const Medical = {
     if (action === "prev") { this.runner.index = Math.max(0, this.runner.index - 1); this.renderRunner(); return; }
     if (action === "next") { this.runner.index = Math.min((this.exam.questions || []).length - 1, this.runner.index + 1); this.renderRunner(); return; }
     if (action === "finish") { await this.finishExam(); return; }
+    if (action === "export") { await this.exportMarkdown("exam", { exam_id: this.exam.exam_id }, "Soru kâğıdı"); return; }
     if (action === "flag") { await this.answer(question.question_id, question.answer, { flagged: !question.flagged }); return; }
     if (action === "ask") { this.quickAsk(`Bu soruyu açıkla: ${question.stem}`); return; }
     if (action === "report") { Study.flagQuestion(question.question_id, { exam_id: this.exam.exam_id, attempt_id: this.exam.attempt ? this.exam.attempt.attempt_id : null }); return; }
@@ -1405,6 +1420,10 @@ const Medical = {
             <span class="ms-value">${noScore ? (unscored.length ? "Değerlendirme dışı" : "—") : "%" + analysis.percent}</span>
             <span class="ms-note">${noScore && unscored.length ? `${unscored.length} soru yalnız çalışma içindi; puanlı soru yok` : `${analysis.correct || 0} doğru · ${analysis.incorrect || 0} yanlış · ${analysis.unanswered || 0} boş · ${analysis.total || 0} puanlı`}${unscored.length && !noScore ? ` · ${unscored.length} puansız` : ""}${analysis.ungradable ? ` · ${analysis.ungradable} anahtarsız` : ""}${analysis.elapsed_seconds ? ` · ${fmtDuration(analysis.elapsed_seconds * 1000)}` : ""}</span>
           </div>
+          <div class="btn-row" style="justify-content:flex-start">
+            <button type="button" class="btn btn-ghost small" data-result-export="exam">Soru kâğıdını aktar</button>
+            <button type="button" class="btn btn-ghost small" data-result-export="exam_key" title="Anahtar, açıklama, kaynaklar ve puansız işaretleriyle">Cevap anahtarını aktar</button>
+          </div>
           ${analysis.suggestion ? `<div class="med-explain"><h4>Sıradaki adım</h4>${esc(analysis.suggestion.text)}</div>` : ""}
           ${analysis.adaptive ? `<div class="med-explain"><h4>Uyarlanabilir zorluk</h4>${esc(analysis.adaptive.reason)}</div>` : ""}
           ${unscored.length ? `<div class="med-explain med-unscored"><h4>Değerlendirme dışı (${unscored.length})</h4>Bu sorular gösterildi ve açıklandı; puana, kavram istatistiğine ve öğrenme kaydına girmedi.<ul>${unscored.map((item) => `<li>${esc(item.label)}${item.reason ? ` — ${esc(item.reason)}` : ""}${item.answered ? (item.correct ? " · doğru cevapladın" : " · yanlış cevapladın") : " · boş"}</li>`).join("")}</ul></div>` : ""}
@@ -1424,6 +1443,7 @@ const Medical = {
         ${this.reviewSection(questions)}
       </div>`;
     this.loadFigures(host);
+    $$("[data-result-export]", host).forEach((node) => node.addEventListener("click", () => this.exportMarkdown(node.dataset.resultExport, { exam_id: exam.exam_id }, node.dataset.resultExport === "exam_key" ? "Cevap anahtarı" : "Soru kâğıdı")));
     $$("[data-result]", host).forEach((node) => node.addEventListener("click", () => {
       if (node.dataset.result === "review") this.quickAsk("zayıf olduğum konuları tekrar et");
       if (node.dataset.result === "retry") { const wrong = $("#med-exam-wrong"); if (wrong) wrong.checked = true; this.createExam(null, false); }

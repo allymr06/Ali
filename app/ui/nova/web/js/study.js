@@ -356,7 +356,7 @@ const Study = {
       <div class="sa-head"><span class="chip ${STUDY_ACTIVITY_TONE[status] || ""}">${esc(activity.status_label || status)}</span>
         <span class="chip">${esc(activity.kind_label || activity.kind)}</span>
         <span class="sa-estimate" title="${esc(activity.estimate_label || "tahmini")}">≈ ${studyMinutes(activity.estimate_minutes)} <i>(${esc(activity.estimate_label || "tahmini")})</i></span></div>
-      <div class="sa-title">${esc(activity.title)}</div>
+      <div class="sa-title">${esc(activity.title)}${status === "started" && activity.started_at ? ` <span class="chip accent" data-elapsed="${esc(activity.started_at)}">${studyMinutes(Math.max(1, Math.round((Date.now() - Date.parse(activity.started_at)) / 60000)))} sürüyor</span>` : ""}</div>
       <div class="sa-reason">${esc(activity.reason || "")}</div>
       ${actions && (status === "planned" || status === "started") ? `<div class="btn-row" style="justify-content:flex-start">
         <button type="button" class="btn btn-primary small" data-activity-run="${esc(activity.activity_id)}">${status === "started" ? "Devam et" : "Başla"}</button>
@@ -1016,7 +1016,16 @@ const Study = {
 
   /* ── plan view ───────────────────────────────────────────────── */
 
+  tickElapsed() {
+    // The started activity's badge stays honest without re-rendering the view.
+    $$("[data-elapsed]").forEach((node) => {
+      const started = Date.parse(node.dataset.elapsed);
+      if (Number.isFinite(started)) node.textContent = `${studyMinutes(Math.max(1, Math.round((Date.now() - started) / 60000)))} sürüyor`;
+    });
+  },
+
   async openPlan() {
+    if (!this.elapsedTimer) this.elapsedTimer = setInterval(() => this.tickElapsed(), 30000);
     const result = await this.request("plans", {});
     if (result.ok === false) { toast(result.error || "Planlar okunamadı.", true); return; }
     this.plans = result.plans || [];

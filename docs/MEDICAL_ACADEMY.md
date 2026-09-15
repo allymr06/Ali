@@ -1025,6 +1025,18 @@ A weekly copy runs in the background on startup when due
 `backups` view says how — because JARVIS never overwrites live data on its
 own; a copy is refused when the disk lacks twice the database size.
 
+### Paper exports and the running-activity badge (15 September 2026)
+
+A note or a paper can be written into a folder the student picks, as
+Markdown for printing (`export_markdown` through the bridge; buttons on the
+note card, the exam runner and the result). The question sheet carries no
+keys, no explanations and no marks — it is for sitting on paper; the
+answer-key sheet carries the key, the explanation, the sources and each
+question's scoring status, so a study-only item is labelled on paper too.
+An existing file is never overwritten; a numbered sibling is written
+instead. A started plan activity shows a live "N dk sürüyor" badge,
+refreshed twice a minute.
+
 ### One scoring decision (13 September 2026)
 
 Every place that measures asks one question of a question: does the scoring

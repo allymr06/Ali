@@ -2593,3 +2593,24 @@ def test_an_exam_answer_carries_confidence_over_the_bridge(booted) -> None:
     events = booted.bridge.medical_call("understanding_events", {})["events"]
     assert len(events) == 1 and events[0]["confidence"] == "sure" and events[0]["reasoning"] == "Akromioklaviküler eklem."
 
+
+def test_the_bridge_exports_markdown_into_the_chosen_folder_without_overwriting(booted, tmp_path) -> None:
+    from app.medical.models import Question, QuestionOption
+
+    academy = booted.app.medical
+    academy.store.save_question(Question(question_id="ex1", subject="anatomy", stem="Soru?", options=[QuestionOption("A", "x"), QuestionOption("B", "y")], correct_key="A", origin="manual"))
+    exam = academy.exam_builder.build(academy.exam_config({"subjects": ["anatomy"], "question_count": 1}), [academy.store.get_question("ex1")])
+
+    target = tmp_path / "cikti"
+    missing = booted.bridge.medical_call("export_markdown", {"kind": "exam", "exam_id": exam.exam_id, "directory": str(target)})
+    assert missing == {"ok": False, "error": "Klasör bulunamadı; önce bir klasör seç."}
+
+    target.mkdir()
+    first = booted.bridge.medical_call("export_markdown", {"kind": "exam", "exam_id": exam.exam_id, "directory": str(target)})
+    second = booted.bridge.medical_call("export_markdown", {"kind": "exam", "exam_id": exam.exam_id, "directory": str(target)})
+    assert first["ok"] is True and second["ok"] is True
+    assert first["file"] != second["file"] and second["file"].endswith("-2.md"), "a second export never overwrites the first"
+    content = (target / first["file"]).read_text(encoding="utf-8")
+    assert "Soru?" in content and "Cevap" not in content
+    unknown = booted.bridge.medical_call("export_markdown", {"kind": "pdf", "directory": str(target)})
+    assert unknown["ok"] is False and "Bilinmeyen dışa aktarma türü" in unknown["error"]

@@ -274,6 +274,71 @@ class MedicalAcademy:
     # jobs the page starts
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # exports: what is on screen, as a printable Markdown file
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _safe_filename(title: str, suffix: str) -> str:
+        import re as _re
+
+        stem = _re.sub(r"[^0-9A-Za-zÇĞİÖŞÜçğıöşü _.-]+", "", title).strip().replace(" ", "-")[:80] or "jarvis"
+        return f"{stem}{suffix}"
+
+    def export_note_markdown(self, note_id: str) -> tuple[str, str]:
+        """(suggested file name, content) for one note, sources listed."""
+        note = next((item for item in self.store.list_notes(limit=500) if item.note_id == note_id), None)
+        if note is None:
+            raise ValueError("Not bulunamadı.")
+        lines = [f"# {note.title}", ""]
+        context = " › ".join(part for part in (SUBJECT_LABELS_TR.get(note.subject or "", note.subject or ""), self.curriculum.breadcrumb(note.topic_id) if note.topic_id else "") if part)
+        if context:
+            lines += [f"*{context}*", ""]
+        lines += [note.content.strip(), ""]
+        if note.references:
+            lines += ["## Kaynaklar", ""]
+            for ref in note.references:
+                lines.append(f"- {ref.title or ref.document_id} · s. {ref.page_number}")
+            lines.append("")
+        lines.append(f"*JARVIS Tıp Akademisi · {note.created_at.date().isoformat()} tarihli not; kaynak sayfalar yukarıda.*")
+        return self._safe_filename(note.title, ".md"), "\n".join(lines) + "\n"
+
+    def export_exam_markdown(self, exam_id: str, *, include_answers: bool) -> tuple[str, str]:
+        """(suggested file name, content) for a paper.
+
+        The question sheet holds no keys, no explanations and no "answered"
+        marks — it is for sitting on paper. The answer-key variant holds the
+        key, the explanation, the sources, and each question's scoring
+        status, so an unscored study item is labelled on paper too.
+        """
+        exam = self.store.get_exam(exam_id)
+        if exam is None:
+            raise ValueError("Sınav bulunamadı.")
+        questions = self.store.get_questions(exam.question_ids)
+        variant = "cevap-anahtari" if include_answers else "soru-kagidi"
+        lines = [f"# {exam.title} — {'Cevap anahtarı' if include_answers else 'Soru kâğıdı'}", ""]
+        if exam.config.timed_seconds:
+            lines += [f"Süre: {exam.config.timed_seconds // 60} dakika · {len(questions)} soru", ""]
+        for note in exam.generation_notes:
+            lines.append(f"> {note}")
+        if exam.generation_notes:
+            lines.append("")
+        for position, question in enumerate(questions, start=1):
+            lines.append(f"**{position}.** {question.stem}")
+            for option in question.options:
+                lines.append(f"   {option.key}) {option.text}")
+            if include_answers:
+                decision = self.scoring_of(question)
+                lines.append("")
+                lines.append(f"   **Cevap: {question.correct_key or '—'}**" + ("" if decision["scored"] else f" · puansız ({decision['label']})"))
+                if question.explanation:
+                    lines.append(f"   {question.explanation}")
+                for ref in question.references:
+                    lines.append(f"   Kaynak: {ref.title or ref.document_id} · s. {ref.page_number}")
+            lines.append("")
+        lines.append(f"*JARVIS Tıp Akademisi · {exam.created_at.date().isoformat()}*")
+        return self._safe_filename(f"{exam.title}-{variant}", ".md"), "\n".join(lines) + "\n"
+
     def backups(self) -> dict[str, Any]:
         from app.medical.repair import list_backups
 

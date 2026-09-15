@@ -768,3 +768,32 @@ def test_backups_rotate_spare_repair_snapshots_and_refuse_a_full_disk(academy, t
     report = asyncio.run(instance.backup_job())
     assert report["path"].endswith(".sqlite3")
     assert any(event.get("kind") == "backup_done" for event in events), "the page hears the result"
+
+
+def test_exports_put_no_key_on_the_question_sheet_and_label_unscored_on_the_answer_key(academy) -> None:
+    instance = academy(None)
+    keyed = question("x1", refs=True)
+    study_only = question("x2", origin=QuestionOrigin.GENERATED)
+    for item in (keyed, study_only):
+        instance.store.save_question(item)
+    exam = instance.exam_builder.build(instance.exam_config({"subjects": ["anatomy"], "question_count": 2}), [keyed, study_only])
+
+    name, sheet = instance.export_exam_markdown(exam.exam_id, include_answers=False)
+    assert name.endswith("soru-kagidi.md")
+    assert "**1.**" in sheet and "A) Capitulum humeri" in sheet
+    assert "Cevap" not in sheet and keyed.explanation not in sheet, "the question sheet is for sitting on paper"
+
+    key_name, key = instance.export_exam_markdown(exam.exam_id, include_answers=True)
+    assert key_name.endswith("cevap-anahtari.md")
+    assert "**Cevap: A**" in key and keyed.explanation in key
+    assert "puansız (Kaynaksız (yalnız çalışma))" in key, "a study item is labelled on paper too"
+    assert "Üst ekstremite · s. 12" in key
+
+    from app.medical.models import SourceReference, StudyNote
+
+    instance.store.save_note(StudyNote(note_id="n1", title="Karbonhidrat Özeti", content="## Glikoliz\nNet 2 ATP.", subject="biochemistry", references=[SourceReference("d1", 3, title="Biyokimya 7")]))
+    note_name, note = instance.export_note_markdown("n1")
+    assert note_name == "Karbonhidrat-Özeti.md"
+    assert note.startswith("# Karbonhidrat Özeti") and "Net 2 ATP." in note and "Biyokimya 7 · s. 3" in note
+    with pytest.raises(ValueError):
+        instance.export_note_markdown("yok")

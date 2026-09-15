@@ -110,11 +110,17 @@ def backup_now(store: Any, *, keep: int = BACKUP_KEEP) -> dict[str, Any]:
         src.close()
     partial.replace(target)
     removed: list[str] = []
+    blocked: list[str] = []
     backups = sorted(directory.glob(f"{BACKUP_PREFIX}*.sqlite3"), key=lambda file: file.name, reverse=True)
     for stale in backups[max(1, int(keep)):]:
-        stale.unlink(missing_ok=True)
-        removed.append(stale.name)
-    return {"path": str(target), "bytes": target.stat().st_size, "kept": min(len(backups), max(1, int(keep))), "removed": removed}
+        try:
+            stale.unlink(missing_ok=True)
+            removed.append(stale.name)
+        except OSError:
+            # A scanner may hold the file for a moment; the fresh copy stands
+            # either way and the stale one is reported, not fatal.
+            blocked.append(stale.name)
+    return {"path": str(target), "bytes": target.stat().st_size, "kept": min(len(backups), max(1, int(keep))), "removed": removed, "blocked": blocked}
 
 
 def auto_backup_due(store: Any, *, every_days: int = BACKUP_EVERY_DAYS) -> bool:

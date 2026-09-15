@@ -1501,6 +1501,25 @@ class NovaBridge:
             return {"ok": True, **_jsonable(academy.progress())}
         if name == "backups":
             return {"ok": True, **_jsonable(academy.backups())}
+        if name == "export_markdown":
+            directory = Path(text("directory"))
+            if not directory.is_dir():
+                return {"ok": False, "error": "Klasör bulunamadı; önce bir klasör seç."}
+            kind = text("kind")
+            if kind == "note":
+                filename, content = academy.export_note_markdown(text("note_id"))
+            elif kind in ("exam", "exam_key"):
+                filename, content = academy.export_exam_markdown(text("exam_id"), include_answers=kind == "exam_key")
+            else:
+                return {"ok": False, "error": f"Bilinmeyen dışa aktarma türü: {kind}"}
+            target = directory / filename
+            counter = 2
+            while target.exists():
+                target = directory / f"{Path(filename).stem}-{counter}{Path(filename).suffix}"
+                counter += 1
+            target.write_text(content, encoding="utf-8")
+            self._record_ui_event("medical.exported", "A study artefact was exported.", kind=kind)
+            return {"ok": True, "path": str(target), "file": target.name}
         if name == "anatomy":
             return {"ok": True, **_jsonable(academy.anatomy_structures())}
         if name == "structure":

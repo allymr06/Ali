@@ -38,6 +38,7 @@ SOURCE_LABELS_TR: dict[str, str] = {
     "question": "Yanlış yapılan soru",
     "histology": "Histoloji örneği",
     "occlusion": "Ders şekli (etiket kapatma)",
+    "landmark": "İşaret noktası",
 }
 STATE_LABELS_TR: dict[str, str] = {"new": "Yeni", "learning": "Öğreniliyor", "review": "Tekrarda", "suspended": "Askıda"}
 
@@ -250,6 +251,23 @@ class FlashcardDeck:
                     provenance=f"Ders kartı: {structure.canonical} · {question}",
                     topic_id=structure.topic_id,
                     extra={"structure_id": structure.structure_id, "field": field},
+                )
+                if created:
+                    added.append(card)
+                else:
+                    existing += 1
+        for structure in structures:
+            for landmark in structure.landmarks:
+                if not landmark.latin or not landmark.turkish:
+                    continue
+                card, created = self._create(
+                    _stable_id("landmark", structure.structure_id, landmark.landmark_id),
+                    source="landmark",
+                    front=f"{structure.canonical}: {landmark.turkish} — Latince adı?",
+                    back=landmark.latin + (f"\n{landmark.note}" if landmark.note else ""),
+                    provenance=f"Ders kartı: {structure.canonical} · işaret noktası",
+                    topic_id=structure.topic_id,
+                    extra={"structure_id": structure.structure_id, "landmark_id": landmark.landmark_id},
                 )
                 if created:
                     added.append(card)
@@ -521,6 +539,9 @@ class FlashcardDeck:
         elif card.get("state") == "suspended":
             card["state"] = card.pop("state_before_suspend", "review" if card.get("reps") else "new")
         return {"card": self.payload(self._save(card))}
+
+    def suspended_cards(self) -> list[dict[str, Any]]:
+        return [self.payload(card) for card in self.all() if card.get("state") == "suspended"]
 
     def delete(self, card_id: str) -> bool:
         delete_media = getattr(self._store, "delete_media", None)

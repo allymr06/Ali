@@ -172,6 +172,7 @@ class StudyWorkflow:
             "cards_occlusion_scan": lambda payload: self.flashcards.occlusion_candidates(_text(payload, "document_id"), _number(payload, "page_number", 1), _mapping(payload, "region") or None),
             "cards_occlusion_add": lambda payload: self.flashcards.add_occlusion(_text(payload, "document_id"), _number(payload, "page_number", 1), _mapping(payload, "region") or None, [str(item) for item in (payload.get("labels") or [])]),
             "cards_suspend": lambda payload: self.flashcards.suspend(_text(payload, "card_id"), payload.get("suspended") is not False),
+            "cards_suspended": lambda payload: {"cards": self.flashcards.suspended_cards()},
             "cards_delete": lambda payload: {"deleted": self.flashcards.delete(_text(payload, "card_id")), **self.flashcards.overview()},
             "cards_settings": lambda payload: {"settings": self.flashcards.update_settings(_mapping(payload, "fields"))},
             "cards_image": lambda payload: {"card_id": _text(payload, "card_id"), "image": "data:image/png;base64," + base64.b64encode(self.flashcards.front_image(_text(payload, "card_id"))).decode("ascii")},

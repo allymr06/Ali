@@ -111,6 +111,9 @@ def test_a_topic_builds_fact_and_terminology_cards_once_and_never_from_atlas_mir
     assert biceps["provenance"].startswith("Ders kartı: ")
     terms = [card for card in cards if card["source"] == "terminology"]
     assert terms and all(card["back"] for card in terms)
+    landmark = next(card for card in cards if card["source"] == "landmark")
+    assert landmark["front"].endswith("Latince adı?") and landmark["back"], "a landmark card answers with the Latin name"
+    assert landmark["source_label"] == "İşaret noktası"
     again = deck.build_topic(ARM)
     assert again["added"] == 0 and again["existing"] == report["added"], "a rebuild finds the same ids"
     with pytest.raises(ValueError):

@@ -109,9 +109,12 @@ const Cards = {
         ["", `${Math.min(overview.new_available || 0, overview.new_budget || 0)} yeni`],
         ["ok", `${overview.reviewed_today || 0} bugün yapıldı`],
       ];
-      if (overview.suspended) chips.push(["warn", `${overview.suspended} askıda`]);
+      if (overview.suspended) chips.push(["warn", `${overview.suspended} askıda`, "suspended"]);
       (overview.by_source || []).forEach((row) => chips.push(["violet", `${row.label} · ${row.count}`]));
-      summary.innerHTML = chips.map(([tone, text]) => `<span class="chip ${tone}">${esc(text)}</span>`).join("");
+      summary.innerHTML = chips.map(([tone, text, action]) => action
+        ? `<button type="button" class="chip ${tone}" data-cards-panel="${action}" title="Askıya alınan kartları listeler; geri alınabilir">${esc(text)}</button>`
+        : `<span class="chip ${tone}">${esc(text)}</span>`).join("");
+      $$("[data-cards-panel]", summary).forEach((node) => node.addEventListener("click", () => this.showSuspended()));
     }
     const newInput = $("#med-cards-new");
     if (newInput && overview.settings) newInput.value = String(overview.settings.new_per_day);
@@ -170,6 +173,29 @@ const Cards = {
       await this.refreshOverview();
       this.renderReview();
     }));
+  },
+
+  /* The suspended cards, each with its way back into the queue. */
+  async showSuspended() {
+    const host = $("#med-cards-review");
+    if (!host) return;
+    const result = await this.request("cards_suspended", {});
+    if (result.ok === false) { toast(result.error || "Askıdakiler okunamadı.", true); return; }
+    const cards = result.cards || [];
+    host.innerHTML = `<div class="panel med-card">
+      <div class="panel-title"><span class="kicker">Askıdaki kartlar</span><span class="faint">${cards.length}</span></div>
+      ${cards.length ? `<div class="med-bank-list">${cards.map((card) => `<div class="med-row"><span class="med-row-title">${esc(card.front.split("\n")[0])}</span>
+        <span class="med-row-side"><button type="button" class="chip" data-card-restore="${esc(card.card_id)}">Geri al</button></span>
+        <span class="med-row-meta">${esc(card.source_label)}${card.topic_label ? ` · ${esc(card.topic_label)}` : ""}</span></div>`).join("")}</div>` : medEmpty("Askıda kart yok")}
+      <div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-ghost small" data-cards-back>Tekrara dön</button></div></div>`;
+    $$("[data-card-restore]", host).forEach((node) => node.addEventListener("click", async () => {
+      const restored = await this.request("cards_suspend", { card_id: node.dataset.cardRestore, suspended: false });
+      if (restored.ok === false) { toast(restored.error || "Geri alınamadı.", true); return; }
+      await this.open();
+      this.showSuspended();
+    }));
+    const back = host.querySelector("[data-cards-back]");
+    if (back) back.addEventListener("click", () => this.open());
   },
 
   async loadImage(host, cardId) {
@@ -922,7 +948,8 @@ const Study = {
           <span class="chip ${study.findings_active ? "bad" : study.findings_open ? "warn" : "ok"}">${study.findings_open || 0} açık bulgu${study.findings_active ? ` · ${study.findings_active} desteklenen` : ""}</span>
           <span class="chip ${study.open_flags ? "warn" : ""}">${study.open_flags || 0} soru işareti</span>
           <span class="chip">${(histology.eligible || 0) + (histology.study_only || 0)} histoloji örneği${histology.eligible ? ` · ${histology.eligible} sınava uygun` : ""}</span>
-          <span class="chip">${study.plans || 0} plan</span></div>
+          <span class="chip">${study.plans || 0} plan</span>
+          ${(study.cards_due || 0) + (study.cards_new || 0) ? `<button type="button" class="chip accent" data-study-go="cards" title="Tekrarı gelen ve günün yeni kartları">${(study.cards_due || 0) + (study.cards_new || 0)} kart bekliyor</button>` : ""}</div>
         <div class="btn-row" style="justify-content:flex-start">
           <button type="button" class="btn btn-ghost small" data-study-go="understanding">Bulgular</button>
           <button type="button" class="btn btn-ghost small" data-study-check title="Bankadan bir soru: cevap, güven ve gerekçe birlikte kaydedilir">Anlama kontrolü</button>

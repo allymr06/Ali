@@ -33,6 +33,8 @@ from app.providers.models import ModelProfile, TaskType
 from app.providers.registry import ProviderRegistry
 from app.providers.router import ModelRouter
 from app.research import (
+    DuckDuckGoSearchProvider,
+    GeminiGroundedSearch,
     ResearchService,
     SQLiteResearchCache,
     SafeWebFetcher,
@@ -534,6 +536,7 @@ def create_application(
         screen_watcher.register_tools(tool_executor)
 
     research = None
+    search_provider = None
     if active_settings.research_enabled:
         policy = URLPolicy(allow_http=active_settings.research_allow_http)
         fetcher = SafeWebFetcher(
@@ -544,11 +547,34 @@ def create_application(
             max_redirects=active_settings.research_max_redirects,
             user_agent=active_settings.research_user_agent,
         )
-        search_provider = SearXNGSearchProvider(
-            active_settings.research_searxng_url or "",
-            fetcher,
-            policy,
-        )
+        search_provider = None
+        if active_settings.research_provider == "searxng":
+            search_provider = SearXNGSearchProvider(
+                active_settings.research_searxng_url or "",
+                fetcher,
+                policy,
+            )
+        elif active_settings.research_provider == "gemini":
+            # Google Search grounding rides the stored Gemini key. With
+            # no key the service stays off instead of failing at first
+            # use. (Grounding also needs quota the free tier may lack -
+            # the keyless default below does not.)
+            if active_settings.gemini_api_key:
+                search_provider = GeminiGroundedSearch(
+                    active_settings.gemini_api_key,
+                    active_settings.gemini_model or DEFAULT_GEMINI_MODEL,
+                    policy,
+                    timeout_seconds=active_settings.research_timeout_seconds,
+                )
+        else:
+            # The default needs nothing: no key, no account, no server.
+            search_provider = DuckDuckGoSearchProvider(
+                policy,
+                timeout_seconds=active_settings.research_timeout_seconds,
+                max_response_bytes=active_settings.research_max_response_bytes,
+            )
+
+    if search_provider is not None:
         research = ResearchService(
             search_provider=search_provider,
             fetcher=fetcher,

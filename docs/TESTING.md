@@ -890,3 +890,23 @@ screen; the focus clock formats remaining time exactly (half-started
 seconds round up, never negative). The demo bridge mirrors the three new
 methods without pretending demo file writes; the hidden attribute wins
 over every panel class, the topbar buttons included.
+
+## Web research backends (15 September 2026)
+
+In `tests/test_research_search.py`: the DuckDuckGo provider requests the
+no-script endpoint with a browser agent, decodes organic redirects to
+their real URLs, drops ad routers and duplicates, decodes entities,
+honours limit and day/month/year ranges, reports a challenge page as
+zero hits and a non-200 as a SearchError, and its redirect decoder
+refuses foreign hosts and missing `uddg` values. The Gemini grounding
+provider turns grounding chunks into hits with support-segment
+snippets, keeps the key in a header and out of every URL and error,
+reports an ungrounded answer as zero hits, and rejects bad payloads,
+parameters and model names. `tests/test_settings.py` pins the provider
+choices; `tests/test_bootstrap.py` pins default-on DuckDuckGo wiring,
+Gemini wiring with a key and honest silence without one; the tool
+schema selector exposes `research_web` for arastir/guncel/haber turns
+(`tests/test_tool_schema_selection.py`); the extractor survives meta
+tags with neither property nor name (`tests/test_research_extractor.py`);
+and medical tutor turns include `research_web` in their allowed tools
+(`tests/test_medical_tutor.py` keeps passing with the widened set).

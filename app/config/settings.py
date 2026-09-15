@@ -265,7 +265,12 @@ class Settings:
     memory_auto_capture_enabled: bool = True
     memory_extraction_model: str = "gemini-3.5-flash-lite"
 
-    research_enabled: bool = False
+    # Web research: on by default over the keyless DuckDuckGo backend.
+    # "gemini" switches to Google Search grounding (needs the stored key
+    # and grounding quota); "searxng" needs a self-hosted endpoint. A
+    # provider whose requirement is missing leaves research off, honestly.
+    research_enabled: bool = True
+    research_provider: str = "duckduckgo"
     research_searxng_url: str | None = None
     research_allow_http: bool = False
     research_timeout_seconds: float = 10.0
@@ -454,12 +459,20 @@ class Settings:
             raise ValueError("Vision image limits must be positive.")
         if self.vision_taskbar_height < 0:
             raise ValueError("vision_taskbar_height cannot be negative.")
-        if self.research_enabled and (
-            self.research_searxng_url is None
-            or not self.research_searxng_url.strip()
+        if self.research_provider not in {"duckduckgo", "gemini", "searxng"}:
+            raise ValueError(
+                "research_provider must be duckduckgo, gemini or searxng."
+            )
+        if (
+            self.research_enabled
+            and self.research_provider == "searxng"
+            and (
+                self.research_searxng_url is None
+                or not self.research_searxng_url.strip()
+            )
         ):
             raise ValueError(
-                "research_searxng_url is required when research is enabled."
+                "research_searxng_url is required for the searxng provider."
             )
         if self.research_searxng_url is not None and not self.research_searxng_url.strip():
             raise ValueError("research_searxng_url cannot be empty when set.")
@@ -802,7 +815,11 @@ class Settings:
                 "JARVIS_NOTIFICATIONS_DATABASE_PATH",
                 default_state_path("jarvis_notifications.sqlite3"),
             ),
-            research_enabled=_get_bool("JARVIS_RESEARCH_ENABLED"),
+            research_enabled=_get_bool("JARVIS_RESEARCH_ENABLED", True),
+            research_provider=(
+                os.getenv("JARVIS_RESEARCH_PROVIDER", "duckduckgo").strip().casefold()
+                or "duckduckgo"
+            ),
             research_searxng_url=os.getenv("JARVIS_RESEARCH_SEARXNG_URL"),
             research_allow_http=_get_bool("JARVIS_RESEARCH_ALLOW_HTTP"),
             research_timeout_seconds=_get_float(

@@ -241,6 +241,37 @@ Academy):
   corrupt file) fall back to defaults instead of trapping the user.
 - A native **folder picker** on the bridge serves both exports.
 
+On "web arastirmasi da ekle" (mid-night request): the research pipeline
+that always existed finally has a backend that works out of the box.
+
+- **DuckDuckGo provider (default)** - keyless search over the no-script
+  HTML endpoint; organic-result redirects are decoded to their real
+  URLs and every destination passes the same URL policy as any fetch;
+  ad links never decode, so they never appear. Region tr-tr, safe
+  search on, day/month/year ranges mapped.
+- **Gemini grounding provider (optional)** - Google Search grounding
+  over the stored key for anyone with grounding quota
+  (`JARVIS_RESEARCH_PROVIDER=gemini`); the generated prose is discarded,
+  only the grounding chunks become hits, and the pipeline still fetches
+  and cites every page itself. Ali's free tier returned 429 for
+  grounded calls (plain generation fine), which is exactly why it is
+  not the default.
+- **Research on by default** - `research_enabled` now defaults to true
+  and the SYSTEM panel shows it ready; a provider whose requirement is
+  missing leaves it off honestly instead of failing at first use.
+- **The model reaches for it by itself** - the tool schema selector
+  exposes `research_web` for arastir/guncel/haber/kaynak requests, the
+  tool description says when to use it, and medical tutor turns carry
+  it too: course material stays the medical source of truth, but exam
+  calendars, application dates and official announcements are looked
+  up and cited, never recalled. Verified live in chat: "2026 TUS 1.
+  donem ne zaman?" now researches and answers "15 Mart 2026" with the
+  OSYM calendar as the source, instead of "arama aracim yok".
+- **Extractor fix** - a meta tag with neither property nor name
+  (charset, http-equiv, bare content) crashed the whole page fetch;
+  DuckDuckGo's own results page tripped it. Now ignored, with a
+  regression test.
+
 ## Medical Academy: the user test of 13 September 2026 repaired (14 September 2026)
 
 An eighteen-finding user test of the Academy on 96e5f41 (report under

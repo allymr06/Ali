@@ -292,7 +292,10 @@ class ResearchService:
                 name="research_web",
                 description=(
                     "Research a question using bounded untrusted web evidence; returns "
-                    "source timestamps, hashes, citations, and explicit uncertainties."
+                    "source timestamps, hashes, citations, and explicit uncertainties. "
+                    "Use it whenever the answer needs current or verifiable facts - "
+                    "news, dates, prices, schedules, guidelines, anything after the "
+                    "training cutoff - instead of guessing."
                 ),
                 timeout_seconds=self.operation_timeout_seconds,
                 capabilities=frozenset({"web", "research", "search"}),

@@ -21,7 +21,7 @@ from app.medical.generation import ExamBuilder, GenerationError
 from app.medical.model import MedicalModelClient, MedicalModelError, extract_json
 from app.medical.models import ExamConfig, Question, QuestionOption, QuestionOrigin
 from app.medical.schemas import NOTES_SCHEMA, QUESTIONS_SCHEMA, coerce_strings, validate, wire_schema
-from app.medical.tutor import MEDICAL_TOOLS, MedicalTutor
+from app.medical.tutor import MEDICAL_TOOLS, TUTOR_TURN_TOOLS, MedicalTutor
 from app.tools.executor import ToolExecutor
 
 ARM = "anatomy.musculoskeletal.upper_limb.arm"
@@ -324,7 +324,7 @@ async def test_a_study_turn_is_augmented_and_a_household_turn_is_left_alone(buil
 
     augmentation = await academy.augment(Request("Scapulayı bana basit anlat"), Context())
     assert augmentation.kind == "medical" and augmentation.suppress_memory is True and augmentation.direct_response is None
-    assert augmentation.allowed_tools == MEDICAL_TOOLS, "the turn is narrowed to the medical tools"
+    assert augmentation.allowed_tools == TUTOR_TURN_TOOLS, "the turn is narrowed to the medical tools plus web research"
     assert "Never fabricate citations" in augmentation.system_prompt and "cannot replace" in augmentation.system_prompt
     assert augmentation.metadata["intent"] == "medical.simplify"
     assert augmentation.metadata["evidence_count"] == 0 and augmentation.metadata["references"] == []

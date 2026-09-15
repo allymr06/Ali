@@ -776,6 +776,20 @@ class ToolSchemaSelector:
                     {"watch_screen_start", "watch_screen_status"}
                 )
 
+        research_domain = self._has_stem(
+            tokens,
+            (
+                "arastir",
+                "research",
+                "guncel",
+                "haber",
+                "kaynak",
+            ),
+        )
+
+        if research_domain and not selected:
+            selected.add("research_web")
+
         browser_domain = self._has_stem(
             tokens,
             (

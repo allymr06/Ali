@@ -130,6 +130,24 @@ def test_process_termination_does_not_invent_tool():
     assert "terminate_process" not in result.names
 
 
+def test_research_request_exposes_the_research_tool_when_wired():
+    result = ToolSchemaSelector().select(
+        Request("Bana TUS 2026 tarihini arastir."),
+        available_names=set(ALL_NAMES) | {"research_web"},
+    )
+
+    assert result.names == frozenset({"research_web"})
+    assert result.reason == "deterministic_intent_match"
+
+
+def test_research_request_without_the_service_falls_back_to_full_exposure():
+    result = select("Bu konuyu benim icin arastirir misin?")
+
+    # research_web is not wired: instead of failing closed the model sees
+    # the inventory and can still explain or use the browser opener.
+    assert result.reason == "intent_unresolved_full_exposure"
+
+
 def test_unresolved_intent_exposes_available_tools_for_the_model():
     # A phrasing the deterministic vocabulary does not recognize must
     # not leave the model blind; it sees the available inventory and

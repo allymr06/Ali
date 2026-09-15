@@ -30,3 +30,22 @@ def test_extractor_applies_character_limit_and_handles_unknown_charset() -> None
 def test_parse_datetime_rejects_invalid_values() -> None:
     assert parse_datetime("not-a-date") is None
     assert parse_datetime(None) is None
+
+
+def test_extractor_survives_meta_tags_with_neither_property_nor_name() -> None:
+    # DuckDuckGo's results page (and plenty of ordinary sites) open with
+    # <meta charset> and bare content-only meta tags; they used to raise
+    # AttributeError and sink the whole fetch.
+    html = (
+        b"<html><head><meta charset=\"utf-8\">"
+        b"<meta http-equiv=\"content-type\" content=\"text/html\">"
+        b"<meta content=\"orphan\"><title>Sayfa</title></head>"
+        b"<body><p>Metin var.</p></body></html>"
+    )
+
+    title, text, published, findings = extract_content(
+        html, "text/html; charset=utf-8", max_characters=1_000
+    )
+
+    assert title == "Sayfa" and "Metin var." in text
+    assert published is None and findings == ()

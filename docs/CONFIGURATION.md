@@ -267,8 +267,9 @@ local address rejection.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `JARVIS_RESEARCH_ENABLED` | `false` | Registers the read-only research tool at startup. |
-| `JARVIS_RESEARCH_SEARXNG_URL` | unset | Base URL of the configured SearXNG service; required when enabled. |
+| `JARVIS_RESEARCH_ENABLED` | `true` | Registers the read-only research tool at startup. |
+| `JARVIS_RESEARCH_PROVIDER` | `duckduckgo` | Search backend: `duckduckgo` (keyless default), `gemini` (Google Search grounding over the stored key; needs grounding quota), or `searxng`. |
+| `JARVIS_RESEARCH_SEARXNG_URL` | unset | Base URL of the configured SearXNG service; required for the `searxng` provider. |
 | `JARVIS_RESEARCH_ALLOW_HTTP` | `false` | Explicitly permits plain HTTP while retaining all address checks. |
 | `JARVIS_RESEARCH_TIMEOUT_SECONDS` | `10` | Timeout for one HTTP request. |
 | `JARVIS_RESEARCH_OPERATION_TIMEOUT_SECONDS` | `45` | Tool-level research deadline. |
@@ -277,7 +278,7 @@ local address rejection.
 | `JARVIS_RESEARCH_MAX_REDIRECTS` | `3` | Maximum manually validated redirects; range `0` through `10`. |
 | `JARVIS_RESEARCH_MAX_SOURCES` | `5` | Maximum source pages in one report; range `1` through `10`. |
 | `JARVIS_RESEARCH_MAX_CONCURRENCY` | `3` | Maximum simultaneous source fetches; range `1` through `8`. |
-| `JARVIS_RESEARCH_USER_AGENT` | `JARVIS/0.1` | Non-secret HTTP user-agent identifier. |
+| `JARVIS_RESEARCH_USER_AGENT` | `JARVIS/0.1` | Non-secret HTTP user-agent for source-page fetches. The DuckDuckGo search request itself presents a browser string, because the endpoint serves an empty challenge page to non-browser agents. |
 
 ## Plugins
 

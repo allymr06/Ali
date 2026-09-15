@@ -35,7 +35,7 @@ from app.medical.models import (
     Subject,
 )
 from app.medical.store import MedicalStore
-from app.medical.tutor import CONTEXT_WINDOW, MEDICAL_TOOLS
+from app.medical.tutor import TUTOR_TURN_TOOLS, CONTEXT_WINDOW, MEDICAL_TOOLS
 
 ARM = "anatomy.musculoskeletal.upper_limb.arm"
 OPTIONS = ["Capitulum humeri", "Trochlea humeri", "Olecranon", "Acromion"]
@@ -229,7 +229,7 @@ def test_a_teaching_turn_hands_the_core_a_prompt_and_only_the_medical_tools(buil
     augmentation = plan(build(None), "humerus anatomisini anlat")
 
     assert augmentation is not None
-    assert augmentation.allowed_tools == MEDICAL_TOOLS
+    assert augmentation.allowed_tools == TUTOR_TURN_TOOLS, "medical tools plus web research for current facts"
     assert augmentation.direct_response is None
     assert augmentation.suppress_memory is True
     assert augmentation.metadata["subject"] == "anatomy"

@@ -57,6 +57,11 @@ from app.medical.text import tokens
 MEDICAL_TOOLS: frozenset[str] = frozenset(
     {"medical_search_library", "medical_lookup_term", "medical_open_anatomy", "medical_study_state"}
 )
+# What a tutor turn may call: the academy's own four tools, plus web
+# research - current administrative facts (exam calendars, application
+# dates, official announcements) live on the web, not in lecture PDFs.
+# The extra name is simply absent when the research service is off.
+TUTOR_TURN_TOOLS: frozenset[str] = MEDICAL_TOOLS | {"research_web"}
 CONTEXT_WINDOW = timedelta(minutes=20)
 CHAT_QUIZ_MAX = 10
 STOP_WORDS: frozenset[str] = frozenset({"bitir", "dur", "durdur", "stop", "yeter", "kapat", "iptal", "quit", "end"})
@@ -237,7 +242,7 @@ class MedicalTutor:
         }
         if references:
             self._emit({"kind": "references", "references": references, "summary": describe_command(command)})
-        return RequestAugmentation(system_prompt=prompt, allowed_tools=MEDICAL_TOOLS, kind="medical", suppress_memory=True, metadata=metadata)
+        return RequestAugmentation(system_prompt=prompt, allowed_tools=TUTOR_TURN_TOOLS, kind="medical", suppress_memory=True, metadata=metadata)
 
     def _review_weakness(self, command: StudyCommand, context: StudyContext, metadata: dict[str, Any]) -> RequestAugmentation:
         weak = self._learning.weak(limit=6, subject=context.subject)
@@ -267,7 +272,7 @@ class MedicalTutor:
             spoken=context.spoken,
             quiz_note="Weak concepts to review (from the student's own quiz history):\n" + "\n".join(lines),
         )
-        return RequestAugmentation(system_prompt=prompt, allowed_tools=MEDICAL_TOOLS, kind="medical", suppress_memory=True, metadata={**metadata, "weak_concepts": [item.concept_id for item in weak]})
+        return RequestAugmentation(system_prompt=prompt, allowed_tools=TUTOR_TURN_TOOLS, kind="medical", suppress_memory=True, metadata={**metadata, "weak_concepts": [item.concept_id for item in weak]})
 
     # ------------------------------------------------------------------
     # quiz in chat (deterministic)
@@ -541,7 +546,7 @@ class MedicalTutor:
             spoken=context.spoken,
             quiz_note=(self._quiz_note(session) or "") + "\nStart now: greet in one line and ask the first question only.",
         )
-        return RequestAugmentation(system_prompt=prompt, allowed_tools=MEDICAL_TOOLS, kind="medical", suppress_memory=True, metadata={**metadata, "quiz": "oral"})
+        return RequestAugmentation(system_prompt=prompt, allowed_tools=TUTOR_TURN_TOOLS, kind="medical", suppress_memory=True, metadata={**metadata, "quiz": "oral"})
 
     def _current_question(self, quiz: dict[str, Any]) -> Question | None:
         ids = quiz.get("question_ids") or []
@@ -657,7 +662,7 @@ class MedicalTutor:
             spoken=context.spoken,
             quiz_note="Quiz item under discussion:\n" + "\n".join(detail),
         )
-        return RequestAugmentation(system_prompt=prompt, allowed_tools=MEDICAL_TOOLS, kind="medical", suppress_memory=True, metadata={**metadata, "question_id": question.question_id})
+        return RequestAugmentation(system_prompt=prompt, allowed_tools=TUTOR_TURN_TOOLS, kind="medical", suppress_memory=True, metadata={**metadata, "question_id": question.question_id})
 
     # ------------------------------------------------------------------
     # exams from chat

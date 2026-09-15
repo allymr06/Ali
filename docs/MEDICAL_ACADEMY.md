@@ -965,6 +965,36 @@ tracked and the results say when repeated specimens inflated the score. Scored
 answers feed mastery and the understanding events; "Karıştırılanlarla kıyasla"
 puts the recorded features of confusable specimens side by side.
 
+### Flashcards: spaced repetition over the student's own material (15 September 2026)
+
+`app/medical/flashcards.py`, the **Kartlar** tab. Every card is cut from
+something already recorded, and says so on its face:
+
+- a curated anatomy fact (origin, insertion, innervation, action, course …)
+  for the structures of one curriculum topic — atlas mirrors of a lesson are
+  skipped so a fact is asked once;
+- a terminology entry tied to those structures (Latin front, Turkish back);
+- a question answered wrong in a *scored* paper — the back is the bank's own
+  key and explanation; study-only questions make no card;
+- a labelled histology specimen — the masked crop in front, the recorded
+  name and features behind;
+- **image occlusion**: labels the lecture page itself prints, read from the
+  PDF text layer, covered on the figure (`Etiket kartları üret` on a library
+  page). A label the page does not print is refused; a scanned page says it
+  has no text layer instead of guessing.
+
+The scheduler is a documented SM-2 variant (ease 2.5 start, clamped to
+[1.3, 3.0]; lapse −0.2 and back to today; hard ×1.2 −0.15; good ×ease;
+easy ×ease×1.3 +0.15; whole days, half-up, one year cap, no fuzz). The queue
+serves due cards oldest-first, then new cards under a daily budget
+(default 15, a setting on the tab). Each grade button shows what it would
+schedule. Answers are idempotent by submission id.
+
+A grade is the student's own word: it schedules repetition and (every
+twenty answers) logs five minutes of study to the planner — it never
+touches concept mastery, findings, events or exam analyses, and the tab
+says so. Deletion asks first; suspending keeps the card and its state.
+
 ### One scoring decision (13 September 2026)
 
 Every place that measures asks one question of a question: does the scoring

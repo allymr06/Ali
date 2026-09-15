@@ -78,3 +78,14 @@
 .med-page-image.selecting img { pointer-events: none; }
 .study-region { position: absolute; border: 2px dashed var(--accent); background: rgba(var(--accent-rgb), 0.12); pointer-events: none; }
 .study-specimen-form { margin-top: 10px; }
+
+/* ── flashcards ─────────────────────────────────────────────────── */
+.study-flashcard { gap: 0.9rem; }
+.study-flashcard .fc-front { font-size: var(--text-lg); line-height: 1.55; color: var(--ink-1); white-space: normal; }
+.study-flashcard .fc-back { padding-top: 0.8rem; border-top: 1px solid var(--line-2); font-size: var(--text-md); line-height: 1.6; color: var(--accent-2); }
+.study-flashcard .fc-grades { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.study-flashcard .fc-grades .btn { display: inline-flex; flex-direction: column; align-items: center; gap: 0.1rem; min-width: 5.2rem; }
+.study-flashcard .fc-grades .btn i { font-style: normal; font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-4); }
+.study-flashcard .study-crop img { max-height: 20rem; }
+.study-flashcard .mb-meta .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.fc-occlusion-list { display: flex; flex-direction: column; gap: 0.2rem; max-height: 16rem; overflow-y: auto; }

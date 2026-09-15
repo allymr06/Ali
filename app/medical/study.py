@@ -17,9 +17,11 @@ The academy facade stays what it was; this module is where the pieces meet.
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from app.medical.flashcards import FlashcardDeck
 from app.medical.histology import HistologyBank
 from app.medical.models import SUBJECT_LABELS_TR
 from app.medical.planner import StudyPlanner
@@ -74,6 +76,8 @@ class StudyWorkflow:
         academy.generator.scoring = self.reviewer.decision
         self.planner = StudyPlanner(store, curriculum, concepts, learning, self.understanding, self.prerequisites, remind=remind, emit=academy._emit)
         self.histology = HistologyBank(store, academy.pipeline, learning, self.understanding, concepts, model)
+        # Flashcards: repetition from the student's own material, never measurement.
+        self.flashcards = FlashcardDeck(store, academy.anatomy, academy.terminology, curriculum, self.histology, academy.pipeline, planner=self.planner)
         self.SYNC_ACTIONS: dict[str, Callable[[Mapping[str, Any]], Any]] = {
             # understanding
             "understanding_overview": lambda payload: self.understanding.overview(),
@@ -152,6 +156,19 @@ class StudyWorkflow:
             "histology_session": lambda payload: {"session": self._session(self.histology.session(_text(payload, "session_id")))},
             "histology_show": lambda payload: {"session": self.histology.show(_text(payload, "session_id"), _number(payload, "index"))},
             "histology_finish": lambda payload: {"session": self.histology.finish_session(_text(payload, "session_id"))},
+            # flashcards (deterministic; a grade is study, not evidence)
+            "cards_overview": lambda payload: self.flashcards.overview(),
+            "cards_queue": lambda payload: self.flashcards.queue(limit=_number(payload, "limit", 60)),
+            "cards_answer": lambda payload: self.flashcards.answer(_text(payload, "card_id"), _text(payload, "grade"), submission_id=_optional(payload, "submission_id")),
+            "cards_build_topic": lambda payload: self.flashcards.build_topic(_text(payload, "topic_id")),
+            "cards_add_wrongs": lambda payload: self.flashcards.add_wrong_questions(scoring=self.reviewer.decision),
+            "cards_add_histology": lambda payload: self.flashcards.add_histology(),
+            "cards_occlusion_scan": lambda payload: self.flashcards.occlusion_candidates(_text(payload, "document_id"), _number(payload, "page_number", 1), _mapping(payload, "region") or None),
+            "cards_occlusion_add": lambda payload: self.flashcards.add_occlusion(_text(payload, "document_id"), _number(payload, "page_number", 1), _mapping(payload, "region") or None, [str(item) for item in (payload.get("labels") or [])]),
+            "cards_suspend": lambda payload: self.flashcards.suspend(_text(payload, "card_id"), payload.get("suspended") is not False),
+            "cards_delete": lambda payload: {"deleted": self.flashcards.delete(_text(payload, "card_id")), **self.flashcards.overview()},
+            "cards_settings": lambda payload: {"settings": self.flashcards.update_settings(_mapping(payload, "fields"))},
+            "cards_image": lambda payload: {"card_id": _text(payload, "card_id"), "image": "data:image/png;base64," + base64.b64encode(self.flashcards.front_image(_text(payload, "card_id"))).decode("ascii")},
         }
         self.ASYNC_ACTIONS: dict[str, Callable[[Mapping[str, Any]], Any]] = {
             "understanding_assess": lambda payload: self._async("understanding_assess", lambda: self.understanding.assess(_text(payload, "event_id")), key="event"),
@@ -161,7 +178,7 @@ class StudyWorkflow:
             "question_review": lambda payload: self._async("question_review", lambda: self._review(_text(payload, "question_id")), key="support", question_id=_text(payload, "question_id")),
             "histology_answer": lambda payload: self._async("histology_answer", lambda: self.histology.answer(_text(payload, "session_id"), _text(payload, "specimen_id"), _text(payload, "text"), confidence=_optional(payload, "confidence"), explanation=_text(payload, "explanation"), submission_id=_optional(payload, "submission_id"), timed_out=bool(payload.get("timed_out"))), key="session"),
         }
-        self.CONFIRMED_ACTIONS: frozenset[str] = frozenset({"invalidate_question", "plan_delete", "histology_delete"})
+        self.CONFIRMED_ACTIONS: frozenset[str] = frozenset({"invalidate_question", "plan_delete", "histology_delete", "cards_delete"})
         self.ASYNC_MESSAGES_TR: dict[str, str] = {
             "understanding_assess": "Gerekçe değerlendiriliyor.",
             "diagnostic_ask": "Teşhis sorusu hazırlanıyor.",
@@ -292,8 +309,11 @@ class StudyWorkflow:
             today = self.planner.today_view()
         except ValueError:
             today = {"plan": None, "activities": [], "next": None}
+        cards = self.flashcards.queue(limit=1)
         return {
             "today": today,
+            "cards_due": cards["due"],
+            "cards_new": min(cards["new_available"], cards["new_budget"]),
             "findings_open": len(open_findings),
             "findings_active": sum(1 for item in open_findings if item.get("status") in ("supported", "reopened")),
             "plans": len(self.planner.plans()),

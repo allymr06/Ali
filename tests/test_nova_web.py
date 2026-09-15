@@ -1635,3 +1635,35 @@ def test_the_page_handles_job_state_pushes_and_duplicate_starts() -> None:
     # The failure is toasted once, by the bridge's job_failed push; the state push only keeps the row on screen.
     assert report["toasts"] == []
     assert "job_state" in JS_SOURCES["js/medical.js"], "the push kind the ledger emits is handled"
+
+
+def test_the_cards_tab_reveals_before_grading_and_speaks_turkish() -> None:
+    assert 'data-view="cards"' in HTML and 'id="med-cards-review"' in HTML and "data-occlusion-scan" in HTML.replace("&quot;", '"') or "data-occlusion-scan" in JS_SOURCES["js/medical.js"]
+    context = medical_context()
+    context.eval("""
+      Cards.overview = {total: 3, due: 1, new_available: 2, new_budget: 2, reviewed_today: 0, suspended: 0, by_source: [{source: "anatomy_fact", label: "Ders kartı (anatomi)", count: 3}], forecast: [{date: "2026-09-15", due: 1}], settings: {new_per_day: 15}};
+      Cards.queue = [{card_id: "fc1", state: "new", state_label: "Yeni", source: "anatomy_fact", source_label: "Ders kartı (anatomi)", front: "Musculus biceps brachii — innervasyonu?", back: "Nervus musculocutaneus (C5–C6)", provenance: "Ders kartı: Musculus biceps brachii · innervation", topic_label: "Anatomi › Kol", reps: 0, has_image: false, previews: {again: "bugün", hard: "bugün", good: "1 gün", easy: "3 gün"}, preview_labels: {again: "Tekrar", hard: "Zor", good: "İyi", easy: "Kolay"}}];
+      Cards.index = 0; Cards.revealed = false;
+      Cards.renderPanel(); Cards.renderReview();
+      const hidden = HOSTS["#med-cards-review"].innerHTML;
+      Cards.revealed = true; Cards.renderReview();
+      globalThis.CARDS_REPORT = JSON.stringify({hidden, shown: HOSTS["#med-cards-review"].innerHTML, panel: HOSTS["#med-cards-summary"].innerHTML, forecast: HOSTS["#med-cards-forecast"].innerHTML});
+    """)
+    report = json.loads(context.eval("CARDS_REPORT"))
+    # Before the reveal: the question, no answer, no grade buttons.
+    assert "innervasyonu" in report["hidden"] and "musculocutaneus" not in report["hidden"].lower()
+    assert "Cevabı göster" in report["hidden"] and "data-grade" not in report["hidden"]
+    # After: the answer, four Turkish grades with their schedule previews, the source.
+    assert "Nervus musculocutaneus" in report["shown"]
+    for label in ("Tekrar", "Zor", "İyi", "Kolay"):
+        assert label in report["shown"]
+    assert "1 gün" in report["shown"] and "3 gün" in report["shown"]
+    assert "Ders kartı: Musculus biceps brachii" in report["shown"] and "ölçmeye girmez" in report["shown"]
+    assert "1 tekrar" in report["panel"] and "2 yeni" in report["panel"]
+    assert "Bugün" in report["forecast"]
+    # The keyboard grades only after the reveal.
+    context.eval('Medical.view = "cards"; Cards.revealed = false; globalThis.GRADED = null; Cards.answer = (g) => { GRADED = g; };')
+    assert context.eval('Cards.keydown({key: "3", target: {tagName: "DIV"}})') is False
+    context.eval("Cards.revealed = true;")
+    assert context.eval('Cards.keydown({key: "3", target: {tagName: "DIV"}})') is True
+    assert context.eval("GRADED") == "good"

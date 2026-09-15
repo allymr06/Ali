@@ -837,3 +837,19 @@ Live, on a repaired copy of the tester's database with the real model: the
 flows in `DUZELTME_RAPORU.md`. Not covered: a physical keyboard (access to
 the desktop was declined, so Esc was injected through the browser input
 pipeline), microphone and voice, and a clinical review of the 718 questions.
+
+## Flashcards (15 September 2026)
+
+`tests/test_medical_flashcards.py`: the scheduler walked through learning,
+review, a lapse and the clamps (half-up rounding pinned); previews say what
+each button schedules; a topic builds fact and terminology cards once and
+never from atlas mirrors; wrong answers become cards with the bank's own
+key and nothing unscored; histology cards render the masked crop; occlusion
+masks only labels the page prints, refuses the rest, and explains a page
+with no text layer; the queue orders due before new under the daily budget
+and skips suspended cards; an "again" card returns the same day; an answer
+is recorded once per submission id; reviews never move mastery, findings or
+attempts; the forecast splits backlog from each day's own load; deletion is
+a confirmed bridge action. Page side (`test_nova_web.py`): the answer stays
+hidden until revealed, the four grades are Turkish with their previews, and
+the keyboard grades only after the reveal.

@@ -74,6 +74,203 @@ function studyOptions(options, { chosen = null, correctKey = null, revealed = fa
    Study: plan, understanding, histology, and the answer's context
    ════════════════════════════════════════════════════════════════════ */
 
+
+/* ── Kartlar: spaced repetition over the student's own material ────────
+   A grade is the student's own word: it schedules the next repetition and
+   counts as study time, and it never moves mastery, findings or results. */
+const Cards = {
+  overview: null,
+  queue: [],
+  index: 0,
+  revealed: false,
+  imageCache: new Map(),
+
+  request(action, params) { return Study.request(action, params); },
+
+  async open() {
+    const [overview, queue] = await Promise.all([this.request("cards_overview", {}), this.request("cards_queue", { limit: 60 })]);
+    if (overview.ok === false) { toast(overview.error || "Kartlar okunamadı.", true); return; }
+    this.overview = overview;
+    this.queue = queue.ok === false ? [] : (queue.cards || []);
+    this.index = 0;
+    this.revealed = false;
+    this.renderPanel();
+    this.renderReview();
+  },
+
+  renderPanel() {
+    const overview = this.overview || {};
+    const count = $("#med-cards-count");
+    if (count) count.textContent = overview.total ? `${overview.total} kart` : "";
+    const summary = $("#med-cards-summary");
+    if (summary) {
+      const chips = [
+        ["accent", `${overview.due || 0} tekrar`],
+        ["", `${Math.min(overview.new_available || 0, overview.new_budget || 0)} yeni`],
+        ["ok", `${overview.reviewed_today || 0} bugün yapıldı`],
+      ];
+      if (overview.suspended) chips.push(["warn", `${overview.suspended} askıda`]);
+      (overview.by_source || []).forEach((row) => chips.push(["violet", `${row.label} · ${row.count}`]));
+      summary.innerHTML = chips.map(([tone, text]) => `<span class="chip ${tone}">${esc(text)}</span>`).join("");
+    }
+    const newInput = $("#med-cards-new");
+    if (newInput && overview.settings) newInput.value = String(overview.settings.new_per_day);
+    const forecast = $("#med-cards-forecast");
+    if (forecast) {
+      const rows = overview.forecast || [];
+      forecast.innerHTML = rows.length
+        ? rows.map((row, position) => `<div class="med-row"><span class="med-row-title">${position === 0 ? "Bugün" : esc(studyDate(row.date))}</span><span class="med-row-side">${row.due} kart</span></div>`).join("")
+        : "";
+    }
+  },
+
+  current() { return this.queue[this.index] || null; },
+
+  async renderReview() {
+    const host = $("#med-cards-review");
+    if (!host) return;
+    const card = this.current();
+    if (!card) {
+      const overview = this.overview || {};
+      host.innerHTML = `<div class="panel med-card">${medEmpty(
+        overview.total ? "Bugünlük bitti" : "Henüz kart yok",
+        overview.total ? "Tekrarı gelen kart kalmadı; yarınki yük soldaki listede." : (overview.empty_state || ""))}</div>`;
+      return;
+    }
+    const remaining = this.queue.length - this.index;
+    const image = card.has_image ? `<div class="study-crop" data-card-image="${esc(card.card_id)}"><span class="mq-figure-wait">Görüntü yükleniyor…</span></div>` : "";
+    const grades = ["again", "hard", "good", "easy"];
+    const gradeLabels = card.preview_labels || { again: "Tekrar", hard: "Zor", good: "İyi", easy: "Kolay" };
+    const previews = card.previews || {};
+    host.innerHTML = `<div class="panel med-card study-flashcard">
+      <div class="panel-title"><span class="kicker">${esc(card.state_label)} · ${remaining} kart kaldı</span>
+        <span class="med-chips"><span class="chip">${esc(card.source_label)}</span>${card.topic_label ? `<span class="chip">${esc(card.topic_label)}</span>` : ""}</span></div>
+      ${image}
+      <div class="fc-front">${esc(card.front).replace(/\n/g, "<br>")}</div>
+      ${this.revealed
+        ? `<div class="fc-back">${esc(card.back).replace(/\n/g, "<br>")}</div>
+           <div class="fc-grades">${grades.map((grade) => `<button type="button" class="btn ${grade === "good" ? "btn-primary" : "btn-ghost"} small" data-grade="${grade}">${esc(gradeLabels[grade] || grade)}<i>${esc(previews[grade] || "")}</i></button>`).join("")}</div>
+           <p class="settings-note">1–4 tuşları da not verir. Notun yalnız tekrar zamanını belirler; ölçmeye girmez.</p>`
+        : `<div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-primary small" data-card-reveal>Cevabı göster · Boşluk</button></div>`}
+      <div class="mb-meta">
+        <span class="chip" title="Kaynağı">${esc(card.provenance)}</span>
+        <span class="spacer"></span>
+        <button type="button" class="chip" data-card-suspend="${esc(card.card_id)}">Askıya al</button>
+      </div>
+    </div>`;
+    if (card.has_image) this.loadImage(host, card.card_id);
+    const reveal = host.querySelector("[data-card-reveal]");
+    if (reveal) reveal.addEventListener("click", () => { this.revealed = true; this.renderReview(); });
+    $$("[data-grade]", host).forEach((node) => node.addEventListener("click", () => this.answer(node.dataset.grade)));
+    $$("[data-card-suspend]", host).forEach((node) => node.addEventListener("click", async () => {
+      const result = await this.request("cards_suspend", { card_id: node.dataset.cardSuspend });
+      if (result.ok === false) { toast(result.error || "Askıya alınamadı.", true); return; }
+      this.queue.splice(this.index, 1);
+      this.revealed = false;
+      await this.refreshOverview();
+      this.renderReview();
+    }));
+  },
+
+  async loadImage(host, cardId) {
+    let image = this.imageCache.get(cardId);
+    if (!image) {
+      const result = await this.request("cards_image", { card_id: cardId });
+      if (result.ok === false || !result.image) { const node = host.querySelector("[data-card-image]"); if (node) node.innerHTML = `<span class="mq-figure-wait">${esc((result && result.error) || "Görüntü alınamadı.")}</span>`; return; }
+      image = result.image;
+      this.imageCache.set(cardId, image);
+    }
+    const node = host.querySelector(`[data-card-image="${cardId}"]`);
+    if (node) node.innerHTML = `<img src="${image}" alt="Kartın görseli">`;
+  },
+
+  async answer(grade) {
+    const card = this.current();
+    if (!card || !this.revealed) return;
+    const result = await this.request("cards_answer", { card_id: card.card_id, grade, submission_id: Study.submissionId(card.card_id, String(card.reps || 0), grade) });
+    if (result.ok === false) { toast(result.error || "Not kaydedilemedi.", true); return; }
+    const updated = result.card || {};
+    this.queue.splice(this.index, 1);
+    if (updated.interval_days === 0 && updated.state === "learning") {
+      // "Again" comes back at the end of today's queue with fresh previews.
+      const requeued = await this.request("cards_queue", { limit: 60 });
+      const found = requeued.ok !== false ? (requeued.cards || []).find((item) => item.card_id === card.card_id) : null;
+      this.queue.push(found || { ...card, ...updated });
+    }
+    this.revealed = false;
+    await this.refreshOverview();
+    this.renderReview();
+  },
+
+  async refreshOverview() {
+    const overview = await this.request("cards_overview", {});
+    if (overview.ok !== false) { this.overview = overview; this.renderPanel(); }
+    if (Medical.state && Medical.state.study) {
+      Medical.state.study.cards_due = (overview.ok !== false ? overview.due : 0) || 0;
+      Medical.state.study.cards_new = overview.ok !== false ? Math.min(overview.new_available || 0, overview.new_budget || 0) : 0;
+      Medical.markTabs();
+    }
+  },
+
+  keydown(event) {
+    if (!Study.viewIs("cards") || !this.current()) return false;
+    if (/INPUT|TEXTAREA|SELECT/.test((event.target || {}).tagName || "")) return false;
+    if ((event.key === " " || event.key === "Enter") && !this.revealed) { this.revealed = true; this.renderReview(); return true; }
+    const grades = { "1": "again", "2": "hard", "3": "good", "4": "easy" };
+    if (this.revealed && grades[event.key]) { this.answer(grades[event.key]); return true; }
+    return false;
+  },
+
+  async build(action, params, label) {
+    const result = await this.request(action, params || {});
+    if (result.ok === false) { toast(result.error || `${label} yapılamadı.`, true); return; }
+    const parts = [`${result.added || 0} kart eklendi`];
+    if (result.existing) parts.push(`${result.existing} zaten vardı`);
+    if (result.skipped_unscored) parts.push(`${result.skipped_unscored} puansız soru alınmadı`);
+    toast(`${label}: ${parts.join(", ")}.`, "ok");
+    await this.open();
+  },
+
+  /* Labels the page itself prints, chosen in a dialog, masked on the figure. */
+  async occlusionFromPage(documentId, pageNumber) {
+    const found = await this.request("cards_occlusion_scan", { document_id: documentId, page_number: pageNumber });
+    if (found.ok === false) { toast(found.error || "Etiketler okunamadı.", true); return; }
+    const candidates = found.candidates || [];
+    if (!candidates.length) { toast(found.reason || "Bu sayfada metin katmanında etiket yok.", true); return; }
+    const chosen = await Study.dialog({
+      title: `Etiket kartları · s. ${pageNumber}`,
+      okLabel: "KART YAP",
+      html: `<p class="med-review-note">Sayfanın kendi bastığı etiketler. Seçtiklerin şekil üzerinde gri kutuyla kapatılır; kartın cevabı etiketin kendisidir.</p>
+        <div class="fc-occlusion-list">${candidates.map((item, position) => `<label class="switch-row small"><span>${esc(item.label)} <i class="faint">(${item.boxes.length} yerde)</i></span><input class="switch" type="checkbox" data-occ-label="${position}" ${position < 8 ? "checked" : ""}></label>`).join("")}</div>`,
+      collect: (host) => Array.from(host.querySelectorAll("[data-occ-label]")).filter((node) => node.checked).map((node) => candidates[Number(node.dataset.occLabel)].label),
+    });
+    if (!chosen || !chosen.length) return;
+    const result = await this.request("cards_occlusion_add", { document_id: documentId, page_number: pageNumber, labels: chosen });
+    if (result.ok === false) { toast(result.error || "Kartlar üretilemedi.", true); return; }
+    toast(`${result.added} etiket kartı eklendi${result.existing ? `, ${result.existing} zaten vardı` : ""}.`, "ok");
+    Medical.refreshCounts();
+  },
+
+  bind() {
+    const topic = $("#med-cards-topic");
+    if (topic) topic.addEventListener("click", () => {
+      const session = (Medical.state && Medical.state.session) || {};
+      if (!session.topic_id) { toast("Önce Panel'den bir konu seç.", true); return; }
+      this.build("cards_build_topic", { topic_id: session.topic_id }, "Konu kartları");
+    });
+    const wrongs = $("#med-cards-wrongs");
+    if (wrongs) wrongs.addEventListener("click", () => this.build("cards_add_wrongs", {}, "Yanlış kartları"));
+    const histo = $("#med-cards-histo");
+    if (histo) histo.addEventListener("click", () => this.build("cards_add_histology", {}, "Histoloji kartları"));
+    const newInput = $("#med-cards-new");
+    if (newInput) newInput.addEventListener("change", async () => {
+      const result = await this.request("cards_settings", { fields: { new_per_day: Number(newInput.value) || 0 } });
+      if (result.ok !== false) { toast(`Günlük yeni kart: ${result.settings.new_per_day}.`, "ok"); this.open(); }
+    });
+    addEventListener("keydown", (event) => { if (this.keydown(event)) event.preventDefault(); });
+  },
+};
+
 const Study = {
   plans: [],
   plan: null,
@@ -1602,5 +1799,6 @@ const Study = {
     if (study) study.addEventListener("click", () => this.startSession("study"));
     const timed = $("#med-histo-timed");
     if (timed) timed.addEventListener("click", () => this.startSession("timed"));
+    Cards.bind();
   },
 };

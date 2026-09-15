@@ -21,6 +21,7 @@ const MED_TABS = [
   ["bank", "Soru bankası", "tools"],
   ["understanding", "Anlama", "spark"],
   ["histology", "Histoloji", "vision"],
+  ["cards", "Kartlar", "memory"],
   ["professor", "Hoca tarzı", "integrations"],
   ["progress", "İlerleme", "diagnostics"],
   ["anatomy", "Anatomi Lab", "vision"],
@@ -169,7 +170,8 @@ const Medical = {
     const study = (this.state && this.state.study) || {};
     const histology = study.histology || {};
     const map = { library: counts.documents, notes: counts.notes, exam: counts.exams, bank: counts.questions,
-      plan: study.plans, understanding: study.findings_open, histology: (histology.eligible || 0) + (histology.study_only || 0) };
+      plan: study.plans, understanding: study.findings_open, histology: (histology.eligible || 0) + (histology.study_only || 0),
+      cards: (study.cards_due || 0) + (study.cards_new || 0) };
     $$("#med-tabs .med-tab-count").forEach((node) => {
       const value = map[node.dataset.count];
       node.textContent = Number.isFinite(Number(value)) && Number(value) > 0 ? String(value) : "";
@@ -222,6 +224,7 @@ const Medical = {
     if (view === "plan") { await Study.openPlan(); return; }
     if (view === "understanding") { await Study.openUnderstanding(); return; }
     if (view === "histology") { await Study.openHistology(); return; }
+    if (view === "cards") { await Cards.open(); return; }
     if (view === "anatomy") { await Lab.open(); return; }
   },
 
@@ -846,7 +849,8 @@ const Medical = {
     Study.endRegionSelect();
     host.innerHTML = `
       <div>${page.image ? `<div id="med-page-image" class="med-page-image"><img src="${page.image}" alt="Sayfa ${page.page_number}"></div>
-        <div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-ghost small" data-histo-select title="Şekli çerçeve içine al; adı ve dayanağıyla histoloji örneği olarak kaydedilir">Histoloji örneği seç</button></div>
+        <div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-ghost small" data-histo-select title="Şekli çerçeve içine al; adı ve dayanağıyla histoloji örneği olarak kaydedilir">Histoloji örneği seç</button>
+        <button type="button" class="btn btn-ghost small" data-occlusion-scan title="Sayfanın kendi bastığı etiketleri bulur; seçtiklerin şekil üzerinde kapatılarak kart olur. Taranmış sayfada metin katmanı yoktur ve bunu söyler">Etiket kartları üret</button></div>
         <div id="med-histo-form"></div>`
         : `<div class="med-explain">${esc(page.image_error || "Bu belge için sayfa görüntüsü yok.")}</div>`}</div>
       <div>
@@ -857,6 +861,8 @@ const Medical = {
       </div>`;
     const select = host.querySelector("[data-histo-select]");
     if (select && this.document) select.addEventListener("click", () => Study.beginRegionSelect(this.document.document_id, page.page_number));
+    const occlusion = host.querySelector("[data-occlusion-scan]");
+    if (occlusion && this.document) occlusion.addEventListener("click", () => Cards.occlusionFromPage(this.document.document_id, page.page_number));
   },
 
   /* ── notes ─────────────────────────────────────────────────────── */

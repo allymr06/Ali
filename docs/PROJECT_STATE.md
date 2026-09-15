@@ -193,6 +193,34 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Night additions: cards, rehearsal, weekly summary, backups, exports (15 September 2026)
+
+Built overnight on explicit standing authorization, each verified live in
+the real window on a copy of the study store and pinned by tests
+(`scripts/verify.py`: 2,526 passed, 4 skipped):
+
+- **Kartlar** — spaced repetition cut only from recorded material: curated
+  anatomy facts, terminology, questions answered wrong in scored papers,
+  histology crops, and image occlusion of labels the lecture page itself
+  prints (PDF text layer; a scanned page says so). Documented SM-2 variant,
+  daily new-card budget, previews on every grade, idempotent answers.
+  A grade schedules repetition and counts as study time; it never moves
+  mastery, findings or results.
+- **Komite provası** — a timed paper in the real committee's shape from the
+  imported committee questions only, grouped by subject, shortfalls stated,
+  never padded across subjects; per-subject result like the real report.
+- **Haftalık özet** on İlerleme — minutes, answers (accuracy over scored
+  only), cards, findings, adherence, streak and exam countdowns, computed
+  from records alone and saying so.
+- **Yedekler** — weekly background safety copy when due plus a quick
+  action; SQLite backup API, temp-then-rename, newest three kept, repair
+  snapshots spared, full disk refused; restore stays manual by design
+  (`JARVIS_MEDICAL_AUTO_BACKUP`).
+- **Exports** — a note or a paper as printable Markdown into a chosen
+  folder: the question sheet carries no keys; the answer key labels
+  unscored items and lists sources; nothing is overwritten. A started plan
+  activity wears a live elapsed badge.
+
 ## Medical Academy: the user test of 13 September 2026 repaired (14 September 2026)
 
 An eighteen-finding user test of the Academy on 96e5f41 (report under

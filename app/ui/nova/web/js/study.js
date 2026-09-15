@@ -229,6 +229,7 @@ const Cards = {
     if (result.skipped_unscored) parts.push(`${result.skipped_unscored} puansız soru alınmadı`);
     toast(`${label}: ${parts.join(", ")}.`, "ok");
     await this.open();
+    await this.refreshOverview();
   },
 
   /* Labels the page itself prints, chosen in a dialog, masked on the figure. */

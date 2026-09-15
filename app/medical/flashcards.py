@@ -247,7 +247,7 @@ class FlashcardDeck:
                     source="anatomy_fact",
                     front=f"{structure.canonical} — {question}?",
                     back=back,
-                    provenance=f"Ders kartı: {structure.canonical} · {field}",
+                    provenance=f"Ders kartı: {structure.canonical} · {question}",
                     topic_id=structure.topic_id,
                     extra={"structure_id": structure.structure_id, "field": field},
                 )

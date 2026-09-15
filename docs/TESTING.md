@@ -910,3 +910,13 @@ schema selector exposes `research_web` for arastir/guncel/haber turns
 tags with neither property nor name (`tests/test_research_extractor.py`);
 and medical tutor turns include `research_web` in their allowed tools
 (`tests/test_medical_tutor.py` keeps passing with the widened set).
+
+## Conversation search (15 September 2026)
+
+`tests/test_ui_nova.py`: the bridge refuses one-character queries,
+matches across visible turns with Turkish folding ("BÖBREK" finds
+"Böbrek", "idrar" finds "İDRAR"), never matches system turns, carries
+the speaker and an exact excerpt, and reports zero hits honestly.
+`tests/test_nova_web.py` (QuickJS): the drawer markup escapes excerpt
+HTML, highlights the match with <mark> case-insensitively in Turkish,
+and renders the empty and error states in words.

@@ -240,6 +240,12 @@ Academy):
   (first run stays maximized); nonsense frames (too small, off-screen,
   corrupt file) fall back to defaults instead of trapping the user.
 - A native **folder picker** on the bridge serves both exports.
+- **Conversation search** - a search box in the conversations drawer
+  finds stored chats by what was said in them, not just titles: visible
+  turns only (system notes never match), Turkish-aware folding (dotted
+  and dotless i both ways, offsets kept exact for the excerpt), a
+  highlighted excerpt with the speaker, match counts, Enter opens the
+  top hit and Escape restores the list.
 
 On "web arastirmasi da ekle" (mid-night request): the research pipeline
 that always existed finally has a backend that works out of the box.

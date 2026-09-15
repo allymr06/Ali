@@ -2691,3 +2691,30 @@ def test_daily_brief_reads_each_section_from_its_own_service(booted) -> None:
     assert medical["available"] is True
     assert medical["cards_waiting"] == 0 and medical["findings_open"] == 0
     assert medical["countdown"] is None, "no exam plan means no countdown, not an invented one"
+
+
+def test_conversation_search_finds_words_with_turkish_folding(booted, tmp_path) -> None:
+    engine = booted.app.conversation_engine
+    first = engine.create()
+    first.turns.append(ConversationTurn(first.conversation_id, MessageRole.USER, "Böbrek anatomisini anlatır mısın?"))
+    first.turns.append(ConversationTurn(first.conversation_id, MessageRole.ASSISTANT, "Böbrek retroperitoneal bir organdır ve İDRAR üretir."))
+    engine.store.save(first)
+    second = engine.create()
+    second.turns.append(ConversationTurn(second.conversation_id, MessageRole.USER, "Kalp kapakları nelerdir?"))
+    second.turns.append(ConversationTurn(second.conversation_id, MessageRole.SYSTEM, "böbrek kelimesi gizli sistem notunda"))
+    engine.store.save(second)
+
+    short = booted.bridge.search_conversations("b")
+    assert short == {"ok": False, "error": "Arama için en az 2 karakter yaz."}
+
+    found = booted.bridge.search_conversations("BÖBREK")
+    assert found["ok"] is True and len(found["results"]) == 1, "system turns never match"
+    hit = found["results"][0]
+    assert hit["conversation_id"] == str(first.conversation_id)
+    assert hit["matches"] == 2 and "Böbrek" in hit["excerpt"] and hit["excerpt_role"] == "user"
+
+    dotless = booted.bridge.search_conversations("idrar")
+    assert len(dotless["results"]) == 1, "casefold matches Turkish dotted I"
+
+    nothing = booted.bridge.search_conversations("pankreas")
+    assert nothing["ok"] is True and nothing["results"] == []

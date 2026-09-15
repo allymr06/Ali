@@ -178,6 +178,58 @@ function renderConversations() {
   renderChatTitle();
 }
 
+/* Search across stored conversations: matching titles and excerpts of
+   what was actually said, newest first. Pure builder, testable alone. */
+function convSearchMarkup(payload) {
+  if (!payload || payload.ok === false) return `<div class="ctx-empty" style="padding:.8rem .4rem">${esc((payload && payload.error) || "Arama yapılamadı.")}</div>`;
+  const rows = payload.results || [];
+  if (!rows.length) return `<div class="ctx-empty" style="padding:.8rem .4rem">“${esc(payload.query)}” hiçbir konuşmada geçmiyor.</div>`;
+  const mark = (text) => {
+    const safe = esc(text);
+    const needle = esc(payload.query);
+    const index = safe.toLocaleLowerCase("tr-TR").indexOf(needle.toLocaleLowerCase("tr-TR"));
+    if (index < 0) return safe;
+    return safe.slice(0, index) + "<mark>" + safe.slice(index, index + needle.length) + "</mark>" + safe.slice(index + needle.length);
+  };
+  return rows.map((item) => `
+    <button type="button" class="conv-item ${item.active ? "active" : ""}" data-id="${esc(item.conversation_id)}" title="${esc(item.title)}">
+      <span class="conv-title">${mark(item.title)}</span>
+      ${item.excerpt ? `<span class="conv-excerpt">${item.excerpt_role === "user" ? "Sen: " : ""}${mark(item.excerpt)}</span>` : ""}
+      <span class="conv-meta"><span>${item.matches} eşleşme${item.status === "archived" ? " · arşiv" : ""}</span><span>${esc(fmtRelative(item.updated_at))}</span></span>
+    </button>`).join("");
+}
+
+let convSearchTimer = 0;
+async function runConvSearch(raw) {
+  const host = $("#conv-items");
+  if (!host) return;
+  const query = String(raw || "").trim();
+  if (query.length < 2) { renderConversations(); return; }
+  const payload = await call("search_conversations", query);
+  host.innerHTML = convSearchMarkup(payload);
+  $$(".conv-item", host).forEach((node) => node.addEventListener("click", () => {
+    openConversation(node.dataset.id);
+    const box = $("#conv-search");
+    if (box) box.value = "";
+  }));
+}
+
+function bindConvSearch() {
+  const box = $("#conv-search");
+  if (!box) return;
+  box.addEventListener("input", () => {
+    clearTimeout(convSearchTimer);
+    convSearchTimer = setTimeout(() => runConvSearch(box.value), 250);
+  });
+  box.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") { box.value = ""; renderConversations(); }
+    if (event.key === "Enter") {
+      const first = $("#conv-items .conv-item");
+      if (first) first.click();
+    }
+  });
+}
+
 async function refreshConversations() {
   const result = await call("list_conversations");
   if (result.ok === false) return;
@@ -367,6 +419,7 @@ function bindConversation() {
   });
   $("#conv-new").addEventListener("click", newConversation);
   $("#chat-new").addEventListener("click", newConversation);
+  bindConvSearch();
   const chatExport = $("#chat-export");
   if (chatExport) chatExport.addEventListener("click", async () => {
     const listing = await call("list_conversations");

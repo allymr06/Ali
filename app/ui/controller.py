@@ -169,6 +169,70 @@ class DesktopController:
             for conversation in conversations[: max(1, limit)]
         ]
 
+    def search_conversations(self, query: str, limit: int = 12) -> list[dict[str, object]]:
+        """Stored conversations whose visible turns mention the query.
+
+        Matching is casefolded in Python so Turkish dotted and dotless I
+        behave (SQL LIKE only folds ASCII). Each hit carries an excerpt
+        around the first match; newest conversations come first.
+        """
+        def fold(text: str) -> str:
+            # Turkish-aware and length-preserving: casefold() turns the
+            # dotted capital i into "i" plus a combining dot, which both
+            # misses matches and skews excerpt offsets. Mapping the two
+            # Turkish capitals first and then lower() keeps offsets exact.
+            return text.replace("İ", "i").replace("I", "ı").lower()
+
+        needle = fold(" ".join(str(query or "").split()))
+        if not needle:
+            return []
+        results: list[dict[str, object]] = []
+        conversations = sorted(
+            self.application.conversation_engine.list(),
+            key=lambda item: (item.updated_at, item.created_at),
+            reverse=True,
+        )
+        for conversation in conversations:
+            turns = self._visible_turns(conversation)
+            matches = 0
+            excerpt = ""
+            excerpt_role = ""
+            for message in turns:
+                text = " ".join(message.text.split())
+                folded = fold(text)
+                if needle not in folded:
+                    continue
+                matches += 1
+                if not excerpt:
+                    start = folded.index(needle)
+                    begin = max(0, start - 40)
+                    end = min(len(text), start + len(needle) + 60)
+                    prefix = "…" if begin else ""
+                    suffix = "…" if end < len(text) else ""
+                    excerpt = f"{prefix}{text[begin:end]}{suffix}"
+                    excerpt_role = message.role
+            title = self.conversation_title(conversation)
+            if not matches and needle not in fold(title):
+                continue
+            results.append(
+                {
+                    "conversation_id": str(conversation.conversation_id),
+                    "title": title,
+                    "status": conversation.status.value,
+                    "matches": matches,
+                    "excerpt": excerpt,
+                    "excerpt_role": excerpt_role,
+                    "turn_count": len(turns),
+                    "updated_at": conversation.updated_at.isoformat(),
+                    "active": (
+                        conversation.conversation_id == self.context.conversation_id
+                    ),
+                }
+            )
+            if len(results) >= max(1, limit):
+                break
+        return results
+
     def conversation_export(self, conversation_id: str) -> tuple[str, str, list[ChatMessage]]:
         """(title, created date, visible messages) of a stored conversation.
 

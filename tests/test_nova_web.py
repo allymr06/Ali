@@ -1728,3 +1728,30 @@ def test_the_focus_clock_formats_time_exactly() -> None:
         "JSON.stringify([Focus.format(0), Focus.format(-500), Focus.format(1500000), Focus.format(61000), Focus.format(59400), Focus.format(3600000)])"
     ))
     assert values == ["0:00", "0:00", "25:00", "1:01", "1:00", "60:00"]
+
+
+def test_conversation_search_markup_marks_matches_and_stays_honest() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(
+        "function esc(v) { return String(v == null ? \"\" : v).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\"); }"
+        + "function fmtRelative(v) { return \"az önce\"; }"
+    )
+    context.eval(section(JS_SOURCES["js/conversation.js"], "function convSearchMarkup", "\nlet convSearchTimer"))
+
+    run = lambda payload: context.eval("convSearchMarkup(" + json.dumps(payload) + ")")
+
+    empty = run({"ok": True, "query": "pankreas", "results": []})
+    assert "hiçbir konuşmada geçmiyor" in empty and "pankreas" in empty
+
+    error = run({"ok": False, "error": "Arama için en az 2 karakter yaz."})
+    assert "en az 2 karakter" in error
+
+    rows = run({"ok": True, "query": "böbrek", "results": [{
+        "conversation_id": "c1", "title": "Böbrek anatomisi", "status": "active", "matches": 2,
+        "excerpt": "Böbrek retroperitoneal <b>organdır</b>", "excerpt_role": "user",
+        "turn_count": 4, "updated_at": "2026-09-15T07:00:00+03:00", "active": False,
+    }]})
+    assert "<mark>Böbrek</mark>" in rows, "the match is highlighted case-insensitively in Turkish"
+    assert "Sen: " in rows and "2 eşleşme" in rows
+    assert "<b>" not in rows, "excerpt HTML is escaped, never injected"

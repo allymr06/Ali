@@ -2120,6 +2120,14 @@ class NovaBridge:
             ),
         }
 
+    def search_conversations(self, query: Any) -> dict[str, Any]:
+        """Find stored conversations by what was said in them."""
+        normalized = " ".join(str(query or "").split())
+        if len(normalized) < 2:
+            return {"ok": False, "error": "Arama için en az 2 karakter yaz."}
+        results = self.controller.search_conversations(normalized)
+        return {"ok": True, "query": normalized, "results": _jsonable(results)}
+
     def open_conversation(self, conversation_id: str) -> dict[str, Any]:
         with self._lock:
             blocked = self._conversation_switch_blocked()

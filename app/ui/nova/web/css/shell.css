@@ -477,19 +477,40 @@ body.light #context { background: linear-gradient(180deg, rgba(255,255,255,0.78)
   transition: border-color var(--motion-normal);
 }
 .mini-form input:focus { border-color: var(--line-3); }
-.mini-actions { grid-area: actions; display: flex; gap: 0.5rem; justify-content: flex-end; padding: 0.6rem 1rem 0.9rem 0; }
-
-/* ------ focus timer chip ------------------------------------------ */
-.focus-chip { width: auto; padding: 0 0.7rem; font-family: var(--font-mono); font-size: 0.72rem; color: var(--accent-2); border: 1px solid rgba(var(--accent-rgb), 0.4); border-radius: var(--radius-pill); }
-.focus-chip.done { color: var(--ok); border-color: rgba(var(--ok-rgb), 0.55); }
-
-/* ------ the day at a glance ---------------------------------------- */
-#home-brief { display: flex; flex-direction: column; gap: 0.2rem; }
-#home-brief .hb-date { font-family: var(--font-system); font-size: var(--text-xs); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-4); margin-bottom: 0.3rem; }
-#home-brief .hb-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; width: 100%; text-align: left; padding: 0.4rem 0.45rem; border-radius: var(--radius-1); color: var(--ink-2); font-size: var(--text-sm); }
-#home-brief button.hb-row:hover { background: rgba(var(--accent-rgb), 0.07); color: var(--ink-1); }
-#home-brief .hb-row.warn .hb-side { color: var(--warn); }
-#home-brief .hb-row.muted { color: var(--ink-4); }
-#home-brief .hb-icon { width: 1.2rem; text-align: center; }
-#home-brief .hb-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-actions { grid-area: actions; display: flex; gap: 0.5rem; justify-content: flex-end; padding: 0.6rem 1rem 0.9rem 0; }
+
+
+
+/* ------ focus timer chip ------------------------------------------ */
+
+.focus-chip { width: auto; padding: 0 0.7rem; font-family: var(--font-mono); font-size: 0.72rem; color: var(--accent-2); border: 1px solid rgba(var(--accent-rgb), 0.4); border-radius: var(--radius-pill); }
+
+.focus-chip.done { color: var(--ok); border-color: rgba(var(--ok-rgb), 0.55); }
+
+
+
+/* ------ the day at a glance ---------------------------------------- */
+
+#home-brief { display: flex; flex-direction: column; gap: 0.2rem; }
+
+#home-brief .hb-date { font-family: var(--font-system); font-size: var(--text-xs); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-4); margin-bottom: 0.3rem; }
+
+#home-brief .hb-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; width: 100%; text-align: left; padding: 0.4rem 0.45rem; border-radius: var(--radius-1); color: var(--ink-2); font-size: var(--text-sm); }
+
+#home-brief button.hb-row:hover { background: rgba(var(--accent-rgb), 0.07); color: var(--ink-1); }
+
+#home-brief .hb-row.warn .hb-side { color: var(--warn); }
+
+#home-brief .hb-row.muted { color: var(--ink-4); }
+
+#home-brief .hb-icon { width: 1.2rem; text-align: center; }
+
+#home-brief .hb-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 #home-brief .hb-side { font-family: var(--font-mono); font-size: 0.64rem; color: var(--ink-4); white-space: nowrap; }
+
+/* ------ conversation search ---------------------------------------- */
+.conv-search { width: 100%; margin: 0.35rem 0 0.5rem; padding: 0.45rem 0.6rem; background: rgba(var(--accent-rgb), 0.05); border: 1px solid var(--line-1); border-radius: var(--radius-1); color: var(--ink-1); font-family: var(--font-system); font-size: var(--text-sm); }
+.conv-search:focus { outline: none; border-color: rgba(var(--accent-rgb), 0.45); }
+.conv-item .conv-excerpt { display: block; margin-top: 0.15rem; color: var(--ink-4); font-size: 0.7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-item mark { background: rgba(var(--accent-rgb), 0.25); color: var(--ink-1); border-radius: 2px; padding: 0 1px; }

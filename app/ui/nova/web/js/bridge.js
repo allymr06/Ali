@@ -201,6 +201,15 @@ const DemoBridge = {
     return { ok: false, error: "Demo modunda dışa aktarma yok." };
   },
 
+  async search_conversations(query) {
+    const needle = String(query || "").trim().toLocaleLowerCase("tr-TR");
+    if (needle.length < 2) return { ok: false, error: "Arama için en az 2 karakter yaz." };
+    const rows = (await this.list_conversations()).conversations
+      .filter((item) => item.title.toLocaleLowerCase("tr-TR").includes(needle))
+      .map((item) => ({ ...item, matches: 1, excerpt: item.title, excerpt_role: "user" }));
+    return { ok: true, query: needle, results: rows };
+  },
+
   async list_conversations() {
     return { ok: true, active: "demo-conv-1", conversations: (await DemoBridge.boot()).conversations };
   },

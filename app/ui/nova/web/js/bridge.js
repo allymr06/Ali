@@ -552,6 +552,10 @@ const PUSH = {
     setBusy(false, READY);
   },
 
+  /* Sources collected by research_web during the running turn; the
+     reply that follows wears them as chips. */
+  research_sources(payload) { State.pendingSources = payload; },
+
   research_result({ ok, report, error }) {
     renderResearch(ok, report, error);
     setBusy(false, READY);

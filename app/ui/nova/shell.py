@@ -850,6 +850,31 @@ class NovaBridge:
                 }
             )
         self._push("tool_activity", payload)
+        # A finished web research hands the page its sources, so the next
+        # assistant reply can wear them. Only what the tool actually
+        # returned is forwarded; no result, no chips.
+        if (
+            event.tool_name == "research_web"
+            and result is not None
+            and not result.error
+            and isinstance(result.data, Mapping)
+        ):
+            sources = [
+                {
+                    "title": str(item.get("title") or ""),
+                    "url": str(item.get("url") or ""),
+                }
+                for item in list(result.data.get("sources") or [])[:5]
+                if isinstance(item, Mapping)
+            ]
+            if sources:
+                self._push(
+                    "research_sources",
+                    {
+                        "query": str(result.data.get("question") or ""),
+                        "sources": sources,
+                    },
+                )
 
     def _on_diagnostic_event(self, event: Any) -> None:
         self._push(

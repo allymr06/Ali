@@ -8,6 +8,34 @@
 
 /* ── messages ─────────────────────────────────────────────────────── */
 
+/* Web sources for an answer that ran research_web this turn. Hosts are
+   shown, the full URL rides the tooltip, and a click reruns the exact
+   research on its own screen (served from the cache). */
+function researchSourcesMarkup(payload) {
+  const sources = (payload && payload.sources) || [];
+  if (!sources.length) return "";
+  const host = (url) => {
+    const match = /^[a-z]+:\/\/([^\/?#]+)/i.exec(String(url || ""));
+    return match ? match[1].replace(/^www\./, "") : "";
+  };
+  const chips = sources.map((source) => {
+    const name = host(source.url) || "kaynak";
+    return `<button type="button" class="chip" data-research-query="${esc(payload.query || "")}" title="${esc(source.title || "")} — ${esc(source.url || "")}">${esc(name)}</button>`;
+  });
+  return `<div class="msg-sources"><span class="msg-sources-label">Web kaynakları</span>${chips.join("")}</div>`;
+}
+
+function bindResearchChips(node) {
+  $$("[data-research-query]", node).forEach((chip) => chip.addEventListener("click", () => {
+    showScreen("research");
+    const input = $("#research-input");
+    if (input && chip.dataset.researchQuery) {
+      input.value = chip.dataset.researchQuery;
+      $("#research-submit")?.click();
+    }
+  }));
+}
+
 function assuranceChips(metadata) {
   if (!metadata || typeof metadata !== "object") return "";
   const chips = [];
@@ -71,6 +99,11 @@ function finalizePendingBubble(message) {
       if (meta) meta.innerHTML = `<span class="msg-role">JARVIS</span><span class="msg-time">${esc(fmtClock(new Date(message.at)))}</span>`;
       node.querySelector(".msg-body").textContent = message.text;
       node.insertAdjacentHTML("beforeend", assuranceChips(message.metadata));
+      if (State.pendingSources) {
+        node.insertAdjacentHTML("beforeend", researchSourcesMarkup(State.pendingSources));
+        bindResearchChips(node);
+        State.pendingSources = null;
+      }
       return;
     }
     node.remove();
@@ -126,6 +159,7 @@ async function sendCommand(raw) {
   if (State.paused) { toast(PAUSED_NOTICE, true); return; }
   if (!text || State.busy || !bridgeReady()) return;
   const message = { role: "user", text, at: Date.now() };
+  State.pendingSources = null; // sources belong to the turn that earned them
   hideChatEmpty();
   updateChat(() => {
     appendMessage($("#chat-list"), message, false);

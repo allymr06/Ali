@@ -946,3 +946,14 @@ carries the new values and web research off means the research tool is
 not registered at all. Verified live in the window: saving 07:45 with
 research off flipped the WEB indicator and the runtime immediately;
 restoring the defaults brought both back.
+
+## Web sources under answers (15 September 2026)
+
+`tests/test_ui_nova.py`: only a successful research_web result pushes
+sources (other tools, failures and sourceless reports push nothing),
+and the payload carries exactly title and url. `tests/test_nova_web.py`
+(QuickJS): the chip row shows the bare host with the full URL riding
+the tooltip, escapes titles and queries, gives an unparseable URL an
+honest generic chip, and renders nothing without sources. Live: a
+fresh "Nobel 2026" research answered honestly that the prize is not
+announced until 5 October and wore five source chips.

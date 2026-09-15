@@ -1755,3 +1755,23 @@ def test_conversation_search_markup_marks_matches_and_stays_honest() -> None:
     assert "<mark>Böbrek</mark>" in rows, "the match is highlighted case-insensitively in Turkish"
     assert "Sen: " in rows and "2 eşleşme" in rows
     assert "<b>" not in rows, "excerpt HTML is escaped, never injected"
+
+
+def test_answer_source_chips_show_hosts_and_escape_everything() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval("function esc(v) { return String(v == null ? SQ : v).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\").replace(/\"/g, \"&quot;\"); }".replace("SQ", "\"\""))
+    context.eval(section(JS_SOURCES["js/conversation.js"], "function researchSourcesMarkup", "\nfunction bindResearchChips"))
+
+    run = lambda payload: context.eval("researchSourcesMarkup(" + json.dumps(payload) + ")")
+
+    assert run(None) == "" and run({"sources": []}) == "", "no sources, no block"
+
+    html = run({"query": "tus 2026 <script>", "sources": [
+        {"title": "ÖSYM \"Takvimi\"", "url": "https://www.osym.gov.tr/takvim?x=1"},
+        {"title": "", "url": "not a url"},
+    ]})
+    assert ">osym.gov.tr</button>" in html, "the chip text is the bare host; the full URL rides the tooltip"
+    assert ">kaynak<" in html, "an unparseable url still gets an honest generic chip"
+    assert "<script>" not in html and "&quot;Takvimi&quot;" in html
+    assert "Web kaynakları" in html

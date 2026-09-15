@@ -540,4 +540,8 @@ details.disclosure > .disclosure-body { margin-top: 0.6rem; }
   transition: color var(--motion-normal), background var(--motion-normal);
 }
 .tab:hover { color: var(--ink-1); background: rgba(var(--accent-rgb), 0.05); }
-.tab.active { color: var(--accent); background: rgba(var(--accent-rgb), 0.1); }
+.tab.active { color: var(--accent); background: rgba(var(--accent-rgb), 0.1); }
+
+/* ------ web sources under an answer ------------------------------- */
+.msg .msg-sources { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.45rem; }
+.msg .msg-sources-label { font-family: var(--font-system); font-size: var(--text-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-4); margin-right: 0.15rem; }

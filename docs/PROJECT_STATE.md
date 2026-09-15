@@ -240,6 +240,13 @@ Academy):
   (first run stays maximized); nonsense frames (too small, off-screen,
   corrupt file) fall back to defaults instead of trapping the user.
 - A native **folder picker** on the bridge serves both exports.
+- **Web sources under answers** - when a chat turn runs the research
+  tool, the reply wears a "Web kaynakları" chip row: the bare host of
+  each source, the full title and URL in the tooltip, and a click
+  reruns the exact research on its own screen (served from the cache).
+  Only what the tool actually returned is forwarded - no result, no
+  chips - and a new command clears pending sources so they can never
+  attach to an unrelated reply.
 - **Assistant settings in the UI** - a new Ayarlar > Asistan card
   edits the morning brief (on/off, time) and web research (on/off)
   without environment variables: values persist in the non-secret

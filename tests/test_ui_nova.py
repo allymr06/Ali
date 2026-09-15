@@ -2768,3 +2768,25 @@ def test_the_bridge_saves_assistant_settings_and_applies_them_live(booted) -> No
     assert application.settings.daily_brief_time == "07:15"
     assert application.research is None, "web research off means the tool is not registered"
     assert not application.tool_executor.contains("research_web")
+
+
+def test_a_finished_web_research_hands_the_page_its_sources(booted) -> None:
+    from app.core.models import ToolExecutionStatus
+
+    def event(tool, data, error=None):
+        result = SimpleNamespace(status=ToolExecutionStatus.SUCCESS, verified=True, message="", error=error,
+                                 data=data, started_at=None, finished_at=None)
+        return SimpleNamespace(phase="finished", execution_id="x1", tool_name=tool, operation=None, result=result)
+
+    booted.bridge._on_tool_event(event("research_web", {
+        "question": "TUS 2026 ne zaman?",
+        "sources": [{"title": "ÖSYM Takvimi", "url": "https://osym.gov.tr/takvim", "extra": "dropped"}],
+    }))
+    pushes = booted.window.payloads("research_sources")
+    assert pushes == [{"query": "TUS 2026 ne zaman?", "sources": [{"title": "ÖSYM Takvimi", "url": "https://osym.gov.tr/takvim"}]}]
+
+    # Other tools, failed runs and sourceless reports push nothing.
+    booted.bridge._on_tool_event(event("medical_search_library", {"sources": [{"title": "x", "url": "y"}]}))
+    booted.bridge._on_tool_event(event("research_web", {"question": "q", "sources": []}))
+    booted.bridge._on_tool_event(event("research_web", {"question": "q", "sources": [{"title": "t", "url": "u"}]}, error="boom"))
+    assert len(booted.window.payloads("research_sources")) == 1

@@ -707,6 +707,7 @@ class NovaBridge:
         self._voice_level_last = 0.0
         self._compact = False
         self._pause_handler: Callable[[bool], None] | None = None
+        self._uri_launcher: Any | None = None
         self._started_at = datetime.now().astimezone()
         self._webview2_version: str | None | bool = False  # False: not probed
         self._process = ProcessMonitor()
@@ -1354,6 +1355,27 @@ class NovaBridge:
             return {"available": True, **_jsonable(academy.dashboard())}
         except Exception as exc:
             return {"available": False, "reason": f"Tıp Akademisi okunamadı ({type(exc).__name__})."}
+
+    def open_external(self, url: Any) -> dict[str, Any]:
+        """Open one validated http(s) URL in the default browser.
+
+        Serves direct clicks on source links the page shows; the same
+        validation as the system-control tool, nothing else accepted.
+        """
+        from app.integrations.system_control import _validate_web_url
+
+        validated, problem = _validate_web_url(str(url or ""))
+        if validated is None:
+            return {"ok": False, "error": problem or "Geçersiz URL."}
+        launcher = self._uri_launcher
+        if launcher is None:
+            from app.integrations.runtime import UriLauncher
+
+            launcher = UriLauncher()
+        if not launcher.open(validated):
+            return {"ok": False, "error": "Varsayılan tarayıcı açılamadı."}
+        self._record_ui_event("external.opened", "A source link was opened in the browser.")
+        return {"ok": True, "url": validated}
 
     def pick_folder(self) -> dict[str, Any]:
         """The native folder picker, for any surface that saves a file."""

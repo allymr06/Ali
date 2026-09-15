@@ -20,9 +20,10 @@ function researchSourcesMarkup(payload) {
   };
   const chips = sources.map((source) => {
     const name = host(source.url) || "kaynak";
-    return `<button type="button" class="chip" data-research-query="${esc(payload.query || "")}" title="${esc(source.title || "")} — ${esc(source.url || "")}">${esc(name)}</button>`;
+    return `<button type="button" class="chip" data-open-url="${esc(source.url || "")}" title="${esc(source.title || "")} — ${esc(source.url || "")} · tarayıcıda açar">${esc(name)}</button>`;
   });
-  return `<div class="msg-sources"><span class="msg-sources-label">Web kaynakları</span>${chips.join("")}</div>`;
+  const report = `<button type="button" class="chip accent" data-research-query="${esc(payload.query || "")}" title="Tam raporu Araştırma ekranında açar">rapor</button>`;
+  return `<div class="msg-sources"><span class="msg-sources-label">Web kaynakları</span>${report}${chips.join("")}</div>`;
 }
 
 function bindResearchChips(node) {
@@ -33,6 +34,10 @@ function bindResearchChips(node) {
       input.value = chip.dataset.researchQuery;
       $("#research-submit")?.click();
     }
+  }));
+  $$("[data-open-url]", node).forEach((chip) => chip.addEventListener("click", async () => {
+    const result = await call("open_external", chip.dataset.openUrl);
+    if (result.ok === false) toast(result.error || "Bağlantı açılamadı.", true);
   }));
 }
 

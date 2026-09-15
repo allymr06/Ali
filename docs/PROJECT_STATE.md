@@ -240,6 +240,14 @@ Academy):
   (first run stays maximized); nonsense frames (too small, off-screen,
   corrupt file) fall back to defaults instead of trapping the user.
 - A native **folder picker** on the bridge serves both exports.
+- **Sources open in the browser** - the source chips under answers
+  and the URLs in the Araştırma report are clickable: a validated
+  http(s) open in the default browser (same validation as the
+  system-control tool; file:, javascript: and friends refuse in
+  words). The chip row also carries a "rapor" chip that reopens the
+  full cached report. Chips live with the turn that earned them; a
+  restart shows the plain text again and the report stays in the
+  research cache.
 - **Markdown in answers** - assistant bubbles render the safe subset
   the model actually writes (bold, italics, inline code, simple lists,
   heading lines) after escaping everything, so \*\*15 Mart 2026\*\* shows

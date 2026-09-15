@@ -2849,3 +2849,27 @@ def test_an_archived_conversation_can_come_back(booted) -> None:
 
     missing = booted.bridge.unarchive_conversation(str(uuid4()))
     assert missing == {"ok": False, "error": "Konuşma bulunamadı."}
+
+
+def test_open_external_validates_and_uses_the_launcher(booted) -> None:
+    class FakeLauncher:
+        def __init__(self) -> None:
+            self.opened: list[str] = []
+
+        def open(self, uri: str) -> bool:
+            self.opened.append(uri)
+            return True
+
+    launcher = FakeLauncher()
+    booted.bridge._uri_launcher = launcher
+
+    assert booted.bridge.open_external("javascript:alert(1)")["ok"] is False
+    assert booted.bridge.open_external("file:///C:/secret.txt")["ok"] is False
+    assert booted.bridge.open_external("")["ok"] is False
+    assert launcher.opened == [], "nothing invalid ever reaches the launcher"
+
+    result = booted.bridge.open_external("https://osym.gov.tr/takvim")
+    assert result == {"ok": True, "url": "https://osym.gov.tr/takvim"}
+    bare = booted.bridge.open_external("nobelprize.org")
+    assert bare["ok"] is True and bare["url"] == "https://nobelprize.org"
+    assert launcher.opened == ["https://osym.gov.tr/takvim", "https://nobelprize.org"]

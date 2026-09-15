@@ -1000,3 +1000,11 @@ lists open and close properly; hostile HTML and script tags from the
 model or a fetched page arrive escaped and inert; `3*4` and `a*b`
 never become emphasis; and the source pins that only assistant bubbles
 take this path while user text stays literal.
+
+## Source links that open the browser (15 September 2026)
+
+`tests/test_ui_nova.py`: open_external refuses javascript:, file: and
+empty input before anything reaches the launcher, opens validated
+http(s), and completes a bare domain to https. Live: the bridge
+refused file:/// in Turkish and the chip builder emits both the
+open-in-browser chips and the "rapor" chip.

@@ -446,7 +446,7 @@ function renderResearch(ok, report, error) {
   if (Array.isArray(sources) && sources.length) {
     parts.push("<h3>KAYNAKLAR</h3>" + sources.map((src) => {
       const title = src.title || src.url || String(src);
-      const url = src.url ? ` — ${esc(src.url)}` : "";
+      const url = src.url ? ` — <button type="button" class="src-link" data-open-url="${esc(src.url)}" title="Tarayıcıda açar">${esc(src.url)}</button>` : "";
       return `<span class="src">▸ ${esc(title)}${url}</span>`;
     }).join(""));
   }
@@ -455,6 +455,10 @@ function renderResearch(ok, report, error) {
     parts.push("<h3>BELİRSİZLİKLER</h3>" + uncertainties.map((u) => `<span class="src">▸ ${esc(u)}</span>`).join(""));
   }
   panel.innerHTML = parts.join("") || esc(JSON.stringify(report, null, 2));
+  $$("[data-open-url]", panel).forEach((node) => node.addEventListener("click", async () => {
+    const opened = await call("open_external", node.dataset.openUrl);
+    if (opened.ok === false) toast(opened.error || "Bağlantı açılamadı.", true);
+  }));
 }
 
 /* ── diagnostics ──────────────────────────────────────────────────── */

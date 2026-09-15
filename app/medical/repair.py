@@ -15,8 +15,9 @@ and the report says exactly what changed and what was already done.
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,87 @@ def backup_database(store: Any, *, directory: Path | None = None) -> Path | None
     with sqlite3.connect(f"file:{source}?mode=ro", uri=True) as src, sqlite3.connect(target) as dst:
         src.backup(dst)
     return target
+
+
+BACKUP_PREFIX = "jarvis_medical-backup-"
+BACKUP_KEEP = 3
+BACKUP_EVERY_DAYS = 7
+
+
+def _backup_directory(store: Any) -> Path | None:
+    path = getattr(store, "path", None)
+    return Path(path).parent / "backups" if path else None
+
+
+def list_backups(store: Any) -> list[dict[str, Any]]:
+    """The safety copies on disk, newest first; repair snapshots listed apart."""
+    directory = _backup_directory(store)
+    if directory is None or not directory.is_dir():
+        return []
+    rows = []
+    for file in directory.glob("jarvis_medical-*.sqlite3"):
+        stat = file.stat()
+        rows.append({
+            "file": file.name,
+            "path": str(file),
+            "bytes": stat.st_size,
+            "at": datetime.fromtimestamp(stat.st_mtime).astimezone().isoformat(),
+            "kind": "repair" if file.name.startswith("jarvis_medical-before-repair-") else "backup",
+        })
+    rows.sort(key=lambda row: row["at"], reverse=True)
+    return rows
+
+
+def backup_now(store: Any, *, keep: int = BACKUP_KEEP) -> dict[str, Any]:
+    """One consistent copy via SQLite's backup API, with rotation.
+
+    Refuses when the disk could not hold another copy safely (twice the
+    database size must be free), and never touches the before-repair
+    snapshots — those belong to the corrections that made them.
+    """
+    path = getattr(store, "path", None)
+    if not path:
+        raise ValueError("Bellek içi depo yedeklenmez.")
+    source = Path(path)
+    if not source.is_file():
+        raise ValueError("Veritabanı dosyası bulunamadı.")
+    directory = _backup_directory(store)
+    directory.mkdir(parents=True, exist_ok=True)
+    size = source.stat().st_size
+    free = shutil.disk_usage(directory).free
+    if free < size * 2:
+        raise ValueError(f"Diskte yer yok: yedek için en az {2 * size // (1024 * 1024)} MB boş alan gerekli, {free // (1024 * 1024)} MB var.")
+    stamp = utc_now().strftime("%Y%m%d-%H%M%S-%f")
+    target = directory / f"{BACKUP_PREFIX}{stamp}.sqlite3"
+    # Copy to a temporary name first: a copy cut short by shutdown must not
+    # sit in the rotation looking like a good backup. sqlite3's context
+    # manager commits but does not close, so close by hand before renaming.
+    partial = directory / f"{BACKUP_PREFIX}{stamp}.sqlite3.tmp"
+    src = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+    dst = sqlite3.connect(partial)
+    try:
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
+    partial.replace(target)
+    removed: list[str] = []
+    backups = sorted(directory.glob(f"{BACKUP_PREFIX}*.sqlite3"), key=lambda file: file.name, reverse=True)
+    for stale in backups[max(1, int(keep)):]:
+        stale.unlink(missing_ok=True)
+        removed.append(stale.name)
+    return {"path": str(target), "bytes": target.stat().st_size, "kept": min(len(backups), max(1, int(keep))), "removed": removed}
+
+
+def auto_backup_due(store: Any, *, every_days: int = BACKUP_EVERY_DAYS) -> bool:
+    """True when no backup (auto or manual) is younger than the interval."""
+    if not getattr(store, "path", None):
+        return False
+    newest = next((row for row in list_backups(store) if row["kind"] == "backup"), None)
+    if newest is None:
+        return True
+    age = utc_now() - datetime.fromisoformat(newest["at"])
+    return age >= timedelta(days=max(1, int(every_days)))
 
 
 def repair_learning(academy: Any, *, backup: bool = True, backup_directory: Path | None = None) -> dict[str, Any]:
@@ -176,4 +258,4 @@ def format_report(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["REPAIR_KIND", "backup_database", "format_report", "repair_learning"]
+__all__ = ["BACKUP_EVERY_DAYS", "BACKUP_KEEP", "REPAIR_KIND", "auto_backup_due", "backup_database", "backup_now", "format_report", "list_backups", "repair_learning"]

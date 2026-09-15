@@ -249,6 +249,7 @@ class Settings:
     # Review every newly generated, source-grounded question against its
     # cited passage before it can sit in a scored paper.
     medical_source_review: bool = True
+    medical_auto_backup: bool = True
     medical_narration_checkpoint_every: int = 3
 
     spotify_client_id: str | None = None
@@ -765,6 +766,7 @@ class Settings:
             medical_office_conversion=_get_bool("JARVIS_MEDICAL_OFFICE_CONVERSION", True),
             medical_narration_voice=os.getenv("JARVIS_MEDICAL_NARRATION_VOICE", "local").strip().lower() or "local",
             medical_source_review=_get_bool("JARVIS_MEDICAL_SOURCE_REVIEW", True),
+            medical_auto_backup=_get_bool("JARVIS_MEDICAL_AUTO_BACKUP", True),
             medical_narration_checkpoint_every=_get_non_negative_int("JARVIS_MEDICAL_NARRATION_CHECKPOINT_EVERY", 3),
             medical_directory=os.getenv(
                 "JARVIS_MEDICAL_DIRECTORY",

@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Callable, Mapping
+from datetime import timedelta
+from datetime import timedelta
 from typing import Any
 
 from app.medical.flashcards import FlashcardDeck
@@ -157,6 +159,10 @@ class StudyWorkflow:
             "histology_show": lambda payload: {"session": self.histology.show(_text(payload, "session_id"), _number(payload, "index"))},
             "histology_finish": lambda payload: {"session": self.histology.finish_session(_text(payload, "session_id"))},
             # flashcards (deterministic; a grade is study, not evidence)
+            "weekly_report": lambda payload: self.weekly_report(days=_number(payload, "days", 7)),
+            "weekly_report": lambda payload: self.weekly_report(days=_number(payload, "days", 7)),
+            "committee_options": lambda payload: self._academy.committee_options(),
+            "committee_exam": lambda payload: {"exam": self._academy.committee_exam(_mapping(payload, "distribution"), seconds_per_question=(_number(payload, "seconds_per_question") or None), unseen_only=bool(payload.get("unseen_only")), seed=_optional(payload, "seed"))},
             "cards_overview": lambda payload: self.flashcards.overview(),
             "cards_queue": lambda payload: self.flashcards.queue(limit=_number(payload, "limit", 60)),
             "cards_answer": lambda payload: self.flashcards.answer(_text(payload, "card_id"), _text(payload, "grade"), submission_id=_optional(payload, "submission_id")),
@@ -301,6 +307,120 @@ class StudyWorkflow:
     # ------------------------------------------------------------------
     # what the dashboard shows
     # ------------------------------------------------------------------
+
+    def weekly_report(self, *, days: int = 7) -> dict[str, Any]:
+        """The last week as the records tell it; nothing is estimated.
+
+        Study minutes come from the planner's log and completed activities,
+        answers from finished attempts (scored ones only enter accuracy),
+        cards from the review log, findings from their own records. A day
+        with nothing recorded is a zero, not a gap in the chart, and the
+        streak is consecutive recorded days ending today.
+        """
+        window = max(1, min(31, int(days)))
+        now = self.planner.now()
+        day_keys = [(now - timedelta(days=offset)).date().isoformat() for offset in range(window - 1, -1, -1)]
+        per_day: dict[str, dict[str, Any]] = {key: {"date": key, "minutes": 0, "answers": 0, "cards": 0, "activities_done": 0} for key in day_keys}
+
+        def bucket(stamp: Any) -> dict[str, Any] | None:
+            key = str(stamp or "")[:10]
+            return per_day.get(key)
+
+        for log in self._academy.store.list_records("study_log", limit=1000):
+            row = bucket(log.get("at"))
+            if row is not None and log.get("minutes"):
+                row["minutes"] += int(log["minutes"])
+        planned = completed = skipped = missed = 0
+        for activity in self._academy.store.list_records("plan_activity", limit=2000):
+            if str(activity.get("date") or "") not in per_day:
+                continue
+            status = str(activity.get("status") or "planned")
+            planned += 1
+            if status == "completed":
+                completed += 1
+                row = per_day[str(activity["date"])]
+                row["activities_done"] += 1
+                # A completed read/recap already logged its minutes to the
+                # study log; adding them here would count them twice.
+                if activity.get("actual_minutes") and activity.get("kind") not in ("read", "recap"):
+                    row["minutes"] += int(activity["actual_minutes"])
+            elif status == "skipped":
+                skipped += 1
+            elif status == "missed":
+                missed += 1
+
+        answered_total = correct_total = scored_total = unscored_answered = 0
+        papers = 0
+        for attempt in self._academy.store.list_attempts(limit=500):
+            for entry in attempt.answers.values():
+                row = bucket(entry.answered_at.isoformat() if entry.answered_at else None)
+                if row is not None and entry.answer_key:
+                    row["answers"] += 1
+            if attempt.finished_at is None or attempt.finished_at.date().isoformat() not in per_day:
+                continue
+            analysis = attempt.analysis or {}
+            if analysis.get("total") is None:
+                continue
+            papers += 1
+            scored_total += int(analysis.get("total") or 0)
+            correct_total += int(analysis.get("correct") or 0)
+            answered_total += int(analysis.get("correct") or 0) + int(analysis.get("incorrect") or 0)
+            unscored_answered += int(analysis.get("unscored_answered") or 0)
+
+        reviews = [item for item in self._academy.store.list_records("flashcard_review", limit=2000) if str(item.get("at", ""))[:10] in per_day]
+        for review in reviews:
+            per_day[str(review["at"])[:10]]["cards"] += 1
+        card_grades: dict[str, int] = {}
+        for review in reviews:
+            card_grades[str(review.get("grade"))] = card_grades.get(str(review.get("grade")), 0) + 1
+
+        findings_opened = sum(1 for item in self.understanding.findings(limit=500) if str(item.get("created_at", ""))[:10] in per_day)
+        findings_resolved = sum(
+            1
+            for item in self.understanding.findings(limit=500)
+            if item.get("status") in ("resolved", "dismissed", "withdrawn") and str(item.get("updated_at", ""))[:10] in per_day
+        )
+        histology_sessions = [item for item in self._academy.store.list_records("histology_session", limit=200) if item.get("status") == "closed" and str(item.get("finished_at", ""))[:10] in per_day]
+        histology_identified = sum(int((item.get("results") or {}).get("identified") or 0) for item in histology_sessions)
+        histology_scored = sum(int((item.get("results") or {}).get("scored") or 0) for item in histology_sessions)
+
+        streak = 0
+        for key in reversed(day_keys):
+            row = per_day[key]
+            if row["minutes"] or row["answers"] or row["cards"] or row["activities_done"]:
+                streak += 1
+            else:
+                break
+
+        countdowns = []
+        for plan in self.planner.plans():
+            summary = self.planner.summary(plan["plan_id"])
+            countdowns.append({"plan_id": summary["plan_id"], "name": summary["name"], "exam_date": summary["exam_date"], "days_left": summary["days_left"]})
+        countdowns.sort(key=lambda item: item["days_left"])
+
+        return {
+            "days": [per_day[key] for key in day_keys],
+            "totals": {
+                "minutes": sum(row["minutes"] for row in per_day.values()),
+                "answers": sum(row["answers"] for row in per_day.values()),
+                "cards": len(reviews),
+                "papers": papers,
+                "scored": scored_total,
+                "correct": correct_total,
+                "accuracy": round(correct_total / scored_total, 3) if scored_total else None,
+                "unscored_answered": unscored_answered,
+                "card_grades": card_grades,
+                "findings_opened": findings_opened,
+                "findings_resolved": findings_resolved,
+                "histology_identified": histology_identified,
+                "histology_scored": histology_scored,
+                "activities": {"planned": planned, "completed": completed, "skipped": skipped, "missed": missed},
+            },
+            "streak_days": streak,
+            "countdowns": countdowns,
+            "empty": not any(row["minutes"] or row["answers"] or row["cards"] or row["activities_done"] for row in per_day.values()),
+            "note": "Bu özet yalnız kayıtlardan hesaplanır: dakikalar plan günlüğünden, doğruluk puanlı sorulardan, kartlar tekrar defterinden. Tahmin yoktur.",
+        }
 
     def dashboard_block(self) -> dict[str, Any]:
         findings = self.understanding.findings(limit=200)

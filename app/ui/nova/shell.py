@@ -127,6 +127,7 @@ MEDICAL_BACKGROUND_ACTIONS: frozenset[str] = frozenset(
         "compare_document",
         "create_note",
         "create_exam",
+        "backup_now",
         "import_questions",
         "import_folder",
         "process_lecture_set",
@@ -1498,6 +1499,8 @@ class NovaBridge:
             return {"ok": removed, "professors": _jsonable(academy.professors()), "error": None if removed else "Hoca profili bulunamadı."}
         if name == "progress":
             return {"ok": True, **_jsonable(academy.progress())}
+        if name == "backups":
+            return {"ok": True, **_jsonable(academy.backups())}
         if name == "anatomy":
             return {"ok": True, **_jsonable(academy.anatomy_structures())}
         if name == "structure":
@@ -1653,6 +1656,9 @@ class NovaBridge:
             operation = academy.continue_processing(set_id=set_id, document_id=document_id, vision=payload.get("vision") is not False, analysis=payload.get("analysis") is not False)
             message = "Taranmış sayfalar okunuyor, bekleyen şekiller inceleniyor, eksik analizler tamamlanıyor; model durursa kaldığı yerde bekler."
             report = "continue"
+        elif name == "backup_now":
+            operation = academy.backup_job()
+            message = "Yedek alınıyor; bitince bildirilir."
         elif name == "prepare_narration":
             if academy.store.get_document(text("document_id")) is None:
                 return {"ok": False, "error": "Belge bulunamadı."}

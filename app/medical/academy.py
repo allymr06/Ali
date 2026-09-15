@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import random
 import threading
 from collections import Counter
 from collections.abc import Callable, Coroutine, Iterable
@@ -30,6 +31,7 @@ from app.medical.generation import ExamBuilder, GenerationError, QuestionGenerat
 from app.medical.intents import MedicalIntentParser
 from app.medical.learning import LearningEngine
 from app.medical.model import MedicalModelClient, MedicalModelError
+from app.medical.models import Subject
 from app.medical.models import (
     COMPARISON_LABELS_TR,
     DocumentPage,
@@ -271,6 +273,43 @@ class MedicalAcademy:
     # ------------------------------------------------------------------
     # jobs the page starts
     # ------------------------------------------------------------------
+
+    def backups(self) -> dict[str, Any]:
+        from app.medical.repair import list_backups
+
+        return {
+            "backups": list_backups(self.store),
+            "directory": str(self.store.path.parent / "backups") if self.store.path else None,
+            "note": "Geri yüklemek için: uygulamayı kapat, jarvis_medical.sqlite3 dosyasını seçtiğin yedekle değiştir (-wal ve -shm dosyalarını sil), yeniden aç. JARVIS canlı veriyi kendiliğinden asla ezmez.",
+        }
+
+    async def backup_job(self) -> dict[str, Any]:
+        """A consistent safety copy, off the caller's thread; reported by push."""
+        from app.medical.repair import backup_now
+
+        report = await asyncio.to_thread(backup_now, self.store)
+        self._record("store.backup", "Medical database backed up.", path=report["path"], bytes=report["bytes"])
+        self._emit({"kind": "backup_done", **report})
+        return report
+
+    def start_weekly_backup(self) -> threading.Thread | None:
+        """A weekly safety copy in the background when one is due; never blocks startup."""
+        from app.medical.repair import auto_backup_due, backup_now
+
+        if not auto_backup_due(self.store):
+            return None
+
+        def run() -> None:
+            try:
+                report = backup_now(self.store)
+                self._record("store.backup", "Weekly medical backup taken.", path=report["path"], bytes=report["bytes"])
+                self._emit({"kind": "backup_done", **report, "automatic": True})
+            except Exception as exc:
+                self._record("store.backup_failed", "Weekly medical backup failed.", level="warning", error=str(exc)[:200])
+
+        thread = threading.Thread(target=run, name="jarvis-medical-backup", daemon=True)
+        thread.start()
+        return thread
 
     def running_job(self, kind: str, request: dict[str, Any]) -> dict[str, Any] | None:
         """The running job for this exact request, if the student already started it."""
@@ -1501,6 +1540,96 @@ class MedicalAcademy:
         self._emit({"kind": "exam_ready", "exam_id": exam.exam_id, "title": exam.title, "count": len(exam.question_ids), "open": True})
         return self.exam(exam.exam_id) or {}
 
+    # ------------------------------------------------------------------
+    # committee rehearsal: the real papers, in the real shape
+    # ------------------------------------------------------------------
+
+    SECONDS_PER_COMMITTEE_QUESTION = 72  # ~100 questions in 120 minutes
+
+    def committee_options(self) -> dict[str, Any]:
+        """What a rehearsal can draw on, per subject: the imported committee
+        questions the scoring policy counts, and how many are still unseen."""
+        answered: set[str] = set()
+        for attempt in self.store.list_attempts(limit=2000):
+            answered.update(question_id for question_id, entry in attempt.answers.items() if entry.answer_key)
+        subjects: list[dict[str, Any]] = []
+        for subject in Subject:
+            pool = [
+                question
+                for question in self.store.query_questions(subject=subject, origin=QuestionOrigin.IMPORTED_EXAM, with_answer_key=True, limit=BANK_SCAN_LIMIT)
+                if self.scoring_of(question)["scored"]
+            ]
+            if not pool:
+                continue
+            unseen = sum(1 for question in pool if question.question_id not in answered)
+            subjects.append({"subject": str(subject), "label": SUBJECT_LABELS_TR.get(subject, subject), "available": len(pool), "unseen": unseen})
+        return {"subjects": subjects, "seconds_per_question": self.SECONDS_PER_COMMITTEE_QUESTION}
+
+    def committee_exam(self, distribution: dict[str, Any], *, seconds_per_question: int | None = None, unseen_only: bool = False, seed: str | None = None) -> dict[str, Any]:
+        """Assemble a timed rehearsal from the imported committee questions.
+
+        ``distribution`` maps subject to how many questions the student's real
+        committee asks. Only imported questions the scoring policy counts are
+        used; a subject that cannot fill its count contributes what it has and
+        the paper says so. Questions are grouped by subject in the given
+        order, shuffled within each subject, and never invented or padded
+        from another subject.
+        """
+        wanted: list[tuple[str, int]] = []
+        for subject, count in distribution.items():
+            name = valid_subject(subject)
+            if name is None:
+                raise GenerationError(f"Bilinmeyen ders: {subject}")
+            count = int(count)
+            if count > 0:
+                wanted.append((name, min(120, count)))
+        if not wanted:
+            raise GenerationError("En az bir ders için soru sayısı gerekli.")
+        answered: set[str] = set()
+        if unseen_only:
+            for attempt in self.store.list_attempts(limit=2000):
+                answered.update(question_id for question_id, entry in attempt.answers.items() if entry.answer_key)
+        rng = random.Random(seed or new_id("committee"))
+        chosen: list[Question] = []
+        notes: list[str] = ["Komite provası: sorular hocaların gerçek komite kâğıtlarından, ders sırasına göre gruplu."]
+        shortfalls: list[str] = []
+        for subject, count in wanted:
+            pool = [
+                question
+                for question in self.store.query_questions(subject=subject, origin=QuestionOrigin.IMPORTED_EXAM, with_answer_key=True, limit=BANK_SCAN_LIMIT)
+                if self.scoring_of(question)["scored"] and (not unseen_only or question.question_id not in answered)
+            ]
+            rng.shuffle(pool)
+            taken = pool[:count]
+            chosen.extend(taken)
+            if len(taken) < count:
+                shortfalls.append(f"{SUBJECT_LABELS_TR.get(subject, subject)}: {count} istendi, {len(taken)} bulundu")
+        if not chosen:
+            raise GenerationError("Bu dağılıma uyan komite sorusu yok." + (" 'Daha önce çözmediklerim' süzgecini kaldırmayı dene." if unseen_only else " Önce hocaların komite kâğıtlarını içe aktar."))
+        if shortfalls:
+            notes.append("Eksik dersler — " + "; ".join(shortfalls) + ". Kâğıt eldekiyle kuruldu, başka dersten doldurulmadı.")
+        if unseen_only:
+            notes.append("Yalnız daha önce çözülmemiş sorular alındı.")
+        per_second = max(20, min(300, int(seconds_per_question or self.SECONDS_PER_COMMITTEE_QUESTION)))
+        config = ExamConfig(
+            subjects=[subject for subject, _count in wanted],
+            question_count=len(chosen),
+            option_count=5,
+            timed_seconds=per_second * len(chosen),
+            immediate_feedback=False,
+            answers_at_end=True,
+            randomize=False,  # the paper's order is the subjects' order
+            title=f"Komite provası · {len(chosen)} soru",
+        )
+        notes.append(f"Süre: soru başına {per_second} sn, toplam {config.timed_seconds // 60} dk.")
+        exam = self.exam_builder.build(config, chosen, notes=notes)
+        session = self.sessions.get()
+        session.active_exam_id = exam.exam_id
+        self.sessions.save(session)
+        self._record("exam.generated", "Committee rehearsal assembled.", exam_id=exam.exam_id, questions=len(chosen))
+        self._emit({"kind": "exam_ready", "exam_id": exam.exam_id, "title": exam.title, "count": len(exam.question_ids), "open": True})
+        return self.exam(exam.exam_id) or {}
+
     def _bank_empty_message(self, config: ExamConfig, report: dict[str, Any]) -> str:
         """Why the bank gave nothing, in terms the student can act on."""
         filters = "; ".join(report.get("filters") or [])
@@ -2380,6 +2509,11 @@ def create_medical_academy(
     academy.converter = converter
     if tool_executor is not None:
         academy.register_tools(tool_executor)
+    # A weekly safety copy of the store, taken in the background when due.
+    # The default lives on Settings; a bare test namespace has no flag and
+    # starts no thread.
+    if bool(getattr(settings, "medical_auto_backup", False)):
+        academy.start_weekly_backup()
     return academy
 
 

@@ -528,6 +528,7 @@
                 </div>
                 <p id="med-exam-context" class="med-context" aria-live="polite"></p>
                 <div class="btn-row">
+                  <button id="med-exam-committee" class="btn btn-ghost small" type="button" title="Hocaların gerçek komite sorularından, derslere böldüğün sayılarla süreli bir prova kurar">Komite provası</button>
                   <button id="med-exam-bank" class="btn btn-ghost small" type="button" title="Bankadan derlemede belge, sayfa aralığı, hoca, zorluk, görsel ve yanlış süzgeçleri uygulanır; şık sayısı ve bilgi önceliği sorunun aslından gelir">Bankadan derle</button>
                   <button id="med-exam-create" class="btn btn-primary" type="submit">Sınav hazırla</button>
                 </div>
@@ -599,6 +600,10 @@
           <!-- İlerleme -->
           <section class="med-view" data-view="progress" hidden>
             <div class="med-grid">
+              <div class="panel med-card med-span-2">
+                <div class="panel-title"><span class="kicker">Haftalık özet</span><span id="med-week-streak" class="faint"></span></div>
+                <div id="med-week"></div>
+              </div>
               <div class="panel med-card med-span-2">
                 <div class="panel-title"><span class="kicker">Öğrenme durumu</span></div>
                 <div id="med-progress-metrics" class="diag-metrics"></div>

@@ -343,6 +343,7 @@ const Medical = {
         ["Bugünün planı", () => this.show("plan")],
         ["Anlama kontrolü", () => { this.show("understanding"); Study.startCheck(); }],
         ["Belge ekle", () => { this.show("library"); this.importDocument(); }],
+        ["Veritabanını yedekle", async () => { const result = await this.request("backup_now", {}); toast(result.ok === false ? (result.error || "Yedek alınamadı.") : result.message, result.ok === false ? true : "ok"); }],
         ["Anatomi Lab", () => this.show("anatomy")],
       ];
       quick.innerHTML = "";
@@ -1112,6 +1113,41 @@ const Medical = {
     this.loadJobs();
   },
 
+  /* A timed rehearsal in the real committee's shape: the student says how
+     many questions each subject asks; the paper takes only real imported
+     committee questions and says what it could not fill. */
+  async committeeDialog() {
+    const options = await this.request("committee_options", {});
+    if (options.ok === false) { toast(options.error || "Komite seçenekleri okunamadı.", true); return; }
+    const subjects = options.subjects || [];
+    if (!subjects.length) { toast("Bankada komite kâğıtlarından alınmış puanlı soru yok; önce hocaların sınav dosyalarını içe aktar.", true); return; }
+    const entry = await Study.dialog({
+      title: "Komite provası",
+      okLabel: "PROVAYI KUR",
+      html: `<p class="med-review-note">Komitende her dersten kaç soru çıkacaksa yaz. Sorular hocaların gerçek komite kâğıtlarından gelir; eksik kalan ders başka dersle doldurulmaz.</p>
+        ${subjects.map((row) => `<label class="med-field"><span>${esc(row.label)} · bankada ${row.available}${row.unseen !== row.available ? ` · ${row.unseen} çözülmemiş` : ""}</span>
+          <input type="number" min="0" max="120" value="0" data-committee-subject="${esc(row.subject)}"></label>`).join("")}
+        <label class="med-field"><span>Soru başına süre (sn)</span><input id="med-committee-spq" type="number" min="20" max="300" value="${options.seconds_per_question}"></label>
+        <label class="switch-row small"><span>Yalnız daha önce çözmediklerim</span><input id="med-committee-unseen" class="switch" type="checkbox"></label>`,
+      collect: (host) => ({
+        distribution: Object.fromEntries(Array.from(host.querySelectorAll("[data-committee-subject]")).map((node) => [node.dataset.committeeSubject, Number(node.value) || 0]).filter(([, count]) => count > 0)),
+        seconds_per_question: Number(host.querySelector("#med-committee-spq").value) || options.seconds_per_question,
+        unseen_only: host.querySelector("#med-committee-unseen").checked,
+      }),
+    });
+    if (!entry) return;
+    if (!Object.keys(entry.distribution).length) { toast("En az bir ders için soru sayısı gir.", true); return; }
+    const result = await this.request("committee_exam", entry);
+    if (result.ok === false) { toast(result.error || "Prova kurulamadı.", true); return; }
+    toast(`Prova hazır: ${result.exam.title}.`, "ok");
+    await this.loadExams();
+    this.exam = result.exam;
+    this.runner = { index: 0, finished: false };
+    this.renderExamList();
+    this.renderRunner();
+    this.refreshCounts();
+  },
+
   renderExamList() {
     const host = $("#med-exam-list");
     if (!host) return;
@@ -1749,10 +1785,49 @@ const Medical = {
   /* ── progress ──────────────────────────────────────────────────── */
 
   async loadProgress() {
-    const result = await this.request("progress");
+    const [result, week] = await Promise.all([this.request("progress"), this.request("weekly_report", {})]);
     if (result.ok === false) { toast(result.error || "İlerleme okunamadı.", true); return; }
     this.progressData = result;
+    this.weekData = week.ok === false ? null : week;
     this.renderProgress();
+    this.renderWeek();
+  },
+
+  /* The last week as the records tell it: a bar per day, honest totals,
+     the exam countdowns, and a streak of recorded days. */
+  renderWeek() {
+    const host = $("#med-week");
+    if (!host) return;
+    const week = this.weekData;
+    if (!week) { host.innerHTML = ""; return; }
+    const streak = $("#med-week-streak");
+    if (streak) streak.textContent = week.streak_days ? `${week.streak_days} gündür aralıksız` : "";
+    if (week.empty) {
+      host.innerHTML = medEmpty("Bu hafta kayıt yok", "Çalışma dakikaları plan günlüğünden, sorular sınavlardan, kartlar tekrar defterinden gelir.");
+      return;
+    }
+    const totals = week.totals || {};
+    const peak = Math.max(1, ...week.days.map((day) => day.minutes));
+    const dayName = (iso) => ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"][new Date(iso + "T12:00:00").getDay()];
+    host.innerHTML = `
+      <div class="med-week-days">${week.days.map((day) => `
+        <div class="med-week-day" title="${esc(day.date)} · ${day.minutes} dk · ${day.answers} soru · ${day.cards} kart">
+          <span class="mwd-bar"><i style="transform: scaleY(${(day.minutes / peak).toFixed(3)})"></i></span>
+          <span class="mwd-minutes">${day.minutes ? day.minutes + "'" : "·"}</span>
+          <span class="mwd-name">${dayName(day.date)}</span>
+        </div>`).join("")}</div>
+      <div class="med-chips">
+        <span class="chip accent">${totals.minutes || 0} dk çalışma</span>
+        <span class="chip">${totals.answers || 0} soru cevabı</span>
+        ${totals.scored ? `<span class="chip ${totals.accuracy >= 0.7 ? "ok" : totals.accuracy < 0.5 ? "bad" : ""}">${totals.papers} sınav · puanlıda %${Math.round((totals.accuracy || 0) * 100)}</span>` : ""}
+        ${totals.unscored_answered ? `<span class="chip">${totals.unscored_answered} puansız cevap (ölçülmedi)</span>` : ""}
+        <span class="chip">${totals.cards || 0} kart tekrarı</span>
+        ${totals.histology_scored ? `<span class="chip">histoloji ${totals.histology_identified}/${totals.histology_scored}</span>` : ""}
+        ${totals.findings_opened || totals.findings_resolved ? `<span class="chip">${totals.findings_opened} bulgu açıldı · ${totals.findings_resolved} kapandı</span>` : ""}
+        <span class="chip">plan: ${totals.activities.completed}/${totals.activities.planned} etkinlik${totals.activities.skipped ? ` · ${totals.activities.skipped} atlandı` : ""}${totals.activities.missed ? ` · ${totals.activities.missed} kaçtı` : ""}</span>
+      </div>
+      ${(week.countdowns || []).length ? `<div class="med-chips">${week.countdowns.map((item) => `<span class="chip ${item.days_left <= 7 ? "warn" : ""}">${esc(item.name)} · ${item.days_left} gün</span>`).join("")}</div>` : ""}
+      <p class="settings-note">${esc(week.note || "")}</p>`;
   },
 
   renderProgress() {
@@ -1843,6 +1918,11 @@ const Medical = {
       if (payload.context_switched && payload.context_note) toast(payload.context_note, "");
       if (State.screen === "medical" && this.view === "notes") this.loadNotes();
       else toast(`Not hazır: ${payload.title}`, "ok");
+      return;
+    }
+    if (kind === "backup_done") {
+      const megabytes = Math.round((payload.bytes || 0) / 1048576);
+      toast(`${payload.automatic ? "Haftalık yedek" : "Yedek"} alındı: ${megabytes} MB${(payload.removed || []).length ? ` · ${payload.removed.length} eski yedek silindi` : ""}.`, "ok");
       return;
     }
     if (kind === "job_state") {
@@ -3578,6 +3658,8 @@ function bindMedical() {
   if (examForm) examForm.addEventListener("submit", (event) => Medical.createExam(event, false));
   const examBank = $("#med-exam-bank");
   if (examBank) examBank.addEventListener("click", () => Medical.createExam(null, true));
+  const examCommittee = $("#med-exam-committee");
+  if (examCommittee) examCommittee.addEventListener("click", () => Medical.committeeDialog());
   const bankRefresh = $("#med-bank-refresh");
   if (bankRefresh) { bankRefresh.innerHTML = icon("refresh"); bankRefresh.addEventListener("click", () => Medical.loadBank()); }
   ["med-bank-subject", "med-bank-origin", "med-bank-answered"].forEach((id) => {

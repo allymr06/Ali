@@ -615,3 +615,156 @@ def test_the_repair_removes_unscored_evidence_relinks_histology_and_recomputes_r
     again = repair_learning(instance, backup=False)
     assert again["unscored_questions"] == [] and again["histology_relinked"] == [] and again["already_applied"] == 2
     assert store.get_mastery("concept.q1").attempts == 1 and moved.attempts == 1
+
+
+# ---------------------------------------------------------------------------
+# the committee rehearsal: the real papers, in the real shape
+# ---------------------------------------------------------------------------
+
+
+def test_a_committee_rehearsal_keeps_the_distribution_the_order_and_its_honesty(academy) -> None:
+    instance = academy(None)
+    store = instance.store
+    for index in range(4):
+        store.save_question(question(f"a{index}", origin=QuestionOrigin.IMPORTED_EXAM, subject="anatomy"))
+    for index in range(2):
+        store.save_question(question(f"p{index}", origin=QuestionOrigin.IMPORTED_EXAM, subject="physiology", topic_id=None))
+    store.save_question(question("gen", origin=QuestionOrigin.GENERATED, subject="anatomy"))
+    store.save_question(question("nokey", origin=QuestionOrigin.IMPORTED_EXAM, subject="anatomy", key=None))
+
+    options = instance.committee_options()
+    rows = {row["subject"]: row for row in options["subjects"]}
+    assert rows["anatomy"]["available"] == 4, "only keyed imported questions the policy scores"
+    assert rows["physiology"]["available"] == 2 and options["seconds_per_question"] == 72
+
+    exam = instance.committee_exam({"anatomy": 3, "physiology": 5}, seed="prova")
+    assert exam["title"] == "Komite provası · 5 soru" and exam["question_count"] == 5
+    assert exam["config"]["timed_seconds"] == 5 * 72 and exam["mode"] == "simulation"
+    subjects = [item["subject"] for item in exam["questions"]]
+    assert subjects == ["anatomy"] * 3 + ["physiology"] * 2, "grouped by subject, never padded across"
+    ids = {item["question_id"] for item in exam["questions"]}
+    assert "gen" not in ids and "nokey" not in ids
+    assert any("Fizyoloji: 5 istendi, 2 bulundu" in note for note in exam["notes"])
+    # A fresh exam id each call; the selection itself is seed-stable.
+    again = instance.committee_exam({"anatomy": 3, "physiology": 5}, seed="prova")
+    assert [item["question_id"] for item in again["questions"]] == [item["question_id"] for item in exam["questions"]]
+
+    # Finishing scores per subject like the real committee report.
+    instance.start_exam(exam["exam_id"])
+    for item in exam["questions"][:3]:
+        instance.answer(exam["exam_id"], item["question_id"], "A")
+    analysis = instance.finish_exam(exam["exam_id"])["analysis"]
+    by_subject = {row["key"]: row for row in analysis["by_subject"]}
+    assert by_subject["anatomy"]["correct"] == 3 and by_subject["physiology"]["total"] == 2
+
+    unseen = instance.committee_exam({"anatomy": 4}, unseen_only=True, seed="prova2")
+    answered_ids = {item["question_id"] for item in exam["questions"] if item["subject"] == "anatomy"}
+    unseen_ids = {item["question_id"] for item in unseen["questions"]}
+    assert unseen_ids == {f"a{index}" for index in range(4)} - answered_ids, "only questions never answered"
+    assert any("çözülmemiş" in note for note in unseen["notes"])
+
+    with pytest.raises(GenerationError, match="Bilinmeyen ders"):
+        instance.committee_exam({"astroloji": 3})
+    with pytest.raises(GenerationError, match="komite sorusu yok"):
+        instance.committee_exam({"histology": 5})
+    with pytest.raises(GenerationError, match="En az bir ders"):
+        instance.committee_exam({"anatomy": 0})
+
+
+def test_the_weekly_report_counts_only_what_the_records_hold(academy) -> None:
+    instance = academy(None)
+    study = instance.study
+
+    empty = study.call("weekly_report", {})
+    assert empty["empty"] is True and empty["streak_days"] == 0 and len(empty["days"]) == 7
+    assert empty["totals"]["accuracy"] is None, "no scored answers, no percentage"
+
+    # A day of work: a plan with a countdown, logged minutes, a finished
+    # paper with one unscored answer, and two card reviews.
+    from datetime import timedelta
+
+    exam_date = (study.planner.today() + timedelta(days=10)).isoformat()
+    plan = study.planner.create("Komite 2", exam_date, subjects=["anatomy"], daily_minutes=45)
+    study.planner.confirm_scope(plan["plan_id"], subjects=["anatomy"], topic_ids=[ARM], document_ids=[], page_ranges={})
+    study.planner.replan(plan["plan_id"])
+    activity = next(item for item in study.planner.activities(plan["plan_id"]) if item["date"] == study.planner.today().isoformat())
+    study.planner.start(activity["activity_id"])
+    study.planner.complete(activity["activity_id"], minutes=25)
+    study.planner.log_study(topic_id=ARM, activity="read", minutes=15)
+
+    keyed = question("wk1")
+    unsourced = question("wk2", origin=QuestionOrigin.GENERATED)
+    for item in (keyed, unsourced):
+        instance.store.save_question(item)
+    paper = asyncio.run(instance.generate_exam({"from_bank": True, "question_count": 2, "topic_ids": [ARM], "randomize": False, "include_unscored": True}))
+    instance.start_exam(paper["exam_id"])
+    instance.answer(paper["exam_id"], "wk1", "A")
+    instance.answer(paper["exam_id"], "wk2", "A")
+    instance.finish_exam(paper["exam_id"])
+
+    study.call("cards_build_topic", {"topic_id": ARM})
+    for card in study.call("cards_queue", {"limit": 2})["cards"]:
+        study.call("cards_answer", {"card_id": card["card_id"], "grade": "good"})
+
+    report = study.call("weekly_report", {})
+    totals = report["totals"]
+    assert report["empty"] is False and report["streak_days"] == 1
+    today = report["days"][-1]
+    assert today["minutes"] == 40, "25 from the completed activity + 15 from the log"
+    assert today["answers"] == 2 and today["cards"] == 2 and today["activities_done"] == 1
+    assert (totals["papers"], totals["scored"], totals["correct"], totals["accuracy"]) == (1, 1, 1, 1.0)
+    assert totals["unscored_answered"] == 1, "the study-only answer is counted apart, never in accuracy"
+    assert totals["card_grades"] == {"good": 2}
+    assert totals["activities"]["completed"] == 1 and totals["activities"]["planned"] >= 1
+    assert report["countdowns"][0]["name"] == "Komite 2" and report["countdowns"][0]["days_left"] == 10
+    assert "kayıtlardan" in report["note"]
+
+
+# ---------------------------------------------------------------------------
+# safety copies of the store
+# ---------------------------------------------------------------------------
+
+
+def test_backups_rotate_spare_repair_snapshots_and_refuse_a_full_disk(academy, tmp_path, monkeypatch) -> None:
+    import shutil as _shutil
+    import sqlite3 as _sqlite3
+
+    from app.medical import repair as repair_module
+    from app.medical.repair import auto_backup_due, backup_now, list_backups
+
+    instance = academy(None)
+    instance.store.save_question(question("b1"))
+    assert auto_backup_due(instance.store) is True, "no copy yet, one is due"
+
+    reports = [backup_now(instance.store, keep=2) for _index in range(3)]
+    rows = list_backups(instance.store)
+    assert [row["kind"] for row in rows].count("backup") == 2, "the rotation keeps two"
+    assert reports[-1]["removed"], "the oldest was removed"
+    copy = _sqlite3.connect(reports[-1]["path"])
+    try:
+        assert copy.execute("SELECT COUNT(*) FROM questions").fetchone()[0] >= 1, "the copy opens and holds the data"
+    finally:
+        copy.close()  # Windows cannot rotate a file a connection still holds
+    assert auto_backup_due(instance.store) is False, "a fresh copy postpones the weekly one"
+
+    # A repair snapshot in the same folder is never rotated away.
+    backups_dir = instance.store.path.parent / "backups"
+    keepsake = backups_dir / "jarvis_medical-before-repair-20260913-000000.sqlite3"
+    keepsake.write_bytes((instance.store.path.parent / "backups" / rows[0]["file"]).read_bytes())
+    backup_now(instance.store, keep=1)
+    assert keepsake.exists(), "before-repair snapshots belong to their corrections"
+    assert sum(1 for row in list_backups(instance.store) if row["kind"] == "backup") == 1
+
+    real_usage = _shutil.disk_usage
+    monkeypatch.setattr(repair_module.shutil, "disk_usage", lambda path: real_usage(path)._replace(free=0))
+    with pytest.raises(ValueError, match="Diskte yer yok"):
+        backup_now(instance.store)
+
+    listing = instance.backups()
+    assert listing["backups"] and "canlı veriyi kendiliğinden asla ezmez" in listing["note"]
+    events: list[dict] = []
+    instance.subscribe(events.append)
+    monkeypatch.setattr(repair_module.shutil, "disk_usage", real_usage)
+    report = asyncio.run(instance.backup_job())
+    assert report["path"].endswith(".sqlite3")
+    assert any(event.get("kind") == "backup_done" for event in events), "the page hears the result"

@@ -558,3 +558,11 @@ body.light .lab-label { background: rgba(255, 255, 255, 0.96); color: #182332; }
 .lab-table thead th { color: var(--ink-3); font-weight: 600; letter-spacing: 0.02em; background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
 .lab-table tbody th { color: var(--ink-1); font-weight: 600; white-space: nowrap; }
 .lab-table td { color: var(--ink-2); }
+
+/* ── weekly summary ───────────────────────────────────────────────── */
+.med-week-days { display: flex; gap: 0.6rem; align-items: flex-end; margin-bottom: 0.7rem; }
+.med-week-day { display: flex; flex-direction: column; align-items: center; gap: 0.2rem; flex: 1; min-width: 0; }
+.med-week-day .mwd-bar { width: 100%; max-width: 2.4rem; height: 3.6rem; border-radius: var(--radius-1); background: rgba(var(--accent-rgb), 0.08); position: relative; overflow: hidden; }
+.med-week-day .mwd-bar i { position: absolute; inset: 0; background: rgba(var(--accent-rgb), 0.55); transform-origin: bottom; }
+.med-week-day .mwd-minutes { font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-3); }
+.med-week-day .mwd-name { font-family: var(--font-system); font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-4); }

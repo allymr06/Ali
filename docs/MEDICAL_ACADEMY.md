@@ -995,6 +995,36 @@ twenty answers) logs five minutes of study to the planner — it never
 touches concept mastery, findings, events or exam analyses, and the tab
 says so. Deletion asks first; suspending keeps the card and its state.
 
+### Committee rehearsal, the weekly summary, and safety copies (15 September 2026)
+
+**Komite provası** (a button on the exam screen) assembles a timed paper in
+the real committee's shape: the student says how many questions each subject
+asks, and the paper takes only imported committee questions the scoring
+policy counts — grouped by subject in the given order, shuffled within each
+subject by a seedable draw, never padded from another subject. A subject
+that cannot fill its count contributes what it has and the paper says so.
+Time defaults to 72 seconds a question; the result's per-subject breakdown
+reads like the real committee report. `unseen_only` keeps to questions never
+answered before.
+
+**Haftalık özet** (top of İlerleme) is computed from the records alone:
+minutes from the planner's log and completed activities (read/recap minutes
+are not counted twice), answers from finished attempts with accuracy over
+scored questions only and unscored answers counted apart, card reviews from
+the review log, findings opened and closed, histology sessions, plan
+adherence, a streak of recorded days, and a countdown per exam plan. A day
+with nothing recorded is a zero, and the panel says nothing is estimated.
+
+**Yedekler**: `backup_now` (the dashboard quick action «Veritabanını
+yedekle») takes a consistent copy of `jarvis_medical.sqlite3` through
+SQLite's backup API into `<medical>/backups/`, writing to a temporary name
+first so an interrupted copy never masquerades as a good one; the newest
+three backups are kept and before-repair snapshots are never rotated away.
+A weekly copy runs in the background on startup when due
+(`JARVIS_MEDICAL_AUTO_BACKUP`). Restoring is deliberately manual — the
+`backups` view says how — because JARVIS never overwrites live data on its
+own; a copy is refused when the disk lacks twice the database size.
+
 ### One scoring decision (13 September 2026)
 
 Every place that measures asks one question of a question: does the scoring

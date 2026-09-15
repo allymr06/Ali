@@ -853,3 +853,16 @@ attempts; the forecast splits backlog from each day's own load; deletion is
 a confirmed bridge action. Page side (`test_nova_web.py`): the answer stays
 hidden until revealed, the four grades are Turkish with their previews, and
 the keyboard grades only after the reveal.
+
+## Committee rehearsal, weekly summary, backups (15 September 2026)
+
+In `tests/test_medical_scoring.py`: the rehearsal keeps the requested
+distribution and subject order, draws only scored imported questions,
+reports shortfalls without padding, is seed-stable, honours `unseen_only`,
+and its result breaks down per subject; the weekly report counts only what
+the records hold (minutes without double counting read activities, accuracy
+over scored answers only, unscored answers apart, card grades, adherence,
+streak and countdowns) and is honestly empty; backups rotate to the newest
+copies while sparing before-repair snapshots, produce an openable database,
+postpone the weekly copy while one is fresh, refuse a full disk, and report
+completion to the page.

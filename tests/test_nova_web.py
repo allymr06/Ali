@@ -1811,3 +1811,17 @@ def test_assistant_markdown_renders_the_safe_subset_and_nothing_else() -> None:
     conversation = JS_SOURCES["js/conversation.js"]
     assert 'if (message.role === "assistant") node.querySelector(".msg-body").innerHTML = renderMarkdownLite(message.text);' in conversation
     assert 'else node.querySelector(".msg-body").textContent = message.text;' in conversation
+
+
+def test_the_exam_chip_speaks_turkish_and_hides_without_a_plan() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/panels.js"], "function examChipText", "\nfunction renderExamChip"))
+
+    run = lambda payload: context.eval("JSON.stringify(examChipText(" + json.dumps(payload) + "))")
+
+    assert run(None) == "null" and run({}) == "null"
+    assert run({"name": "Komite 2", "days_left": -1}) == "null", "a past exam shows nothing"
+    assert json.loads(run({"name": "Komite 2", "days_left": 9})) == {"text": "🎓 Komite 2 · 9 gün", "warn": False}
+    assert json.loads(run({"name": "Komite 2", "days_left": 5})) == {"text": "🎓 Komite 2 · 5 gün", "warn": True}
+    assert json.loads(run({"name": "Komite 2", "days_left": 0})) == {"text": "🎓 Komite 2 · bugün", "warn": True}

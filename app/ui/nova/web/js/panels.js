@@ -58,6 +58,27 @@ function homeBriefMarkup(brief) {
   return `<div class="hb-date">${esc(brief.date || "")}</div>` + rows.join("");
 }
 
+/* The nearest exam countdown as a permanent topbar chip. Pure text
+   builder so the wording is testable alone; null hides the chip. */
+function examChipText(countdown) {
+  if (!countdown || countdown.days_left === undefined || countdown.days_left === null) return null;
+  const days = Number(countdown.days_left);
+  const name = String(countdown.name || "Sınav");
+  if (!Number.isFinite(days)) return null;
+  if (days < 0) return null;
+  return { text: days === 0 ? `🎓 ${name} · bugün` : `🎓 ${name} · ${days} gün`, warn: days <= 7 };
+}
+
+function renderExamChip(countdown) {
+  const chip = $("#exam-chip");
+  if (!chip) return;
+  const built = examChipText(countdown);
+  if (!built) { chip.hidden = true; return; }
+  chip.hidden = false;
+  chip.textContent = built.text;
+  chip.classList.toggle("warn", built.warn);
+}
+
 let briefFetchedAt = 0;
 async function renderHomeBrief(force) {
   const host = $("#home-brief");
@@ -66,6 +87,7 @@ async function renderHomeBrief(force) {
   briefFetchedAt = Date.now();
   const brief = await call("daily_brief");
   host.innerHTML = homeBriefMarkup(brief);
+  renderExamChip(brief && brief.medical ? brief.medical.countdown : null);
   $$("[data-brief-go]", host).forEach((node) => node.addEventListener("click", () => showScreen(node.dataset.briefGo)));
   $$("[data-brief-notify]", host).forEach((node) => node.addEventListener("click", () => Notify.set(true)));
   $$("[data-brief-medical]", host).forEach((node) => node.addEventListener("click", () => { showScreen("medical"); if (typeof Medical !== "undefined") Medical.show(node.dataset.briefMedical); }));
@@ -217,6 +239,7 @@ const Reminders = {
       const done = await call("cancel_reminder", button.dataset.reminderCancel, true);
       toast(done.message || done.error, done.ok ? "ok" : true);
       Reminders.load();
+      renderHomeBrief(true);
     }));
   },
 
@@ -227,7 +250,7 @@ const Reminders = {
     const when = $("#reminder-when").value.trim();
     const result = await call("create_reminder", text, when);
     toast(result.message || result.error, result.ok ? "ok" : true);
-    if (result.ok) { $("#reminder-text").value = ""; $("#reminder-when").value = ""; Reminders.load(); }
+    if (result.ok) { $("#reminder-text").value = ""; $("#reminder-when").value = ""; Reminders.load(); renderHomeBrief(true); }
   },
 
   bind() {
@@ -942,6 +965,7 @@ function bindPanels() {
   $("#settings-assistant-save").addEventListener("click", saveAssistantSettings);
   $("#settings-backup-now").addEventListener("click", runStateBackup);
   Reminders.bind();
+  $("#exam-chip").addEventListener("click", () => { showScreen("medical"); if (typeof Medical !== "undefined") Medical.show("plan"); });
   $("#settings-test").addEventListener("click", testConnection);
   $("#settings-delete").addEventListener("click", deleteKey);
   $("#settings-motion").addEventListener("change", (event) => applyMotionPreference(event.target.checked));

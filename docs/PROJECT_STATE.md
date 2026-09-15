@@ -240,6 +240,11 @@ Academy):
   (first run stays maximized); nonsense frames (too small, off-screen,
   corrupt file) fall back to defaults instead of trapping the user.
 - A native **folder picker** on the bridge serves both exports.
+- **Exam chip on the topbar** - the nearest committee countdown sits
+  next to the clock permanently ("🎓 Komite 2 · 9 gün", amber within a
+  week, "bugün" on the day, hidden past the date or with no plan);
+  clicking it opens the study plan. Reminder changes refresh the home
+  brief immediately instead of waiting out its one-minute throttle.
 - **Research history** - the Araştırma screen lists the newest cached
   questions (the model's own chat-turn queries included) as chips; one
   click refills and reruns, served instantly from the cache, expired

@@ -1017,3 +1017,10 @@ still listed for reopening. Live: the chips carried both screen-typed
 questions and the model's own chat-turn queries, one click reopened
 the cached report instantly, and the four new palette commands surface
 as the top fuzzy hits for odak/hatırlat/yedek/dışa.
+
+## Exam chip (15 September 2026)
+
+`tests/test_nova_web.py` (QuickJS): the chip text builder hides
+without a plan, hides past exams, says "bugün" on the day, and turns
+amber within a week. Live: the topbar showed "🎓 QA Akademi 13 Eylül ·
+5 gün" in amber against the QA store.

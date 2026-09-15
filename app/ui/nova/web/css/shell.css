@@ -507,10 +507,20 @@ body.light #context { background: linear-gradient(180deg, rgba(255,255,255,0.78)
 
 #home-brief .hb-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-#home-brief .hb-side { font-family: var(--font-mono); font-size: 0.64rem; color: var(--ink-4); white-space: nowrap; }
-
-/* ------ conversation search ---------------------------------------- */
-.conv-search { width: 100%; margin: 0.35rem 0 0.5rem; padding: 0.45rem 0.6rem; background: rgba(var(--accent-rgb), 0.05); border: 1px solid var(--line-1); border-radius: var(--radius-1); color: var(--ink-1); font-family: var(--font-system); font-size: var(--text-sm); }
-.conv-search:focus { outline: none; border-color: rgba(var(--accent-rgb), 0.45); }
-.conv-item .conv-excerpt { display: block; margin-top: 0.15rem; color: var(--ink-4); font-size: 0.7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#home-brief .hb-side { font-family: var(--font-mono); font-size: 0.64rem; color: var(--ink-4); white-space: nowrap; }
+
+
+
+/* ------ conversation search ---------------------------------------- */
+
+.conv-search { width: 100%; margin: 0.35rem 0 0.5rem; padding: 0.45rem 0.6rem; background: rgba(var(--accent-rgb), 0.05); border: 1px solid var(--line-1); border-radius: var(--radius-1); color: var(--ink-1); font-family: var(--font-system); font-size: var(--text-sm); }
+
+.conv-search:focus { outline: none; border-color: rgba(var(--accent-rgb), 0.45); }
+
+.conv-item .conv-excerpt { display: block; margin-top: 0.15rem; color: var(--ink-4); font-size: 0.7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .conv-item mark { background: rgba(var(--accent-rgb), 0.25); color: var(--ink-1); border-radius: 2px; padding: 0 1px; }
+
+/* ------ exam countdown chip ---------------------------------------- */
+.exam-chip { width: auto; padding: 0 0.7rem; font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-2); border: 1px solid var(--line-1); border-radius: var(--radius-pill); white-space: nowrap; }
+.exam-chip.warn { color: var(--warn); border-color: rgba(var(--warn-rgb), 0.5); }

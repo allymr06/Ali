@@ -19,8 +19,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Callable, Mapping
-from datetime import timedelta
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from app.medical.flashcards import FlashcardDeck
@@ -323,9 +322,21 @@ class StudyWorkflow:
         day_keys = [(now - timedelta(days=offset)).date().isoformat() for offset in range(window - 1, -1, -1)]
         per_day: dict[str, dict[str, Any]] = {key: {"date": key, "minutes": 0, "answers": 0, "cards": 0, "activities_done": 0} for key in day_keys}
 
+        def day_of(stamp: Any) -> str:
+            # Records are stamped in UTC; the week is counted in the
+            # planner's own (local) days, so 01:00 local on Tuesday is
+            # Tuesday, not Monday.
+            text = str(stamp or "")
+            try:
+                moment = datetime.fromisoformat(text)
+            except ValueError:
+                return text[:10]
+            if moment.tzinfo is None:
+                return text[:10]
+            return moment.astimezone(now.tzinfo).date().isoformat()
+
         def bucket(stamp: Any) -> dict[str, Any] | None:
-            key = str(stamp or "")[:10]
-            return per_day.get(key)
+            return per_day.get(day_of(stamp))
 
         for log in self._academy.store.list_records("study_log", limit=1000):
             row = bucket(log.get("at"))
@@ -357,7 +368,7 @@ class StudyWorkflow:
                 row = bucket(entry.answered_at.isoformat() if entry.answered_at else None)
                 if row is not None and entry.answer_key:
                     row["answers"] += 1
-            if attempt.finished_at is None or attempt.finished_at.date().isoformat() not in per_day:
+            if attempt.finished_at is None or day_of(attempt.finished_at.isoformat()) not in per_day:
                 continue
             analysis = attempt.analysis or {}
             if analysis.get("total") is None:
@@ -368,20 +379,20 @@ class StudyWorkflow:
             answered_total += int(analysis.get("correct") or 0) + int(analysis.get("incorrect") or 0)
             unscored_answered += int(analysis.get("unscored_answered") or 0)
 
-        reviews = [item for item in self._academy.store.list_records("flashcard_review", limit=2000) if str(item.get("at", ""))[:10] in per_day]
+        reviews = [item for item in self._academy.store.list_records("flashcard_review", limit=2000) if day_of(item.get("at")) in per_day]
         for review in reviews:
-            per_day[str(review["at"])[:10]]["cards"] += 1
+            per_day[day_of(review["at"])]["cards"] += 1
         card_grades: dict[str, int] = {}
         for review in reviews:
             card_grades[str(review.get("grade"))] = card_grades.get(str(review.get("grade")), 0) + 1
 
-        findings_opened = sum(1 for item in self.understanding.findings(limit=500) if str(item.get("created_at", ""))[:10] in per_day)
+        findings_opened = sum(1 for item in self.understanding.findings(limit=500) if day_of(item.get("created_at")) in per_day)
         findings_resolved = sum(
             1
             for item in self.understanding.findings(limit=500)
-            if item.get("status") in ("resolved", "dismissed", "withdrawn") and str(item.get("updated_at", ""))[:10] in per_day
+            if item.get("status") in ("resolved", "dismissed", "withdrawn") and day_of(item.get("updated_at")) in per_day
         )
-        histology_sessions = [item for item in self._academy.store.list_records("histology_session", limit=200) if item.get("status") == "closed" and str(item.get("finished_at", ""))[:10] in per_day]
+        histology_sessions = [item for item in self._academy.store.list_records("histology_session", limit=200) if item.get("status") == "closed" and day_of(item.get("finished_at")) in per_day]
         histology_identified = sum(int((item.get("results") or {}).get("identified") or 0) for item in histology_sessions)
         histology_scored = sum(int((item.get("results") or {}).get("scored") or 0) for item in histology_sessions)
 

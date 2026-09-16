@@ -703,11 +703,16 @@ class NovaBridge:
         self._command_future: Future[Any] | None = None
         self._voice_future: Future[Any] | None = None
         self._approvals: dict[str, Future[bool]] = {}
+        # Other surfaces (the mobile companion) watch the same approval
+        # requests; a decision from any of them resolves the one future.
+        self._approval_watchers: list[Callable[[str, dict[str, Any]], None]] = []
         self._detachers: list[Callable[[], None]] = []
         self._voice_level_last = 0.0
         self._compact = False
         self._pause_handler: Callable[[bool], None] | None = None
         self._uri_launcher: Any | None = None
+        # The mobile companion server, when the desktop started one.
+        self._mobile: Any | None = None
         self._started_at = datetime.now().astimezone()
         self._webview2_version: str | None | bool = False  # False: not probed
         self._process = ProcessMonitor()
@@ -2581,20 +2586,19 @@ class NovaBridge:
             request.expires_at - datetime.now(tz=request.expires_at.tzinfo)
         ).total_seconds() - APPROVAL_SAFETY_MARGIN_SECONDS
         wait_seconds = max(remaining, APPROVAL_MINIMUM_WAIT_SECONDS)
-        self._push(
-            "approval",
-            {
-                "token": token,
-                "tool": request.tool_name,
-                "operation": request.operation,
-                "risk": request.risk_level.value,
-                "reason": request.reason,
-                "parameters": dict(safe_approval_parameters(request.parameters)),
-                "seconds": max(int(wait_seconds), 1),
-                "source": request.request_source,
-                "description": self._tool_description(request.tool_name),
-            },
-        )
+        approval_payload = {
+            "token": token,
+            "tool": request.tool_name,
+            "operation": request.operation,
+            "risk": request.risk_level.value,
+            "reason": request.reason,
+            "parameters": dict(safe_approval_parameters(request.parameters)),
+            "seconds": max(int(wait_seconds), 1),
+            "source": request.request_source,
+            "description": self._tool_description(request.tool_name),
+        }
+        self._push("approval", approval_payload)
+        self._notify_approval_watchers("approval", approval_payload)
         if not self._attended:
             self._publish(
                 "approval",
@@ -2619,6 +2623,15 @@ class NovaBridge:
             if not decision.done():
                 decision.set_result(False)
             self._push("approval_closed", {"token": token})
+            self._notify_approval_watchers("approval_closed", {"token": token})
+
+    def _notify_approval_watchers(self, kind: str, payload: dict[str, Any]) -> None:
+        for watcher in list(self._approval_watchers):
+            try:
+                watcher(kind, payload)
+            except Exception:
+                # A watcher's failure must never decide an approval.
+                pass
 
     def resolve_approval(self, token: str, approved: bool) -> dict[str, Any]:
         with self._lock:
@@ -3208,6 +3221,69 @@ class NovaBridge:
         self._record_ui_event("reminder.cancelled", "A reminder was cancelled from the page.")
         return {"ok": True, "message": "Hatırlatıcı iptal edildi."}
 
+    # ------------------------------------------------------------------
+    # Mobile companion (Ayarlar > Telefon)
+    # ------------------------------------------------------------------
+    def mobile_status(self) -> dict[str, Any]:
+        """What the desktop card shows: server state, paired devices, no secrets."""
+        server = self._mobile
+        if server is None:
+            return {"ok": True, "enabled": False, "running": False, "port": None, "sessions": [], "pending_code": None}
+        try:
+            sessions = server.sessions_overview()
+            pending = server.store.pending_pairing()
+        except Exception as exc:
+            return {"ok": False, "error": f"Telefon oturumları okunamadı ({type(exc).__name__})."}
+        return {
+            "ok": True,
+            "enabled": True,
+            "running": bool(server.running),
+            "port": server.bound_port,
+            "local_url": f"http://127.0.0.1:{server.bound_port}/",
+            "sessions": sessions,
+            "pending_code": pending,
+        }
+
+    def mobile_pairing_code(self) -> dict[str, Any]:
+        """Mint a fresh single-use pairing code; shown once, never logged."""
+        server = self._mobile
+        if server is None:
+            return {"ok": False, "error": "Telefon eşleştirme sunucusu bu oturumda çalışmıyor."}
+        try:
+            code, expires = server.store.create_pairing_code(label="desktop")
+        except Exception as exc:
+            return {"ok": False, "error": f"Kod üretilemedi ({type(exc).__name__})."}
+        from app.mobile.sessions import format_pairing_code
+
+        self._record_ui_event("mobile.pairing_code", "A mobile pairing code was issued.")
+        return {"ok": True, "code": format_pairing_code(code), "expires_at": expires.isoformat()}
+
+    def mobile_revoke_session(self, session_id: Any, confirmed: Any = False) -> dict[str, Any]:
+        """Revoke one phone; its next request and its live channel both end."""
+        if confirmed is not True:
+            return {"ok": False, "error": "İptal işlemi onaylanmadı."}
+        server = self._mobile
+        if server is None:
+            return {"ok": False, "error": "Telefon eşleştirme sunucusu bu oturumda çalışmıyor."}
+        identifier = str(session_id or "")
+        if not server.store.revoke(identifier):
+            return {"ok": False, "error": "Oturum bulunamadı ya da zaten kapalı."}
+        server.close_session_channels(identifier)
+        self._record_ui_event("mobile.session_revoked", "A mobile session was revoked from the desktop.")
+        return {"ok": True, "sessions": server.sessions_overview()}
+
+    def mobile_revoke_all(self, confirmed: Any = False) -> dict[str, Any]:
+        if confirmed is not True:
+            return {"ok": False, "error": "İptal işlemi onaylanmadı."}
+        server = self._mobile
+        if server is None:
+            return {"ok": False, "error": "Telefon eşleştirme sunucusu bu oturumda çalışmıyor."}
+        for session in server.store.list_sessions():
+            server.close_session_channels(session.session_id)
+        count = server.store.revoke_all()
+        self._record_ui_event("mobile.sessions_revoked", "All mobile sessions were revoked.", count=count)
+        return {"ok": True, "revoked": count, "sessions": []}
+
     def state_backup_summary(self) -> dict[str, Any]:
         """What the settings card shows about the general state backups."""
         from app.config.paths import default_state_directory
@@ -3647,6 +3723,29 @@ def launch_nova(
     except Exception:
         # These are conveniences; launching matters more.
         pass
+    mobile_server = None
+    if bool(getattr(runtime_settings, "mobile_enabled", False)):
+        try:
+            from app.config.paths import default_state_path
+            from app.mobile.server import MobileServer
+            from app.mobile.sessions import MobileSessionStore
+
+            mobile_store = MobileSessionStore(
+                default_state_path("jarvis_mobile.sqlite3"),
+                pairing_ttl_seconds=int(getattr(runtime_settings, "mobile_pairing_ttl_seconds", 600)),
+                session_days=int(getattr(runtime_settings, "mobile_session_days", 30)),
+            )
+            mobile_server = MobileServer(
+                controller, bridge, mobile_store,
+                port=int(getattr(runtime_settings, "mobile_port", 8765)),
+            )
+            mobile_server.start()
+            bridge._mobile = mobile_server
+        except Exception as exc:
+            # A busy port or a broken store must not keep the desktop from
+            # opening; the Telefon card says the server is not running.
+            mobile_server = None
+            _record_tray_problem(controller, None, exc)
     # pywebview fires ``restored`` only for a return to the Normal state;
     # a maximized window that was minimized comes back as ``maximized``.
     for event_name, visible in (
@@ -3707,6 +3806,11 @@ def launch_nova(
         released = True
         if tray is not None:
             tray.stop()
+        if mobile_server is not None:
+            try:
+                mobile_server.stop()
+            except Exception:
+                pass
         bridge._shutdown()
         controller.close()
 

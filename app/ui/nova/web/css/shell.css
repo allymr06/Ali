@@ -527,7 +527,20 @@ body.light #context { background: linear-gradient(180deg, rgba(255,255,255,0.78)
 
 .exam-chip { width: auto; padding: 0 0.7rem; font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-2); border: 1px solid var(--line-1); border-radius: var(--radius-pill); white-space: nowrap; }
 
-.exam-chip.warn { color: var(--warn); border-color: rgba(var(--warn-rgb), 0.5); }
-
-/* ------ conversation drawer date groups ---------------------------- */
-.conv-group { font-family: var(--font-system); font-size: var(--text-xs); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-4); padding: 0.55rem 0.45rem 0.2rem; }
+.exam-chip.warn { color: var(--warn); border-color: rgba(var(--warn-rgb), 0.5); }
+
+
+
+/* ------ conversation drawer date groups ---------------------------- */
+
+.conv-group { font-family: var(--font-system); font-size: var(--text-xs); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-4); padding: 0.55rem 0.45rem 0.2rem; }
+
+
+
+/* ------ phone pairing code -------------------------------------------- */
+
+.phone-code { display: flex; align-items: baseline; gap: 0.8rem; margin: 0.6rem 0; padding: 0.7rem 0.9rem; border: 1px solid rgba(var(--accent-rgb), 0.4); border-radius: var(--radius-2); background: rgba(var(--accent-rgb), 0.06); }
+
+.phone-code .mono { font-size: 1.6rem; letter-spacing: 0.18em; color: var(--ink-1); }
+.phone-code[hidden] { display: none; }
+

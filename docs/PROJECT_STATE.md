@@ -193,6 +193,44 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Mobile companion: the PC's JARVIS from an Android phone (17 September 2026)
+
+A first phone release, built as a narrow authenticated HTTP surface inside
+the desktop process rather than a second backend: `app/mobile/server.py`
+binds a small `ThreadingHTTPServer` to 127.0.0.1 only and Tailscale Serve
+carries it to the phone over the private network with HTTPS
+(`docs/MOBILE.md`). A message from the phone runs through
+`DesktopController.submit_command` with the phone's own `Context`, so it
+enters the same core, validation, permission and conversation pipeline as
+a desktop message and lands in the same SQLite records the desktop lists;
+the desktop's busy flag and message list stay untouched.
+
+- **Enrollment** (`app/mobile/sessions.py`): a single-use, ten-minute
+  pairing code minted on the PC (Ayarlar › Telefon or
+  `scripts/mobile_pair.py`) exchanged over HTTPS for a 30-day session in an
+  HttpOnly, SameSite=Strict cookie; codes and tokens stored as SHA-256
+  digests only; five attempts a minute per client; revocation from the PC
+  ends the phone's next request and its live channel. Mutations need the
+  page's own header and a matching origin (Host or X-Forwarded-Host
+  behind Serve); there are no CORS headers at all.
+- **PWA** (`app/mobile/web/`): three tabs - Sohbet, Görevler, Ayarlar -
+  on the desktop's own tokens, a server-sent-events channel for streamed
+  replies and approvals, a service worker that caches only the versioned
+  shell and never an API response, an offline page that says an offline
+  shell is not an offline assistant. Each message carries a client id: a
+  retry after a dropped connection finds the existing turn instead of
+  running the command twice, "sonuç bilinmiyor" is shown until the PC
+  answers, and a message the PC never received offers an explicit
+  "Yeniden gönder" - never an automatic one.
+- **Approvals** ride the bridge's existing single-use tokens: the phone
+  sees the same request the desktop sees and either side's decision
+  resolves the one future; stale, repeated or unauthenticated decisions
+  are refused. Task pause/resume/cancel call `TaskControlService` and are
+  offered only when the task's state allows.
+- Tailscale is not installed on the development PC: the Serve steps were
+  checked against the current documentation and written down, not run;
+  real Android, Tailscale and mobile-data checks remain for the user.
+
 ## Night additions: cards, rehearsal, weekly summary, backups, exports (15 September 2026)
 
 Built overnight on explicit standing authorization, each verified live in

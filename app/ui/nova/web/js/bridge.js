@@ -443,6 +443,25 @@ const DemoBridge = {
     return { ok: false, error: "Demo modunda hatırlatıcı yok." };
   },
 
+  async mobile_status() {
+    return { ok: true, enabled: true, running: true, port: 8765, local_url: "http://127.0.0.1:8765/", pending_code: null,
+      sessions: [{ session_id: "demo-m1", label: "Demo telefon", created_at: new Date().toISOString(), last_seen_at: new Date().toISOString(), expires_at: new Date(Date.now() + 864e5).toISOString(), revoked: false, active: true }] };
+  },
+
+  async mobile_pairing_code() {
+    return { ok: false, error: "Demo modunda eşleştirme kodu üretilmez." };
+  },
+
+  async mobile_revoke_session(_id, confirmed) {
+    if (confirmed !== true) return { ok: false, error: "İptal işlemi onaylanmadı." };
+    return { ok: false, error: "Demo modunda cihaz yok." };
+  },
+
+  async mobile_revoke_all(confirmed) {
+    if (confirmed !== true) return { ok: false, error: "İptal işlemi onaylanmadı." };
+    return { ok: false, error: "Demo modunda cihaz yok." };
+  },
+
   async state_backup_summary() {
     return { ok: true, count: 0, newest_at: null, newest_bytes: 0, databases: 0 };
   },

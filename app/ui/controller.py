@@ -366,10 +366,22 @@ class DesktopController:
         *,
         stream_callback: Callable[[str], None] | None = None,
         manage_state: bool = True,
+        context: Context | None = None,
+        source: RequestSource = RequestSource.TEXT,
     ) -> ChatMessage:
+        """Run one turn through the core.
+
+        With an explicit ``context`` (a mobile session, for instance) the
+        turn uses that conversation and leaves the desktop's own state -
+        busy flag, status line, message list - untouched; the shared
+        conversation store still records both turns.
+        """
         normalized = text.strip()
         if not normalized:
             raise ValueError("Command cannot be empty.")
+        if context is not None:
+            manage_state = False
+        active_context = context if context is not None else self.context
         if manage_state:
             self.state.busy = True
             self.state.status = "PROCESSING"
@@ -377,7 +389,7 @@ class DesktopController:
         try:
             request = Request(
                 normalized,
-                source=RequestSource.TEXT,
+                source=source,
             )
 
             approval_options = (
@@ -388,13 +400,13 @@ class DesktopController:
             if stream_callback is None:
                 response = await self.application.engine.handle(
                     request,
-                    self.context,
+                    active_context,
                     **approval_options,
                 )
             else:
                 response = await self.application.engine.handle(
                     request,
-                    self.context,
+                    active_context,
                     stream_callback=stream_callback,
                     **approval_options,
                 )

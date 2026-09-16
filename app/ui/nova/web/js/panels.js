@@ -676,6 +676,7 @@ function renderSettings() {
   renderConfig();
   Files.render();
   renderStateBackups();
+  Phone.render();
 }
 
 function renderConfig() {
@@ -835,6 +836,73 @@ async function runStateBackup() {
   renderStateBackups();
 }
 
+/* ── mobile companion (Ayarlar › Telefon) ────────────────────────── */
+
+const Phone = {
+  async render() {
+    const state = $("#phone-state");
+    const host = $("#phone-sessions");
+    if (!state || !host || !bridgeReady()) return;
+    const status = await call("mobile_status");
+    if (status.ok === false) { state.textContent = "okunamadı"; host.innerHTML = emptyState("Telefon durumu okunamadı", esc(status.error || "")); return; }
+    if (!status.enabled || !status.running) {
+      state.className = "chip warn";
+      state.textContent = status.enabled ? "çalışmıyor" : "kapalı";
+      host.innerHTML = emptyState("Sunucu çalışmıyor", "JARVIS_MOBILE_ENABLED açık olmalı ve port boş olmalı.");
+      $("#phone-code").disabled = true;
+      return;
+    }
+    $("#phone-code").disabled = false;
+    state.className = "chip ok";
+    state.textContent = `127.0.0.1:${status.port} · ${status.sessions.length} cihaz`;
+    const rows = status.sessions || [];
+    host.innerHTML = rows.length ? rows.map((row) => `
+      <div class="routine-row">
+        <span class="routine-icon">📱</span>
+        <span class="routine-main"><span class="routine-name">${esc(row.label)}</span>
+        <span class="routine-meta">bağlandı ${esc(fmtRelative(row.created_at))} · son ${esc(fmtRelative(row.last_seen_at))} · bitiş ${esc(new Date(row.expires_at).toLocaleDateString("tr-TR"))}</span></span>
+        <button type="button" class="btn btn-text" data-phone-revoke="${esc(row.session_id)}">Çıkar</button>
+      </div>`).join("") : emptyState("Bağlı cihaz yok", "Kod üret, telefondaki JARVIS sayfasına yaz.");
+    $$("[data-phone-revoke]", host).forEach((button) => button.addEventListener("click", async () => {
+      const row = rows.find((item) => item.session_id === button.dataset.phoneRevoke);
+      const confirmed = await confirmDialog({
+        title: "Cihaz çıkarılsın mı?",
+        body: `“${row ? row.label : ""}” bir sonraki isteğinde erişimi kaybeder; yeniden bağlanmak için yeni kod gerekir.`,
+        confirmLabel: "ÇIKAR",
+      });
+      if (!confirmed) return;
+      const done = await call("mobile_revoke_session", button.dataset.phoneRevoke, true);
+      toast(done.ok ? "Cihaz çıkarıldı." : (done.error || "Çıkarılamadı."), done.ok ? "ok" : true);
+      Phone.render();
+    }));
+  },
+
+  async code() {
+    if (!bridgeReady()) return;
+    const result = await call("mobile_pairing_code");
+    const box = $("#phone-code-box");
+    if (result.ok === false) { toast(result.error || "Kod üretilemedi.", true); return; }
+    box.hidden = false;
+    $("#phone-code-value").textContent = result.code;
+    $("#phone-code-expiry").textContent = `${new Date(result.expires_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })} sonuna kadar · tek kullanımlık`;
+    Phone.render();
+  },
+
+  async revokeAll() {
+    if (!bridgeReady()) return;
+    const confirmed = await confirmDialog({ title: "Tüm cihazlar çıkarılsın mı?", body: "Bağlı her telefon erişimini kaybeder.", confirmLabel: "TÜMÜNÜ ÇIKAR" });
+    if (!confirmed) return;
+    const done = await call("mobile_revoke_all", true);
+    toast(done.ok ? `${done.revoked} cihaz çıkarıldı.` : (done.error || "Çıkarılamadı."), done.ok ? "ok" : true);
+    Phone.render();
+  },
+
+  bind() {
+    $("#phone-code")?.addEventListener("click", () => this.code());
+    $("#phone-revoke-all")?.addEventListener("click", () => this.revokeAll());
+  },
+};
+
 async function saveAssistantSettings() {
   if (!bridgeReady()) return;
   const status = $("#settings-assistant-status");
@@ -965,6 +1033,7 @@ function bindPanels() {
   $("#settings-assistant-save").addEventListener("click", saveAssistantSettings);
   $("#settings-backup-now").addEventListener("click", runStateBackup);
   Reminders.bind();
+  Phone.bind();
   $("#exam-chip").addEventListener("click", () => { showScreen("medical"); if (typeof Medical !== "undefined") Medical.show("plan"); });
   $("#settings-test").addEventListener("click", testConnection);
   $("#settings-delete").addEventListener("click", deleteKey);

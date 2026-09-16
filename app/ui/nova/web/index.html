@@ -779,6 +779,7 @@
           <button class="tab active" type="button" data-target="connection">Bağlantı</button>
           <button class="tab" type="button" data-target="appearance">Görünüm</button>
           <button class="tab" type="button" data-target="assistant">Asistan</button>
+          <button class="tab" type="button" data-target="phone">Telefon</button>
           <button class="tab" type="button" data-target="voice">Ses</button>
           <button class="tab" type="button" data-target="vision">Görüş ve web</button>
           <button class="tab" type="button" data-target="memory">Hafıza</button>
@@ -830,6 +831,16 @@
             <div class="btn-row" style="justify-content:flex-start">
               <button type="button" id="settings-backup-now" class="btn btn-ghost">Şimdi yedekle</button>
             </div>
+          </div>
+          <div id="settings-phone" class="panel settings-card">
+            <div class="panel-title"><span class="kicker">Telefon</span><span id="phone-state" class="chip"></span></div>
+            <p class="settings-note">Telefon, bilgisayardaki bu JARVIS'e Tailscale özel ağı üzerinden bağlanır; bilgisayar açık ve JARVIS çalışırken yanıt alır. Kurulum: <span class="mono">docs/MOBILE.md</span>. Eşleştirme kodu 10 dakika geçerli ve tek kullanımlıktır; kodu yalnız kendi telefonuna yaz.</p>
+            <div class="btn-row" style="justify-content:flex-start">
+              <button type="button" id="phone-code" class="btn btn-primary">Eşleştirme kodu üret</button>
+            </div>
+            <div id="phone-code-box" class="phone-code" hidden><span id="phone-code-value" class="mono"></span><span id="phone-code-expiry" class="faint"></span></div>
+            <div class="panel-title" style="margin-top:.6rem"><span class="kicker">Bağlı cihazlar</span><button type="button" id="phone-revoke-all" class="btn btn-text">Tümünü çıkar</button></div>
+            <div id="phone-sessions" class="routine-list"></div>
           </div>
           <div id="settings-voice" class="panel settings-card">
             <div class="panel-title"><span class="kicker">Ses</span><span class="chip">salt okunur</span></div>

@@ -1032,3 +1032,37 @@ calendar days between midnights - 23:59 yesterday is still "Dün", the
 week and month boundaries hold, and a future timestamp from clock skew
 falls back to "Bugün" instead of inventing a group. Live: the
 hundred-conversation drawer rendered under "Bugün" and "Bu ay".
+
+## Mobile companion (17 September 2026)
+
+`tests/test_mobile.py` drives the loopback server over real HTTP against
+a booted mock-provider core: every API path and the event stream refuse
+an unauthenticated request; a pairing code is single-use, a wrong code
+fails, codes and sessions expire on the store's clock, six attempts in a
+minute are rate-limited; mutations without the page header, with a
+foreign Origin or a cross-site Sec-Fetch-Site are refused while a
+forwarded host matches; logout and desktop revocation end the session on
+the next request and close its live channel; a phone message reaches the
+shared conversation pipeline (user turn with source "api" plus reply in
+the same store the desktop lists, desktop state untouched); a repeated
+client id never runs the command twice and an unknown one reports 404;
+the event stream carries turn_started/turn_done; empty, oversized or
+malformed input and a paused core are refused; approvals are bound to
+the pending token (an unauthenticated decision is 401, a repeat or an
+unknown token is 409, a denial fails closed); tasks list and unsupported
+actions refuse honestly; the desktop card mints codes that pair and
+revokes everyone without pushing the code to the page; the static shell
+is stamped, the manifest and icons served, and traversal refused.
+
+Browser checks (Claude's in-app browser, 360×780 and 412×915): pairing
+screen → paired chat with "BAĞLI", no horizontal overflow at either
+width, hidden badge, a real turn answered in the chat, the Görevler empty
+state, the Ayarlar details, "yeniden bağlanıyor" while the desktop was
+stopped, a message sent meanwhile marked "sonuç bilinmiyor", automatic
+reconnection after the restart with the message marked "bilgisayara
+ulaşmamış" and an explicit resend that then got its reply; the desktop
+window listed the phone's conversation and its Telefon card showed the
+paired device.
+
+Not verified here: installation on a physical Android device, Tailscale
+Serve connectivity, mobile-data access. Those need the user's devices.

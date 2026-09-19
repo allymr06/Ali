@@ -10,6 +10,7 @@ body.phone #app {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas: "top" "stage" "rail";
+  height: 100vh;
   height: 100dvh;
 }
 body.phone #app.rail-collapsed, body.phone #app.context-open, body.phone #app.rail-collapsed.context-open { grid-template-columns: minmax(0, 1fr); }

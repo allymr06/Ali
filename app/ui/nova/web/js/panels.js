@@ -179,7 +179,7 @@ function taskCardHTML(task, { compact = false } = {}) {
     : ["running"].includes(status) ? "accent" : ["paused", "waiting_for_input", "waiting_for_approval"].includes(status) ? "warn" : "";
   const steps = Array.isArray(task.steps) ? task.steps : [];
   const timeline = steps.length
-    ? `<div class="timeline">${steps.map((step) => `<div class="tl-node ${esc(step.status)}"><div class="tl-name">${esc(step.name)}</div>${step.error ? `<div class="tl-meta"><span class="bad">${esc(step.error)}</span></div>` : ""}</div>`).join("")}</div>`
+    ? `<div class="timeline">${steps.map((step) => `<div class="tl-node ${esc(step.status)}"><div class="tl-name">${esc(step.name)}</div>${step.error ? `<div class="tl-meta"><span class="bad">${esc(taskErrorTr(step.error))}</span></div>` : ""}</div>`).join("")}</div>`
     : (compact ? "" : `<div class="ctx-empty">Bu görevin adım planı yok.</div>`);
   return `<div class="panel task-card animated-border ${status === "running" ? "live" : ""}">
     <div class="task-goal">${esc(task.goal)}</div>
@@ -191,9 +191,31 @@ function taskCardHTML(task, { compact = false } = {}) {
       ${task.updated_at ? `<span class="faint">${esc(fmtRelative(task.updated_at))}</span>` : ""}
       ${task.recovery_required ? `<span class="chip warn">kurtarma gerekli</span>` : ""}
     </div>
-    ${task.error ? `<div class="task-error">${esc(task.error)}</div>` : ""}
+    ${task.error ? `<div class="task-error">${esc(taskErrorTr(task.error))}</div>` : ""}
     ${timeline}
   </div>`;
+}
+
+/* The execution engine writes its failures in English as stable machine
+   strings. They are values, not prose, so they are mapped here instead of
+   being translated at the source - an unknown one is shown as it came,
+   never invented. */
+const TASK_ERROR_TR = {
+  "Invalid tool_name.": "Adımın aracı tanımsız.",
+  "Parameters must be a dictionary.": "Araç parametreleri geçersiz.",
+  "Execution time budget exhausted.": "Süre bütçesi doldu; adım yarıda kesildi.",
+  "Tool result has no explicit postcondition verification.": "Aracın sonucu doğrulanamadı.",
+  "Plan could not be persisted safely.": "Plan güvenle kaydedilemedi.",
+  "User confirmation required.": "Bu adım için onayın gerekiyor.",
+  "Verifier must be callable.": "Doğrulayıcı çağrılabilir değil.",
+  "Cannot resume a plan containing a permanently failed step.": "Kalıcı olarak başarısız bir adım var; plan sürdürülemez.",
+  "Execution snapshot is terminal and cannot be resumed.": "Görev sonlanmış; sürdürülemez.",
+};
+
+function taskErrorTr(text) {
+  const value = String(text == null ? "" : text).trim();
+  if (!value) return "";
+  return TASK_ERROR_TR[value] || value;
 }
 
 function renderTasks(tasks) {

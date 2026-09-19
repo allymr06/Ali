@@ -386,3 +386,30 @@ def test_routines_database_path_reads_environment(monkeypatch, tmp_path) -> None
 def test_notifications_database_path_reads_environment(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("JARVIS_NOTIFICATIONS_DATABASE_PATH", str(tmp_path / "n.sqlite3"))
     assert Settings.from_environment().notifications_database_path == str(tmp_path / "n.sqlite3")
+
+
+def test_the_execution_time_budget_is_configurable(monkeypatch) -> None:
+    """A long durable task needed a code edit to finish; now it needs a setting."""
+    import pytest
+
+    from app.bootstrap import create_application
+
+    assert Settings().execution_timeout_seconds == 300.0, "the long-standing default is unchanged"
+
+    monkeypatch.setenv("JARVIS_EXECUTION_TIMEOUT_SECONDS", "1800")
+    assert Settings.from_environment().execution_timeout_seconds == 1800.0
+
+    for bad in (0.5, 0.0, 90_000.0):
+        with pytest.raises(ValueError, match="execution_timeout_seconds"):
+            Settings(execution_timeout_seconds=bad)
+
+    application = create_application(
+        Settings(
+            windows_integrations_enabled=False,
+            execution_timeout_seconds=1800.0,
+            memory_database_path=None,
+            task_database_path=None,
+            task_runtime_directory=None,
+        )
+    )
+    assert application.engine.execution_limits.timeout_seconds == 1800.0, "the setting reaches the engine"

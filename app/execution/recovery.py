@@ -117,6 +117,12 @@ class ExecutionRecoveryService:
 
             # RUNNING at the time of interruption means that
             # no verified completion was persisted.
+            #
+            # NOTE: a step whose tool is not idempotent may already have
+            # performed its side effect before the process died; replaying
+            # it repeats that effect. Changing this would alter the
+            # documented recovery contract (pinned by
+            # tests/test_execution_recovery.py), so it is left to the owner.
             step.status = PlanStepStatus.PENDING
 
         plan.status = PlanStatus.READY

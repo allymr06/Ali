@@ -1100,3 +1100,34 @@ in the shared conversation and appears in the desktop chat. `tests/
 test_nova_web.py` (QuickJS): the shim's WAV encoder downsamples 48 kHz
 float audio into a valid mono 16-bit 16 kHz file with the right header
 and amplitude, and the RMS helper is exact.
+
+## Audit repairs (20 September 2026)
+
+`tests/test_task_service.py`: a resume is reported as the outcome it
+actually reached - COMPLETED verified success, PAUSED partial with
+`side_effects_may_continue`, FAILED and CANCELLED failures carrying the
+task's error; a queued or paused task cancels through the manager, a
+second cancel refuses, and an unknown id raises rather than reporting a
+cancellation. `tests/test_planning.py`: the approval grant never
+reaches `plan.json` (no operation id, no binding digest, no key) while
+the rest of the step metadata persists, and saving does not mutate the
+caller's in-memory plan. `tests/test_nova_web.py`: engine failure
+strings map to Turkish in both the desktop card and the step timeline,
+an unmapped one is shown verbatim, and the phone's task card reads the
+`goal` key the server actually sends. `tests/test_settings.py`: the
+execution budget defaults to 300 s, reads
+`JARVIS_EXECUTION_TIMEOUT_SECONDS`, refuses values outside 1-86400 and
+reaches the engine.
+
+Live pass (QA instance, isolated state directory, the user's own JARVIS
+untouched): twelve Nova screens and thirteen Medical Academy views with
+no console error, no unhandled rejection and no horizontal overflow; a
+chat turn, conversation list and search, memory, tasks, routines, a
+reminder created and cancelled, notifications, a four-question committee
+rehearsal answered and finished, a card graded, progress and the weekly
+report, a real web research, the permission audit and system status; the
+bridge refusing unknown and empty approval tokens; the mobile surface
+answering 401 unpaired, 200 paired, 403 without the page header, 403 for
+denied bridge methods, 404 for unknown ones, and returning real cloud
+speech. Thread and handle counts after that exercise matched an idle
+instance.

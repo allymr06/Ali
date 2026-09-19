@@ -269,6 +269,7 @@ local address rejection.
 | --- | --- | --- |
 | `JARVIS_DAILY_BRIEF_NOTIFICATION` | `true` | One OS notification a day with the day's summary; reads services, never the model. |
 | `JARVIS_STATE_AUTO_BACKUP` | `true` | Weekly consistent copies of the state databases (conversations, reminders, routines, notifications, memory, tasks); newest three kept. |
+| `JARVIS_EXECUTION_TIMEOUT_SECONDS` | `300` | Wall-clock budget for one Core execution, a durable task included; raise it for long jobs. Range 1 through 86400. |
 | `JARVIS_MOBILE_ENABLED` | `true` | Starts the mobile companion server inside the desktop process, bound to 127.0.0.1 only (see `docs/MOBILE.md`). |
 | `JARVIS_MOBILE_PORT` | `8765` | Loopback port of the mobile companion; Tailscale Serve forwards to it. |
 | `JARVIS_MOBILE_SESSION_DAYS` | `30` | Lifetime of a paired phone session; range 1 through 365. |

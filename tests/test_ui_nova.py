@@ -2873,3 +2873,24 @@ def test_open_external_validates_and_uses_the_launcher(booted) -> None:
     bare = booted.bridge.open_external("nobelprize.org")
     assert bare["ok"] is True and bare["url"] == "https://nobelprize.org"
     assert launcher.opened == ["https://osym.gov.tr/takvim", "https://nobelprize.org"]
+
+
+def test_the_streamed_bubble_shows_the_answer_not_a_concatenation(booted) -> None:
+    """The engine streams cumulative text; joining snapshots garbled the bubble."""
+    import time
+
+    pushed: list[str] = []
+    booted.bridge._push = lambda kind, payload=None: pushed.append(payload["text"]) if kind == "stream" else None
+
+    # Three cumulative snapshots inside one flush window, as a fast provider sends them.
+    booted.bridge._stream_last_flush = time.monotonic()
+    for snapshot in ("Bu", "Bu bir", "Bu bir deneme"):
+        booted.bridge._stream_latest = snapshot
+    booted.bridge._flush_stream()
+
+    assert pushed == ["Bu bir deneme"], "the newest snapshot is the whole answer so far"
+    assert "BuBu" not in "".join(pushed)
+
+    # A flush with nothing new pushes nothing, and never repeats the last frame.
+    booted.bridge._flush_stream()
+    assert pushed == ["Bu bir deneme"]

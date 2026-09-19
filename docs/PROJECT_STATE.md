@@ -193,6 +193,56 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## End-to-end audit and its repairs (20 September 2026)
+
+A multi-agent audit of the whole application, plus a live pass over the
+running desktop and phone surfaces. The live pass found nothing broken:
+all twelve Nova screens and all thirteen Medical Academy views rendered
+with no console error and no horizontal overflow, a chat turn, a
+committee rehearsal, a card review, reminders, research, the weekly
+report, the permission audit and the mobile API surface (401 before
+pairing, 403 without the page header, 403/404 on denied and unknown
+bridge methods, real cloud speech) all behaved. The static audit reached
+the task and execution layer before its budget ran out, and every one of
+its eight claims was reproduced by hand before anything was changed.
+
+Fixed:
+
+- **A failed resume reported success.** `TaskControlService.resume`
+  counted FAILED, CANCELLED and PAUSED as verified, so a task that died
+  on its first step told the model, the desktop and the phone that the
+  work was done. Only COMPLETED is a verified success now; PAUSED is
+  partial and carries `side_effects_may_continue`, FAILED and CANCELLED
+  are failures and carry the task's own error.
+- **A parked task could not be cancelled.** `cancel` only ever
+  interrupted a live executor, so the cancel control the phone offers
+  for queued, paused and waiting tasks always failed with a ValueError.
+  A task that is not actively executing is now cancelled through the
+  manager; the terminal-state refusal is unchanged.
+- **The approval capability was written to disk.** A granted
+  single-use approval rode `step.metadata` into `plan.json`, leaving the
+  operation id and binding digest readable on disk. Plan persistence now
+  strips it, so the capability stays in memory; a step resumed after a
+  pause asks again, which is what fail-closed means.
+- **The phone labelled every task with a raw UUID.** The client read
+  `task.title`/`task.description` while the server sends `goal`.
+- **English engine strings were shown as Turkish UI text.** The
+  execution engine's failures are stable machine values; both the
+  desktop task card and the phone now map the known ones to Turkish and
+  show an unmapped one verbatim rather than inventing a translation.
+- **A long task could not finish and could not be configured.** One
+  300-second wall-clock budget covered an entire durable task and
+  bootstrap never overrode it, so a bulk job was cut off mid-step with
+  no way to change it short of editing code. The budget is now
+  `JARVIS_EXECUTION_TIMEOUT_SECONDS`, still 300 seconds by default.
+
+Reported, deliberately not changed: recovery resets the step that was in
+flight when the process died back to PENDING without consulting the
+tool's `idempotent` flag, so a non-idempotent side effect can run twice
+after a crash. The risk is real and reproduced, but "unverified means
+redo" is the documented recovery contract and seven tests pin it;
+changing it is the owner's call, and the code now says so in place.
+
 ## Mobile companion: the PC's JARVIS from an Android phone (17 September 2026)
 
 A first phone release, built as a narrow authenticated HTTP surface inside

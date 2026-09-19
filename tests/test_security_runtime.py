@@ -437,3 +437,98 @@ def test_approval_store_expires_stale_requests_with_injected_clock() -> None:
     assert expired[0].operation_id == request.operation_id
     assert expired[0].status is ApprovalStatus.EXPIRED
     assert store.get(request.operation_id).status is ApprovalStatus.EXPIRED
+
+
+def test_a_rejected_call_gives_the_one_time_approval_back() -> None:
+    """A capability is spent by the action, not by the attempt.
+
+    Argument binding and the concurrency gate both run after the
+    permission check. When they rejected a call the grant had already
+    been consumed, so the user's single approval was gone even though
+    nothing ran, and the retry reported "Approval replay blocked."
+    instead of the real reason.
+    """
+    executor = ToolExecutor()
+    executor.register(
+        ToolDefinition(
+            name="write",
+            description="Write",
+            risk_level=RiskLevel.MEDIUM,
+        ),
+        lambda path: path,
+    )
+    authorization = bound_approval("write", parameters={"gecersiz": 1})
+
+    first = executor.execute("write", parameters={"gecersiz": 1}, **authorization)
+    second = executor.execute("write", parameters={"gecersiz": 1}, **authorization)
+
+    assert first.status is ToolExecutionStatus.FAILED
+    assert "path" in (first.error or "")
+    assert second.status is ToolExecutionStatus.FAILED, (
+        "the handler never ran, so the approval was never spent"
+    )
+    assert "path" in (second.error or ""), (
+        "the caller keeps seeing the real fault, not a replay block masking it"
+    )
+
+
+def test_a_busy_concurrency_slot_does_not_spend_the_approval() -> None:
+    """The slot frees, the same grant still works, a true replay still fails."""
+    executor = ToolExecutor()
+    executor.register(
+        ToolDefinition(
+            name="convert",
+            description="Convert",
+            risk_level=RiskLevel.MEDIUM,
+            max_concurrency=1,
+        ),
+        lambda path: path,
+    )
+    definition = executor.get("convert").definition
+    authorization = bound_approval("convert", parameters={"path": "a.pdf"})
+
+    assert executor._try_acquire_execution_slot(definition) is True
+    blocked = executor.execute("convert", parameters={"path": "a.pdf"}, **authorization)
+    executor._release_execution_slot(definition)
+    retried = executor.execute("convert", parameters={"path": "a.pdf"}, **authorization)
+    replayed = executor.execute("convert", parameters={"path": "a.pdf"}, **authorization)
+
+    assert blocked.status is ToolExecutionStatus.BLOCKED
+    assert "concurrent" in (blocked.error or "").lower()
+    assert retried.status is ToolExecutionStatus.SUCCESS, (
+        "a call the executor turned away must not cost the user their approval"
+    )
+    assert retried.data == "a.pdf"
+    assert replayed.status is ToolExecutionStatus.BLOCKED, (
+        "once the tool has actually run, the capability is spent for good"
+    )
+    assert replayed.error == "Approval replay blocked."
+
+
+@pytest.mark.asyncio
+async def test_the_async_path_returns_the_approval_the_same_way() -> None:
+    executor = ToolExecutor()
+    executor.register(
+        ToolDefinition(
+            name="convert_async",
+            description="Convert",
+            risk_level=RiskLevel.MEDIUM,
+            max_concurrency=1,
+        ),
+        lambda path: path,
+    )
+    definition = executor.get("convert_async").definition
+    authorization = bound_approval("convert_async", parameters={"path": "b.pdf"})
+
+    assert executor._try_acquire_execution_slot(definition) is True
+    blocked = await executor.execute(
+        "convert_async", parameters={"path": "b.pdf"}, **authorization
+    )
+    executor._release_execution_slot(definition)
+    retried = await executor.execute(
+        "convert_async", parameters={"path": "b.pdf"}, **authorization
+    )
+
+    assert blocked.status is ToolExecutionStatus.BLOCKED
+    assert retried.status is ToolExecutionStatus.SUCCESS
+    assert retried.data == "b.pdf"

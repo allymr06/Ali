@@ -66,18 +66,25 @@ class TaskControlService:
         if self.runtime is None:
             raise RuntimeError("Durable task runtime is not configured.")
         task = await self.runtime.resume(UUID(task_id))
-        verified = task.status in {
-            TaskStatus.COMPLETED,
-            TaskStatus.PAUSED,
-            TaskStatus.CANCELLED,
-            TaskStatus.FAILED,
-        }
+        # Only a finished task is a verified success. A resume that lands on
+        # FAILED or CANCELLED is a failure, and one that pauses again is
+        # partial - reporting any of them as "verified success" told the
+        # model, the desktop and the phone that the work was done.
+        if task.status is TaskStatus.COMPLETED:
+            status = ToolExecutionStatus.SUCCESS
+        elif task.status is TaskStatus.PAUSED:
+            status = ToolExecutionStatus.PARTIAL
+        else:
+            status = ToolExecutionStatus.FAILED
+        verified = task.status is TaskStatus.COMPLETED
         return ToolResult(
-            status=(ToolExecutionStatus.SUCCESS if verified else ToolExecutionStatus.FAILED),
+            status=status,
             tool_name="resume_task",
             message=f"Task resume reached {task.status.value}.",
             data=self._serialize(task),
             verified=verified,
+            error=task.error or None,
+            side_effects_may_continue=task.status is TaskStatus.PAUSED,
         )
 
     async def pause(self, task_id: str) -> ToolResult:
@@ -100,6 +107,18 @@ class TaskControlService:
         if self.runtime is None:
             raise RuntimeError("Durable task runtime is not configured.")
         identifier = UUID(task_id)
+        if not self.runtime.is_active(identifier):
+            # Queued, paused and waiting tasks have no live executor to
+            # interrupt; cancelling them is a record change, and refusing
+            # it left a cancel control that could never work.
+            task = self.manager.cancel(identifier)
+            return ToolResult(
+                status=ToolExecutionStatus.SUCCESS,
+                tool_name="cancel_task",
+                message="Task cancelled.",
+                data=self._serialize(task),
+                verified=task.status is TaskStatus.CANCELLED,
+            )
         self.runtime.request_cancel(identifier)
         task = await self._wait_for_terminal_boundary(identifier, TaskStatus.CANCELLED)
         verified = task.status is TaskStatus.CANCELLED

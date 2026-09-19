@@ -614,6 +614,19 @@ class ToolExecutor:
 
         return None
 
+    def _return_approval_grant(self, grant: ApprovalGrant | None) -> None:
+        """Give a consumed capability back when the action never started.
+
+        Argument validation and the concurrency gate run after the
+        permission check, so a call rejected there had already spent the
+        user's one-time approval and the same action could never be
+        retried without asking again.
+        """
+        if grant is None:
+            return
+        with self._approval_lock:
+            self._consumed_approval_ids.pop(grant.operation_id, None)
+
     def _consume_approval_grant(self, grant: ApprovalGrant) -> bool:
         """Atomically consume one capability so concurrent replay fails closed."""
         now = utc_now()
@@ -780,6 +793,7 @@ class ToolExecutor:
         )
 
         if argument_error is not None:
+            self._return_approval_grant(approval_grant)
             return ToolResult(
                 status=ToolExecutionStatus.FAILED,
                 tool_name=definition.name,
@@ -791,6 +805,7 @@ class ToolExecutor:
             )
 
         if not self._try_acquire_execution_slot(definition):
+            self._return_approval_grant(approval_grant)
             return self._concurrency_blocked_result(definition, started_at)
 
         try:
@@ -985,6 +1000,7 @@ class ToolExecutor:
         )
 
         if argument_error is not None:
+            self._return_approval_grant(approval_grant)
             return ToolResult(
                 status=ToolExecutionStatus.FAILED,
                 tool_name=definition.name,
@@ -996,6 +1012,7 @@ class ToolExecutor:
             )
 
         if not self._try_acquire_execution_slot(definition):
+            self._return_approval_grant(approval_grant)
             return self._concurrency_blocked_result(definition, started_at)
 
         try:

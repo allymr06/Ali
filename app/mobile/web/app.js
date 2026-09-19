@@ -362,6 +362,21 @@
   }
 
   /* ----------------------------------------------------------- tasks */
+  /* The engine's English failure strings are stable machine values; an
+     unknown one is shown verbatim rather than guessed at. */
+  const TASK_ERROR_TR = {
+    "Invalid tool_name.": "Adımın aracı tanımsız.",
+    "Parameters must be a dictionary.": "Araç parametreleri geçersiz.",
+    "Execution time budget exhausted.": "Süre bütçesi doldu; adım yarıda kesildi.",
+    "Tool result has no explicit postcondition verification.": "Aracın sonucu doğrulanamadı.",
+    "Plan could not be persisted safely.": "Plan güvenle kaydedilemedi.",
+    "User confirmation required.": "Bu adım için onayın gerekiyor.",
+  };
+  const taskErrorTr = (text) => {
+    const value = String(text == null ? "" : text).trim();
+    return value ? (TASK_ERROR_TR[value] || value) : "";
+  };
+
   async function loadTasks() {
     const host = $("#tasks-list");
     let result;
@@ -375,7 +390,7 @@
       const actions = task.actions || {};
       const buttons = ["pause", "resume", "cancel"].filter((action) => actions[action]).map((action) =>
         '<button type="button" class="btn small" data-task="' + esc(task.task_id) + '" data-action="' + action + '">' + ({ pause: "Duraklat", resume: "Sürdür", cancel: "İptal et" })[action] + "</button>").join("");
-      return '<div class="task"><div class="head"><strong>' + esc(task.title || task.description || task.task_id) + '</strong><span class="status ' + esc(status) + '">' + esc(status) + "</span></div>" +
+      return '<div class="task"><div class="head"><strong>' + esc(task.goal || task.title || task.description || task.task_id) + '</strong><span class="status ' + esc(status) + '">' + esc(status) + "</span></div>" +
         (steps ? '<ol class="steps">' + steps + "</ol>" : "") +
         (buttons ? '<div class="actions">' + buttons + "</div>" : '<div class="none">Bu görev için uygulanabilir işlem yok.</div>') + "</div>";
     }).join("");

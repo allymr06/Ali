@@ -1885,3 +1885,30 @@ def test_the_phone_wav_encoder_downsamples_into_a_valid_mono_pcm16_file() -> Non
     assert report["rate"] == 16000 and report["byteRate"] == 32000
     assert report["dataSize"] == 16000 * 2 and report["total"] == 44 + 16000 * 2, "one second at 48 kHz becomes one second at 16 kHz"
     assert 0x3000 < report["peak"] <= 0x4000, "a half-scale sine stays half scale after the box filter"
+
+
+def test_engine_failures_are_shown_in_turkish_and_unknown_ones_verbatim() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/panels.js"], "const TASK_ERROR_TR", "\nfunction renderTasks"))
+
+    assert context.eval('taskErrorTr("Execution time budget exhausted.")') == "Süre bütçesi doldu; adım yarıda kesildi."
+    assert context.eval('taskErrorTr("Invalid tool_name.")') == "Adımın aracı tanımsız."
+    assert context.eval('taskErrorTr("User confirmation required.")') == "Bu adım için onayın gerekiyor."
+    assert context.eval('taskErrorTr("")') == "" and context.eval("taskErrorTr(null)") == ""
+    unknown = "Some future engine string."
+    assert context.eval('taskErrorTr("' + unknown + '")') == unknown, "an unmapped failure is shown as it came, never invented"
+    panels = JS_SOURCES["js/panels.js"]
+    assert "esc(taskErrorTr(task.error))" in panels and "esc(taskErrorTr(step.error))" in panels
+
+
+def test_the_phone_task_card_shows_the_goal_not_the_uuid() -> None:
+    from app.mobile.server import WEB_ROOT
+    from app.tasks.manager import TaskManager
+    from app.tasks.service import TaskControlService
+
+    source = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    assert "esc(task.goal || task.title" in source, "the client reads the key the server actually sends"
+
+    row = TaskControlService(TaskManager(), None)._serialize(TaskManager().create("PDF'leri dönüştür"))
+    assert row["goal"] and "title" not in row, "the server contract is goal, and the client follows it"

@@ -622,3 +622,46 @@ def test_the_asset_stamp_follows_the_shim(tmp_path, mobile) -> None:
     second = MobileServer(mobile.controller, mobile.bridge, mobile.store, port=0, nova_shim=shim).stamp
     assert first != second, "a changed shim invalidates the immutable cache"
     assert mobile.server.stamp != first
+
+
+def test_a_task_action_reports_in_turkish_what_actually_happened(mobile) -> None:
+    """A resume that parks again must not read as a completion on the phone."""
+    from types import SimpleNamespace
+
+    from app.core.models import ToolExecutionStatus
+
+    client = paired(mobile)
+
+    class FakeTaskService:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def _make(self, status, task_status, message, verified):
+            async def run(_task_id):
+                return SimpleNamespace(
+                    status=status, verified=verified, message=message,
+                    error=None, data={"status": task_status},
+                    succeeded=status is ToolExecutionStatus.SUCCESS,
+                )
+            return run
+
+        def __getattr__(self, name):
+            raise AttributeError(name)
+
+    service = FakeTaskService()
+    service.resume = service._make(ToolExecutionStatus.PARTIAL, "paused", "Task resume reached paused.", False)
+    service.cancel = service._make(ToolExecutionStatus.SUCCESS, "cancelled", "Task cancelled.", True)
+    mobile.app.task_service = service
+
+    identifier = str(uuid4())
+    status, payload = client.request("POST", f"/api/tasks/{identifier}/resume", {})
+    assert status == 409 and payload["ok"] is False, "a paused resume is not a success"
+    assert payload["error"] == "Görev yeniden duraklatıldı; henüz bitmedi."
+    assert "Task resume reached" not in json.dumps(payload), "no English machine string reaches the phone"
+
+    status, payload = client.request("POST", f"/api/tasks/{identifier}/cancel", {})
+    assert status == 200 and payload["ok"] is True and payload["message"] == "Görev iptal edildi."
+
+    service.resume = service._make(ToolExecutionStatus.FAILED, "failed", "Task resume reached failed.", False)
+    status, payload = client.request("POST", f"/api/tasks/{identifier}/resume", {})
+    assert status == 409 and payload["error"] == "Görev sürdürülemedi ve başarısız oldu."

@@ -365,8 +365,13 @@ def create_application(
             model=active_settings.memory_extraction_model,
         )
 
+    from app.execution.models import ExecutionLimits
+
     engine = CoreEngine(
         provider_registry=provider_registry,
+        execution_limits=ExecutionLimits(
+            timeout_seconds=active_settings.execution_timeout_seconds
+        ),
         memory_manager=memory_manager,
         tool_executor=tool_executor,
         task_manager=task_manager,

@@ -93,6 +93,13 @@ def _restore_json(value: Any) -> Any:
     return value
 
 
+# A single-use approval capability is an in-memory proof. Writing it into
+# plan.json would leave the operation id and binding digest readable on
+# disk long after the step ran, so it is stripped on the way out and the
+# step simply asks again after a resume.
+TRANSIENT_STEP_METADATA = ("_approval_grant",)
+
+
 class PlanStore:
     """Atomic JSON persistence for executable plans."""
 
@@ -198,7 +205,11 @@ class PlanStore:
                     ),
                     "status": step.status.value,
                     "metadata": _json_safe(
-                        step.metadata
+                        {
+                            key: value
+                            for key, value in step.metadata.items()
+                            if key not in TRANSIENT_STEP_METADATA
+                        }
                     ),
                 }
                 for step in plan.steps

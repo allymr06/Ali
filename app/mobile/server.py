@@ -91,6 +91,18 @@ NL_BYTES = b'\n'
 CLIENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 CANCELLABLE_STATUSES = {"queued", "running", "paused", "waiting_for_input", "waiting_for_approval"}
 PAUSED_MESSAGE = "JARVIS duraklatıldı; masaüstünden sürdürülene kadar komut almıyor."
+# What a task action actually achieved, said in the phone's own language.
+TASK_ACTION_MESSAGES_TR = {
+    ("resume", "completed"): "Görev tamamlandı.",
+    ("resume", "paused"): "Görev yeniden duraklatıldı; henüz bitmedi.",
+    ("resume", "failed"): "Görev sürdürülemedi ve başarısız oldu.",
+    ("resume", "cancelled"): "Görev sürdürülürken iptal edildi.",
+    ("pause", "paused"): "Görev duraklatıldı.",
+    ("cancel", "cancelled"): "Görev iptal edildi.",
+    # Requested but not confirmed at the boundary: say that, do not imply it stopped.
+    ("pause", "partial"): "Duraklatma istendi; görev henüz durmadı.",
+    ("cancel", "partial"): "İptal istendi; görev henüz durmadı.",
+}
 
 
 def _json_default(value: Any) -> Any:
@@ -599,11 +611,19 @@ class MobileServer:
         except Exception as exc:
             return {"ok": False, "error": f"İşlem tamamlanamadı ({type(exc).__name__})."}
         succeeded = bool(getattr(result, "succeeded", False))
+        # The service answers in English machine strings; the phone is
+        # Turkish, and the outcome it reports must be the one that
+        # happened - a resume that parks again is not a completion.
+        status = getattr(getattr(result, "status", None), "value", "")
+        task_status = str((getattr(result, "data", None) or {}).get("status") or "")
+        spoken = TASK_ACTION_MESSAGES_TR.get((action, task_status)) or TASK_ACTION_MESSAGES_TR.get((action, status))
+        if not spoken:
+            spoken = "İşlem tamamlandı." if succeeded else str(getattr(result, "error", "") or getattr(result, "message", "") or "İşlem başarısız.")
         return {
             "ok": succeeded,
-            "message": str(getattr(result, "message", "") or ""),
+            "message": spoken,
             "verified": bool(getattr(result, "verified", False)),
-            "error": None if succeeded else str(getattr(result, "message", "") or "İşlem başarısız."),
+            "error": None if succeeded else spoken,
         }
 
     # ----------------------------------------------------------------- state

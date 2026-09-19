@@ -411,3 +411,40 @@ def test_plan_executor_cannot_fail_non_running_step():
     with pytest.raises(ValueError):
         executor.fail_step(plan, step)
 
+
+
+def test_the_approval_grant_never_reaches_the_plan_file(tmp_path) -> None:
+    """A single-use capability is in-memory proof; disk keeps no copy."""
+    from datetime import timedelta
+    from uuid import uuid4
+
+    from app.core.time import utc_now
+    from app.planning.models import Plan, PlanStep
+    from app.planning.persistence import PlanStore
+    from app.security.approval import ApprovalGrant
+
+    grant = ApprovalGrant(
+        operation_id=uuid4(),
+        binding_digest="a" * 64,
+        expires_at=utc_now() + timedelta(minutes=5),
+        task_id=uuid4(),
+    )
+    step = PlanStep(name="riskli adım")
+    step.metadata["tool_name"] = "delete_path"
+    step.metadata["_approval_grant"] = grant
+    plan = Plan(goal="temizlik", steps=[step])
+
+    path = tmp_path / "plan.json"
+    store = PlanStore(path)
+    store.save(plan)
+
+    written = path.read_text(encoding="utf-8")
+    assert "binding_digest" not in written and str(grant.operation_id) not in written
+    assert "_approval_grant" not in written
+    assert "delete_path" in written, "the rest of the step metadata still persists"
+
+    reloaded = store.load()
+    assert "_approval_grant" not in reloaded.steps[0].metadata
+    assert reloaded.steps[0].metadata["tool_name"] == "delete_path"
+    # The in-memory plan keeps its grant: saving must not mutate the caller's object.
+    assert plan.steps[0].metadata["_approval_grant"] is grant

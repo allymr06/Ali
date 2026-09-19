@@ -699,7 +699,11 @@ class NovaBridge:
                 error=type(exc).__name__,
             )
         )
-        self._stream_buffer: list[str] = []
+        # The engine hands the callback the CUMULATIVE answer so far, not
+        # a delta, and the page replaces the bubble with whatever arrives.
+        # Only the newest snapshot is worth sending; joining them printed
+        # "BuBu birBu bir deneme" while JARVIS was typing.
+        self._stream_latest: str = ""
         self._stream_last_flush = 0.0
         self._command_future: Future[Any] | None = None
         self._voice_future: Future[Any] | None = None
@@ -2217,7 +2221,7 @@ class NovaBridge:
         def stream(chunk: str) -> None:
             if not chunk:
                 return
-            self._stream_buffer.append(chunk)
+            self._stream_latest = chunk
             now = time.monotonic()
             if now - self._stream_last_flush >= STREAM_FLUSH_SECONDS:
                 self._flush_stream()
@@ -2269,10 +2273,10 @@ class NovaBridge:
         return {"ok": True}
 
     def _flush_stream(self) -> None:
-        if not self._stream_buffer:
+        text = self._stream_latest
+        if not text:
             return
-        text = "".join(self._stream_buffer)
-        self._stream_buffer.clear()
+        self._stream_latest = ""
         self._stream_last_flush = time.monotonic()
         self._push("stream", {"text": text})
 

@@ -110,8 +110,28 @@ fingers pinch to zoom and drag to pan, the on-screen arrows still work.
 
 Stays on the PC, refused in words from the phone: API key and model
 settings, pairing and device management, native file and folder
-dialogs (imports and exports), the PC microphone and screen, window
-controls (compact mode). The light client remains at `/?lite=1`.
+dialogs (imports and exports), the PC screen, window controls (compact
+mode). The light client remains at `/?lite=1`.
+
+### Voice on the phone
+
+The desktop's voice session uses the PC's microphone and speakers, so it
+cannot be proxied. On the phone the loop runs in the browser instead:
+tap the microphone (or "Sesli mod"), allow the microphone once, and the
+page records until you pause; the recording goes to the PC as 16 kHz WAV,
+the PC's own speech recognizer turns it into text (`POST
+/api/voice/transcribe`), the transcript enters the desktop's own
+`submit_command` marked as spoken - same conversation, same permission
+pipeline, the desktop chat shows it too - and the reply is synthesized
+by the PC's own voice (`POST /api/voice/speak`, the local Windows voice
+as fallback, exactly like the desktop) and played on the phone. Then it
+listens again, until you close the stage or twelve seconds of silence
+pass twice. The phone's audio never touches the PC's devices.
+
+It needs the HTTPS address (browsers give microphone access only on a
+secure origin) and a foreground tab: Android suspends audio in the
+background, and the session says so and ends rather than pretending to
+listen.
 
 ## What the phone can do in this release
 

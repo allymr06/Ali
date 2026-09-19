@@ -12,12 +12,14 @@ conversation pipeline a desktop message does.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import platform
 import queue
 import re
 import threading
 import time
+import wave
 from concurrent.futures import Future
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import date, datetime
@@ -76,6 +78,14 @@ PHONE_DENIED = frozenset({
     "set_compact", "set_visible", "start_voice", "stop_voice", "run_vision",
 })
 PHONE_DENIED_MESSAGE = "Bu işlem telefondan yapılamaz; bilgisayardaki JARVIS'te yap."
+# Phone voice: the phone records, the PC's own speech providers listen and
+# speak. 16 kHz mono PCM16 for 30 s is under a megabyte; two is plenty.
+MAX_VOICE_UPLOAD_BYTES = 2 * 1024 * 1024
+VOICE_SAMPLE_RATES = range(8_000, 48_001)
+VOICE_MIME_BY_ENCODING = {
+    "wav": "audio/wav", "mp3": "audio/mpeg", "opus": "audio/ogg", "aac": "audio/aac", "flac": "audio/flac",
+}
+_MARKDOWN_NOISE = re.compile(r"[*_`#>]+")
 BRIDGE_METHOD_PATTERN = re.compile(r"^[a-z][a-z0-9_]{1,60}$")
 NL_BYTES = b'\n'
 CLIENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -150,6 +160,7 @@ class MobileServer:
         port: int = 8765,
         web_root: Path = WEB_ROOT,
         tokens_css: Path = TOKENS_CSS,
+        nova_shim: Path | None = None,
     ) -> None:
         self.controller = controller
         self.bridge = bridge
@@ -158,6 +169,7 @@ class MobileServer:
         self.port = int(port)
         self.web_root = Path(web_root)
         self.tokens_css = Path(tokens_css)
+        self.nova_shim = Path(nova_shim) if nova_shim is not None else NOVA_SHIM
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._lock = threading.RLock()
@@ -167,6 +179,10 @@ class MobileServer:
         self._running: dict[str, str] = {}  # session_id -> client_id of the running turn
         self._pending_approvals: dict[str, dict[str, Any]] = {}
         self._pair_limiter = RateLimiter(PAIRING_ATTEMPTS_PER_MINUTE, 60.0)
+        # The desktop's own offline voice; tests swap in a stub.
+        from app.voice.audio import synthesize_local_turkish
+
+        self.local_tts: Callable[[str], Any] = synthesize_local_turkish
         self._pair_global = RateLimiter(PAIRING_ATTEMPTS_PER_TEN_MINUTES, 600.0)
         self.stamp = self._compute_stamp()
         self.started_at = datetime.now().astimezone()
@@ -184,6 +200,10 @@ class MobileServer:
                 digest.update(candidate.read_bytes())
         if self.tokens_css.is_file():
             digest.update(self.tokens_css.read_bytes())
+        # The shim is served under the same immutable version query as the
+        # shell, so a change to it must change the stamp too.
+        if self.nova_shim.is_file():
+            digest.update(self.nova_shim.read_bytes())
         return digest.hexdigest()[:12]
 
     @property
@@ -263,6 +283,97 @@ class MobileServer:
         except (TypeError, ValueError):
             return
         self.emit(None, "push", data)
+
+    # ----------------------------------------------------------------- voice
+    def _voice(self) -> Any | None:
+        return getattr(self.controller.application, "voice", None)
+
+    def _run_on_loop(self, coroutine: Any, timeout: float) -> Any:
+        """One coroutine on the controller's loop, awaited from a request thread."""
+        future = self.controller.submit_background(coroutine, lambda _done: None)
+        return future.result(timeout=timeout)
+
+    def transcribe_wav(self, payload: bytes) -> dict[str, Any]:
+        """Text for one WAV recording from the phone, through the PC's recognizer.
+
+        Silence is not an error: it comes back as an empty text so the
+        phone can simply listen again. Provider failures are said in words.
+        """
+        from app.voice.errors import VoiceConfigurationError, VoiceNoSpeech, VoiceProviderError, VoiceTimeoutError
+        from app.voice.models import AudioCapture
+
+        voice = self._voice()
+        recognizer = getattr(voice, "recognizer", None) if voice is not None else None
+        if recognizer is None:
+            return {"ok": False, "status": 409, "error": "Sesli iletişim bu bilgisayarda ayarlanmamış."}
+        try:
+            with wave.open(io.BytesIO(payload)) as handle:
+                channels, width, rate = handle.getnchannels(), handle.getsampwidth(), handle.getframerate()
+                frames = handle.readframes(handle.getnframes())
+        except (wave.Error, EOFError, ValueError):
+            return {"ok": False, "status": 400, "error": "Ses kaydı okunamadı (WAV bekleniyor)."}
+        if channels != 1 or width != 2 or rate not in VOICE_SAMPLE_RATES:
+            return {"ok": False, "status": 400, "error": "Ses kaydı tek kanallı 16 bit PCM olmalı."}
+        if not frames:
+            return {"ok": True, "text": ""}
+        settings = getattr(self.controller.application, "settings", None)
+        timeout = float(getattr(settings, "voice_operation_timeout_seconds", 60.0) or 60.0)
+        language = getattr(settings, "voice_language", None)
+        capture = AudioCapture(data=bytearray(frames), sample_rate=rate, channels=1, sample_width=2)
+        try:
+            result = self._run_on_loop(recognizer.transcribe(capture, language=language), timeout)
+        except VoiceNoSpeech:
+            return {"ok": True, "text": ""}
+        except VoiceConfigurationError as exc:
+            return {"ok": False, "status": 409, "error": f"Ses tanıma ayarlanmamış ({exc})."}
+        except (VoiceProviderError, VoiceTimeoutError, TimeoutError):
+            return {"ok": False, "status": 502, "error": "Konuşma çözümlenemedi; sağlayıcı yanıt vermedi. Tekrar dene."}
+        except Exception as exc:
+            return {"ok": False, "status": 502, "error": f"Konuşma çözümlenemedi ({type(exc).__name__})."}
+        text = str(getattr(result, "text", "") or "").strip()
+        return {"ok": True, "text": text, "provider": getattr(result, "provider", None)}
+
+    @staticmethod
+    def speakable(text: str) -> str:
+        """What the synthesizer is given: prose, not markup."""
+        return " ".join(_MARKDOWN_NOISE.sub("", str(text or "")).split())
+
+    def speak(self, text: str) -> tuple[bytes, str, str] | dict[str, Any]:
+        """(audio bytes, mime type, source) for a reply, through the PC's synthesizer.
+
+        When the cloud voice fails the same local voice the desktop falls
+        back to is tried; when that is missing too the caller gets words,
+        and the phone shows the reply as text instead of pretending.
+        """
+        from app.voice.models import AudioEncoding, pcm16_to_wav
+
+        voice = self._voice()
+        synthesizer = getattr(voice, "synthesizer", None) if voice is not None else None
+        if synthesizer is None:
+            return {"ok": False, "status": 409, "error": "Sesli iletişim bu bilgisayarda ayarlanmamış."}
+        settings = getattr(self.controller.application, "settings", None)
+        limit = int(getattr(settings, "voice_max_tts_characters", 4000) or 4000)
+        timeout = float(getattr(settings, "voice_operation_timeout_seconds", 60.0) or 60.0)
+        spoken = self.speakable(text)
+        if not spoken:
+            return {"ok": False, "status": 400, "error": "Seslendirilecek metin boş."}
+        if len(spoken) > limit:
+            spoken = spoken[:limit].rsplit(" ", 1)[0]
+        try:
+            speech = self._run_on_loop(synthesizer.synthesize(spoken), timeout)
+            encoding = getattr(speech.encoding, "value", str(speech.encoding))
+            if encoding == AudioEncoding.PCM16.value:
+                return pcm16_to_wav(bytes(speech.data), 24_000), "audio/wav", "cloud"
+            return bytes(speech.data), VOICE_MIME_BY_ENCODING.get(encoding, "application/octet-stream"), "cloud"
+        except Exception:
+            pass
+        try:
+            local = self._run_on_loop(self.local_tts(spoken), timeout)
+        except Exception:
+            local = None
+        if local:
+            return bytes(local), "audio/wav", "local"
+        return {"ok": False, "status": 502, "error": "Ses üretilemedi; yanıt metin olarak duruyor."}
 
     def bridge_method(self, name: str) -> Callable[..., Any] | None:
         """The NovaBridge method a phone may call, or None."""
@@ -611,6 +722,14 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
                 raise ValueError("İstek gövdesi bir nesne olmalı.")
             return payload
 
+        def _read_raw(self, limit: int) -> bytes:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length <= 0:
+                raise ValueError("İstek gövdesi boş.")
+            if length > limit:
+                raise OverflowError("İstek gövdesi çok büyük.")
+            return self.rfile.read(length)
+
         def _send(self, status: int, body: bytes, content_type: str, extra: dict[str, str] | None = None) -> None:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
@@ -711,7 +830,7 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
                 self._send(HTTPStatus.OK, body, "text/html; charset=utf-8", {"Cache-Control": "no-store"})
                 return
             if relative == "js/nova-shim.js":
-                candidate = NOVA_SHIM
+                candidate = server.nova_shim
             else:
                 parts = PurePath(relative).parts
                 if len(parts) != 2 or parts[0] not in ("css", "js") or ".." in parts or not parts[1]:
@@ -810,6 +929,12 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
             if match and method == "POST":
                 self._bridge(session, match.group(1))
                 return
+            if path == "/api/voice/transcribe" and method == "POST":
+                self._voice_transcribe()
+                return
+            if path == "/api/voice/speak" and method == "POST":
+                self._voice_speak()
+                return
             match = re.fullmatch(r"/api/turns/([A-Za-z0-9_-]{8,64})", path)
             if match and method == "GET":
                 record = server.turn(session.session_id, match.group(1))
@@ -894,6 +1019,38 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
                 self._json(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc)})
                 return
             self._json(HTTPStatus.OK, {"ok": True, "duplicate": duplicate, "turn": record.to_dict()})
+
+        # ------------------------------------------------------------ voice
+        def _voice_transcribe(self) -> None:
+            content_type = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if content_type not in {"audio/wav", "audio/x-wav", "audio/wave"}:
+                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Ses kaydı audio/wav olarak gönderilmeli."})
+                return
+            try:
+                payload = self._read_raw(MAX_VOICE_UPLOAD_BYTES)
+            except OverflowError:
+                self._json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"ok": False, "error": "Ses kaydı çok büyük (en çok 2 MB)."})
+                return
+            except ValueError as exc:
+                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+                return
+            result = server.transcribe_wav(payload)
+            status = int(result.pop("status", 200))
+            self._json(status, result)
+
+        def _voice_speak(self) -> None:
+            try:
+                body = self._read_json()
+            except (ValueError, json.JSONDecodeError):
+                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "İstek gövdesi okunamadı."})
+                return
+            outcome = server.speak(str(body.get("text") or ""))
+            if isinstance(outcome, dict):
+                status = int(outcome.pop("status", 502))
+                self._json(status, outcome)
+                return
+            audio, mime, source = outcome
+            self._send(HTTPStatus.OK, audio, mime, {"Cache-Control": "no-store", "X-JARVIS-Voice": source})
 
         # ----------------------------------------------------------- events
         def _events(self, session: DeviceSession) -> None:

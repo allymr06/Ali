@@ -2204,10 +2204,13 @@ class NovaBridge:
     # ------------------------------------------------------------------
     # Chat
     # ------------------------------------------------------------------
-    def submit_command(self, text: str) -> dict[str, Any]:
+    def submit_command(self, text: str, spoken: Any = False) -> dict[str, Any]:
+        """One chat turn. ``spoken`` marks a transcript (the phone's voice
+        loop): the record and the core see it as a voice request."""
         normalized = str(text or "").strip()
         if not normalized:
             return {"ok": False, "error": "Komut boş olamaz."}
+        source = RequestSource.VOICE if spoken is True else RequestSource.TEXT
         if self.controller.paused:
             return {"ok": False, "error": PAUSED_MESSAGE}
 
@@ -2257,7 +2260,7 @@ class NovaBridge:
             try:
                 self._command_future = self.controller.submit_background(
                     self.controller.submit_command(
-                        normalized, stream_callback=stream
+                        normalized, stream_callback=stream, source=source
                     ),
                     done,
                 )

@@ -460,3 +460,165 @@ def test_desktop_pushes_are_mirrored_to_the_phone(mobile) -> None:
     status, refreshed = client.request("POST", "/api/bridge/refresh", {"args": []})
     assert status == 200 and "snapshot" in refreshed, "reconnecting phones re-read the live snapshot"
     connection.close()
+
+
+# ---------------------------------------------------------------------------
+# phone voice: the phone records, the PC listens and speaks
+# ---------------------------------------------------------------------------
+
+
+class FakeRecognizer:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, int, str | None]] = []
+        self.fail: Exception | None = None
+
+    async def transcribe(self, capture, *, language=None):
+        from app.voice.errors import VoiceNoSpeech
+        from app.voice.models import TranscriptionResult
+
+        self.calls.append((len(capture.data), capture.sample_rate, language))
+        if self.fail is not None:
+            raise self.fail
+        if len(capture.data) < 3200:
+            raise VoiceNoSpeech("silence")
+        return TranscriptionResult(text="Telefondan sesli mesaj", provider="fake", model="fake")
+
+
+class FakeSynthesizer:
+    def __init__(self) -> None:
+        self.texts: list[str] = []
+        self.fail = False
+
+    async def synthesize(self, text: str):
+        from app.voice.models import AudioEncoding, SynthesizedSpeech, pcm16_to_wav
+
+        self.texts.append(text)
+        if self.fail:
+            raise RuntimeError("quota")
+        return SynthesizedSpeech(data=pcm16_to_wav(b"\x10\x00" * 800, 24_000), encoding=AudioEncoding.WAV, provider="fake", model="fake", voice="fake")
+
+
+def wav_bytes(seconds: float = 0.5, rate: int = 16_000, channels: int = 1, width: int = 2) -> bytes:
+    import io
+    import math
+    import struct
+    import wave
+
+    frames = int(rate * seconds)
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(channels)
+        handle.setsampwidth(width)
+        handle.setframerate(rate)
+        if width == 2:
+            handle.writeframes(b"".join(struct.pack("<h", int(3000 * math.sin(i / 8))) * channels for i in range(frames)))
+        else:
+            handle.writeframes(bytes(frames * channels))
+    return buffer.getvalue()
+
+
+def post_raw(client: Client, path: str, data: bytes, content_type: str, *, header: bool = True):
+    connection = http.client.HTTPConnection("127.0.0.1", client.port, timeout=15)
+    headers = {"Content-Type": content_type, "Content-Length": str(len(data))}
+    if header:
+        headers[CLIENT_HEADER] = "pwa"
+    if client.cookie:
+        headers["Cookie"] = client.cookie
+    connection.request("POST", path, body=data, headers=headers)
+    response = connection.getresponse()
+    body = response.read()
+    result = (response.status, body, dict(response.getheaders()))
+    connection.close()
+    return result
+
+
+def test_voice_transcribe_runs_the_pcs_recognizer_and_says_silence_honestly(mobile) -> None:
+    client = paired(mobile)
+    mobile.app.voice = None
+    status, body, _ = post_raw(client, "/api/voice/transcribe", wav_bytes(), "audio/wav")
+    assert status == 409 and "ayarlanmamış" in json.loads(body)["error"]
+
+    recognizer = FakeRecognizer()
+    mobile.app.voice = SimpleNamespace(recognizer=recognizer, synthesizer=FakeSynthesizer())
+
+    stranger = Client(mobile.port)
+    assert post_raw(stranger, "/api/voice/transcribe", wav_bytes(), "audio/wav")[0] == 401
+    assert post_raw(client, "/api/voice/transcribe", wav_bytes(), "audio/wav", header=False)[0] == 403
+    assert post_raw(client, "/api/voice/transcribe", b"{}", "application/json")[0] == 400
+    assert post_raw(client, "/api/voice/transcribe", b"not a wav at all", "audio/wav")[0] == 400
+    assert post_raw(client, "/api/voice/transcribe", wav_bytes(channels=2), "audio/wav")[0] == 400, "stereo is refused, not guessed"
+    status, body, _ = post_raw(client, "/api/voice/transcribe", wav_bytes(seconds=70), "audio/wav")
+    assert status == 413 and "2 MB" in json.loads(body)["error"]
+    assert recognizer.calls == [], "nothing malformed ever reaches the recognizer"
+
+    status, body, _ = post_raw(client, "/api/voice/transcribe", wav_bytes(seconds=0.05), "audio/wav")
+    assert status == 200 and json.loads(body) == {"ok": True, "text": ""}, "silence is an empty text, not an error"
+
+    status, body, _ = post_raw(client, "/api/voice/transcribe", wav_bytes(seconds=0.5), "audio/wav")
+    payload = json.loads(body)
+    assert status == 200 and payload["text"] == "Telefondan sesli mesaj" and payload["provider"] == "fake"
+    assert recognizer.calls[-1] == (16_000, 16_000, "tr"), "16 kHz mono PCM in the configured language"
+
+    from app.voice.errors import VoiceProviderError
+
+    recognizer.fail = VoiceProviderError("down")
+    status, body, _ = post_raw(client, "/api/voice/transcribe", wav_bytes(), "audio/wav")
+    assert status == 502 and "sağlayıcı" in json.loads(body)["error"]
+
+
+def test_voice_speak_uses_the_cloud_voice_and_falls_back_to_the_local_one(mobile) -> None:
+    client = paired(mobile)
+    synthesizer = FakeSynthesizer()
+    mobile.app.voice = SimpleNamespace(recognizer=FakeRecognizer(), synthesizer=synthesizer)
+
+    status, audio, headers = post_raw(client, "/api/voice/speak", json.dumps({"text": "**Kalın** bir `cevap`; # başlık"}).encode("utf-8"), "application/json")
+    assert status == 200 and headers["Content-Type"] == "audio/wav" and audio[:4] == b"RIFF"
+    assert headers["X-JARVIS-Voice"] == "cloud" and headers["Cache-Control"] == "no-store"
+    assert synthesizer.texts == ["Kalın bir cevap; başlık"], "markup never reaches the voice"
+
+    assert client.request("POST", "/api/voice/speak", {"text": "   "})[0] == 400
+    long_text = "kelime " * 1500
+    post_raw(client, "/api/voice/speak", json.dumps({"text": long_text}).encode("utf-8"), "application/json")
+    assert len(synthesizer.texts[-1]) <= 4000, "the desktop's own character limit applies"
+
+    synthesizer.fail = True
+    calls: list[str] = []
+
+    async def local(text: str) -> bytes | None:
+        calls.append(text)
+        return wav_bytes(seconds=0.1)
+
+    mobile.server.local_tts = local
+    status, audio, headers = post_raw(client, "/api/voice/speak", json.dumps({"text": "Bulut sesi düştü"}).encode("utf-8"), "application/json")
+    assert status == 200 and headers["X-JARVIS-Voice"] == "local" and audio[:4] == b"RIFF" and calls == ["Bulut sesi düştü"]
+
+    async def missing(_text: str) -> bytes | None:
+        return None
+
+    mobile.server.local_tts = missing
+    status, body, _ = post_raw(client, "/api/voice/speak", json.dumps({"text": "Hiç ses yok"}).encode("utf-8"), "application/json")
+    assert status == 502 and "metin olarak" in json.loads(body)["error"]
+
+    mobile.app.voice = None
+    assert client.request("POST", "/api/voice/speak", {"text": "x"})[0] == 409
+
+
+def test_a_spoken_submit_from_the_phone_is_recorded_as_a_voice_request(mobile) -> None:
+    client = paired(mobile)
+    status, payload = client.request("POST", "/api/bridge/submit_command", {"args": ["Sesle söylenen mesaj", True]})
+    assert status == 200 and payload == {"ok": True}
+    wait_for(lambda: not mobile.controller.state.busy and any(m.role == "assistant" for m in mobile.controller.state.messages))
+    conversation = mobile.app.conversation_engine.get(mobile.controller.context.conversation_id)
+    assert conversation.turns[0].content == "Sesle söylenen mesaj"
+    assert conversation.turns[0].metadata.get("source") == "voice", "the record knows it was spoken"
+    assert mobile.controller.state.messages[0].role == "user", "the desktop chat shows the transcript like any message"
+
+
+def test_the_asset_stamp_follows_the_shim(tmp_path, mobile) -> None:
+    shim = tmp_path / "shim.js"
+    shim.write_text("// v1", encoding="utf-8")
+    first = MobileServer(mobile.controller, mobile.bridge, mobile.store, port=0, nova_shim=shim).stamp
+    shim.write_text("// v2", encoding="utf-8")
+    second = MobileServer(mobile.controller, mobile.bridge, mobile.store, port=0, nova_shim=shim).stamp
+    assert first != second, "a changed shim invalidates the immutable cache"
+    assert mobile.server.stamp != first

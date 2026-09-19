@@ -1084,3 +1084,19 @@ booted over HTTP with `body.phone`, twelve rail items in the bottom bar,
 the Academy dashboard with no overflow, a four-question rehearsal built
 and answered from the phone, the Anatomy Lab with a live WebGL context
 and the skull loaded, a chat turn answered through the mirrored pushes.
+
+## Voice on the phone (19 September 2026)
+
+`tests/test_mobile.py`: transcription needs a session and the page
+header, accepts only mono 16-bit WAV under 2 MB (JSON, stereo, garbage
+and oversized uploads refuse before the recognizer sees them), reports
+silence as an empty text, passes 16 kHz PCM in the configured language
+to the PC's recognizer, and says a provider failure in words;
+synthesis strips markup before the voice, applies the desktop's
+character limit, returns the cloud voice as audio/wav, falls back to
+the local voice with an honest header, and refuses in words when both
+are gone; a spoken submit from the phone is recorded as a voice request
+in the shared conversation and appears in the desktop chat. `tests/
+test_nova_web.py` (QuickJS): the shim's WAV encoder downsamples 48 kHz
+float audio into a valid mono 16-bit 16 kHz file with the right header
+and amplitude, and the RMS helper is exact.

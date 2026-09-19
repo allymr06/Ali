@@ -258,6 +258,24 @@ dashboard, a four-question committee rehearsal answered from the phone,
 the skull rendering in WebGL, a chat turn streamed back, no horizontal
 overflow.
 
+### Voice on the phone (19 September 2026)
+
+The desktop voice session owns the PC's microphone and speakers, so the
+phone got its own loop in the shim rather than a proxy: the browser
+records (ScriptProcessor, RMS voice activity detection, a box-filter
+downsample to 16 kHz mono PCM16 WAV built in JavaScript), the PC's own
+recognizer transcribes it (`POST /api/voice/transcribe`, silence coming
+back as empty text rather than an error), the transcript enters the
+desktop's `submit_command` with a new `spoken` flag that records the
+turn as a voice request, the mirrored `reply` push is synthesized by the
+PC's own voice with the desktop's local fallback (`POST
+/api/voice/speak`, `X-JARVIS-Voice: cloud|local`) and decoded straight
+into the phone's audio context. The page's voice stage, captions, orb
+level and phases are driven with the very pushes the desktop session
+would send, so nothing in the desktop UI changed. The phone's audio
+never reaches the PC's devices; `start_voice`/`stop_voice` stay denied
+on the server and are answered by the phone loop in the shim.
+
 ## Night additions: cards, rehearsal, weekly summary, backups, exports (15 September 2026)
 
 Built overnight on explicit standing authorization, each verified live in

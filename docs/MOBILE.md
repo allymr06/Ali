@@ -92,6 +92,47 @@ Chrome or Edge on Android: open the address, menu ⋮ → **Uygulamayı yükle**
 the JARVIS icon. The installed shell opens offline and says so plainly; an
 offline shell is not an offline assistant.
 
+## The whole desktop page on the phone
+
+After pairing, the phone is sent to `https://…ts.net/nova/`: the desktop
+Nova page itself, served by the same loopback server with a small shim
+in front of it (`app/mobile/web/nova-shim.js`). Every `window.pywebview.api`
+call becomes an authenticated `POST /api/bridge/<method>` answered by the
+real `NovaBridge`, and every push the desktop window receives is mirrored
+over the event channel - so the Medical Academy (plan, subjects, library,
+notes, exams, question bank, understanding, histology, cards, professor
+style, progress, Anatomy Lab), tasks, memory, research, routines and the
+rest work on the phone exactly as on the PC, on the same records. A
+phone layer (`css/phone.css`, active only under `body.phone`) turns the
+rail into a bottom bar, stacks every layout, grows touch targets and
+gives the WebGL lab a fixed viewport: one finger turns the model, two
+fingers pinch to zoom and drag to pan, the on-screen arrows still work.
+
+Stays on the PC, refused in words from the phone: API key and model
+settings, pairing and device management, native file and folder
+dialogs (imports and exports), the PC screen, window controls (compact
+mode). The light client remains at `/?lite=1`.
+
+### Voice on the phone
+
+The desktop's voice session uses the PC's microphone and speakers, so it
+cannot be proxied. On the phone the loop runs in the browser instead:
+tap the microphone (or "Sesli mod"), allow the microphone once, and the
+page records until you pause; the recording goes to the PC as 16 kHz WAV,
+the PC's own speech recognizer turns it into text (`POST
+/api/voice/transcribe`), the transcript enters the desktop's own
+`submit_command` marked as spoken - same conversation, same permission
+pipeline, the desktop chat shows it too - and the reply is synthesized
+by the PC's own voice (`POST /api/voice/speak`, the local Windows voice
+as fallback, exactly like the desktop) and played on the phone. Then it
+listens again, until you close the stage or twelve seconds of silence
+pass twice. The phone's audio never touches the PC's devices.
+
+It needs the HTTPS address (browsers give microphone access only on a
+secure origin) and a foreground tab: Android suspends audio in the
+background, and the session says so and ends rather than pretending to
+listen.
+
 ## What the phone can do in this release
 
 - **Sohbet**: text chat with streamed replies, switch or start

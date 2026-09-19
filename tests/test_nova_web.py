@@ -1843,3 +1843,45 @@ def test_drawer_groups_follow_local_calendar_days() -> None:
     assert run("2026-09-01T09:00:00", now) == "Bu ay"
     assert run("2026-07-01T09:00:00", now) == "Daha eski"
     assert run("2026-09-16T09:00:00", now) == "Bugün", "a clock skew never invents a group"
+
+
+# ---------------------------------------------------------------------------
+# phone voice helpers in the shim
+# ---------------------------------------------------------------------------
+
+
+def test_the_phone_wav_encoder_downsamples_into_a_valid_mono_pcm16_file() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    from app.mobile.server import NOVA_SHIM
+
+    source = NOVA_SHIM.read_text(encoding="utf-8")
+    context = quickjs.Context()
+    context.eval(section(source, "function phoneVoiceRms", "\n/* ---- the shim"))
+
+    assert context.eval("phoneVoiceRms(new Float32Array([0.5, -0.5, 0.5, -0.5]))") == pytest.approx(0.5)
+    assert context.eval("phoneVoiceRms(new Float32Array(0))") == 0
+
+    report = json.loads(context.eval("""
+      (() => {
+        const rate = 48000;
+        const chunk = new Float32Array(rate);
+        for (let i = 0; i < rate; i += 1) chunk[i] = Math.sin(i / 20) * 0.5;
+        const buffer = phoneVoiceEncodeWav([chunk], rate, 16000);
+        const view = new DataView(buffer);
+        const text = (start, length) => Array.from(new Uint8Array(buffer, start, length)).map((b) => String.fromCharCode(b)).join("");
+        const samples = new Int16Array(buffer, 44);
+        let peak = 0;
+        for (let i = 0; i < samples.length; i += 1) peak = Math.max(peak, Math.abs(samples[i]));
+        return JSON.stringify({
+          riff: text(0, 4), wave: text(8, 4), fmt: text(12, 4), data: text(36, 4),
+          format: view.getUint16(20, true), channels: view.getUint16(22, true), rate: view.getUint32(24, true),
+          byteRate: view.getUint32(28, true), bits: view.getUint16(34, true), dataSize: view.getUint32(40, true),
+          total: buffer.byteLength, peak,
+        });
+      })()
+    """))
+    assert (report["riff"], report["wave"], report["fmt"], report["data"]) == ("RIFF", "WAVE", "fmt ", "data")
+    assert report["format"] == 1 and report["channels"] == 1 and report["bits"] == 16
+    assert report["rate"] == 16000 and report["byteRate"] == 32000
+    assert report["dataSize"] == 16000 * 2 and report["total"] == 44 + 16000 * 2, "one second at 48 kHz becomes one second at 16 kHz"
+    assert 0x3000 < report["peak"] <= 0x4000, "a half-scale sine stays half scale after the box filter"

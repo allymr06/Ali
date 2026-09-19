@@ -557,6 +557,12 @@
       return;
     }
     applyState(state);
+    // The paired phone gets the whole desktop page unless the light
+    // client was asked for explicitly (?lite=1).
+    if (new URLSearchParams(location.search).get("lite") !== "1") {
+      window.location.replace("/nova/");
+      return;
+    }
     showScreen("chat");
     await loadMessages(state.conversation ? state.conversation.conversation_id : null);
     connectEvents();
@@ -628,5 +634,10 @@
   }
 
   bind();
+  if (new URLSearchParams(location.search).get("expired") === "1") {
+    const error = $("#pair-error");
+    error.textContent = "Oturum yok ya da sona erdi; telefonu yeniden eşleştir.";
+    error.hidden = false;
+  }
   boot();
 })();

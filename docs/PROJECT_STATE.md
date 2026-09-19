@@ -230,6 +230,51 @@ the desktop's busy flag and message list stay untouched.
 - Tailscale is not installed on the development PC: the Serve steps were
   checked against the current documentation and written down, not run;
   real Android, Tailscale and mobile-data checks remain for the user.
+  (19 September: the user installed Tailscale, `tailscale serve` maps
+  `https://alimirili.taile30bb7.ts.net` to the loopback port, and a real
+  Android phone paired and chatted.)
+
+### The whole desktop page on the phone (19 September 2026)
+
+On "bütün özellikleri telefon moduna da ekle": instead of a second UI,
+the paired phone now receives the desktop Nova page itself at `/nova/`.
+A shim loaded before every Nova script (`app/mobile/web/nova-shim.js`)
+provides `window.pywebview.api` as a proxy whose every call is an
+authenticated `POST /api/bridge/<method>` answered by the real
+`NovaBridge` in the desktop process, and `NovaBridge._push` now fans
+every push out to the phones' event channels, so the page's own push
+handlers run unchanged. A deny list (mirrored in the shim and enforced
+by the server) keeps credential/model settings, pairing management,
+native dialogs, the PC microphone/screen and window controls on the
+PC; everything else - the Medical Academy including exams, cards and
+the WebGL Anatomy Lab, chat, tasks, memory, research, routines,
+approvals - runs on the phone against the same records. `css/phone.css`
+is linked by the desktop index too but scoped to `body.phone`, which
+only the shim sets: the rail becomes a bottom bar, layouts stack, span
+classes reset, touch targets grow, the lab puts the model first with a
+fixed viewport and gains pinch-to-zoom and two-finger pan. Verified in
+the in-app browser at 360 px: Nova booted over HTTP, the Academy
+dashboard, a four-question committee rehearsal answered from the phone,
+the skull rendering in WebGL, a chat turn streamed back, no horizontal
+overflow.
+
+### Voice on the phone (19 September 2026)
+
+The desktop voice session owns the PC's microphone and speakers, so the
+phone got its own loop in the shim rather than a proxy: the browser
+records (ScriptProcessor, RMS voice activity detection, a box-filter
+downsample to 16 kHz mono PCM16 WAV built in JavaScript), the PC's own
+recognizer transcribes it (`POST /api/voice/transcribe`, silence coming
+back as empty text rather than an error), the transcript enters the
+desktop's `submit_command` with a new `spoken` flag that records the
+turn as a voice request, the mirrored `reply` push is synthesized by the
+PC's own voice with the desktop's local fallback (`POST
+/api/voice/speak`, `X-JARVIS-Voice: cloud|local`) and decoded straight
+into the phone's audio context. The page's voice stage, captions, orb
+level and phases are driven with the very pushes the desktop session
+would send, so nothing in the desktop UI changed. The phone's audio
+never reaches the PC's devices; `start_voice`/`stop_voice` stay denied
+on the server and are answered by the phone loop in the shim.
 
 ## Night additions: cards, rehearsal, weekly summary, backups, exports (15 September 2026)
 

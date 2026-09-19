@@ -76,6 +76,7 @@ WEB_ASSETS: tuple[str, ...] = (
     "css/screens.css",
     "css/medical.css",
     "css/study.css",
+    "css/phone.css",
     "js/foundation.js",
     "js/bridge.js",
     "js/presence.js",
@@ -757,6 +758,14 @@ class NovaBridge:
             {"kind": kind, "payload": _jsonable(payload)},
             ensure_ascii=True,
         )
+        mobile = self._mobile
+        if mobile is not None:
+            # A paired phone shows the same page: it gets every push the
+            # window gets. Queue puts only, safe from any thread.
+            try:
+                mobile.broadcast_push(kind, _jsonable(payload))
+            except Exception:
+                pass
         if self._ui_thread_id is not None and threading.get_ident() == self._ui_thread_id:
             # Evaluating here would block the thread that has to run the
             # script. A window event that records a diagnostic — hiding to
@@ -2195,10 +2204,13 @@ class NovaBridge:
     # ------------------------------------------------------------------
     # Chat
     # ------------------------------------------------------------------
-    def submit_command(self, text: str) -> dict[str, Any]:
+    def submit_command(self, text: str, spoken: Any = False) -> dict[str, Any]:
+        """One chat turn. ``spoken`` marks a transcript (the phone's voice
+        loop): the record and the core see it as a voice request."""
         normalized = str(text or "").strip()
         if not normalized:
             return {"ok": False, "error": "Komut boş olamaz."}
+        source = RequestSource.VOICE if spoken is True else RequestSource.TEXT
         if self.controller.paused:
             return {"ok": False, "error": PAUSED_MESSAGE}
 
@@ -2248,7 +2260,7 @@ class NovaBridge:
             try:
                 self._command_future = self.controller.submit_background(
                     self.controller.submit_command(
-                        normalized, stream_callback=stream
+                        normalized, stream_callback=stream, source=source
                     ),
                     done,
                 )

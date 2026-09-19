@@ -90,7 +90,7 @@ class Client:
         return connection, response
 
 
-def next_event(response, timeout: float = 10.0):
+def next_event(response, timeout: float = 10.0, want=None):
     deadline = time.time() + timeout
     kind = None
     while time.time() < deadline:
@@ -101,7 +101,11 @@ def next_event(response, timeout: float = 10.0):
         if text.startswith("event: "):
             kind = text[7:]
         elif text.startswith("data: ") and kind:
-            return kind, json.loads(text[6:])
+            # Desktop pushes mirrored as "push" events may interleave with
+            # the lite channel's own kinds; a caller can wait for specific ones.
+            if want is None or kind in want:
+                return kind, json.loads(text[6:])
+            kind = None
         elif not text:
             kind = None
     raise TimeoutError("no event arrived")
@@ -223,7 +227,7 @@ def test_logout_and_desktop_revocation_end_the_session_and_its_channel(mobile) -
     assert mobile.bridge.mobile_revoke_session(session_id) == {"ok": False, "error": "İptal işlemi onaylanmadı."}
     revoked = mobile.bridge.mobile_revoke_session(session_id, True)
     assert revoked["ok"] is True and revoked["sessions"] == []
-    kind, payload = next_event(stream)
+    kind, payload = next_event(stream, want={"session_ended"})
     assert kind == "session_ended" and payload["reason"] == "revoked"
     connection.close()
     status_code, payload = client.request("GET", "/api/state")
@@ -317,7 +321,7 @@ def test_approvals_are_bound_to_the_pending_action_and_never_repeat(mobile) -> N
     assert next_event(stream)[0] == "hello"
 
     future = mobile.controller.submit_background(mobile.bridge._request_approval(approval_request(seconds=30)), lambda _f: None)
-    kind, payload = next_event(stream)
+    kind, payload = next_event(stream, want={"approval"})
     assert kind == "approval" and payload["tool"] == "fs.write" and payload["parameters"]["api_key"] == "<gizli>"
     token = payload["token"]
     assert [item["token"] for item in mobile.server.pending_approvals()] == [token]
@@ -328,7 +332,7 @@ def test_approvals_are_bound_to_the_pending_action_and_never_repeat(mobile) -> N
     status, decided = client.request("POST", f"/api/approvals/{token}", {"approved": True})
     assert status == 200 and decided["ok"] is True
     assert future.result(timeout=5) is True
-    kind, closed = next_event(stream)
+    kind, closed = next_event(stream, want={"approval_closed"})
     assert kind == "approval_closed" and closed["token"] == token
 
     status, repeated = client.request("POST", f"/api/approvals/{token}", {"approved": True})
@@ -388,3 +392,233 @@ def test_static_shell_is_served_versioned_without_leaking_anything(mobile) -> No
     assert client.request("GET", "/offline.html")[0] == 200
     assert client.request("GET", "/../app/config/settings.py")[0] == 404
     assert client.request("GET", "/api/nope")[0] == 401, "unknown API paths still need a session"
+
+
+# ---------------------------------------------------------------------------
+# the whole desktop page on the phone
+# ---------------------------------------------------------------------------
+
+
+def test_the_nova_page_is_served_only_to_paired_phones_with_the_shim(mobile) -> None:
+    stranger = Client(mobile.port)
+    status, _ = stranger.request("GET", "/nova/")
+    assert status == 302, "an unpaired phone is sent to the pairing screen"
+    assert stranger.request("GET", "/nova/js/foundation.js")[0] == 302
+
+    client = paired(mobile)
+    status, body = client.request("GET", "/nova/")
+    assert status == 200
+    assert b'js/nova-shim.js?v=' in body and body.index(b"nova-shim.js") < body.index(b"js/foundation.js"), "the shim loads before every Nova script"
+    assert b"css/phone.css" in body and b'href="/manifest.webmanifest"' in body
+    assert b"Content-Security-Policy" in body, "the desktop page's own CSP travels with it"
+    for path in ("/nova/js/nova-shim.js", "/nova/js/foundation.js", "/nova/css/tokens.css", "/nova/css/phone.css", "/nova/js/medical.js"):
+        assert client.request("GET", path)[0] == 200, path
+    assert client.request("GET", "/nova/js/../../mobile/server.py")[0] == 404
+    assert client.request("GET", "/nova/css/nope.css")[0] == 404
+    assert client.request("GET", "/nova/index.html/extra")[0] == 404
+
+
+def test_bridge_calls_from_the_phone_reach_the_real_bridge_and_denied_ones_do_not(mobile) -> None:
+    client = paired(mobile)
+    stranger = Client(mobile.port)
+    assert stranger.request("POST", "/api/bridge/list_conversations", {"args": []})[0] == 401
+
+    status, payload = client.request("POST", "/api/bridge/list_conversations", {"args": []})
+    assert status == 200 and payload["ok"] is True and "conversations" in payload
+
+    status, payload = client.request("POST", "/api/bridge/search_conversations", {"args": ["merhaba"]})
+    assert status == 200 and payload["ok"] is True and payload["query"] == "merhaba"
+
+    for denied in ("save_settings", "delete_api_key", "mobile_pairing_code", "pick_folder", "start_voice", "set_compact", "run_vision", "open_external"):
+        status, payload = client.request("POST", f"/api/bridge/{denied}", {"args": []})
+        assert status == 403 and "telefondan yapılamaz" in payload["error"], denied
+
+    for unknown in ("_shutdown", "_push", "nonexistent", "__class__"):
+        status, _ = client.request("POST", f"/api/bridge/{unknown}", {"args": []})
+        assert status in (404, 400), unknown
+    assert client.request("POST", "/api/bridge/list_conversations", {"args": "x"})[0] == 400
+    assert client.request("POST", "/api/bridge/list_conversations", {"args": [1, 2, 3]})[0] == 400, "wrong arity is a bad request, not a crash"
+
+    # A phone message runs the desktop's own submit path: same conversation, same state.
+    status, payload = client.request("POST", "/api/bridge/submit_command", {"args": ["Telefondan tam arayüz mesajı"]})
+    assert status == 200 and payload == {"ok": True}
+    wait_for(lambda: not mobile.controller.state.busy and any(m.role == "assistant" for m in mobile.controller.state.messages))
+    assert [m.role for m in mobile.controller.state.messages][:2] == ["user", "assistant"]
+    assert "reply" in [json.loads(script.split("push(", 1)[1].rstrip(")"))["kind"] for script in mobile.window.scripts if "push(" in script]
+
+
+def test_desktop_pushes_are_mirrored_to_the_phone(mobile) -> None:
+    client = paired(mobile)
+    connection, stream = client.events()
+    assert next_event(stream)[0] == "hello"
+
+    mobile.bridge._push("busy", {"busy": True, "status": "PROCESSING"})
+    kind, payload = next_event(stream, want={"push"})
+    assert kind == "push" and payload == {"kind": "busy", "payload": {"busy": True, "status": "PROCESSING"}}
+    assert any("busy" in script for script in mobile.window.scripts), "the desktop window still gets it too"
+
+    status, refreshed = client.request("POST", "/api/bridge/refresh", {"args": []})
+    assert status == 200 and "snapshot" in refreshed, "reconnecting phones re-read the live snapshot"
+    connection.close()
+
+
+# ---------------------------------------------------------------------------
+# phone voice: the phone records, the PC listens and speaks
+# ---------------------------------------------------------------------------
+
+
+class FakeRecognizer:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, int, str | None]] = []
+        self.fail: Exception | None = None
+
+    async def transcribe(self, capture, *, language=None):
+        from app.voice.errors import VoiceNoSpeech
+        from app.voice.models import TranscriptionResult
+
+        self.calls.append((len(capture.data), capture.sample_rate, language))
+        if self.fail is not None:
+            raise self.fail
+        if len(capture.data) < 3200:
+            raise VoiceNoSpeech("silence")
+        return TranscriptionResult(text="Telefondan sesli mesaj", provider="fake", model="fake")
+
+
+class FakeSynthesizer:
+    def __init__(self) -> None:
+        self.texts: list[str] = []
+        self.fail = False
+
+    async def synthesize(self, text: str):
+        from app.voice.models import AudioEncoding, SynthesizedSpeech, pcm16_to_wav
+
+        self.texts.append(text)
+        if self.fail:
+            raise RuntimeError("quota")
+        return SynthesizedSpeech(data=pcm16_to_wav(b"\x10\x00" * 800, 24_000), encoding=AudioEncoding.WAV, provider="fake", model="fake", voice="fake")
+
+
+def wav_bytes(seconds: float = 0.5, rate: int = 16_000, channels: int = 1, width: int = 2) -> bytes:
+    import io
+    import math
+    import struct
+    import wave
+
+    frames = int(rate * seconds)
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(channels)
+        handle.setsampwidth(width)
+        handle.setframerate(rate)
+        if width == 2:
+            handle.writeframes(b"".join(struct.pack("<h", int(3000 * math.sin(i / 8))) * channels for i in range(frames)))
+        else:
+            handle.writeframes(bytes(frames * channels))
+    return buffer.getvalue()
+
+
+def post_raw(client: Client, path: str, data: bytes, content_type: str, *, header: bool = True):
+    connection = http.client.HTTPConnection("127.0.0.1", client.port, timeout=15)
+    headers = {"Content-Type": content_type, "Content-Length": str(len(data))}
+    if header:
+        headers[CLIENT_HEADER] = "pwa"
+    if client.cookie:
+        headers["Cookie"] = client.cookie
+    connection.request("POST", path, body=data, headers=headers)
+    response = connection.getresponse()
+    body = response.read()
+    result = (response.status, body, dict(response.getheaders()))
+    connection.close()
+    return result
+
+
+def test_voice_transcribe_runs_the_pcs_recognizer_and_says_silence_honestly(mobile) -> None:
+    client = paired(mobile)
+    mobile.app.voice = None
+    status, body, _ = post_raw(client, "/api/voice/transcribe", wav_bytes(), "audio/wav")
+    assert status == 409 and "ayarlanmamış" in json.loads(body)["error"]
+
+    recognizer = FakeRecognizer()
+    mobile.app.voice = SimpleNamespace(recognizer=recognizer, synthesizer=FakeSynthesizer())
+
+    stranger = Client(mobile.port)
+    assert post_raw(stranger, "/api/voice/transcribe", wav_bytes(), "audio/wav")[0] == 401
+    assert post_raw(client, "/api/voice/transcribe", wav_bytes(), "audio/wav", header=False)[0] == 403
+    assert post_raw(client, "/api/voice/transcribe", b"{}", "application/json")[0] == 400
+    assert post_raw(client, "/api/voice/transcribe", b"not a wav at all", "audio/wav")[0] == 400
+    assert post_raw(client, "/api/voice/transcribe", wav_bytes(channels=2), "audio/wav")[0] == 400, "stereo is refused, not guessed"
+    status, body, _ = post_raw(client, "/api/voice/transcribe", wav_bytes(seconds=70), "audio/wav")
+    assert status == 413 and "2 MB" in json.loads(body)["error"]
+    assert recognizer.calls == [], "nothing malformed ever reaches the recognizer"
+
+    status, body, _ = post_raw(client, "/api/voice/transcribe", wav_bytes(seconds=0.05), "audio/wav")
+    assert status == 200 and json.loads(body) == {"ok": True, "text": ""}, "silence is an empty text, not an error"
+
+    status, body, _ = post_raw(client, "/api/voice/transcribe", wav_bytes(seconds=0.5), "audio/wav")
+    payload = json.loads(body)
+    assert status == 200 and payload["text"] == "Telefondan sesli mesaj" and payload["provider"] == "fake"
+    assert recognizer.calls[-1] == (16_000, 16_000, "tr"), "16 kHz mono PCM in the configured language"
+
+    from app.voice.errors import VoiceProviderError
+
+    recognizer.fail = VoiceProviderError("down")
+    status, body, _ = post_raw(client, "/api/voice/transcribe", wav_bytes(), "audio/wav")
+    assert status == 502 and "sağlayıcı" in json.loads(body)["error"]
+
+
+def test_voice_speak_uses_the_cloud_voice_and_falls_back_to_the_local_one(mobile) -> None:
+    client = paired(mobile)
+    synthesizer = FakeSynthesizer()
+    mobile.app.voice = SimpleNamespace(recognizer=FakeRecognizer(), synthesizer=synthesizer)
+
+    status, audio, headers = post_raw(client, "/api/voice/speak", json.dumps({"text": "**Kalın** bir `cevap`; # başlık"}).encode("utf-8"), "application/json")
+    assert status == 200 and headers["Content-Type"] == "audio/wav" and audio[:4] == b"RIFF"
+    assert headers["X-JARVIS-Voice"] == "cloud" and headers["Cache-Control"] == "no-store"
+    assert synthesizer.texts == ["Kalın bir cevap; başlık"], "markup never reaches the voice"
+
+    assert client.request("POST", "/api/voice/speak", {"text": "   "})[0] == 400
+    long_text = "kelime " * 1500
+    post_raw(client, "/api/voice/speak", json.dumps({"text": long_text}).encode("utf-8"), "application/json")
+    assert len(synthesizer.texts[-1]) <= 4000, "the desktop's own character limit applies"
+
+    synthesizer.fail = True
+    calls: list[str] = []
+
+    async def local(text: str) -> bytes | None:
+        calls.append(text)
+        return wav_bytes(seconds=0.1)
+
+    mobile.server.local_tts = local
+    status, audio, headers = post_raw(client, "/api/voice/speak", json.dumps({"text": "Bulut sesi düştü"}).encode("utf-8"), "application/json")
+    assert status == 200 and headers["X-JARVIS-Voice"] == "local" and audio[:4] == b"RIFF" and calls == ["Bulut sesi düştü"]
+
+    async def missing(_text: str) -> bytes | None:
+        return None
+
+    mobile.server.local_tts = missing
+    status, body, _ = post_raw(client, "/api/voice/speak", json.dumps({"text": "Hiç ses yok"}).encode("utf-8"), "application/json")
+    assert status == 502 and "metin olarak" in json.loads(body)["error"]
+
+    mobile.app.voice = None
+    assert client.request("POST", "/api/voice/speak", {"text": "x"})[0] == 409
+
+
+def test_a_spoken_submit_from_the_phone_is_recorded_as_a_voice_request(mobile) -> None:
+    client = paired(mobile)
+    status, payload = client.request("POST", "/api/bridge/submit_command", {"args": ["Sesle söylenen mesaj", True]})
+    assert status == 200 and payload == {"ok": True}
+    wait_for(lambda: not mobile.controller.state.busy and any(m.role == "assistant" for m in mobile.controller.state.messages))
+    conversation = mobile.app.conversation_engine.get(mobile.controller.context.conversation_id)
+    assert conversation.turns[0].content == "Sesle söylenen mesaj"
+    assert conversation.turns[0].metadata.get("source") == "voice", "the record knows it was spoken"
+    assert mobile.controller.state.messages[0].role == "user", "the desktop chat shows the transcript like any message"
+
+
+def test_the_asset_stamp_follows_the_shim(tmp_path, mobile) -> None:
+    shim = tmp_path / "shim.js"
+    shim.write_text("// v1", encoding="utf-8")
+    first = MobileServer(mobile.controller, mobile.bridge, mobile.store, port=0, nova_shim=shim).stamp
+    shim.write_text("// v2", encoding="utf-8")
+    second = MobileServer(mobile.controller, mobile.bridge, mobile.store, port=0, nova_shim=shim).stamp
+    assert first != second, "a changed shim invalidates the immutable cache"
+    assert mobile.server.stamp != first

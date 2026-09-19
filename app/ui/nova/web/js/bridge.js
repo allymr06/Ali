@@ -552,7 +552,26 @@ window.NOVA = {
 const PUSH = {
   snapshot(payload) { State.snapshot = payload; renderSnapshot(); },
 
-  busy({ busy, status }) { setBusy(!!busy, status); },
+  /* A turn can begin on the other surface: the phone submits through the
+     same bridge and this page has no bubble for it. State.busy is the tell
+     - the page that sent the message set it before the call, so only the
+     watching one draws the question and the thinking mark here. A spoken
+     turn is left alone: its voice loop already wrote the line. */
+  busy({ busy, status, text, spoken }) {
+    if (busy && text && !spoken && !State.busy) {
+      const message = { role: "user", text, at: Date.now() };
+      State.messages.push(message);
+      State.pendingSources = null;
+      hideChatEmpty();
+      updateChat(() => {
+        appendMessage($("#chat-list"), message, false);
+        Activity.beginTurn(text);
+        showThinking();
+      }, { force: true });
+    }
+    setBusy(!!busy, status);
+    renderHomeSession();
+  },
 
   stream({ text }) {
     if (!text) return;

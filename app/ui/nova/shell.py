@@ -32,6 +32,7 @@ import ctypes
 import getpass
 import hashlib
 import importlib.metadata
+import itertools
 import json
 import os
 import platform
@@ -92,6 +93,7 @@ WEB_RELATIVE_PATH = PurePath("app", "ui", "nova", "web")
 SOURCE_WEB_ROOT = Path(__file__).resolve().parent / "web"
 WINDOW_TITLE = "JARVIS"
 READY_STATUS = "LOCAL CORE READY"
+WORKING_STATUS = "PROCESSING"
 PAUSED_STATUS = "PAUSED"
 PAUSED_MESSAGE = (
     "JARVIS duraklatıldı; devam etmek için tepsi menüsünden Devam'ı seç."
@@ -687,10 +689,14 @@ class NovaBridge:
         # that is still holding this lock inside submit_command/start_voice.
         self._lock = RLock()
         self._push_lock = Lock()
-        # The window's UI thread, learned from the first event it delivers.
-        # A push raised on that thread is deferred instead of evaluated, or
-        # the thread would wait for the JavaScript result it has to deliver.
+        # The window's UI thread, asked of the window itself (see
+        # :meth:`_note_ui_thread`). A push raised on that thread is deferred
+        # instead of evaluated, or the thread would wait for the JavaScript
+        # result it has to deliver.
         self._ui_thread_id: int | None = None
+        # Pushes carry news, so no two of them are interchangeable; the
+        # counter keeps the worker's dedupe from mistaking one for another.
+        self._push_serial = itertools.count()
         self._window_worker = WindowWorker(
             lambda key, exc: self._record_ui_event(
                 "window.worker_failed",
@@ -744,8 +750,28 @@ class NovaBridge:
         self._window = window
 
     def _note_ui_thread(self) -> None:
-        """Remember the thread pywebview delivers window events on."""
-        self._ui_thread_id = threading.get_ident()
+        """Remember the thread the window's message loop runs on.
+
+        pywebview delivers a non-blocking window event (``shown``,
+        ``minimized``, ``restored``) on a thread it starts for that one
+        callback and then drops, so the ident read here is usually a thread
+        that is already gone by the time :meth:`_push` compares against it.
+        The window is asked instead: an operation marshalled through the
+        native form runs on the message loop itself, and that is the thread
+        worth remembering. Without a native form — the tests, any backend
+        that is not WinForms — the calling thread is the only answer there
+        is, and it is the one the blocking ``closing`` event arrives on.
+        """
+        window = self._window
+        native = getattr(window, "native", None)
+        if native is None or not getattr(native, "InvokeRequired", False):
+            self._ui_thread_id = threading.get_ident()
+        elif self._ui_thread_id is None:
+            try:
+                _run_on_ui_thread(window, self._note_ui_thread)
+            except Exception:
+                # The form is on its way out; the old ident is no worse.
+                pass
 
     def _defer(self, key: str, job: Callable[[], None]) -> bool:
         """Run ``job`` off the UI thread; ``False`` if one is already queued.
@@ -774,8 +800,13 @@ class NovaBridge:
             # Evaluating here would block the thread that has to run the
             # script. A window event that records a diagnostic — hiding to
             # the tray, minimising — reaches this line, and inline it hangs
-            # the whole application.
-            self._window_worker.submit(f"push:{kind}:{len(message)}", lambda: self._evaluate_push(message))
+            # the whole application. The key is serial because the worker
+            # drops a job whose key is already waiting: two notifications
+            # that merely share a kind are still two notifications.
+            self._window_worker.submit(
+                f"push:{kind}:{next(self._push_serial)}",
+                lambda: self._evaluate_push(message),
+            )
             return
         self._evaluate_push(message)
 
@@ -2261,6 +2292,21 @@ class NovaBridge:
                     "ok": False,
                     "error": "JARVIS şu an başka bir istek işliyor.",
                 }
+            # Every surface has to learn that a turn started, not only the
+            # one that started it: a phone submit reaches this method through
+            # the same bridge and otherwise leaves the desktop sitting at
+            # READY with a bubble filling itself in. Raised before the
+            # submission, because a callback that fires synchronously pushes
+            # the matching busy:false and must not be overtaken.
+            self._push(
+                "busy",
+                {
+                    "busy": True,
+                    "status": WORKING_STATUS,
+                    "text": normalized,
+                    "spoken": spoken is True,
+                },
+            )
             try:
                 self._command_future = self.controller.submit_background(
                     self.controller.submit_command(
@@ -2269,6 +2315,7 @@ class NovaBridge:
                     done,
                 )
             except RuntimeError as exc:
+                self._push("busy", {"busy": False, "status": READY_STATUS})
                 return {"ok": False, "error": f"İstek gönderilemedi ({exc})."}
         return {"ok": True}
 

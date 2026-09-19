@@ -81,6 +81,10 @@ PHONE_DENIED_MESSAGE = "Bu işlem telefondan yapılamaz; bilgisayardaki JARVIS't
 # Phone voice: the phone records, the PC's own speech providers listen and
 # speak. 16 kHz mono PCM16 for 30 s is under a megabyte; two is plenty.
 MAX_VOICE_UPLOAD_BYTES = 2 * 1024 * 1024
+# The largest body this server ever accepts, and so the most it is
+# willing to swallow from a request it refuses before reusing the
+# connection it arrived on.
+MAX_DRAIN_BYTES = MAX_VOICE_UPLOAD_BYTES
 VOICE_SAMPLE_RATES = range(8_000, 48_001)
 VOICE_MIME_BY_ENCODING = {
     "wav": "audio/wav", "mp3": "audio/mpeg", "opus": "audio/ogg", "aac": "audio/aac", "flac": "audio/flac",
@@ -91,6 +95,7 @@ NL_BYTES = b'\n'
 CLIENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 CANCELLABLE_STATUSES = {"queued", "running", "paused", "waiting_for_input", "waiting_for_approval"}
 PAUSED_MESSAGE = "JARVIS duraklatıldı; masaüstünden sürdürülene kadar komut almıyor."
+ARCHIVED_MESSAGE = "Arşivdeki bir konuşmaya yazılamaz; önce masaüstünden arşivden çıkar."
 # What a task action actually achieved, said in the phone's own language.
 TASK_ACTION_MESSAGES_TR = {
     ("resume", "completed"): "Görev tamamlandı.",
@@ -542,7 +547,13 @@ class MobileServer:
                 conversation = engine.get(UUID(str(chosen)))
             except (KeyError, ValueError):
                 conversation = None
-            if conversation is not None and getattr(conversation.status, "value", conversation.status) == "active":
+            if conversation is not None:
+                if getattr(conversation.status, "value", conversation.status) != "active":
+                    # The phone still shows this thread as the open one.
+                    # Filing the message in a fresh conversation would
+                    # leave the user writing where nobody is reading, so
+                    # refuse exactly as tapping the archived thread does.
+                    raise ValueError(ARCHIVED_MESSAGE)
                 if chosen != session.conversation_id:
                     self.store.set_conversation(session.session_id, str(chosen))
                 return str(chosen)
@@ -574,7 +585,7 @@ class MobileServer:
         engine = self.controller.application.conversation_engine
         conversation = engine.get(UUID(str(conversation_id)))  # KeyError/ValueError bubble up
         if getattr(conversation.status, "value", conversation.status) != "active":
-            raise ValueError("Arşivdeki bir konuşmaya yazılamaz; önce masaüstünden arşivden çıkar.")
+            raise ValueError(ARCHIVED_MESSAGE)
         self.store.set_conversation(session.session_id, str(conversation_id))
         return self.messages(str(conversation_id))
 
@@ -665,6 +676,8 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
         protocol_version = "HTTP/1.1"
         server_version = "JARVIS-Mobile"
         sys_version = ""
+        # Whether this request's body has left the socket - see _drain_body.
+        _body_consumed = False
 
         # ----------------------------------------------------------- utils
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - stdlib signature
@@ -735,6 +748,7 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
             if length < 0 or length > MAX_BODY_BYTES:
                 raise ValueError("İstek gövdesi çok büyük.")
             raw = self.rfile.read(length) if length else b""
+            self._body_consumed = not self._chunked()
             if not raw:
                 return {}
             payload = json.loads(raw.decode("utf-8"))
@@ -748,10 +762,49 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
                 raise ValueError("İstek gövdesi boş.")
             if length > limit:
                 raise OverflowError("İstek gövdesi çok büyük.")
-            return self.rfile.read(length)
+            payload = self.rfile.read(length)
+            self._body_consumed = not self._chunked()
+            return payload
+
+        def _chunked(self) -> bool:
+            """Whether the body's end is marked in the stream, not in a header."""
+            encoding = (self.headers.get("Transfer-Encoding") or "").strip().lower()
+            return bool(encoding) and encoding != "identity"
+
+        def _drain_body(self) -> None:
+            """Swallow a request body no handler asked for.
+
+            Keep-alive is on, so whatever a POST declared and nobody read
+            stays in the socket and the next request on that connection
+            is parsed out of the leftovers. A refusal has to finish
+            reading what it refused. When the body is larger than this
+            server ever accepts, or its length is not stated at all,
+            there is no safe place to stop and the connection ends.
+            """
+            if self._body_consumed:
+                return
+            self._body_consumed = True
+            if self.command in {"GET", "HEAD"}:
+                return
+            try:
+                remaining = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                remaining = -1
+            if remaining < 0 or remaining > MAX_DRAIN_BYTES or self._chunked():
+                self.close_connection = True
+                return
+            while remaining > 0:
+                chunk = self.rfile.read(min(remaining, 65536))
+                if not chunk:
+                    self.close_connection = True
+                    return
+                remaining -= len(chunk)
 
         def _send(self, status: int, body: bytes, content_type: str, extra: dict[str, str] | None = None) -> None:
+            self._drain_body()
             self.send_response(status)
+            if self.close_connection:
+                self.send_header("Connection", "close")
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("X-Content-Type-Options", "nosniff")
@@ -785,6 +838,7 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
             self._dispatch("POST")
 
         def _dispatch(self, method: str) -> None:
+            self._body_consumed = False
             path = urlsplit(self.path).path
             try:
                 if path.startswith("/api/"):

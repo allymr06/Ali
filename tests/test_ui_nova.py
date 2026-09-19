@@ -420,12 +420,17 @@ def test_second_command_is_rejected_while_the_first_runs(booted) -> None:
     wait_until(lambda: "snapshot" in booted.window.kinds())
 
     kinds = booted.window.kinds()
-    assert kinds.index("reply") < kinds.index("busy") < kinds.index("snapshot")
+    settled = max(index for index, kind in enumerate(kinds) if kind == "busy")
+    assert kinds.index("busy") < kinds.index("reply") < settled < kinds.index("snapshot")
     reply = booted.window.payloads("reply")[0]
     assert reply["role"] == "assistant"
     assert reply["text"] == "Bitti: ilk"
+    # A turn brackets itself: working when it starts, ready when it ends.
+    # The rejected second command never opened one, so there is no pair
+    # for it.
     assert booted.window.payloads("busy") == [
-        {"busy": False, "status": "LOCAL CORE READY"}
+        {"busy": True, "status": "PROCESSING", "text": "ilk", "spoken": False},
+        {"busy": False, "status": "LOCAL CORE READY"},
     ]
     assert booted.controller.state.busy is False
     assert [m.role for m in booted.controller.state.messages] == [
@@ -449,7 +454,8 @@ def test_streamed_chunks_reach_the_page_in_order(booted) -> None:
     booted.app.engine = StreamingEngine()
 
     assert booted.bridge.submit_command("selam") == {"ok": True}
-    wait_until(lambda: "busy" in booted.window.kinds())
+    # "snapshot" closes the turn; "busy" now opens one as well.
+    wait_until(lambda: "snapshot" in booted.window.kinds())
 
     kinds = booted.window.kinds()
     streamed = "".join(p["text"] for p in booted.window.payloads("stream"))
@@ -465,12 +471,70 @@ def test_core_failure_is_reported_as_a_system_message(booted) -> None:
     booted.app.engine = BrokenEngine()
 
     assert booted.bridge.submit_command("patla") == {"ok": True}
-    wait_until(lambda: "busy" in booted.window.kinds())
+    # "snapshot" closes the turn; "busy" now opens one as well.
+    wait_until(lambda: "snapshot" in booted.window.kinds())
 
     reply = booted.window.payloads("reply")[0]
     assert reply["role"] == "system"
     assert "RuntimeError" in reply["text"]
     assert "çok gizli ayrıntı" not in json.dumps(booted.window.events())
+
+
+def test_a_submit_from_elsewhere_still_drives_the_window(booted) -> None:
+    """A phone message reaches this very method (app/mobile/server.py's
+    /api/bridge/<method> route), and the desktop page did not draw anything
+    for it: without a busy push the window sits at READY while a bubble
+    fills itself in."""
+    release = threading.Event()
+
+    class GatedEngine:
+        async def handle(self, request, context, **_kwargs):
+            while not release.is_set():
+                await asyncio.sleep(0.01)
+            return Response("Bitti", request_id=request.request_id)
+
+    booted.app.engine = GatedEngine()
+
+    assert booted.bridge.submit_command("telefondan selam") == {"ok": True}
+    wait_until(lambda: "busy" in booted.window.kinds())
+    # Before any answer exists, the page already knows a turn is running
+    # and which question it belongs to.
+    assert booted.window.kinds()[-1] == "busy"
+    assert booted.window.payloads("busy")[0] == {
+        "busy": True,
+        "status": "PROCESSING",
+        "text": "telefondan selam",
+        "spoken": False,
+    }
+
+    release.set()
+    wait_until(lambda: "snapshot" in booted.window.kinds())
+    assert booted.window.payloads("busy")[-1] == {
+        "busy": False,
+        "status": "LOCAL CORE READY",
+    }
+
+
+def test_the_phone_voice_loop_marks_its_turn_as_spoken(booted) -> None:
+    """The phone's voice loop writes the transcript itself, so the page has
+    to be able to tell that turn from a typed one and not draw it twice."""
+    booted.bridge.submit_command("saat kaç", True)
+    wait_until(lambda: "busy" in booted.window.kinds())
+    assert booted.window.payloads("busy")[0]["spoken"] is True
+
+
+def test_a_refused_submission_leaves_no_turn_open(booted, monkeypatch) -> None:
+    def refuse(_controller, operation, _callback):
+        operation.close()  # the real runner would have consumed the coroutine
+        raise RuntimeError("runner kapalı")
+
+    monkeypatch.setattr(DesktopController, "submit_background", refuse)
+    result = booted.bridge.submit_command("selam")
+    assert result["ok"] is False and "runner kapalı" in result["error"]
+    assert [payload["busy"] for payload in booted.window.payloads("busy")] == [
+        True,
+        False,
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -1916,6 +1980,83 @@ def test_launch_nova_installs_an_os_notifier_and_window_visibility_hooks(monkeyp
         if event.name == "window.visibility"
     ]
     assert visibility == [True, False, True, False]
+
+
+def test_two_pushes_of_a_kind_are_not_mistaken_for_one(booted) -> None:
+    """The window worker drops a job whose key is already waiting, so a push
+    key has to identify the push rather than describe its size. These two
+    notifications serialize to exactly the same number of bytes."""
+    gate = threading.Event()
+    assert booted.bridge._defer("gate", gate.wait) is True  # hold the worker
+    booted.bridge._ui_thread_id = threading.get_ident()  # take the deferred branch
+    try:
+        booted.bridge._push("notification", {"title": "AAAA"})
+        booted.bridge._push("notification", {"title": "BBBB"})
+    finally:
+        booted.bridge._ui_thread_id = None
+        gate.set()
+
+    assert booted.bridge._window_worker.wait_idle(5.0)
+    assert booted.window.payloads("notification") == [
+        {"title": "AAAA"},
+        {"title": "BBBB"},
+    ]
+
+
+def test_the_ui_thread_is_learned_from_the_window_not_the_event_thread(
+    booted, monkeypatch
+) -> None:
+    """pywebview runs a non-blocking window event (``shown``, ``minimized``)
+    on a thread it starts for that one callback and then drops, so the ident
+    read inside the handler belongs to a thread that is already gone. The
+    guard in ``_push`` then answers for nobody."""
+    ui_thread = threading.get_ident()
+    handoff: list[tuple] = []
+
+    class NativeForm:
+        """WinForms answers this from any thread."""
+
+        @property
+        def InvokeRequired(self) -> bool:  # noqa: N802 - the .NET spelling
+            return threading.get_ident() != ui_thread
+
+    def marshal(_window, operation) -> None:
+        done = threading.Event()
+        handoff.append((operation, done))
+        assert done.wait(5.0), "the operation never reached the UI thread"
+
+    monkeypatch.setattr(shell, "_run_on_ui_thread", marshal)
+    window = FakeWindow()
+    window.native = NativeForm()
+    booted.bridge._attach(window)
+    booted.bridge._ui_thread_id = None
+
+    event_thread: dict[str, int] = {}
+
+    def deliver_window_event() -> None:
+        event_thread["ident"] = threading.get_ident()
+        booted.bridge._note_ui_thread()
+
+    thread = threading.Thread(target=deliver_window_event, name="pywebview-event")
+    thread.start()
+    wait_until(lambda: bool(handoff))
+    operation, done = handoff.pop()
+    operation()  # this thread is the window's own; that is the whole point
+    done.set()
+    thread.join(5.0)
+
+    assert booted.bridge._ui_thread_id == ui_thread
+    assert booted.bridge._ui_thread_id != event_thread["ident"]
+
+    # A later window event arrives on yet another throwaway thread and does
+    # not replace what the window already told us.
+    again = threading.Thread(target=booted.bridge._note_ui_thread)
+    again.start()
+    again.join(5.0)
+    assert booted.bridge._ui_thread_id == ui_thread
+    assert handoff == [], "the window was asked again for an answer it had"
+
+    booted.bridge._ui_thread_id = None
 
 
 def test_boot_warms_the_provider_connection_on_the_runner(booted) -> None:

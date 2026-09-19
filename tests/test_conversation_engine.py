@@ -440,3 +440,83 @@ def test_complete_response_keeps_timing_and_tool_count_when_present() -> None:
     assert turn is not None
     assert turn.metadata["elapsed_seconds"] == 1.05
     assert turn.metadata["tool_calls"] == 1
+
+
+def test_sensitive_tool_content_survives_later_rebuilds_in_the_same_turn():
+    store = InMemoryConversationStore()
+    engine = ConversationEngine(store)
+    context = Context()
+    request = Request("panoyu oku ve saati söyle")
+    engine.prepare_request(request, context)
+    engine.add_assistant_tool_calls(
+        context,
+        request_id=request.request_id,
+        content=None,
+        tool_calls=[
+            {"id": "gizli", "function": {"name": "clipboard"}},
+            {"id": "saat", "function": {"name": "clock"}},
+        ],
+    )
+    engine.add_tool_result(
+        context,
+        request_id=request.request_id,
+        tool_call_id="gizli",
+        content="Sensitive output was not retained.",
+        provider_content="çok gizli pano metni",
+    )
+    engine.add_tool_result(
+        context,
+        request_id=request.request_id,
+        tool_call_id="saat",
+        content="14:05",
+    )
+    engine.add_assistant_tool_calls(
+        context,
+        request_id=request.request_id,
+        content=None,
+        tool_calls=[{"id": "yaz", "function": {"name": "write_file"}}],
+    )
+
+    sensitive = next(
+        message
+        for message in context.values["messages"]
+        if message.get("tool_call_id") == "gizli"
+    )
+    assert sensitive["content"] == "çok gizli pano metni"
+    assert "çok gizli" not in repr(store.get(context.conversation_id))
+
+
+def test_sensitive_tool_content_is_dropped_once_the_turn_is_answered():
+    store = InMemoryConversationStore()
+    engine = ConversationEngine(store)
+    context = Context()
+    request = Request("panoyu oku")
+    engine.prepare_request(request, context)
+    engine.add_assistant_tool_calls(
+        context,
+        request_id=request.request_id,
+        content=None,
+        tool_calls=[{"id": "gizli", "function": {"name": "clipboard"}}],
+    )
+    engine.add_tool_result(
+        context,
+        request_id=request.request_id,
+        tool_call_id="gizli",
+        content="Sensitive output was not retained.",
+        provider_content="çok gizli pano metni",
+    )
+    engine.complete_response(
+        request,
+        Response("Panonda bir şey var.", request_id=request.request_id),
+        context,
+    )
+
+    def leaked() -> bool:
+        return any(
+            "çok gizli" in str(message.get("content") or "")
+            for message in context.values["messages"]
+        )
+
+    assert not leaked()
+    engine.prepare_request(Request("peki şimdi ne yapayım"), context)
+    assert not leaked()

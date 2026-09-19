@@ -39,6 +39,13 @@ class ConversationEngine:
         self._summary_max_characters = summary_max_characters
         self._system_prompt = system_prompt.strip() if system_prompt else None
         self._lock = RLock()
+        # Sensitive tool output is never written to the store; the stored turn
+        # carries a placeholder instead. The provider still needs the real text
+        # for the turn that produced it, or the model is told a tool ran without
+        # being told what it returned and answers from a hole in the transcript.
+        # These overrides therefore live in memory only, keyed by the turn that
+        # produced them, and are dropped as soon as that turn ends.
+        self._provider_overrides: dict[UUID, tuple[UUID, dict[str, str]]] = {}
 
     @property
     def store(self) -> ConversationStore:
@@ -166,13 +173,51 @@ class ConversationEngine:
         messages.extend(turn.to_message() for turn in selected)
         return messages
 
+    def _provider_overrides_for(
+        self,
+        conversation_id: UUID,
+        request_id: UUID | None,
+    ) -> dict[str, str]:
+        entry = self._provider_overrides.get(conversation_id)
+        if entry is None:
+            return {}
+        owning_request_id, overrides = entry
+        if request_id is None or owning_request_id != request_id:
+            del self._provider_overrides[conversation_id]
+            return {}
+        return overrides
+
+    def _forget_provider_overrides(self, conversation_id: UUID) -> None:
+        self._provider_overrides.pop(conversation_id, None)
+
     def _sync_context(
         self,
         conversation: Conversation,
         context: Context,
         request_id: UUID | None = None,
     ) -> None:
-        context.values["messages"] = self._context_messages(conversation)
+        messages = self._context_messages(conversation)
+        overrides = self._provider_overrides_for(
+            conversation.conversation_id,
+            request_id,
+        )
+        if overrides:
+            restored: list[dict[str, Any]] = []
+            for message in messages:
+                tool_call_id = message.get("tool_call_id")
+                replacement = (
+                    overrides.get(tool_call_id)
+                    if isinstance(tool_call_id, str)
+                    else None
+                )
+                if replacement is None:
+                    restored.append(message)
+                    continue
+                transient = dict(message)
+                transient["content"] = replacement
+                restored.append(transient)
+            messages = restored
+        context.values["messages"] = messages
         context.values["conversation_id"] = str(conversation.conversation_id)
         if request_id is not None:
             context.values["conversation_request_id"] = str(request_id)
@@ -247,14 +292,17 @@ class ConversationEngine:
                 metadata=dict(metadata or {}),
             )
             conversation.add_turn(turn)
-            self._sync_context(conversation, context, request_id)
             if provider_content is not None:
-                messages = list(context.values.get("messages", []))
-                if messages and messages[-1].get("tool_call_id") == tool_call_id:
-                    transient = dict(messages[-1])
-                    transient["content"] = provider_content
-                    messages[-1] = transient
-                    context.values["messages"] = messages
+                entry = self._provider_overrides.get(
+                    conversation.conversation_id
+                )
+                if entry is None or entry[0] != request_id:
+                    entry = (request_id, {})
+                    self._provider_overrides[
+                        conversation.conversation_id
+                    ] = entry
+                entry[1][str(tool_call_id)] = provider_content
+            self._sync_context(conversation, context, request_id)
             return turn
 
     def complete_response(
@@ -263,9 +311,12 @@ class ConversationEngine:
         response: Response,
         context: Context,
     ) -> ConversationTurn | None:
-        if not response.text:
-            return None
         with self._lock:
+            # The turn is over, so sensitive tool output has served the provider
+            # call it was needed for and stops being replayed into the context.
+            self._forget_provider_overrides(context.conversation_id)
+            if not response.text:
+                return None
             conversation = self.ensure(context.conversation_id)
             existing = next(
                 (

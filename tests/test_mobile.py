@@ -18,7 +18,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app.mobile.server import CLIENT_HEADER, MobileServer
+from app.mobile.server import CLIENT_HEADER, WEB_ROOT, MobileServer
 from app.mobile.sessions import (
     MobileSessionStore,
     PairingError,
@@ -213,6 +213,53 @@ def test_mutations_require_the_page_header_and_a_matching_origin(mobile) -> None
     assert status == 200
 
 
+def test_a_refused_post_leaves_the_connection_in_step(mobile) -> None:
+    """Keep-alive is on, so a refusal still has to swallow the body it refused.
+
+    Whatever a POST declared and no handler read stays in the socket, and
+    the next request on that connection gets parsed out of the leftovers -
+    the phone's following tap answers with someone else's garbage.
+    """
+    client = paired(mobile)
+    body = json.dumps({"text": "x" * 4000, "client_id": "keepalive-01"}).encode("utf-8")
+    page = {CLIENT_HEADER: "pwa", "Cookie": client.cookie or ""}
+    refusals = (
+        ("/api/chat", {}, 401),                        # no session
+        ("/api/chat", {"Cookie": client.cookie}, 403),  # a session, but not the page
+        ("/api/bridge/save_settings", page, 403),       # a bridge method the phone may not call
+        ("/api/nope", page, 404),                       # no such route
+        ("/nova/", page, 405),                          # not a POST surface at all
+    )
+    for path, headers, expected in refusals:
+        connection = http.client.HTTPConnection("127.0.0.1", mobile.port, timeout=10)
+        try:
+            connection.request("POST", path, body=body, headers={"Content-Type": "application/json", **headers})
+            refused = connection.getresponse()
+            refused.read()
+            assert refused.status == expected, (path, refused.status)
+            connection.request("GET", "/api/health", headers={CLIENT_HEADER: "pwa"})
+            following = connection.getresponse()
+            payload = following.read()
+            assert following.status == 200, (path, following.status, payload[:120])
+            assert json.loads(payload)["ok"] is True, path
+        finally:
+            connection.close()
+
+    # A body whose end is only marked in the stream cannot be drained on the
+    # way out, so the connection is closed rather than handed on unparsed.
+    connection = http.client.HTTPConnection("127.0.0.1", mobile.port, timeout=10)
+    try:
+        connection.request(
+            "POST", "/api/bridge/save_settings", body=iter([body]),
+            headers={**page, "Content-Type": "application/json"}, encode_chunked=True,
+        )
+        refused = connection.getresponse()
+        refused.read()
+        assert refused.status == 403 and refused.getheader("Connection") == "close"
+    finally:
+        connection.close()
+
+
 def test_logout_and_desktop_revocation_end_the_session_and_its_channel(mobile) -> None:
     client = paired(mobile)
     connection, stream = client.events()
@@ -310,6 +357,35 @@ def test_chat_input_is_validated_and_a_running_turn_blocks_a_second(mobile) -> N
     mobile.controller.set_paused(False)
 
 
+def test_a_message_into_an_archived_thread_is_refused_not_replaced(mobile) -> None:
+    """The phone is told, never quietly handed a different conversation.
+
+    The phone still shows the archived thread as the open one; filing the
+    message in a fresh conversation would leave the user writing where
+    nobody is reading and the old thread looking untouched.
+    """
+    client = paired(mobile)
+    status, payload = client.request("POST", "/api/chat", {"text": "Arşivden önce", "client_id": "archive-0001"})
+    assert status == 200, payload
+    conversation_id = payload["turn"]["conversation_id"]
+    wait_for(lambda: client.request("GET", "/api/turns/archive-0001")[1]["turn"]["status"] != "running")
+    before = len(mobile.controller.list_conversations())
+
+    mobile.controller.archive_conversation(conversation_id)
+
+    status, payload = client.request("POST", "/api/chat", {"text": "Arşivden sonra", "client_id": "archive-0002"})
+    assert status == 409 and "Arşivdeki" in payload["error"] and "masaüstünden" in payload["error"]
+    assert client.request("GET", "/api/turns/archive-0002")[0] == 404, "nothing was started anywhere"
+    assert len(mobile.controller.list_conversations()) == before, "no stand-in conversation was invented"
+    assert len(mobile.app.conversation_engine.get(UUID(conversation_id)).turns) == 2, "the thread is as it was"
+
+    # The desktop is what reopens it - and then the phone writes into the same thread.
+    mobile.controller.unarchive_conversation(conversation_id)
+    status, payload = client.request("POST", "/api/chat", {"text": "Arşivden çıkınca", "client_id": "archive-0003"})
+    assert status == 200 and payload["turn"]["conversation_id"] == conversation_id
+    wait_for(lambda: client.request("GET", "/api/turns/archive-0003")[1]["turn"]["status"] != "running")
+
+
 # ---------------------------------------------------------------------------
 # approvals and tasks
 # ---------------------------------------------------------------------------
@@ -392,6 +468,127 @@ def test_static_shell_is_served_versioned_without_leaking_anything(mobile) -> No
     assert client.request("GET", "/offline.html")[0] == 200
     assert client.request("GET", "/../app/config/settings.py")[0] == 404
     assert client.request("GET", "/api/nope")[0] == 401, "unknown API paths still need a session"
+
+
+# ---------------------------------------------------------------------------
+# the offline shell, executed in QuickJS
+# ---------------------------------------------------------------------------
+
+
+# A service worker's world, small enough to reason about: a cache keyed by
+# string, a fetch that can be switched offline or made to answer with a
+# redirect, and a driver that fires one navigation.
+SW_ENVIRONMENT = r"""
+var CACHES = {};
+var HANDLERS = {};
+var self = {
+  location: { origin: "https://pc.tail.ts.net" },
+  addEventListener: function (kind, fn) { HANDLERS[kind] = fn; },
+  skipWaiting: function () { return Promise.resolve(true); },
+  clients: { claim: function () { return Promise.resolve(true); } }
+};
+function URL(href) {
+  var parts = /^([a-z]+:)\/\/([^\/?#]*)([^?#]*)(\?[^#]*)?/.exec(href);
+  this.origin = parts[1] + "//" + parts[2];
+  this.pathname = parts[3] || "/";
+  this.search = parts[4] || "";
+}
+function Response(body, init) {
+  this.body = body;
+  this.status = (init && init.status) || 200;
+  this.ok = this.status >= 200 && this.status < 300;
+}
+Response.prototype.clone = function () { return new Response(this.body, { status: this.status }); };
+var caches = {
+  open: function (name) {
+    if (!CACHES[name]) { CACHES[name] = {}; }
+    var store = CACHES[name];
+    return Promise.resolve({
+      addAll: function (urls) { urls.forEach(function (u) { store[u] = "shell:" + u; }); return Promise.resolve(true); },
+      put: function (key, response) { store[typeof key === "string" ? key : key.url] = response.body; return Promise.resolve(true); }
+    });
+  },
+  keys: function () { return Promise.resolve(Object.keys(CACHES)); },
+  delete: function (name) { delete CACHES[name]; return Promise.resolve(true); },
+  match: function (key) {
+    var wanted = typeof key === "string" ? key : key.url;
+    var names = Object.keys(CACHES);
+    for (var i = 0; i < names.length; i += 1) {
+      if (Object.prototype.hasOwnProperty.call(CACHES[names[i]], wanted)) {
+        return Promise.resolve(new Response(CACHES[names[i]][wanted]));
+      }
+    }
+    return Promise.resolve(undefined);
+  }
+};
+var OFFLINE = false;
+var STATUS = 200;
+function fetch(request) {
+  if (OFFLINE) { return Promise.reject(new Error("offline")); }
+  return Promise.resolve(new Response("live:" + request.url, { status: STATUS }));
+}
+var SERVED = {};
+function install() { HANDLERS.install({ waitUntil: function (_kept) {} }); }
+function navigate(name, path) {
+  var served = null;
+  HANDLERS.fetch({
+    request: { url: "https://pc.tail.ts.net" + path, mode: "navigate", method: "GET" },
+    respondWith: function (promise) { served = promise; }
+  });
+  served.then(
+    function (response) { SERVED[name] = response ? response.body : null; },
+    function () { SERVED[name] = "REJECTED"; }
+  );
+}
+function dump() { return JSON.stringify({ caches: CACHES, served: SERVED }); }
+"""
+
+
+def service_worker(stamp: str = "teststamp"):
+    """The real sw.js in QuickJS; each call runs a step and returns the world."""
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(SW_ENVIRONMENT)
+    context.eval((WEB_ROOT / "sw.js").read_text(encoding="utf-8").replace("__STAMP__", stamp))
+
+    def step(script: str) -> dict:
+        context.eval(script)
+        for _ in range(10_000):  # promises only settle when their jobs run
+            if not context.execute_pending_job():
+                break
+        return json.loads(context.eval("dump()"))
+
+    return step
+
+
+def test_each_navigable_page_keeps_its_own_offline_shell() -> None:
+    """Two pages are navigable here, and neither may be cached as the other."""
+    step = service_worker()
+    step("install();")
+    step("navigate('phone', '/');")
+    cached = step("navigate('nova', '/nova/');")["caches"]["jarvis-mobile-teststamp"]
+    assert cached["/"] == "live:https://pc.tail.ts.net/"
+    assert cached["/nova/"] == "live:https://pc.tail.ts.net/nova/"
+    assert cached["/index.html"] == "shell:/index.html", "the Nova page never lands on the phone shell's key"
+
+    step("OFFLINE = true;")
+    step("navigate('phone_offline', '/');")
+    served = step("navigate('nova_offline', '/nova/');")["served"]
+    assert served["phone_offline"] == "live:https://pc.tail.ts.net/", "the phone gets its own page back"
+    assert served["nova_offline"] == "live:https://pc.tail.ts.net/nova/", "and Nova gets its own"
+
+
+def test_a_redirect_is_never_kept_as_a_shell() -> None:
+    """An unpaired phone is sent to the pairing screen; that answer is not a page."""
+    step = service_worker()
+    step("install();")
+    step("STATUS = 302;")
+    cached = step("navigate('nova', '/nova/');")["caches"]["jarvis-mobile-teststamp"]
+    assert "/nova/" not in cached
+
+    step("OFFLINE = true;")
+    served = step("navigate('nova_offline', '/nova/');")["served"]
+    assert served["nova_offline"] == "shell:/offline.html", "with nothing cached, the offline page says so"
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import FrozenInstanceError
 from datetime import timedelta
@@ -532,3 +535,189 @@ async def test_the_async_path_returns_the_approval_the_same_way() -> None:
     assert blocked.status is ToolExecutionStatus.BLOCKED
     assert retried.status is ToolExecutionStatus.SUCCESS
     assert retried.data == "b.pdf"
+
+
+def _overlap_counting_handler(
+    ledger: dict[str, int],
+    hold: threading.Event,
+):
+    """A handler that reports how many copies of itself ran at once."""
+    lock = threading.Lock()
+
+    def handler() -> str:
+        with lock:
+            ledger["live"] += 1
+            ledger["peak"] = max(ledger["peak"], ledger["live"])
+        try:
+            hold.wait(10.0)
+        finally:
+            with lock:
+                ledger["live"] -= 1
+        return "done"
+
+    return handler
+
+
+def test_a_timed_out_worker_keeps_the_slot_until_it_actually_stops() -> None:
+    """The slot follows the work, not the wait.
+
+    Abandoning a handler on timeout does not stop the thread running it.
+    A tool that declares one writer - every confirming filesystem tool
+    does - must not get a second one while the first is still inside the
+    handler, and must not stay wedged once it leaves.
+    """
+    executor = ToolExecutor()
+    ledger = {"live": 0, "peak": 0}
+    hold = threading.Event()
+    executor.register(
+        ToolDefinition(
+            name="one_writer",
+            description="One writer",
+            timeout_seconds=0.05,
+            max_concurrency=1,
+        ),
+        _overlap_counting_handler(ledger, hold),
+    )
+
+    abandoned = executor.execute("one_writer")
+    intruder = executor.execute("one_writer")
+    hold.set()
+    deadline = time.monotonic() + 5.0
+    while (
+        executor._active_execution_counts.get("one_writer")
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.01)
+    hold.clear()
+    after_worker_finished = executor.execute("one_writer")
+    hold.set()
+
+    assert abandoned.status is ToolExecutionStatus.TIMEOUT
+    assert intruder.status is ToolExecutionStatus.BLOCKED, (
+        "the abandoned handler is still running, so its slot is still taken"
+    )
+    assert ledger["peak"] == 1, "two writers were inside the tool at once"
+    assert after_worker_finished.status is ToolExecutionStatus.TIMEOUT, (
+        "the slot must come back when the work ends, or the tool is wedged"
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_async_path_holds_the_slot_for_the_thread_too() -> None:
+    """Cancelling the await does not reach into the thread."""
+    executor = ToolExecutor()
+    ledger = {"live": 0, "peak": 0}
+    hold = threading.Event()
+    executor.register(
+        ToolDefinition(
+            name="one_writer_async",
+            description="One writer",
+            timeout_seconds=0.05,
+            max_concurrency=1,
+        ),
+        _overlap_counting_handler(ledger, hold),
+    )
+
+    abandoned = await executor.execute("one_writer_async")
+    intruder = await executor.execute("one_writer_async")
+    hold.set()
+    deadline = time.monotonic() + 5.0
+    while (
+        executor._active_execution_counts.get("one_writer_async")
+        and time.monotonic() < deadline
+    ):
+        await asyncio.sleep(0.01)
+    hold.clear()
+    after_worker_finished = await executor.execute("one_writer_async")
+    hold.set()
+
+    assert abandoned.status is ToolExecutionStatus.TIMEOUT
+    assert intruder.status is ToolExecutionStatus.BLOCKED, (
+        "the thread runs on after the timeout, so its slot is still taken"
+    )
+    assert ledger["peak"] == 1, "two writers were inside the tool at once"
+    assert after_worker_finished.status is ToolExecutionStatus.TIMEOUT, (
+        "the slot must come back when the work ends, or the tool is wedged"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_coroutine_gives_its_slot_back_at_once() -> None:
+    """A coroutine really is stopped, so nothing has to outlive the wait."""
+    executor = ToolExecutor()
+
+    async def slow() -> str:
+        await asyncio.sleep(10)
+        return "done"
+
+    executor.register(
+        ToolDefinition(
+            name="slow_coroutine",
+            description="Slow",
+            timeout_seconds=0.05,
+            max_concurrency=1,
+        ),
+        slow,
+    )
+
+    first = await executor.execute("slow_coroutine")
+    second = await executor.execute("slow_coroutine")
+
+    assert first.status is ToolExecutionStatus.TIMEOUT
+    assert second.status is ToolExecutionStatus.TIMEOUT
+
+
+@pytest.mark.asyncio
+async def test_a_retried_step_reports_the_real_fault_not_a_replay_warning(
+) -> None:
+    """One approval buys one attempt, and the user still reads why it failed.
+
+    A retryable tool re-offers the grant its first attempt already spent.
+    The executor is right to refuse it, but that refusal used to land on
+    top of the error the user needed: a mail server that could not be
+    reached was reported as a blocked approval replay.
+    """
+    application = create_application()
+    attempts: list[int] = []
+
+    def send() -> str:
+        attempts.append(1)
+        raise RuntimeError("SMTP sunucusuna ulasilamadi")
+
+    application.tool_executor.register(
+        ToolDefinition(
+            name="send_retryable",
+            description="Send",
+            risk_level=RiskLevel.HIGH,
+            retry_max_attempts=2,
+            idempotent=True,
+        ),
+        send,
+    )
+    plan = application.engine.create_plan(
+        "send",
+        [
+            PlanStep(
+                "send_retryable",
+                metadata={"tool_name": "send_retryable", "parameters": {}},
+            )
+        ],
+    )
+    loop = AgentLoop(
+        engine=application.engine,
+        plan_builder=lambda request, context: plan,
+    )
+
+    waiting = await loop.run(Request("send"), mode=AgentMode.TASK)
+    loop.approve(plan.steps[0].metadata["approval_operation_id"])
+    failed = await loop.run(Request("send"), mode=AgentMode.TASK)
+
+    assert waiting.status is AgentStatus.WAITING_FOR_APPROVAL
+    assert failed.status is AgentStatus.FAILED
+    assert plan.steps[0].metadata["tool_error"] == (
+        "SMTP sunucusuna ulasilamadi"
+    ), "the retry must not overwrite the fault the user has to act on"
+    assert "replay" not in failed.response_text.lower()
+    assert len(attempts) == 1, (
+        "a spent approval never buys a second run of the handler"
+    )

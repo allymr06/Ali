@@ -1869,8 +1869,15 @@ class CoreEngine:
         assurance = summarize_assurance(tool_results, outcome=outcome)
 
         if outcome == "approval_required":
+            # The gate stops the pending call, not the calls that already ran
+            # in this turn, so only promise an untouched machine when nothing
+            # actually succeeded.
             response_text = (
-                "Bu işlem açık onay gerektiriyor; hiçbir değişiklik yapılmadı."
+                "Bu işlem açık onay gerektiriyor ve yapılmadı; bu turda daha "
+                "önce çalışan işlemler tamamlanmış olabilir."
+                if successful_tools
+                else "Bu işlem açık onay gerektiriyor; hiçbir değişiklik "
+                "yapılmadı."
             )
             provider_name = provider.name
             model_name = getattr(model_response, "model", None)
@@ -1885,9 +1892,9 @@ class CoreEngine:
             model_name = getattr(model_response, "model", None)
         elif model_response is None:
             response_text = (
-                "Request cancelled."
+                "İstek iptal edildi."
                 if outcome == "cancelled"
-                else "Execution budget exhausted before a response was produced."
+                else "Bir yanıt üretilemeden çalışma bütçesi doldu."
             )
             provider_name = provider.name
             model_name = None
@@ -1898,9 +1905,9 @@ class CoreEngine:
 
             if not response_text and outcome != "completed":
                 response_text = (
-                    "Request cancelled."
+                    "İstek iptal edildi."
                     if outcome == "cancelled"
-                    else "Execution stopped before verified completion."
+                    else "Çalışma, doğrulanmış bir sonuca ulaşmadan durdu."
                 )
 
         raw_reasoning_level = (

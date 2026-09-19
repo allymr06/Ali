@@ -19,7 +19,7 @@ from app.medical.catalog import Curriculum
 from app.medical.concepts import default_concept_graph
 from app.medical.learning import LearningEngine
 from app.medical.model import MedicalModelClient
-from app.medical.models import ConceptMastery, DocumentStatus, ExamAttempt, MasteryLevel, Question, QuestionAttempt, QuestionOption, StudyDocument
+from app.medical.models import ConceptMastery, DocumentStatus, ExamAttempt, MasteryLevel, Question, QuestionAttempt, QuestionOption, QuestionOrigin, StudyDocument
 from app.medical.planner import COVERAGE_LABELS_TR, DEFAULT_ESTIMATES, StudyPlanner
 from app.medical.prerequisites import PrerequisiteGraph
 from app.medical.retrieval import Retriever
@@ -44,9 +44,11 @@ class Clock:
         self.now = self.now + timedelta(**delta)
 
 
-def question(question_id: str, topic_id: str, concept: str) -> Question:
+def question(question_id: str, topic_id: str, concept: str, *, origin: str = QuestionOrigin.GENERATED) -> Question:
+    """A bank item. Generated with no source passage by default: study material
+    under the scoring policy, which a person's key (``MANUAL``) is not."""
     options = [QuestionOption(key, text) for key, text in zip("ABCD", ["Bir", "İki", "Üç", "Dört"])]
-    return Question(question_id=question_id, subject="physiology", stem=f"{question_id} sorusu?", options=options, correct_key="B", topic_id=topic_id, concept_ids=[concept], explanation="Açıklama.")
+    return Question(question_id=question_id, subject="physiology", stem=f"{question_id} sorusu?", options=options, correct_key="B", topic_id=topic_id, concept_ids=[concept], explanation="Açıklama.", origin=origin)
 
 
 def build(path=None, clock: Clock | None = None):
@@ -120,6 +122,22 @@ def test_untested_topics_stay_visible_beside_a_strong_one_and_reading_never_coun
     assert first_day and first_day[0]["kind"] in ("read", "assess") and first_day[0]["topic_id"] != EXCITABLE, "the strong topic is not first in line"
     kinds = {(item["topic_id"], item["kind"]) for day in summary["days"] for item in day["activities"]}
     assert (TRANSPORT, "assess") in kinds and (EXCITABLE, "recap") not in {item for item in kinds if item[1] != "recap"}
+
+
+def test_coverage_counts_answers_that_measured_something_and_no_others() -> None:
+    planner, store, _learning, _understanding, clock = build()
+    store.save_question(question("m1", MUSCLE, "physiology.sliding_filament", origin=QuestionOrigin.MANUAL))
+    store.save_question(question("g1", TRANSPORT, "physiology.na_k_atpase"))
+    store.save_attempt(ExamAttempt("att", "e1", started_at=clock.now, finished_at=clock.now, answers={identifier: QuestionAttempt(identifier, "B", True) for identifier in ("m1", "g1")}))
+    record = physiology_plan(planner)
+
+    by_topic = {row["topic_id"]: row for row in planner.coverage(record["plan_id"])["topics"]}
+
+    assert by_topic[MUSCLE]["state"] == "assessed_limited" and by_topic[MUSCLE]["attempts"] == 1
+    # The study-only answer is work done, not knowledge shown: the plan may not
+    # report the topic as covered on the strength of it.
+    assert by_topic[TRANSPORT]["state"] == "unstudied"
+    assert by_topic[TRANSPORT]["attempts"] == 0 and by_topic[TRANSPORT]["flags"]["assessed"] is False
 
 
 def test_a_misconception_and_a_due_review_come_first_with_the_prerequisite_named() -> None:
@@ -269,6 +287,22 @@ def test_estimates_learn_from_real_minutes_and_states_stay_distinct() -> None:
     assert {"completed", "skipped", "planned"} <= statuses
     view = planner.today_view(record["plan_id"])
     assert view["done_minutes"] == 90
+
+
+def test_work_too_long_for_one_day_keeps_its_remainder_for_the_next() -> None:
+    planner, _store, _learning, _understanding, _clock = build()
+    record = physiology_plan(planner, minutes=10)  # a 20-minute reading against a 10-minute day
+
+    activities = planner.activities(record["plan_id"])
+    first = activities[0]
+    rest = next(item for item in activities[1:] if item["topic_id"] == first["topic_id"] and item["kind"] == first["kind"])
+
+    assert first["split"] is True and first["estimate_minutes"] == 10 and "birkaç oturuma yayılır" in first["reason"]
+    # What did not fit today is the next session, not a silent loss: the two
+    # sessions are the whole reading.
+    assert rest["date"] > first["date"] and "devamı" in rest["reason"]
+    assert first["estimate_minutes"] + rest["estimate_minutes"] == DEFAULT_ESTIMATES["read"]
+    assert all(day["planned_minutes"] <= 10 for day in planner.summary(record["plan_id"])["days"])
 
 
 def test_a_confirmed_plan_is_laid_out_the_moment_it_is_created() -> None:

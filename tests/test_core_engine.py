@@ -2130,3 +2130,136 @@ def test_clock_questions_are_answered_from_the_clock_without_a_model_call() -> N
     assert response.metadata["interaction_kind"] == "clock"
     assert response.metadata["model"] == "jarvis-identity-composer"
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_approval_gate_does_not_deny_side_effects_already_made() -> None:
+    from app.core.models import RiskLevel, ToolExecutionStatus, ToolResult
+
+    done: list[str] = []
+
+    def tool_call(call_id: str, name: str) -> dict:
+        return {
+            "id": call_id,
+            "type": "function",
+            "function": {"name": name, "arguments": "{}"},
+        }
+
+    class TwoStepProvider(MockProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+
+        async def generate(self, request, context, **kwargs):
+            self.calls += 1
+            name = "append_note" if self.calls == 1 else "delete_everything"
+            return SimpleNamespace(
+                text="",
+                model="mock-model",
+                provider="mock",
+                finish_reason="tool_calls",
+                tool_calls=[tool_call(f"call-{self.calls}", name)],
+                usage={},
+                metadata={},
+            )
+
+    def append_note() -> ToolResult:
+        done.append("append_note")
+        return ToolResult(
+            status=ToolExecutionStatus.SUCCESS,
+            tool_name="append_note",
+            data={"appended": True},
+            verified=True,
+        )
+
+    def delete_everything() -> ToolResult:
+        done.append("delete_everything")
+        return ToolResult(
+            status=ToolExecutionStatus.SUCCESS,
+            tool_name="delete_everything",
+            verified=True,
+        )
+
+    executor = ToolExecutor()
+    executor.register(
+        ToolDefinition(name="append_note", description="Append a note."),
+        append_note,
+    )
+    executor.register(
+        ToolDefinition(
+            name="delete_everything",
+            description="Delete everything.",
+            risk_level=RiskLevel.HIGH,
+            requires_confirmation=True,
+        ),
+        delete_everything,
+    )
+    registry = ProviderRegistry()
+    registry.register(TwoStepProvider(), make_default=True)
+    engine = CoreEngine(
+        registry,
+        MemoryManager(InMemoryStore()),
+        tool_executor=executor,
+    )
+
+    response = await engine.handle(Request("not ekle sonra sil"), Context())
+
+    assert response.metadata["outcome"] == "approval_required"
+    assert done == ["append_note"]
+    assert "hiçbir değişiklik yapılmadı" not in response.text
+    assert "açık onay" in response.text
+
+
+@pytest.mark.asyncio
+async def test_cancelled_request_answers_in_turkish() -> None:
+    started = asyncio.Event()
+
+    class BlockingProvider(MockProvider):
+        async def generate(self, request, context, **kwargs):
+            started.set()
+            await asyncio.Event().wait()
+
+    registry = ProviderRegistry()
+    registry.register(BlockingProvider(), make_default=True)
+    engine = CoreEngine(registry, MemoryManager(InMemoryStore()))
+    cancel_event = asyncio.Event()
+    running = asyncio.create_task(
+        engine.handle(Request("iptal et"), cancel_event=cancel_event)
+    )
+    await started.wait()
+    cancel_event.set()
+
+    response = await running
+
+    assert response.metadata["outcome"] == "cancelled"
+    assert response.text == "İstek iptal edildi."
+
+
+@pytest.mark.asyncio
+async def test_budget_exhausted_request_answers_in_turkish() -> None:
+    from app.execution.models import ExecutionLimits
+
+    class ExpensiveProvider(MockProvider):
+        async def generate(self, request, context, **kwargs):
+            return SimpleNamespace(
+                text="",
+                model="mock-model",
+                provider="mock",
+                finish_reason="stop",
+                tool_calls=[],
+                usage={"total_tokens": 11},
+                metadata={},
+            )
+
+    registry = ProviderRegistry()
+    registry.register(ExpensiveProvider(), make_default=True)
+    engine = CoreEngine(
+        registry,
+        MemoryManager(InMemoryStore()),
+        execution_limits=ExecutionLimits(max_model_tokens=10),
+    )
+
+    response = await engine.handle(Request("pahalı istek"))
+
+    assert response.metadata["outcome"] == "budget_exhausted"
+    assert response.text == "Çalışma, doğrulanmış bir sonuca ulaşmadan durdu."

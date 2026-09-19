@@ -15,7 +15,9 @@ review queue it computes what each topic in scope is:
     due_review          a concept under it is due in the review queue
     misconception       an open, supported finding needs repair
 
-Opening a PDF is "studied", never "demonstrated". From those states it lays
+Opening a PDF is "studied", never "demonstrated", and an answer counts as
+assessment only where the scoring policy counted it (app/medical/review.py):
+study-only work leaves a topic unassessed. From those states it lays
 out one day at a time within the day's budget — never over it — with the
 reason and an estimated duration (labelled as an estimate, refined from
 the minutes activities actually took) for every activity. Planned, started,
@@ -35,6 +37,7 @@ from typing import Any
 from app.core.time import utc_now
 from app.medical.learning import is_due
 from app.medical.models import SUBJECT_LABELS_TR, MasteryLevel, QuestionOrigin, new_id
+from app.medical.review import rule_decision
 
 PLAN_KIND = "study_plan"
 ACTIVITY_KIND = "plan_activity"
@@ -100,6 +103,7 @@ class StudyPlanner:
         understanding: Any | None = None,
         prerequisites: Any | None = None,
         *,
+        scoring: Callable[[Any], dict[str, Any]] | None = None,
         clock: Callable[[], datetime] | None = None,
         remind: Callable[[str, str], str | None] | None = None,
         emit: Callable[[dict[str, Any]], None] | None = None,
@@ -110,6 +114,9 @@ class StudyPlanner:
         self._learning = learning
         self._understanding = understanding
         self._prerequisites = prerequisites
+        # The one scoring decision (app/medical/review.py): the reviewer's
+        # fuller version where there is one, the rules alone otherwise.
+        self._scoring = scoring or rule_decision
         # The clock returns an aware moment; "today" is its local date.
         self._clock = clock or (lambda: utc_now().astimezone())
         self._remind = remind
@@ -348,7 +355,10 @@ class StudyPlanner:
                 if question_id not in question_cache:
                     question_cache[question_id] = self._store.get_question(question_id)
                 question = question_cache[question_id]
-                if question is None or question.metadata.get("invalidated"):
+                # Coverage is a claim that the topic was measured, so it counts
+                # the same answers a score counts: an answer to a study-only
+                # question is work done, never evidence of knowing.
+                if question is None or not self._scoring(question).get("scored", False):
                     continue
                 answered_by_topic.setdefault(question.topic_id or "", []).append(bool(entry.correct))
         mastery = {item.concept_id: item for item in self._learning.all()}
@@ -515,6 +525,11 @@ class StudyPlanner:
             return self.summary(plan_id)
         coverage = self._coverage(record)
         kept = self.activities(plan_id)
+        # NOTE: this also catches a topic whose split reading was only half
+        # done, so the remainder carried below is dropped by the next day's
+        # replan. Carrying it across passes means recording how much of an
+        # activity is left, which the planner does not model — every activity
+        # is derived from coverage afresh on each pass. Owner decision.
         done_recently = {item["topic_id"] for item in kept if item.get("status") in ("completed", "started") and item.get("kind") in ("read", "recap") and parse_date(item["date"]) >= today - timedelta(days=3)}
         candidates = self._candidates(record, coverage, exclude_topics=done_recently)
         horizon_end = min(exam, today + timedelta(days=HORIZON_DAYS - 1))
@@ -538,6 +553,13 @@ class StudyPlanner:
                     activity = {**candidate, "estimate_minutes": minutes, "split": split, "activity_id": new_id("act"), "plan_id": plan_id, "date": day.isoformat(), "status": "planned", "order": order, "manual": False, "started_at": None, "completed_at": None, "actual_minutes": None}
                     if split:
                         activity["reason"] = candidate["reason"] + f" Tahmini {candidate['estimate_minutes']} dk: bir güne sığmaz, birkaç oturuma yayılır."
+                        rest = candidate["estimate_minutes"] - minutes
+                        if rest > 0:
+                            # The rest of the work goes back into the pool for a
+                            # later day. Dropped here it would vanish silently:
+                            # the activity would shrink to whatever one day held
+                            # and the plan would call the topic done.
+                            leftovers.append({**candidate, "estimate_minutes": rest, "reason": candidate["reason"] + f" Kalan {rest} dk: önceki oturumun devamı."})
                     self._store.save_record(ACTIVITY_KIND, activity["activity_id"], activity, subject_key=plan_id)
                     used += minutes
                     order += 1

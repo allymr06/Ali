@@ -75,7 +75,7 @@ class StudyWorkflow:
         # One scoring decision for the whole academy: the bank picker, the
         # paper, the answer and the analysis all ask the reviewer.
         academy.generator.scoring = self.reviewer.decision
-        self.planner = StudyPlanner(store, curriculum, concepts, learning, self.understanding, self.prerequisites, remind=remind, emit=academy._emit)
+        self.planner = StudyPlanner(store, curriculum, concepts, learning, self.understanding, self.prerequisites, scoring=self.reviewer.decision, remind=remind, emit=academy._emit)
         self.histology = HistologyBank(store, academy.pipeline, learning, self.understanding, concepts, model)
         # Flashcards: repetition from the student's own material, never measurement.
         self.flashcards = FlashcardDeck(store, academy.anatomy, academy.terminology, curriculum, self.histology, academy.pipeline, planner=self.planner)

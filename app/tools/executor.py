@@ -8,7 +8,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from datetime import datetime
-from threading import RLock
+from threading import Lock, RLock
 from typing import Any, get_type_hints
 from uuid import UUID, uuid4
 
@@ -229,6 +229,55 @@ class ToolExecutor:
                 self._active_execution_counts.pop(definition.name, None)
             else:
                 self._active_execution_counts[definition.name] = active - 1
+
+    def _slot_releaser(
+        self,
+        definition: ToolDefinition,
+    ) -> Callable[..., None]:
+        """Hand one concurrency slot back, exactly once.
+
+        A timeout or a cancellation ends the caller's wait, not the
+        handler: the worker thread is still inside the tool. The slot
+        therefore belongs to the work, and the first party to reach the
+        end of that work returns it while every other path turns into a
+        no-op. Losing the race either way is fatal - release twice and a
+        second writer slips in, release never and the tool is wedged for
+        the life of the process.
+        """
+        lock = Lock()
+        released = False
+
+        def release(*_completion: Any) -> None:
+            nonlocal released
+
+            with lock:
+                if released:
+                    return
+
+                released = True
+
+            self._release_execution_slot(definition)
+
+        return release
+
+    @staticmethod
+    def _releasing_handler(
+        handler: ToolCallable,
+        release_slot: Callable[..., None],
+    ) -> ToolCallable:
+        """Wrap a thread-bound handler so its slot frees when it returns.
+
+        Cancelling the task that awaits a thread does not reach into the
+        thread, so only the handler itself knows when its work is over.
+        """
+
+        def run(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return handler(*args, **kwargs)
+            finally:
+                release_slot()
+
+        return run
 
     def _concurrency_blocked_result(
         self,
@@ -627,6 +676,20 @@ class ToolExecutor:
         with self._approval_lock:
             self._consumed_approval_ids.pop(grant.operation_id, None)
 
+    def approval_grant_is_spent(self, grant: ApprovalGrant | None) -> bool:
+        """Report whether this capability has already bought an execution.
+
+        Callers that would otherwise re-present a grant can ask first.
+        The answer is advisory - the binding refusal still happens at the
+        tool boundary - but it lets a retry stop before it turns a real
+        tool failure into a misleading replay warning.
+        """
+        if grant is None:
+            return False
+
+        with self._approval_lock:
+            return grant.operation_id in self._consumed_approval_ids
+
     def _consume_approval_grant(self, grant: ApprovalGrant) -> bool:
         """Atomically consume one capability so concurrent replay fails closed."""
         now = utc_now()
@@ -808,6 +871,9 @@ class ToolExecutor:
             self._return_approval_grant(approval_grant)
             return self._concurrency_blocked_result(definition, started_at)
 
+        release_slot = self._slot_releaser(definition)
+        future = None
+
         try:
             if cancel_event is not None and cancel_event.is_set():
                 return self._interrupted_result(
@@ -823,6 +889,10 @@ class ToolExecutor:
                 *args,
                 **execution_parameters,
             )
+            # Once the work is in flight the slot follows the future, not
+            # this function: the callback fires on success, on failure and
+            # on a cancellation that beat the start, and nowhere else.
+            future.add_done_callback(release_slot)
             deadline = time.monotonic() + definition.timeout_seconds
 
             try:
@@ -900,7 +970,8 @@ class ToolExecutor:
                 verified=False,
             )
         finally:
-            self._release_execution_slot(definition)
+            if future is None:
+                release_slot()
 
     async def _execute_async(
         self,
@@ -1015,6 +1086,9 @@ class ToolExecutor:
             self._return_approval_grant(approval_grant)
             return self._concurrency_blocked_result(definition, started_at)
 
+        release_slot = self._slot_releaser(definition)
+        slot_travels_with_worker = False
+
         try:
             if cancel_event is not None and cancel_event.is_set():
                 return self._interrupted_result(
@@ -1029,13 +1103,20 @@ class ToolExecutor:
             )
 
             if thread_based:
+                # A cancelled coroutine really stops; a thread does not.
+                # The handler outlives our wait, so it carries the slot
+                # and gives it back when it is genuinely done.
                 operation_task = asyncio.create_task(
                     asyncio.to_thread(
-                        registered.handler,
+                        self._releasing_handler(
+                            registered.handler,
+                            release_slot,
+                        ),
                         *args,
                         **execution_parameters,
                     )
                 )
+                slot_travels_with_worker = True
             else:
                 operation_task = asyncio.create_task(
                     registered.handler(
@@ -1141,7 +1222,8 @@ class ToolExecutor:
         finally:
             if "cancel_task" in locals() and cancel_task is not None:
                 cancel_task.cancel()
-            self._release_execution_slot(definition)
+            if not slot_travels_with_worker:
+                release_slot()
 
     @staticmethod
     def _annotation_to_schema(annotation: Any) -> dict[str, Any]:

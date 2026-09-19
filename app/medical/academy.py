@@ -1988,7 +1988,11 @@ class MedicalAcademy:
                 analysis["events"] = events
                 self.study.understanding.confirm_follow_ups()
                 if session.adaptive_difficulty and analysis["total"] >= 5:
-                    recent = [bool(attempt.answers[question_id].correct) for question_id in exam.question_ids if question_id in attempt.answers and attempt.answers[question_id].correct is not None]
+                    # The level is a claim about what the student knows, so only
+                    # what this paper measured may move it: a study-only question
+                    # is shown and explained but is evidence of nothing.
+                    measured = set(analysis["scored_question_ids"])
+                    recent = [bool(attempt.answers[question_id].correct) for question_id in exam.question_ids if question_id in measured and question_id in attempt.answers and attempt.answers[question_id].correct is not None]
                     suggested, reason = self.learning.suggest_difficulty(session.difficulty, recent)
                     analysis["adaptive"] = {"previous": session.difficulty, "suggested": suggested, "reason": reason}
                     if suggested != session.difficulty:

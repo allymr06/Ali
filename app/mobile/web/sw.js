@@ -42,12 +42,20 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (request.mode === "navigate") {
+    // Two pages are navigable here - the phone's own shell and the
+    // desktop Nova page - so each keeps its offline copy under its own
+    // path. A shared key would hand the offline visitor whichever page
+    // happened to load last. A redirect or an error page is not a shell
+    // and is never stored as one.
+    const shell = url.pathname;
     event.respondWith(
       fetch(request).then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE).then((cache) => cache.put("/index.html", copy)).catch(() => {});
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(shell, copy)).catch(() => {});
+        }
         return response;
-      }).catch(() => caches.match("/index.html").then((cached) => cached || caches.match("/offline.html")))
+      }).catch(() => caches.match(shell).then((cached) => cached || caches.match("/offline.html")))
     );
     return;
   }

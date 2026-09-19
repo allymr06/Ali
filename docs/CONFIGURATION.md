@@ -27,6 +27,7 @@ JARVIS untouched.
 | `JARVIS_MEDICAL_VISION_PAGES_PER_DOCUMENT` | `12` | How many figure-heavy pages per document are read with vision. `0` disables the visual pass. |
 | `JARVIS_MEDICAL_NARRATION_VOICE` | `local` | Voice that reads a lecture aloud in *sesli anlatım*: `local` (the Windows Turkish voice, no quota, one voice for the whole lecture) or `cloud` (the Gemini voice; falls back to local when it fails or the daily quota runs out, and says so). |
 | `JARVIS_MEDICAL_NARRATION_CHECKPOINT_EVERY` | `3` | After every N narration segments JARVIS asks whether anything was unclear and listens for a few seconds; `0` never asks (questions can still be typed or spoken with the button). |
+| `JARVIS_MEDICAL_AUTO_BACKUP` | `true` | Take a weekly safety copy of the medical database into `<medical>/backups/` on startup when the newest copy is a week old; the newest three are kept, before-repair snapshots are never rotated away, and a copy is refused when the disk lacks twice the database size. `false` leaves backups to the manual quick action. |
 | `JARVIS_MEDICAL_SOURCE_REVIEW` | `true` | Review every generated question with a source passage against that passage before it enters a paper (at most twelve model calls per paper); unsupported items stay in the bank with their status. `false` skips the gate: new questions stay `needs_review` and unscored until reviewed from the bank. |
 | `JARVIS_MEDICAL_OFFICE_CONVERSION` | `true` | Export `.ppt`/`.pptx` lectures to PDF through the installed PowerPoint (COM automation, read-only, cached under `converted/`). `false` refuses presentations at import. |
 
@@ -266,8 +267,16 @@ local address rejection.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `JARVIS_RESEARCH_ENABLED` | `false` | Registers the read-only research tool at startup. |
-| `JARVIS_RESEARCH_SEARXNG_URL` | unset | Base URL of the configured SearXNG service; required when enabled. |
+| `JARVIS_DAILY_BRIEF_NOTIFICATION` | `true` | One OS notification a day with the day's summary; reads services, never the model. |
+| `JARVIS_STATE_AUTO_BACKUP` | `true` | Weekly consistent copies of the state databases (conversations, reminders, routines, notifications, memory, tasks); newest three kept. |
+| `JARVIS_MOBILE_ENABLED` | `true` | Starts the mobile companion server inside the desktop process, bound to 127.0.0.1 only (see `docs/MOBILE.md`). |
+| `JARVIS_MOBILE_PORT` | `8765` | Loopback port of the mobile companion; Tailscale Serve forwards to it. |
+| `JARVIS_MOBILE_SESSION_DAYS` | `30` | Lifetime of a paired phone session; range 1 through 365. |
+| `JARVIS_MOBILE_PAIRING_TTL_SECONDS` | `600` | Lifetime of a single-use pairing code; range 30 through 3600. |
+| `JARVIS_DAILY_BRIEF_TIME` | `08:30` | Local send time (24-hour `HH:MM`) for the morning summary. |
+| `JARVIS_RESEARCH_ENABLED` | `true` | Registers the read-only research tool at startup. |
+| `JARVIS_RESEARCH_PROVIDER` | `duckduckgo` | Search backend: `duckduckgo` (keyless default), `gemini` (Google Search grounding over the stored key; needs grounding quota), or `searxng`. |
+| `JARVIS_RESEARCH_SEARXNG_URL` | unset | Base URL of the configured SearXNG service; required for the `searxng` provider. |
 | `JARVIS_RESEARCH_ALLOW_HTTP` | `false` | Explicitly permits plain HTTP while retaining all address checks. |
 | `JARVIS_RESEARCH_TIMEOUT_SECONDS` | `10` | Timeout for one HTTP request. |
 | `JARVIS_RESEARCH_OPERATION_TIMEOUT_SECONDS` | `45` | Tool-level research deadline. |
@@ -276,7 +285,7 @@ local address rejection.
 | `JARVIS_RESEARCH_MAX_REDIRECTS` | `3` | Maximum manually validated redirects; range `0` through `10`. |
 | `JARVIS_RESEARCH_MAX_SOURCES` | `5` | Maximum source pages in one report; range `1` through `10`. |
 | `JARVIS_RESEARCH_MAX_CONCURRENCY` | `3` | Maximum simultaneous source fetches; range `1` through `8`. |
-| `JARVIS_RESEARCH_USER_AGENT` | `JARVIS/0.1` | Non-secret HTTP user-agent identifier. |
+| `JARVIS_RESEARCH_USER_AGENT` | `JARVIS/0.1` | Non-secret HTTP user-agent for source-page fetches. The DuckDuckGo search request itself presents a browser string, because the endpoint serves an empty challenge page to non-browser agents. |
 
 ## Plugins
 

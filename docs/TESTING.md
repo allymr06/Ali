@@ -751,3 +751,318 @@ and without the atlas, by building synthetic export packs:
   one), a linked structure keeps its own id and name while gaining the
   lesson's sections and naming that lesson, an unlinked one keeps its plain
   source card, and the lesson itself is unchanged.
+
+## Post-merge atlas review (9 September 2026)
+
+- A real-catalogue rectus femoris regression reproduced the quadriceps
+  group's origin/action being assigned to that individual model. It now
+  retains only a related-lesson link and cannot generate group-fact quiz
+  answers under the individual muscle's name. Primary-name matches still
+  inherit lesson sections and preserve the source English name.
+- Ambiguous same-kind aliases are rejected for both catalogue orders; a
+  wrong-kind candidate cannot interfere with a unique valid match.
+- Three deterministic async regressions reproduced late structure replies,
+  late mesh replies and structure replies arriving after a scene change.
+  A selection generation guard now rejects each stale reply. These are
+  windowless tests with deferred test responses, not live provider calls.
+- Review verification: `scripts/verify.py` completed with 2,472 passed and
+  6 skipped in 278.95 seconds; dependency integrity and compilation passed.
+  Targeted atlas/anatomy/Nova checks: 156 passed. Read-only installed-atlas
+  acceptance loaded all 1,597 supplemental cards and verified the real rectus
+  model, source identity, related group lesson and absence of misleading quiz.
+## Tray and window-thread coverage (10 September 2026)
+
+`tests/test_ui_tray.py` pins the deadlock that stopped the desktop shortcut
+from reopening a hidden window:
+
+- the `closing` callback returns `False` at once and touches the window not at
+  all; the hide, the tray notice and the bridge's own push all happen on
+  another thread, and the test fails if anything evaluates JavaScript on the
+  thread that delivered the event;
+- pressing close repeatedly queues one hide;
+- an activation signal that arrives while the hide is still queued runs after
+  it, so the window ends up visible rather than hidden;
+- `WindowWorker` itself: one job per key while one is pending, a failure
+  reported to its owner instead of swallowed, the thread surviving that
+  failure, and a stopped worker refusing further work;
+- the existing tray, pause, navigation and exit paths still hold, and a build
+  without a tray still closes normally and releases the controller.
+
+All three fail on the unfixed code (two by assertion, one because there is no
+worker to exercise).
+
+## The user test of 13 September 2026 and what pins its repairs
+
+`docs/qa/2026-09-13-tip-akademisi/TEST_RAPORU.md` recorded eighteen findings
+from a real WebView2 session; `DUZELTME_RAPORU.md` beside it records the
+repair and the live re-test. The regressions live in
+`tests/test_medical_scoring.py` and page-side in `tests/test_nova_web.py`:
+
+- the scoring decision table (key from a person, cited source, no source,
+  reviewed statuses, invalidation) and the reviewer gate following the
+  setting without ever scoring an unsourced or invalid item;
+- a practice paper with a study-only question: shown and explained, no
+  mastery, no understanding event, listed under *Değerlendirme dışı* with
+  the reason, finishing twice changes nothing; a paper of only study items
+  has no percentage; a simulation applies the same decision once; a finished
+  paper keeps the decision of its day after an invalidation;
+- blanks are not wrong answers and a concept is weak only on answered
+  questions; the analysis applies a scoring map and reports what it left out;
+- bank selection honours the document and page range, the professor and the
+  figure switch, excludes study items unless asked, and says why it is empty;
+  a paper is named and listed for what it holds; the bank view pages through a
+  stable order with the matched total;
+- histology: exact concept or a stable own id; the side list and the detail
+  hide a specimen under a timed test; a name printed inside the crop keeps
+  the specimen out of the blind test until it is masked; a late answer is
+  late;
+- the understanding check reports a pending assessment rather than a
+  verdict; a note asked from another subject's document follows the document
+  and is refused when the model says the pages do not cover the topic; a
+  reading activity names its sources in order;
+- the lab quiz describes a landmark the model cannot point at, and atlas
+  concept ids are named through the lab;
+- the job ledger: duplicates, timeouts, interruptions, a paper as a job, a
+  second click answered with the first;
+- the repair: unscored evidence removed, histology relinked, results
+  recomputed, and nothing applied twice.
+
+Page tests (QuickJS): the timed specimen hidden in every markup, the exam
+list and result counting what was built and what counted, bank paging,
+professor folding and source buttons, Esc leaving fullscreen before the
+home-screen shortcut and the folding lab notice, the library panel keeping
+room for its list, and the job-state push handled.
+
+Live, on a repaired copy of the tester's database with the real model: the
+flows in `DUZELTME_RAPORU.md`. Not covered: a physical keyboard (access to
+the desktop was declined, so Esc was injected through the browser input
+pipeline), microphone and voice, and a clinical review of the 718 questions.
+
+## Flashcards (15 September 2026)
+
+`tests/test_medical_flashcards.py`: the scheduler walked through learning,
+review, a lapse and the clamps (half-up rounding pinned); previews say what
+each button schedules; a topic builds fact and terminology cards once and
+never from atlas mirrors; wrong answers become cards with the bank's own
+key and nothing unscored; histology cards render the masked crop; occlusion
+masks only labels the page prints, refuses the rest, and explains a page
+with no text layer; the queue orders due before new under the daily budget
+and skips suspended cards; an "again" card returns the same day; an answer
+is recorded once per submission id; reviews never move mastery, findings or
+attempts; the forecast splits backlog from each day's own load; deletion is
+a confirmed bridge action. Page side (`test_nova_web.py`): the answer stays
+hidden until revealed, the four grades are Turkish with their previews, and
+the keyboard grades only after the reveal.
+
+## Committee rehearsal, weekly summary, backups (15 September 2026)
+
+In `tests/test_medical_scoring.py`: the rehearsal keeps the requested
+distribution and subject order, draws only scored imported questions,
+reports shortfalls without padding, is seed-stable, honours `unseen_only`,
+and its result breaks down per subject; the weekly report counts only what
+the records hold (minutes without double counting read activities, accuracy
+over scored answers only, unscored answers apart, card grades, adherence,
+streak and countdowns) and is honestly empty; backups rotate to the newest
+copies while sparing before-repair snapshots, produce an openable database,
+postpone the weekly copy while one is fresh, refuse a full disk, and report
+completion to the page.
+- Exports (`test_medical_scoring.py`, `test_ui_nova.py`): the question
+  sheet holds no key or explanation, the answer key labels unscored items
+  and lists sources, the note export keeps its references, and the bridge
+  refuses a missing folder and never overwrites an existing file.
+
+## General shell: brief, export, focus, geometry (15 September 2026)
+
+In `tests/test_ui_nova.py`: window geometry round-trips through
+`window.json` while nonsense frames (too small, off any screen, corrupt
+JSON, an odd window object) fall back to defaults without touching the
+close path; conversation export writes the visible turns only (system
+turns never leak), speaks as "Sen"/"JARVIS", refuses missing folders and
+unknown ids, adds a collision suffix instead of overwriting, and never
+activates or switches the open conversation; the daily brief answers each
+section from its own service, reports availability honestly, invents no
+countdown, and writes its date in Turkish words.
+
+In `tests/test_nova_web.py` (QuickJS): the brief builder shows what
+exists, escapes reminder text, marks a week-out committee as urgent,
+renders the honest empty and quiet states, and wires each row to its
+screen; the focus clock formats remaining time exactly (half-started
+seconds round up, never negative). The demo bridge mirrors the three new
+methods without pretending demo file writes; the hidden attribute wins
+over every panel class, the topbar buttons included.
+
+## Web research backends (15 September 2026)
+
+In `tests/test_research_search.py`: the DuckDuckGo provider requests the
+no-script endpoint with a browser agent, decodes organic redirects to
+their real URLs, drops ad routers and duplicates, decodes entities,
+honours limit and day/month/year ranges, reports a challenge page as
+zero hits and a non-200 as a SearchError, and its redirect decoder
+refuses foreign hosts and missing `uddg` values. The Gemini grounding
+provider turns grounding chunks into hits with support-segment
+snippets, keeps the key in a header and out of every URL and error,
+reports an ungrounded answer as zero hits, and rejects bad payloads,
+parameters and model names. `tests/test_settings.py` pins the provider
+choices; `tests/test_bootstrap.py` pins default-on DuckDuckGo wiring,
+Gemini wiring with a key and honest silence without one; the tool
+schema selector exposes `research_web` for arastir/guncel/haber turns
+(`tests/test_tool_schema_selection.py`); the extractor survives meta
+tags with neither property nor name (`tests/test_research_extractor.py`);
+and medical tutor turns include `research_web` in their allowed tools
+(`tests/test_medical_tutor.py` keeps passing with the widened set).
+
+## Conversation search (15 September 2026)
+
+`tests/test_ui_nova.py`: the bridge refuses one-character queries,
+matches across visible turns with Turkish folding ("BÖBREK" finds
+"Böbrek", "idrar" finds "İDRAR"), never matches system turns, carries
+the speaker and an exact excerpt, and reports zero hits honestly.
+`tests/test_nova_web.py` (QuickJS): the drawer markup escapes excerpt
+HTML, highlights the match with <mark> case-insensitively in Turkish,
+and renders the empty and error states in words.
+
+## Morning brief notification (15 September 2026)
+
+`tests/test_ui_nova.py`: the clock fires only past the target, once per
+local day, catches up after yesterday's stamp, and disables itself on
+any malformed time; the notification line counts exactly what exists
+and says in words when nothing is pending. `tests/test_settings.py`
+pins the HH:MM validation; `tests/test_notifications.py` pins the new
+"brief" notification kind. Live: with the target set a minute in the
+past the running window published "Günün özeti · QA Akademi 13 Eylül:
+5 gün kaldı · sırada Omuz kuşağı … · 14 kart tekrar bekliyor · 1 açık
+bulgu" within one poll interval, and the stamp file prevented a second
+send.
+
+## Assistant settings card (15 September 2026)
+
+`tests/test_ui_api_settings.py`: desktop preferences round-trip through
+the profile (times normalized to two digits), a legacy profile without
+the new keys loads with defaults, malformed times are refused, and the
+built runtime follows the profile with environment variables keeping
+precedence. `tests/test_ui_nova.py`: the bridge refuses a bad time in
+words, and a save rebuilds the runtime live - the new application
+carries the new values and web research off means the research tool is
+not registered at all. Verified live in the window: saving 07:45 with
+research off flipped the WEB indicator and the runtime immediately;
+restoring the defaults brought both back.
+
+## Web sources under answers (15 September 2026)
+
+`tests/test_ui_nova.py`: only a successful research_web result pushes
+sources (other tools, failures and sourceless reports push nothing),
+and the payload carries exactly title and url. `tests/test_nova_web.py`
+(QuickJS): the chip row shows the bare host with the full URL riding
+the tooltip, escapes titles and queries, gives an unparseable URL an
+honest generic chip, and renders nothing without sources. Live: a
+fresh "Nobel 2026" research answered honestly that the prize is not
+announced until 5 October and wore five source chips.
+
+## General state backups (15 September 2026)
+
+`tests/test_state_backup.py`: every first-level state database is
+copied even while one is held open mid-write (the uncommitted row
+never leaks into the copy, quick_check passes), rotation keeps the
+newest three stamped folders, a half-written .tmp folder from an
+interrupted run is neither listed nor rotated as a backup, the weekly
+due-check respects a fresh copy, and an empty state directory refuses
+in words. `tests/test_ui_nova.py`: the bridge summary and on-demand
+backup round-trip against the isolated state directory. Live: the
+Ayarlar card's chip went from "henüz kopya yok" to "1 kopya · son: az
+önce" and a real stamped folder appeared.
+
+## Reminders surface (15 September 2026)
+
+`tests/test_ui_nova.py`: the bridge lists active reminders as the
+service reports them, creates from "+25" and "23:59" forms, refuses
+empty text and free-text times in the service's own words, cancels
+only with explicit confirmation, and the list reflects each change
+(order-independent near midnight). Live: created "+90" from the
+Görevler form, saw "15.09 10:20" listed, cancelled through the real
+confirm dialog, and the honest empty state returned.
+
+## Unarchive and the weekly summary on paper (15 September 2026)
+
+`tests/test_ui_nova.py`: archive then unarchive round-trips a
+conversation's status through the bridge, and an unknown id refuses in
+words. `tests/test_medical_scoring.py`: the weekly export prints the
+empty week in words, seven day rows, the report's own honesty note,
+and keeps marked answers and finished-paper scoring as separate lines
+- the live QA store had 12 marked answers against 38 scored questions
+on finished papers, which one shared sentence would have turned into
+nonsense.
+
+## Markdown in assistant bubbles (15 September 2026)
+
+`tests/test_nova_web.py` (QuickJS): bold, italics, inline code and
+heading lines render with the asterisks gone; bullet and numbered
+lists open and close properly; hostile HTML and script tags from the
+model or a fetched page arrive escaped and inert; `3*4` and `a*b`
+never become emphasis; and the source pins that only assistant bubbles
+take this path while user text stays literal.
+
+## Source links that open the browser (15 September 2026)
+
+`tests/test_ui_nova.py`: open_external refuses javascript:, file: and
+empty input before anything reaches the launcher, opens validated
+http(s), and completes a bare domain to https. Live: the bridge
+refused file:/// in Turkish and the chip builder emits both the
+open-in-browser chips and the "rapor" chip.
+
+## Research history and palette entries (15 September 2026)
+
+`tests/test_research_cache.py`: recent() lists the newest questions
+first with their source counts, and an entry expired for reads is
+still listed for reopening. Live: the chips carried both screen-typed
+questions and the model's own chat-turn queries, one click reopened
+the cached report instantly, and the four new palette commands surface
+as the top fuzzy hits for odak/hatırlat/yedek/dışa.
+
+## Exam chip (15 September 2026)
+
+`tests/test_nova_web.py` (QuickJS): the chip text builder hides
+without a plan, hides past exams, says "bugün" on the day, and turns
+amber within a week. Live: the topbar showed "🎓 QA Akademi 13 Eylül ·
+5 gün" in amber against the QA store.
+
+## Drawer date groups (15 September 2026)
+
+`tests/test_nova_web.py` (QuickJS): the group label follows local
+calendar days between midnights - 23:59 yesterday is still "Dün", the
+week and month boundaries hold, and a future timestamp from clock skew
+falls back to "Bugün" instead of inventing a group. Live: the
+hundred-conversation drawer rendered under "Bugün" and "Bu ay".
+
+## Mobile companion (17 September 2026)
+
+`tests/test_mobile.py` drives the loopback server over real HTTP against
+a booted mock-provider core: every API path and the event stream refuse
+an unauthenticated request; a pairing code is single-use, a wrong code
+fails, codes and sessions expire on the store's clock, six attempts in a
+minute are rate-limited; mutations without the page header, with a
+foreign Origin or a cross-site Sec-Fetch-Site are refused while a
+forwarded host matches; logout and desktop revocation end the session on
+the next request and close its live channel; a phone message reaches the
+shared conversation pipeline (user turn with source "api" plus reply in
+the same store the desktop lists, desktop state untouched); a repeated
+client id never runs the command twice and an unknown one reports 404;
+the event stream carries turn_started/turn_done; empty, oversized or
+malformed input and a paused core are refused; approvals are bound to
+the pending token (an unauthenticated decision is 401, a repeat or an
+unknown token is 409, a denial fails closed); tasks list and unsupported
+actions refuse honestly; the desktop card mints codes that pair and
+revokes everyone without pushing the code to the page; the static shell
+is stamped, the manifest and icons served, and traversal refused.
+
+Browser checks (Claude's in-app browser, 360×780 and 412×915): pairing
+screen → paired chat with "BAĞLI", no horizontal overflow at either
+width, hidden badge, a real turn answered in the chat, the Görevler empty
+state, the Ayarlar details, "yeniden bağlanıyor" while the desktop was
+stopped, a message sent meanwhile marked "sonuç bilinmiyor", automatic
+reconnection after the restart with the message marked "bilgisayara
+ulaşmamış" and an explicit resend that then got its reply; the desktop
+window listed the phone's conversation and its Telefon card showed the
+paired device.
+
+Not verified here: installation on a physical Android device, Tailscale
+Serve connectivity, mobile-data access. Those need the user's devices.

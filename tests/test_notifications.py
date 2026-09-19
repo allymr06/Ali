@@ -76,7 +76,7 @@ def test_titles_and_bodies_are_bounded_and_kinds_validated() -> None:
         centre.publish("system", "x", severity="loud")
     with pytest.raises(ValueError):
         centre.publish("system", "   ")
-    assert {"reminder", "approval", "reply", "task", "diagnostic", "observation", "system"} == set(
+    assert {"reminder", "approval", "reply", "task", "diagnostic", "observation", "system", "brief"} == set(
         NOTIFICATION_KINDS
     )
 

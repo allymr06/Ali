@@ -8,6 +8,39 @@
 
 /* ── messages ─────────────────────────────────────────────────────── */
 
+/* Web sources for an answer that ran research_web this turn. Hosts are
+   shown, the full URL rides the tooltip, and a click reruns the exact
+   research on its own screen (served from the cache). */
+function researchSourcesMarkup(payload) {
+  const sources = (payload && payload.sources) || [];
+  if (!sources.length) return "";
+  const host = (url) => {
+    const match = /^[a-z]+:\/\/([^\/?#]+)/i.exec(String(url || ""));
+    return match ? match[1].replace(/^www\./, "") : "";
+  };
+  const chips = sources.map((source) => {
+    const name = host(source.url) || "kaynak";
+    return `<button type="button" class="chip" data-open-url="${esc(source.url || "")}" title="${esc(source.title || "")} — ${esc(source.url || "")} · tarayıcıda açar">${esc(name)}</button>`;
+  });
+  const report = `<button type="button" class="chip accent" data-research-query="${esc(payload.query || "")}" title="Tam raporu Araştırma ekranında açar">rapor</button>`;
+  return `<div class="msg-sources"><span class="msg-sources-label">Web kaynakları</span>${report}${chips.join("")}</div>`;
+}
+
+function bindResearchChips(node) {
+  $$("[data-research-query]", node).forEach((chip) => chip.addEventListener("click", () => {
+    showScreen("research");
+    const input = $("#research-input");
+    if (input && chip.dataset.researchQuery) {
+      input.value = chip.dataset.researchQuery;
+      $("#research-submit")?.click();
+    }
+  }));
+  $$("[data-open-url]", node).forEach((chip) => chip.addEventListener("click", async () => {
+    const result = await call("open_external", chip.dataset.openUrl);
+    if (result.ok === false) toast(result.error || "Bağlantı açılamadı.", true);
+  }));
+}
+
 function assuranceChips(metadata) {
   if (!metadata || typeof metadata !== "object") return "";
   const chips = [];
@@ -28,6 +61,41 @@ function fmtSecondsTr(seconds) {
   return `${seconds.toLocaleString("tr-TR", { minimumFractionDigits: digits, maximumFractionDigits: digits })} sn`;
 }
 
+/* ── mini-Markdown for assistant bubbles ─────────────────────────────
+   The model answers with light Markdown; showing the asterisks raw is
+   noise. This renders ONLY a safe subset - bold, italics, inline code,
+   simple lists, heading lines - after escaping everything, so no HTML
+   from the model or a web page ever executes. Anything else stays
+   literal text. */
+function renderMarkdownLite(raw) {
+  const escaped = esc(String(raw ?? ""));
+  const inline = (text) => text
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:!?]|$)/g, "$1<em>$2</em>");
+  const lines = escaped.split(/\r?\n/);
+  const parts = [];
+  let list = null; // "ul" | "ol" | null
+  const closeList = () => { if (list) { parts.push(`</${list}>`); list = null; } };
+  for (const line of lines) {
+    const bullet = /^\s*[-•] +(.*)$/.exec(line);
+    const numbered = /^\s*\d+[.)] +(.*)$/.exec(line);
+    const heading = /^\s*#{1,4} +(.*)$/.exec(line);
+    if (bullet || numbered) {
+      const kind = bullet ? "ul" : "ol";
+      if (list !== kind) { closeList(); parts.push(`<${kind}>`); list = kind; }
+      parts.push(`<li>${inline((bullet || numbered)[1])}</li>`);
+      continue;
+    }
+    closeList();
+    if (heading) { parts.push(`<div class="md-h">${inline(heading[1])}</div>`); continue; }
+    if (!line.trim()) { parts.push('<div class="md-gap"></div>'); continue; }
+    parts.push(`<div>${inline(line)}</div>`);
+  }
+  closeList();
+  return parts.join("");
+}
+
 function appendMessage(host, message, slim, { animate = true } = {}) {
   if (!host || !message || !String(message.text ?? "").trim()) return null;
   const node = el("div", `msg ${esc(message.role)}`);
@@ -37,7 +105,8 @@ function appendMessage(host, message, slim, { animate = true } = {}) {
     (roleLabel && !slim ? `<div class="msg-meta"><span class="msg-role">${roleLabel}</span>${time}</div>` : "") +
     `<div class="msg-body"></div>` +
     (message.role === "assistant" && !slim ? assuranceChips(message.metadata) : "");
-  node.querySelector(".msg-body").textContent = message.text;
+  if (message.role === "assistant") node.querySelector(".msg-body").innerHTML = renderMarkdownLite(message.text);
+  else node.querySelector(".msg-body").textContent = message.text;
   host.appendChild(node);
   if (animate) Motion.rise(node, { y: 10, duration: 360 });
   return node;
@@ -69,8 +138,13 @@ function finalizePendingBubble(message) {
       node.classList.remove("pending");
       const meta = node.querySelector(".msg-meta");
       if (meta) meta.innerHTML = `<span class="msg-role">JARVIS</span><span class="msg-time">${esc(fmtClock(new Date(message.at)))}</span>`;
-      node.querySelector(".msg-body").textContent = message.text;
+      node.querySelector(".msg-body").innerHTML = renderMarkdownLite(message.text);
       node.insertAdjacentHTML("beforeend", assuranceChips(message.metadata));
+      if (State.pendingSources) {
+        node.insertAdjacentHTML("beforeend", researchSourcesMarkup(State.pendingSources));
+        bindResearchChips(node);
+        State.pendingSources = null;
+      }
       return;
     }
     node.remove();
@@ -126,6 +200,7 @@ async function sendCommand(raw) {
   if (State.paused) { toast(PAUSED_NOTICE, true); return; }
   if (!text || State.busy || !bridgeReady()) return;
   const message = { role: "user", text, at: Date.now() };
+  State.pendingSources = null; // sources belong to the turn that earned them
   hideChatEmpty();
   updateChat(() => {
     appendMessage($("#chat-list"), message, false);
@@ -147,6 +222,19 @@ async function sendCommand(raw) {
 
 /* ── stored conversations ─────────────────────────────────────────── */
 
+/* Which drawer group a conversation belongs to, by calendar days
+   between local midnights - so 23:59 yesterday is still "Dün". */
+function convGroupLabel(iso, now) {
+  const day = (value) => { const d = new Date(value); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const diff = Math.round((day(now || Date.now()) - day(iso)) / 86400000);
+  if (!Number.isFinite(diff) || diff < 0) return "Bugün";
+  if (diff === 0) return "Bugün";
+  if (diff === 1) return "Dün";
+  if (diff <= 7) return "Bu hafta";
+  if (diff <= 31) return "Bu ay";
+  return "Daha eski";
+}
+
 function renderConversations() {
   const host = $("#conv-items");
   if (!host) return;
@@ -156,17 +244,37 @@ function renderConversations() {
     renderChatTitle();
     return;
   }
-  host.innerHTML = items.map((item) => `
+  let group = null;
+  host.innerHTML = items.map((item) => {
+    const label = convGroupLabel(item.updated_at);
+    const heading = label !== group ? `<div class="conv-group">${label}</div>` : "";
+    group = label;
+    return `${heading}
     <button type="button" class="conv-item ${item.active ? "active" : ""}" data-id="${esc(item.conversation_id)}" title="${esc(item.title)}">
       <span class="conv-title">${esc(item.title)}</span>
       <span class="conv-meta"><span>${item.turn_count} mesaj${item.status === "archived" ? " · arşiv" : ""}</span><span>${esc(fmtRelative(item.updated_at))}</span></span>
-    </button>`).join("");
+    </button>`;
+  }).join("");
   $$(".conv-item", host).forEach((node) => {
     node.addEventListener("click", () => openConversation(node.dataset.id));
     node.addEventListener("contextmenu", async (event) => {
       event.preventDefault();
       const item = items.find((entry) => entry.conversation_id === node.dataset.id);
-      if (!item || item.status === "archived") return;
+      if (!item) return;
+      if (item.status === "archived") {
+        const restore = await confirmDialog({
+          title: "Arşivden çıkarılsın mı?",
+          body: `“${item.title}” yeniden aktif listeye dönecek.`,
+          confirmLabel: "ÇIKAR",
+        });
+        if (restore) {
+          const result = await call("unarchive_conversation", item.conversation_id);
+          if (result.ok === false) { toast(result.error || "Çıkarılamadı.", true); return; }
+          toast("Konuşma arşivden çıkarıldı.", "ok");
+          refreshConversations();
+        }
+        return;
+      }
       const confirmed = await confirmDialog({
         title: "Konuşma arşivlensin mi?",
         body: `“${item.title}” arşive kaldırılacak. Arşivdeki konuşmalar silinmez; listeden tekrar açılabilir.`,
@@ -176,6 +284,58 @@ function renderConversations() {
     });
   });
   renderChatTitle();
+}
+
+/* Search across stored conversations: matching titles and excerpts of
+   what was actually said, newest first. Pure builder, testable alone. */
+function convSearchMarkup(payload) {
+  if (!payload || payload.ok === false) return `<div class="ctx-empty" style="padding:.8rem .4rem">${esc((payload && payload.error) || "Arama yapılamadı.")}</div>`;
+  const rows = payload.results || [];
+  if (!rows.length) return `<div class="ctx-empty" style="padding:.8rem .4rem">“${esc(payload.query)}” hiçbir konuşmada geçmiyor.</div>`;
+  const mark = (text) => {
+    const safe = esc(text);
+    const needle = esc(payload.query);
+    const index = safe.toLocaleLowerCase("tr-TR").indexOf(needle.toLocaleLowerCase("tr-TR"));
+    if (index < 0) return safe;
+    return safe.slice(0, index) + "<mark>" + safe.slice(index, index + needle.length) + "</mark>" + safe.slice(index + needle.length);
+  };
+  return rows.map((item) => `
+    <button type="button" class="conv-item ${item.active ? "active" : ""}" data-id="${esc(item.conversation_id)}" title="${esc(item.title)}">
+      <span class="conv-title">${mark(item.title)}</span>
+      ${item.excerpt ? `<span class="conv-excerpt">${item.excerpt_role === "user" ? "Sen: " : ""}${mark(item.excerpt)}</span>` : ""}
+      <span class="conv-meta"><span>${item.matches} eşleşme${item.status === "archived" ? " · arşiv" : ""}</span><span>${esc(fmtRelative(item.updated_at))}</span></span>
+    </button>`).join("");
+}
+
+let convSearchTimer = 0;
+async function runConvSearch(raw) {
+  const host = $("#conv-items");
+  if (!host) return;
+  const query = String(raw || "").trim();
+  if (query.length < 2) { renderConversations(); return; }
+  const payload = await call("search_conversations", query);
+  host.innerHTML = convSearchMarkup(payload);
+  $$(".conv-item", host).forEach((node) => node.addEventListener("click", () => {
+    openConversation(node.dataset.id);
+    const box = $("#conv-search");
+    if (box) box.value = "";
+  }));
+}
+
+function bindConvSearch() {
+  const box = $("#conv-search");
+  if (!box) return;
+  box.addEventListener("input", () => {
+    clearTimeout(convSearchTimer);
+    convSearchTimer = setTimeout(() => runConvSearch(box.value), 250);
+  });
+  box.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") { box.value = ""; renderConversations(); }
+    if (event.key === "Enter") {
+      const first = $("#conv-items .conv-item");
+      if (first) first.click();
+    }
+  });
 }
 
 async function refreshConversations() {
@@ -367,6 +527,19 @@ function bindConversation() {
   });
   $("#conv-new").addEventListener("click", newConversation);
   $("#chat-new").addEventListener("click", newConversation);
+  bindConvSearch();
+  const chatExport = $("#chat-export");
+  if (chatExport) chatExport.addEventListener("click", async () => {
+    const listing = await call("list_conversations");
+    const active = listing.ok === false ? null : (listing.conversations || []).find((item) => item.active);
+    if (!active || !active.turn_count) { toast("Dışa aktarılacak bir konuşma yok; önce bir şey yaz.", true); return; }
+    const picked = await call("pick_folder");
+    if (picked.ok === false) { toast(picked.error || "Klasör seçilemedi.", true); return; }
+    if (!picked.path) return;
+    const result = await call("export_conversation", active.conversation_id, picked.path);
+    if (result.ok === false) { toast(result.error || "Dışa aktarılamadı.", true); return; }
+    toast(`Konuşma kaydedildi: ${result.file} (${result.messages} mesaj).`, "ok");
+  });
 
   $("#voice-toggle").addEventListener("click", toggleVoice);
   $("#voice-close").addEventListener("click", () => toggleVoice());

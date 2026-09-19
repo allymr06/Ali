@@ -21,7 +21,7 @@ from app.medical.generation import ExamBuilder, GenerationError
 from app.medical.model import MedicalModelClient, MedicalModelError, extract_json
 from app.medical.models import ExamConfig, Question, QuestionOption, QuestionOrigin
 from app.medical.schemas import NOTES_SCHEMA, QUESTIONS_SCHEMA, coerce_strings, validate, wire_schema
-from app.medical.tutor import MEDICAL_TOOLS, MedicalTutor
+from app.medical.tutor import MEDICAL_TOOLS, TUTOR_TURN_TOOLS, MedicalTutor
 from app.tools.executor import ToolExecutor
 
 ARM = "anatomy.musculoskeletal.upper_limb.arm"
@@ -64,8 +64,9 @@ def draft(stem: str, texts: list[str], correct: str, explanation: str) -> dict:
 
 def bank_question(question_id: str, stem: str, texts: list[str], **overrides) -> Question:
     """A gradable four-option bank item whose answer is B unless overridden."""
+    # Keyed by a person, so the scoring policy counts it (a sourceless model draft it would not).
     fields = {"subject": "anatomy", "topic_id": ARM, "correct_key": "B", "concept_ids": [f"topic:{ARM}"],
-              "explanation": "Gerekce soru bankasinda kayitli olarak durur."}
+              "explanation": "Gerekce soru bankasinda kayitli olarak durur.", "origin": QuestionOrigin.MANUAL}
     fields.update(overrides)
     options = [QuestionOption(key, text) for key, text in zip("ABCD", texts)]
     return Question(question_id=question_id, stem=stem, options=options, **fields)
@@ -233,7 +234,7 @@ def test_question_bank_filters_flags_and_refuses_an_impossible_answer_key(build)
     def ids(filters=None):
         return sorted(item["question_id"] for item in academy.question_bank(filters)["questions"])
 
-    assert ids() == ["q1", "q2"] and academy.question_bank()["counts"] == {"generated": 1, "imported_exam": 1, "total": 2}
+    assert ids() == ["q1", "q2"] and academy.question_bank()["counts"] == {"manual": 1, "imported_exam": 1, "total": 2}
     assert ids({"subject": "anatomy"}) == ["q1"] and ids({"with_answer_key": True}) == ["q1"]
     assert ids({"topic_id": "anatomy.musculoskeletal"}) == ["q1"], "a parent topic matches its descendants"
     assert ids({"origin": "imported_exam"}) == ["q2"] and ids({"professor_id": "p1"}) == ["q2"]
@@ -263,7 +264,7 @@ def test_an_unknown_subject_filter_narrows_to_nothing_and_says_so(build) -> None
     typo = academy.question_bank({"subject": "anatomii"})
     assert typo["questions"] == [] and typo["total"] == 0
     assert typo["problems"] == ["Bilinmeyen ders: anatomii"], "a typo is reported, not dropped"
-    assert typo["counts"] == {"generated": 2, "total": 2}, "the bank behind the rejected filter is untouched"
+    assert typo["counts"] == {"manual": 2, "total": 2}, "the bank behind the rejected filter is untouched"
 
     # The Turkish label is a legitimate spelling of the subject and still filters.
     kept = academy.question_bank({"subject": "Anatomi"})
@@ -323,7 +324,7 @@ async def test_a_study_turn_is_augmented_and_a_household_turn_is_left_alone(buil
 
     augmentation = await academy.augment(Request("Scapulayı bana basit anlat"), Context())
     assert augmentation.kind == "medical" and augmentation.suppress_memory is True and augmentation.direct_response is None
-    assert augmentation.allowed_tools == MEDICAL_TOOLS, "the turn is narrowed to the medical tools"
+    assert augmentation.allowed_tools == TUTOR_TURN_TOOLS, "the turn is narrowed to the medical tools plus web research"
     assert "Never fabricate citations" in augmentation.system_prompt and "cannot replace" in augmentation.system_prompt
     assert augmentation.metadata["intent"] == "medical.simplify"
     assert augmentation.metadata["evidence_count"] == 0 and augmentation.metadata["references"] == []
@@ -477,5 +478,7 @@ def test_exam_titles_name_the_topic_the_filter_and_the_size(build) -> None:
 
     exam = builder.build(config, [bank_question("q1", NERVE_STEM, NERVES)], notes=["Soru bankasından seçildi."])
     assert exam.question_ids == ["q1"] and exam.status == "ready" and exam.mode == "study"
-    assert exam.generation_notes == ["Soru bankasından seçildi."]
+    # Two were asked for and one was built: the paper says so, and its title counts what it holds.
+    assert exam.generation_notes == ["Soru bankasından seçildi.", "2 soru istendi, 1 soru hazırlandı."]
+    assert exam.title == "Anatomi · Yılmaz Hoca tarzı · 1 soru"
     assert academy.store.get_exam(exam.exam_id).title == exam.title

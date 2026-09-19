@@ -380,7 +380,7 @@ class AnatomyLab:
         self._curriculum = curriculum
         self._assets = AnatomyAssetRegistry(assets_directory)
         if assets_directory is not None:
-            from app.medical.atlas import catalog, curated_links, structure_card
+            from app.medical.atlas import catalog, curated_links, same_lesson_subject, structure_card
             links = curated_links()
             for item in catalog():
                 entry = self._assets.entry(item["structure_id"])
@@ -390,18 +390,27 @@ class AnatomyLab:
                 if lesson is None:
                     self._structures[item["structure_id"]] = structure_from_dict(structure_card(item))
                     continue
-                # The atlas supplies the mesh and the source name; the
-                # curriculum supplies the teaching. The card keeps the
-                # structure's own name and says which lesson it is showing, so
-                # a group card ("Musculi adductores") is never mistaken for a
-                # card written about this one muscle.
                 card = structure_card(item)
+                if not same_lesson_subject(item, lesson):
+                    # Group membership is a link, not a license to assign the
+                    # entire group's origin/action to one muscle or its quiz.
+                    card["facts"]["high_yield"].append(
+                        f"İlgili ders: {lesson.canonical}. Bu ders birden fazla yapıyı kapsayabilir; tekil modelin bilgisi olarak kullanılmaz."
+                    )
+                    card["relations"] = [{"relation": "related_lesson", "target": lesson.structure_id}]
+                    card["topic_id"] = lesson.topic_id
+                    self._structures[item["structure_id"]] = structure_from_dict(card)
+                    continue
+                # Keep the atlas identity, while attributing the inherited text
+                # separately from the geometry's licence/source.
                 self._structures[item["structure_id"]] = replace(
                     lesson,
                     structure_id=item["structure_id"],
                     canonical=item["canonical"],
+                    english=item["english"],
+                    turkish=f"{lesson.turkish} · {item['canonical'].rsplit(' · ', 1)[-1]}",
                     region=item["region"],
-                    source=card["source"],
+                    source=card["source"] + f" Ders içeriği: {lesson.source}",
                     facts={
                         **lesson.facts,
                         "high_yield": [f"Ders kartı: {lesson.canonical}. Model kaynak atlastan gelir.", *lesson.facts.get("high_yield", [])],
@@ -418,6 +427,36 @@ class AnatomyLab:
     @property
     def assets(self) -> AnatomyAssetRegistry:
         return self._assets
+
+    def pinned_landmarks(self, structure_id: str) -> set[str]:
+        """The landmark ids the registered model carries an anchor for.
+
+        A quiz may say "the pinned structure" only about these; every other
+        landmark is asked by its description, because a pin nobody placed
+        would have to be guessed from the geometry.
+        """
+        entry = self._assets.entry(structure_id)
+        if not entry or not entry.get("available"):
+            return set()
+        anchors, _meta = AnatomyAssetRegistry._anchors(entry.get("landmarks"))
+        return set(anchors)
+
+    def concept_label(self, concept_id: str) -> str:
+        """A readable name for ``anatomy.<structure>[.<landmark>]`` ids, or "" when unknown."""
+        if not concept_id.startswith("anatomy."):
+            return ""
+        rest = concept_id[len("anatomy."):]
+        structure = self.get(rest)
+        if structure is not None:
+            return structure.canonical
+        structure_id, _, landmark_id = rest.rpartition(".")
+        structure = self.get(structure_id) if structure_id else None
+        if structure is None:
+            return ""
+        landmark = next((item for item in structure.landmarks if item.landmark_id == landmark_id), None)
+        if landmark is None:
+            return ""
+        return f"{structure.canonical} · {landmark.latin}"
 
     def __len__(self) -> int:
         return len(self._structures)
@@ -648,12 +687,16 @@ class AnatomyLab:
     # quiz
     # ------------------------------------------------------------------
 
-    def quiz(self, structure_id: str, *, count: int = 5, seed: str | None = None, option_count: int = 5) -> list[dict[str, Any]]:
+    def quiz(self, structure_id: str, *, count: int = 5, seed: str | None = None, option_count: int = 5, pinned: set[str] | None = None) -> list[dict[str, Any]]:
         """Deterministic identification questions built from the data.
 
         Empty when the structure is unknown or its data carries neither three
         landmarks nor a fact the peers can supply distinct distractors for.
+        ``pinned`` names the landmarks the model on screen can point at; a
+        landmark outside it is asked by its description, never as "the
+        pinned structure", and carries no highlight to a pin that is not there.
         """
+        pins = set(pinned) if pinned is not None else None
         structure = self.get(structure_id)
         if structure is None:
             return []
@@ -678,13 +721,19 @@ class AnatomyLab:
                 rng.shuffle(choices)
                 keys = "ABCDEF"
                 correct_key = keys[choices.index(landmark)]
+                on_model = pins is None or landmark.landmark_id in pins
                 items.append(
                     {
-                        "kind": "landmark_identify",
+                        "kind": "landmark_identify" if on_model else "landmark_describe",
                         "structure_id": structure.structure_id,
                         "landmark_id": landmark.landmark_id,
-                        "stem": f"{structure.canonical} üzerinde işaretlenen yapı: {landmark.turkish}. Bu yapının Latince adı nedir?",
-                        "highlight": landmark.landmark_id,
+                        "stem": (
+                            f"{structure.canonical} üzerinde işaretlenen yapı: {landmark.turkish}. Bu yapının Latince adı nedir?"
+                            if on_model
+                            else f"{structure.canonical} üzerindeki şu yapının Latince adı nedir: {landmark.turkish}?"
+                        ),
+                        "highlight": landmark.landmark_id if on_model else None,
+                        "pinned": on_model,
                         "options": [{"key": keys[index], "text": choice.latin} for index, choice in enumerate(choices)],
                         "correct_key": correct_key,
                         "explanation": f"{landmark.latin} — {landmark.turkish}" + (f" · {landmark.note}" if landmark.note else ""),

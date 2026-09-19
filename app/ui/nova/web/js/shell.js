@@ -114,9 +114,10 @@ function showScreen(id, { focus = true } = {}) {
   if (id === "diagnostics") Diagnostics.refresh({ quiet: true });
   if (id === "memory") Memory.load();
   if (id === "integrations") Trust.refresh();
-  if (id === "tasks") { renderTasks(State.snapshot?.tasks || []); Routines.load(); }
+  if (id === "tasks") { renderTasks(State.snapshot?.tasks || []); Routines.load(); Reminders.load(); }
   if (id === "medical") Medical.open();
   if (id === "settings") Files.load();
+  if (id === "research") renderResearchHistory();
   requestAnimationFrame(() => Engine.resize());
   Engine.wake();
 }
@@ -297,6 +298,9 @@ const Notify = {
       showScreen(item.target);
       /* A routine's outcome lives in its own conversation: open it. */
       if (conversationId && typeof openConversation === "function") openConversation(String(conversationId));
+      /* The morning brief lands on the command centre: show it fresh,
+         not whatever the one-minute throttle still holds. */
+      if (item.kind === "brief" && typeof renderHomeBrief === "function") renderHomeBrief(true);
     } else this.render();
   },
 
@@ -422,6 +426,10 @@ const Palette = {
     }
     list.push({ group: "eylem", icon: "chevron", label: State.railCollapsed ? "Gezinmeyi genişlet" : "Gezinmeyi daralt", keywords: "menü rail", run: () => setRailCollapsed(!State.railCollapsed) });
     list.push({ group: "eylem", icon: "refresh", label: "Sistem sağlığını denetle", keywords: "tanılama health", run: () => { showScreen("diagnostics"); Diagnostics.refresh(); } });
+    list.push({ group: "eylem", icon: "alarm", label: Focus.timer || Focus.endsAt ? "Odak sayacını durdur" : "25 dk odak sayacı", keywords: "odak pomodoro sayaç focus", run: () => Focus.toggle() });
+    list.push({ group: "eylem", icon: "alarm", label: "Hatırlatıcı kur", keywords: "hatırlat alarm kur reminder", run: () => { showScreen("tasks"); setTimeout(() => $("#reminder-text")?.focus(), 350); } });
+    list.push({ group: "eylem", icon: "send", label: "Konuşmayı dışa aktar (.md)", keywords: "export kaydet markdown konuşma", run: () => { showScreen("chat"); $("#chat-export")?.click(); } });
+    list.push({ group: "eylem", icon: "archive", label: "Durum yedeği al", keywords: "yedek backup güvenlik kopya", run: () => runStateBackup() });
     list.push({ group: "görünüm", icon: "motion", label: State.reducedMotion ? "Hareketi geri aç" : "Hareketi azalt", keywords: "animasyon", run: () => applyMotionPreference(!State.reducedMotion) });
     list.push({ group: "görünüm", icon: "moon", label: document.body.classList.contains("light") ? "Koyu tema" : "Açık tema", keywords: "tema light dark", run: () => toggleTheme() });
     (State.runtime?.applications || []).forEach((app) =>
@@ -564,6 +572,88 @@ function handleScrollKeys(event) {
   return false;
 }
 
+/* ── focus timer ──────────────────────────────────────────────────
+   A countdown in the topbar; entirely local, honest about being one.
+   Starting sets the end time; the chip ticks; clicking stops it; the end
+   is a toast, not a claim that any work happened. */
+const Focus = {
+  endsAt: 0,
+  minutes: 0,
+  timer: 0,
+
+  format(remainingMs) {
+    const total = Math.max(0, Math.ceil(remainingMs / 1000));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+  },
+
+  start(minutes) {
+    const chosen = Math.max(1, Math.min(180, Number(minutes) || 25));
+    this.minutes = chosen;
+    this.endsAt = Date.now() + chosen * 60000;
+    clearInterval(this.timer);
+    this.timer = setInterval(() => this.tick(), 1000);
+    this.tick();
+    toast(`Odak başladı: ${chosen} dk. Sayacı durdurmak için üstteki rozete tıkla.`, "ok");
+  },
+
+  stop(finished) {
+    clearInterval(this.timer);
+    this.timer = 0;
+    const chip = $("#focus-chip");
+    if (chip) { chip.hidden = true; chip.classList.remove("done"); }
+    if (!finished && this.endsAt) {
+      const spent = Math.max(0, Math.round((this.minutes * 60000 - (this.endsAt - Date.now())) / 60000));
+      toast(`Odak durduruldu (${spent} dk geçmişti).`);
+    }
+    this.endsAt = 0;
+  },
+
+  tick() {
+    const chip = $("#focus-chip");
+    if (!chip) return;
+    const remaining = this.endsAt - Date.now();
+    chip.hidden = false;
+    if (remaining <= 0) {
+      chip.textContent = "Odak bitti";
+      chip.classList.add("done");
+      clearInterval(this.timer);
+      this.timer = 0;
+      toast(`Odak bitti: ${this.minutes} dk doldu. Kısa bir ara ver.`, "ok");
+      this.chime();
+      setTimeout(() => { if (!this.timer) this.stop(true); }, 15000);
+      this.endsAt = 0;
+      return;
+    }
+    chip.textContent = `⏳ ${this.format(remaining)}`;
+  },
+
+  chime() {
+    try {
+      const context = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.value = 660;
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.2, context.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.9);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + 1.0);
+    } catch (_error) { /* no audio device is fine */ }
+  },
+
+  toggle() {
+    if (this.timer || this.endsAt) this.stop(false);
+    else this.start(25);
+  },
+
+  bind() {
+    const chip = $("#focus-chip");
+    if (chip) chip.addEventListener("click", () => this.stop(false));
+  },
+};
+
 function bindKeyboard() {
   addEventListener("keydown", (event) => {
     if (!State.booted) return;
@@ -592,9 +682,26 @@ function bindKeyboard() {
     if (event.ctrlKey && key === "m") { event.preventDefault(); toggleVoice(); }
     if (event.ctrlKey && key === "n" && !event.shiftKey) { event.preventDefault(); newConversation(); }
     if (event.ctrlKey && event.shiftKey && key === "t") { event.preventDefault(); toggleTheme(); }
+    if (event.ctrlKey && event.shiftKey && key === "f") { event.preventDefault(); Focus.toggle(); }
     if (event.ctrlKey && event.shiftKey && key === "c") { event.preventDefault(); Context.toggle(); }
     if (event.ctrlKey && event.shiftKey && key === "n") { event.preventDefault(); Notify.toggle(); }
     if (event.key === "Escape" && Notify.open) { event.preventDefault(); Notify.set(false); return; }
+    // A real fullscreen element (the Anatomy Lab stage) comes first: Esc
+    // closes it and nothing else; the home screen is not where a student
+    // pressing Esc over a bone expects to land.
+    if (event.key === "Escape" && document.fullscreenElement) {
+      event.preventDefault();
+      if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+      return;
+    }
+    // The in-app fallback for a WebView that refused the API is the same
+    // case: Esc closes the expanded lab stage and stops there.
+    const expandedStage = document.querySelector(".lab-stage.expanded");
+    if (event.key === "Escape" && expandedStage) {
+      event.preventDefault();
+      if (typeof Lab !== "undefined" && Lab && typeof Lab.toggleFullscreen === "function") Lab.toggleFullscreen();
+      return;
+    }
     if (event.ctrlKey && event.shiftKey && key === "b") { event.preventDefault(); setRailCollapsed(!State.railCollapsed); }
     if (event.key === "Escape" && !activeApproval && !confirmOpen) {
       if (VoiceStage.active) toggleVoice();
@@ -610,6 +717,7 @@ const SHORTCUTS = [
   ["Ctrl + L", "Komut alanına odaklan"], ["Ctrl + M", "Sesli modu aç/kapat"],
   ["Ctrl + N", "Yeni konuşma"], ["Ctrl + ,", "Ayarlar"],
   ["Ctrl + Shift + C", "Bağlam paneli"], ["Ctrl + Shift + N", "Bildirimler"],
+  ["Ctrl + Shift + F", "25 dk odak sayacı"],
   ["Ctrl + D", "Tanılama"],
   ["Ctrl + Shift + B", "Gezinmeyi daralt/genişlet"],
   ["Ctrl + Shift + T", "Koyu/açık tema"], ["Alt + 1…9", "Ekranlar"], ["Alt + 0", "Tanılama"],

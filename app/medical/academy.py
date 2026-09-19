@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import random
 import threading
 from collections import Counter
 from collections.abc import Callable, Coroutine, Iterable
@@ -30,6 +31,7 @@ from app.medical.generation import ExamBuilder, GenerationError, QuestionGenerat
 from app.medical.intents import MedicalIntentParser
 from app.medical.learning import LearningEngine
 from app.medical.model import MedicalModelClient, MedicalModelError
+from app.medical.models import Subject
 from app.medical.models import (
     COMPARISON_LABELS_TR,
     DocumentPage,
@@ -73,6 +75,8 @@ from app.medical.prompts import (
     page_visual_prompt,
     question_extraction_prompt,
 )
+from app.medical.jobs import JobLedger, fingerprint
+from app.medical.review import SCORING_POLICY
 from app.medical.questions import (
     analyse_attempt,
     explanation_payload,
@@ -102,6 +106,7 @@ ANALYSIS_MAX_CHARS = 60_000
 COMPARE_MAX_CHARS = 14_000
 NOTES_MAX_CHARS = 12_000
 PAGE_IMAGE_SCALE = 1.5
+BANK_SCAN_LIMIT = 5000
 BANK_LIST_LIMIT = 200
 LECTURE_SET_PREFIX = "lecture_set:"
 # A published book's front matter. Its authors are not the student's
@@ -214,7 +219,7 @@ class MedicalAcademy:
         self.sessions = SessionManager(store, curriculum)
         self.parser = MedicalIntentParser(curriculum, terminology, concepts)
         self.retriever = Retriever(store, terminology)
-        self.learning = LearningEngine(store, curriculum, concepts)
+        self.learning = LearningEngine(store, curriculum, concepts, namer=self._concept_label)
         self.generator = QuestionGenerator(store, model, self.retriever, curriculum, concepts, anatomy, self.learning)
         self.exam_builder = ExamBuilder(store, curriculum)
         self.profiler = StyleProfiler()
@@ -250,6 +255,198 @@ class MedicalAcademy:
         # The connected study workflow: understanding and repair, prerequisites,
         # source-support review, the exam-date planner, histology practicals.
         self.study = StudyWorkflow(self, source_review=source_review)
+        # Long jobs the student starts from the page (a paper, a note) have an
+        # identity and a visible end state, and survive a reload.
+        self.jobs = JobLedger(store, emit=self._emit)
+
+    def _concept_label(self, concept_id: str) -> str:
+        """A readable name for a concept id the graph does not carry: the lab
+        names structures and landmarks, the histology bank its specimens."""
+        named = self.anatomy.concept_label(concept_id)
+        if named:
+            return named
+        study = getattr(self, "study", None)
+        if study is not None and concept_id.startswith("histology.specimen."):
+            return study.histology.concept_label(concept_id)
+        return ""
+
+    # ------------------------------------------------------------------
+    # jobs the page starts
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # exports: what is on screen, as a printable Markdown file
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _safe_filename(title: str, suffix: str) -> str:
+        import re as _re
+
+        stem = _re.sub(r"[^0-9A-Za-zÇĞİÖŞÜçğıöşü _.-]+", "", title).strip().replace(" ", "-")[:80] or "jarvis"
+        return f"{stem}{suffix}"
+
+    def export_note_markdown(self, note_id: str) -> tuple[str, str]:
+        """(suggested file name, content) for one note, sources listed."""
+        note = next((item for item in self.store.list_notes(limit=500) if item.note_id == note_id), None)
+        if note is None:
+            raise ValueError("Not bulunamadı.")
+        lines = [f"# {note.title}", ""]
+        context = " › ".join(part for part in (SUBJECT_LABELS_TR.get(note.subject or "", note.subject or ""), self.curriculum.breadcrumb(note.topic_id) if note.topic_id else "") if part)
+        if context:
+            lines += [f"*{context}*", ""]
+        lines += [note.content.strip(), ""]
+        if note.references:
+            lines += ["## Kaynaklar", ""]
+            for ref in note.references:
+                lines.append(f"- {ref.title or ref.document_id} · s. {ref.page_number}")
+            lines.append("")
+        lines.append(f"*JARVIS Tıp Akademisi · {note.created_at.date().isoformat()} tarihli not; kaynak sayfalar yukarıda.*")
+        return self._safe_filename(note.title, ".md"), "\n".join(lines) + "\n"
+
+    def export_week_markdown(self) -> tuple[str, str]:
+        """(suggested file name, content) for the weekly summary.
+
+        Prints exactly what ``weekly_report`` computed from the records,
+        including its own honesty note; nothing new is derived here.
+        """
+        report = self.study.weekly_report()
+        days = report["days"]
+        totals = report["totals"]
+        first, last = days[0]["date"], days[-1]["date"]
+        lines = [f"# Haftalık çalışma özeti · {first} – {last}", ""]
+        if report.get("empty"):
+            lines += ["Bu hafta kayıtlı çalışma yok.", ""]
+        lines += ["## Toplamlar", ""]
+        accuracy = totals.get("accuracy")
+        lines += [
+            f"- Çalışma süresi: {totals['minutes']} dk",
+            # Two separate facts, kept separate: how many options were
+            # marked, and how the finished papers scored. A paper's scored
+            # total includes the questions left blank, so the two numbers
+            # must never share one sentence.
+            f"- İşaretlenen cevap: {totals['answers']}",
+            f"- Bitirilen kâğıt: {totals['papers']} · puanlı {totals['scored']} soru · doğru {totals['correct']}"
+            + (f" · doğruluk %{round(accuracy * 100)}" if accuracy is not None else ""),
+            f"- Puansız cevap: {totals['unscored_answered']} (doğruluğa girmez)",
+            f"- Kart tekrarı: {totals['cards']}",
+            f"- Bulgular: {totals['findings_opened']} açıldı, {totals['findings_resolved']} kapandı",
+            f"- Plan etkinliği: {totals['activities']['completed']} tamam, {totals['activities']['skipped']} atlandı, {totals['activities']['missed']} kaçtı",
+            f"- Seri: {report['streak_days']} gün",
+            "",
+            "## Günler",
+            "",
+            "| Gün | Dakika | Soru | Kart | Etkinlik |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+        for day in days:
+            lines.append(f"| {day['date']} | {day['minutes']} | {day['answers']} | {day['cards']} | {day['activities_done']} |")
+        lines.append("")
+        if report["countdowns"]:
+            lines += ["## Sınav geri sayımları", ""]
+            for countdown in report["countdowns"]:
+                lines.append(f"- {countdown['name']}: {countdown['days_left']} gün ({countdown['exam_date']})")
+            lines.append("")
+        lines += [f"*{report['note']}*", ""]
+        stamp = last.replace("-", "")
+        return self._safe_filename(f"haftalik-ozet-{stamp}", ".md"), chr(10).join(lines)
+
+    def export_exam_markdown(self, exam_id: str, *, include_answers: bool) -> tuple[str, str]:
+        """(suggested file name, content) for a paper.
+
+        The question sheet holds no keys, no explanations and no "answered"
+        marks — it is for sitting on paper. The answer-key variant holds the
+        key, the explanation, the sources, and each question's scoring
+        status, so an unscored study item is labelled on paper too.
+        """
+        exam = self.store.get_exam(exam_id)
+        if exam is None:
+            raise ValueError("Sınav bulunamadı.")
+        questions = self.store.get_questions(exam.question_ids)
+        variant = "cevap-anahtari" if include_answers else "soru-kagidi"
+        lines = [f"# {exam.title} — {'Cevap anahtarı' if include_answers else 'Soru kâğıdı'}", ""]
+        if exam.config.timed_seconds:
+            lines += [f"Süre: {exam.config.timed_seconds // 60} dakika · {len(questions)} soru", ""]
+        for note in exam.generation_notes:
+            lines.append(f"> {note}")
+        if exam.generation_notes:
+            lines.append("")
+        for position, question in enumerate(questions, start=1):
+            lines.append(f"**{position}.** {question.stem}")
+            for option in question.options:
+                lines.append(f"   {option.key}) {option.text}")
+            if include_answers:
+                decision = self.scoring_of(question)
+                lines.append("")
+                lines.append(f"   **Cevap: {question.correct_key or '—'}**" + ("" if decision["scored"] else f" · puansız ({decision['label']})"))
+                if question.explanation:
+                    lines.append(f"   {question.explanation}")
+                for ref in question.references:
+                    lines.append(f"   Kaynak: {ref.title or ref.document_id} · s. {ref.page_number}")
+            lines.append("")
+        lines.append(f"*JARVIS Tıp Akademisi · {exam.created_at.date().isoformat()}*")
+        return self._safe_filename(f"{exam.title}-{variant}", ".md"), "\n".join(lines) + "\n"
+
+    def backups(self) -> dict[str, Any]:
+        from app.medical.repair import list_backups
+
+        return {
+            "backups": list_backups(self.store),
+            "directory": str(self.store.path.parent / "backups") if self.store.path else None,
+            "note": "Geri yüklemek için: uygulamayı kapat, jarvis_medical.sqlite3 dosyasını seçtiğin yedekle değiştir (-wal ve -shm dosyalarını sil), yeniden aç. JARVIS canlı veriyi kendiliğinden asla ezmez.",
+        }
+
+    async def backup_job(self) -> dict[str, Any]:
+        """A consistent safety copy, off the caller's thread; reported by push."""
+        from app.medical.repair import backup_now
+
+        report = await asyncio.to_thread(backup_now, self.store)
+        self._record("store.backup", "Medical database backed up.", path=report["path"], bytes=report["bytes"])
+        self._emit({"kind": "backup_done", **report})
+        return report
+
+    def start_weekly_backup(self) -> threading.Thread | None:
+        """A weekly safety copy in the background when one is due; never blocks startup."""
+        from app.medical.repair import auto_backup_due, backup_now
+
+        if not auto_backup_due(self.store):
+            return None
+
+        def run() -> None:
+            try:
+                report = backup_now(self.store)
+                self._record("store.backup", "Weekly medical backup taken.", path=report["path"], bytes=report["bytes"])
+                self._emit({"kind": "backup_done", **report, "automatic": True})
+            except Exception as exc:
+                self._record("store.backup_failed", "Weekly medical backup failed.", level="warning", error=str(exc)[:200])
+
+        thread = threading.Thread(target=run, name="jarvis-medical-backup", daemon=True)
+        thread.start()
+        return thread
+
+    def running_job(self, kind: str, request: dict[str, Any]) -> dict[str, Any] | None:
+        """The running job for this exact request, if the student already started it."""
+        key = fingerprint(kind, request)
+        for job in self.jobs.recent(limit=50):
+            if job.get("fingerprint") == key and job.get("status") == "running":
+                return job
+        return None
+
+    async def generate_exam_job(self, fields: dict[str, Any]) -> dict[str, Any]:
+        request = dict(fields)
+        config = self.exam_config(request)
+        title = self.exam_builder.title_for(config)
+        return await self.jobs.run("create_exam", request, lambda: self.generate_exam(request), title=title, summarize=lambda exam: {"exam_id": exam.get("exam_id"), "title": exam.get("title"), "count": len(exam.get("questions") or [])})
+
+    async def generate_notes_job(self, **fields: Any) -> dict[str, Any]:
+        request = {key: value for key, value in fields.items()}
+        context = self.note_context(subject=fields.get("subject"), topic_id=fields.get("topic_id"), document_ids=list(fields.get("document_ids") or []))
+        title = " › ".join(item for item in (context["subject_label"], context["topic_label"]) if item) or "Not"
+
+        async def operation() -> dict[str, Any]:
+            note = await self.generate_notes(**fields)
+            return {"note_id": note.note_id, "title": note.title}
+
+        return await self.jobs.run("create_note", request, operation, title=title, summarize=lambda note: dict(note))
 
     # ------------------------------------------------------------------
     # events, diagnostics, background
@@ -1261,15 +1458,54 @@ class MedicalAcademy:
     def delete_note(self, note_id: str) -> bool:
         return self.store.delete_note(note_id)
 
+    def note_context(self, *, subject: str | None, topic_id: str | None, document_ids: list[str]) -> dict[str, Any]:
+        """The subject and topic a note or paper will actually be about.
+
+        A document the student chose is the material; when its subject is not
+        the session's, the session's topic would be a label on someone else's
+        lecture. The context then follows the document, and says so, instead
+        of asking the model to write biochemistry from a histology page.
+        """
+        documents = [document for document in (self.store.get_document(item) for item in document_ids[:4]) if document is not None]
+        effective_subject, effective_topic, switched = subject, topic_id, False
+        document_subjects = [document.subject for document in documents if document.subject]
+        if documents and document_subjects and subject and all(item != subject for item in document_subjects):
+            effective_subject = document_subjects[0]
+            effective_topic = next((item for document in documents for item in document.topic_ids if self.curriculum.exists(item) and self.curriculum.subject_of(item) == effective_subject), None)
+            switched = True
+        elif documents and not subject and document_subjects:
+            effective_subject = document_subjects[0]
+            if not topic_id:
+                effective_topic = next((item for document in documents for item in document.topic_ids if self.curriculum.exists(item)), None)
+        if effective_topic and effective_subject and self.curriculum.exists(effective_topic) and self.curriculum.subject_of(effective_topic) != effective_subject:
+            effective_topic = None
+        return {
+            "subject": effective_subject,
+            "subject_label": SUBJECT_LABELS_TR.get(effective_subject or "", effective_subject or ""),
+            "topic_id": effective_topic,
+            "topic_label": self.curriculum.breadcrumb(effective_topic) if effective_topic else "",
+            "documents": [{"document_id": document.document_id, "title": document.title, "subject": document.subject, "subject_label": SUBJECT_LABELS_TR.get(document.subject or "", document.subject or "")} for document in documents],
+            "switched": switched,
+            "requested_subject": subject,
+            "requested_subject_label": SUBJECT_LABELS_TR.get(subject or "", subject or ""),
+            "requested_topic_id": topic_id,
+            "requested_topic_label": self.curriculum.breadcrumb(topic_id) if topic_id else "",
+            "note": (f"Seçilen belge {SUBJECT_LABELS_TR.get(effective_subject or '', effective_subject or '')} dersinden; bağlam belgeye göre ayarlandı ({SUBJECT_LABELS_TR.get(subject or '', subject or '')} › {self.curriculum.breadcrumb(topic_id) if topic_id else '-'} yerine)." if switched else ""),
+        }
+
     async def generate_notes(self, *, mode: str, subject: str | None, topic_id: str | None, document_ids: list[str], page_from: int = 0, page_to: int = 0, depth: str = "standard") -> StudyNote:
         if not self.model.available:
             raise MedicalModelError("Not üretimi için model sağlayıcısı gerekli.")
+        context = self.note_context(subject=subject, topic_id=topic_id, document_ids=document_ids)
+        subject, topic_id = context["subject"], context["topic_id"]
         blocks: list[Any] = []
         for document_id in document_ids[:4]:
             document = self.store.get_document(document_id)
             if document is None:
                 continue
             blocks.extend(self.retriever.page_evidence(document, page_from or 1, page_to or document.page_count or 10**6, max_chars=NOTES_MAX_CHARS // max(1, min(4, len(document_ids)))))
+        if document_ids and not blocks:
+            raise GenerationError("Seçilen belge ve sayfa aralığında metin bulunamadı; sayfa aralığını denetle ya da belgeyi yeniden işle.")
         if not blocks and topic_id and self.store.summary()["chunks"]:
             topic = self.curriculum.get(topic_id)
             if topic is not None:
@@ -1281,6 +1517,12 @@ class MedicalAcademy:
             curated = self.anatomy.facts_for_prompt(ids, limit=3)
         prompt = notes_prompt(mode=mode, subject=subject, topic_path=self.curriculum.breadcrumb(topic_id) if topic_id else "", evidence_text=evidence_text, depth=depth, curated_facts=curated)
         data = await self.model.structured("study_notes", prompt, NOTES_SCHEMA, system_prompt=PIPELINE_SYSTEM)
+        if evidence_text and data.get("source_covers_topic") is False:
+            # The model read the pages and found another subject in them. A
+            # note that says "the source has no carbohydrates" is not a note;
+            # the mismatch is reported and nothing is saved.
+            wanted = self.curriculum.breadcrumb(topic_id) if topic_id else SUBJECT_LABELS_TR.get(subject or "", subject or "konu")
+            raise GenerationError(f"Seçilen sayfalar {wanted} konusunu içermiyor: {' '.join(str(data.get('markdown') or '').split())[:160] or 'kaynak başka bir konuyu anlatıyor'}. Belgeyi, sayfa aralığını ya da konuyu değiştir.")
         cited = {int(page) for page in data.get("cited_pages", []) if isinstance(page, int)}
         # A page number identifies an excerpt only within one document: notes are
         # built from up to four, so filtering on the page alone would attach a chip
@@ -1311,7 +1553,7 @@ class MedicalAcademy:
             references=unique_refs[:40],
         )
         self.store.save_note(note)
-        self._emit({"kind": "note_ready", "note_id": note.note_id, "title": note.title})
+        self._emit({"kind": "note_ready", "note_id": note.note_id, "title": note.title, "context_switched": bool(context["switched"]), "context_note": context["note"]})
         return note
 
     # ------------------------------------------------------------------
@@ -1359,6 +1601,7 @@ class MedicalAcademy:
             one_at_a_time=bool(fields.get("one_at_a_time", True)),
             title=str(fields.get("title") or "").strip(),
             wrong_only=bool(fields.get("wrong_only", False)),
+            include_unscored=bool(fields.get("include_unscored", False)),
         )
 
     async def generate_exam(self, fields: dict[str, Any]) -> dict[str, Any]:
@@ -1370,7 +1613,10 @@ class MedicalAcademy:
             profile = self.store.get_professor(config.professor_id)
             if profile is not None and profile.subject and not config.subjects and not config.topic_ids:
                 config.subjects = [profile.subject]
-            if not fields.get("document_ids") and not config.document_ids:
+            # Only a paper the model writes draws on them; a bank paper takes the
+            # professor's questions as they are, and a document nobody chose
+            # must not narrow it.
+            if not fields.get("document_ids") and not config.document_ids and not fields.get("from_bank") and not config.wrong_only:
                 owned = [document.document_id for document in self.store.list_documents() if document.professor_id == config.professor_id and document.status == DocumentStatus.READY]
                 if owned:
                     config.document_ids = owned[:12]
@@ -1384,9 +1630,15 @@ class MedicalAcademy:
             notes.append(f"Yanlış yaptığın {len(questions)} sorudan oluşturuldu.")
         elif fields.get("from_bank"):
             questions = self.generator.from_bank(config)
+            report = dict(self.generator.last_bank_report)
             if not questions:
-                raise GenerationError("Soru bankasında bu ölçütlere uyan soru yok.")
-            notes.append("Soru bankasından seçildi.")
+                raise GenerationError(self._bank_empty_message(config, report))
+            notes.append("Soru bankasından seçildi." + (f" Süzgeç: {'; '.join(report['filters'])}." if report.get("filters") else ""))
+            notes.append("Bankadan derlemede şık sayısı ve bilgi önceliği uygulanmaz; sorular bankadaki hâliyle gelir.")
+            if report.get("unscored_included"):
+                notes.append(f"{report['unscored_included']} soru yalnız çalışma içindir (kaynaksız ya da kaynak desteği doğrulanmamış); puana ve öğrenme kaydına girmez.")
+            elif report.get("unscored"):
+                notes.append(f"{report['unscored']} puansız soru ölçütlere uyduğu hâlde alınmadı; 'Puansız soruları da al' seçeneğiyle çalışma amaçlı eklenebilir.")
         else:
             questions, generated_notes = await self.generator.generate(config)
             notes.extend(generated_notes)
@@ -1400,14 +1652,128 @@ class MedicalAcademy:
         self._emit({"kind": "exam_ready", "exam_id": exam.exam_id, "title": exam.title, "count": len(exam.question_ids), "open": True})
         return self.exam(exam.exam_id) or {}
 
+    # ------------------------------------------------------------------
+    # committee rehearsal: the real papers, in the real shape
+    # ------------------------------------------------------------------
+
+    SECONDS_PER_COMMITTEE_QUESTION = 72  # ~100 questions in 120 minutes
+
+    def committee_options(self) -> dict[str, Any]:
+        """What a rehearsal can draw on, per subject: the imported committee
+        questions the scoring policy counts, and how many are still unseen."""
+        answered: set[str] = set()
+        for attempt in self.store.list_attempts(limit=2000):
+            answered.update(question_id for question_id, entry in attempt.answers.items() if entry.answer_key)
+        subjects: list[dict[str, Any]] = []
+        for subject in Subject:
+            pool = [
+                question
+                for question in self.store.query_questions(subject=subject, origin=QuestionOrigin.IMPORTED_EXAM, with_answer_key=True, limit=BANK_SCAN_LIMIT)
+                if self.scoring_of(question)["scored"]
+            ]
+            if not pool:
+                continue
+            unseen = sum(1 for question in pool if question.question_id not in answered)
+            subjects.append({"subject": str(subject), "label": SUBJECT_LABELS_TR.get(subject, subject), "available": len(pool), "unseen": unseen})
+        return {"subjects": subjects, "seconds_per_question": self.SECONDS_PER_COMMITTEE_QUESTION}
+
+    def committee_exam(self, distribution: dict[str, Any], *, seconds_per_question: int | None = None, unseen_only: bool = False, seed: str | None = None) -> dict[str, Any]:
+        """Assemble a timed rehearsal from the imported committee questions.
+
+        ``distribution`` maps subject to how many questions the student's real
+        committee asks. Only imported questions the scoring policy counts are
+        used; a subject that cannot fill its count contributes what it has and
+        the paper says so. Questions are grouped by subject in the given
+        order, shuffled within each subject, and never invented or padded
+        from another subject.
+        """
+        wanted: list[tuple[str, int]] = []
+        for subject, count in distribution.items():
+            name = valid_subject(subject)
+            if name is None:
+                raise GenerationError(f"Bilinmeyen ders: {subject}")
+            count = int(count)
+            if count > 0:
+                wanted.append((name, min(120, count)))
+        if not wanted:
+            raise GenerationError("En az bir ders için soru sayısı gerekli.")
+        answered: set[str] = set()
+        if unseen_only:
+            for attempt in self.store.list_attempts(limit=2000):
+                answered.update(question_id for question_id, entry in attempt.answers.items() if entry.answer_key)
+        rng = random.Random(seed or new_id("committee"))
+        chosen: list[Question] = []
+        notes: list[str] = ["Komite provası: sorular hocaların gerçek komite kâğıtlarından, ders sırasına göre gruplu."]
+        shortfalls: list[str] = []
+        for subject, count in wanted:
+            pool = [
+                question
+                for question in self.store.query_questions(subject=subject, origin=QuestionOrigin.IMPORTED_EXAM, with_answer_key=True, limit=BANK_SCAN_LIMIT)
+                if self.scoring_of(question)["scored"] and (not unseen_only or question.question_id not in answered)
+            ]
+            rng.shuffle(pool)
+            taken = pool[:count]
+            chosen.extend(taken)
+            if len(taken) < count:
+                shortfalls.append(f"{SUBJECT_LABELS_TR.get(subject, subject)}: {count} istendi, {len(taken)} bulundu")
+        if not chosen:
+            raise GenerationError("Bu dağılıma uyan komite sorusu yok." + (" 'Daha önce çözmediklerim' süzgecini kaldırmayı dene." if unseen_only else " Önce hocaların komite kâğıtlarını içe aktar."))
+        if shortfalls:
+            notes.append("Eksik dersler — " + "; ".join(shortfalls) + ". Kâğıt eldekiyle kuruldu, başka dersten doldurulmadı.")
+        if unseen_only:
+            notes.append("Yalnız daha önce çözülmemiş sorular alındı.")
+        per_second = max(20, min(300, int(seconds_per_question or self.SECONDS_PER_COMMITTEE_QUESTION)))
+        config = ExamConfig(
+            subjects=[subject for subject, _count in wanted],
+            question_count=len(chosen),
+            option_count=5,
+            timed_seconds=per_second * len(chosen),
+            immediate_feedback=False,
+            answers_at_end=True,
+            randomize=False,  # the paper's order is the subjects' order
+            title=f"Komite provası · {len(chosen)} soru",
+        )
+        notes.append(f"Süre: soru başına {per_second} sn, toplam {config.timed_seconds // 60} dk.")
+        exam = self.exam_builder.build(config, chosen, notes=notes)
+        session = self.sessions.get()
+        session.active_exam_id = exam.exam_id
+        self.sessions.save(session)
+        self._record("exam.generated", "Committee rehearsal assembled.", exam_id=exam.exam_id, questions=len(chosen))
+        self._emit({"kind": "exam_ready", "exam_id": exam.exam_id, "title": exam.title, "count": len(exam.question_ids), "open": True})
+        return self.exam(exam.exam_id) or {}
+
+    def _bank_empty_message(self, config: ExamConfig, report: dict[str, Any]) -> str:
+        """Why the bank gave nothing, in terms the student can act on."""
+        filters = "; ".join(report.get("filters") or [])
+        scope = " / ".join(self.curriculum.breadcrumb(item) for item in config.topic_ids[:2]) or " + ".join(SUBJECT_LABELS_TR.get(item, item) for item in config.subjects[:3]) or "seçili kapsam"
+        if not report.get("candidates"):
+            return f"Soru bankasında {scope} için anahtarlı soru yok. Konuyu genişlet, hoca sorularını yükle ya da modelden üret."
+        if report.get("filtered_out") and not report.get("unscored"):
+            return f"Bankadaki {report['candidates']} soru {scope} kapsamında ama süzgece uymuyor ({filters}). Belge/sayfa aralığını ya da hoca seçimini kaldır."
+        if report.get("unscored"):
+            return f"{scope} için bankada yalnız {report['unscored']} puansız soru var (kaynaksız ya da kaynak desteği doğrulanmamış). 'Puansız soruları da al' ile çalışma amaçlı derleyebilir ya da modelden yeni soru üretebilirsin."
+        return "Soru bankasında bu ölçütlere uyan soru yok."
+
+    def scoring_of(self, question: Question) -> dict[str, Any]:
+        """The one scoring decision for a question (app/medical/review.py)."""
+        return self.study.reviewer.decision(question)
+
+    EXAM_STATUS_LABELS_TR = {"ready": "Hazır", "in_progress": "Sürüyor", "completed": "Tamamlandı"}
+
     def exam_summary(self, exam: Any) -> dict[str, Any]:
         attempt = self.store.latest_attempt(exam.exam_id)
+        questions = self.store.get_questions(exam.question_ids)
+        analysis = attempt.analysis if attempt and attempt.analysis else {}
+        scored_count = len(analysis.get("scored_question_ids", [])) if analysis.get("scored_question_ids") is not None and attempt and attempt.finished_at else sum(1 for question in questions if self.scoring_of(question)["scored"])
         return {
             "exam_id": exam.exam_id,
             "title": exam.title,
             "status": exam.status,
+            "status_label": self.EXAM_STATUS_LABELS_TR.get(exam.status, exam.status),
             "mode": exam.mode,
             "question_count": len(exam.question_ids),
+            "requested_count": int(exam.config.question_count),
+            "scored_count": scored_count,
             "created_at": exam.created_at.isoformat(),
             "finished_at": exam.finished_at.isoformat() if exam.finished_at else None,
             "score": attempt.score if attempt else None,
@@ -1423,6 +1789,9 @@ class MedicalAcademy:
                 "timed_seconds": exam.config.timed_seconds,
                 "wrong_only": exam.config.wrong_only,
                 "document_ids": list(exam.config.document_ids),
+                "page_from": exam.config.page_from,
+                "page_to": exam.config.page_to,
+                "include_unscored": exam.config.include_unscored,
             },
             "notes": list(exam.generation_notes),
         }
@@ -1439,9 +1808,12 @@ class MedicalAcademy:
         finished = attempt is not None and attempt.finished_at is not None
         reveal = finished or exam.config.immediate_feedback
         payload = self.exam_summary(exam)
+        # A finished paper keeps the decision of its day; an open one asks now.
+        stored = (attempt.analysis or {}).get("scoring") if attempt is not None and finished else None
         payload["questions"] = [
             {
                 **question_payload(question, reveal=reveal and (finished or (attempt is not None and question.question_id in attempt.answers)), include_explanation=reveal and (finished or (attempt is not None and question.question_id in attempt.answers)), curriculum=self.curriculum),
+                "scoring": (stored or {}).get(question.question_id) or self.scoring_of(question),
                 "answer": (attempt.answers[question.question_id].answer_key if attempt and question.question_id in attempt.answers else None),
                 "flagged": (attempt.answers[question.question_id].flagged if attempt and question.question_id in attempt.answers else False),
                 "confidence": (attempt.answers[question.question_id].confidence if attempt and question.question_id in attempt.answers else None),
@@ -1521,14 +1893,17 @@ class MedicalAcademy:
         if current_index is not None:
             attempt.current_index = max(0, int(current_index))
         self.store.save_attempt(attempt)
-        result: dict[str, Any] = {"exam_id": exam_id, "question_id": question_id, "answer": entry.answer_key, "flagged": entry.flagged, "confidence": entry.confidence, "answered": len([item for item in attempt.answers.values() if item.answer_key])}
+        decision = self.scoring_of(question)
+        result: dict[str, Any] = {"exam_id": exam_id, "question_id": question_id, "answer": entry.answer_key, "flagged": entry.flagged, "confidence": entry.confidence, "answered": len([item for item in attempt.answers.values() if item.answer_key]), "scoring": decision}
         if exam.config.immediate_feedback and entry.answer_key:
             # Only the first answer to a question is an attempt at recall: in
             # immediate feedback the key is revealed with it, so a later send
             # for the same question — flagging it re-sends the answer, and the
             # options stay clickable — is not a second try. Recording it would
             # state attempts, a streak and a confusion the student never made.
-            if entry.correct is not None and not answered_before:
+            # A study-only question (no source, unreviewed, invalidated) is
+            # shown and explained but is evidence of nothing.
+            if entry.correct is not None and not answered_before and decision["scored"]:
                 self.learning.record(question, bool(entry.correct), chosen_key=entry.answer_key)
                 event = self.study.understanding.record_event(
                     question,
@@ -1575,22 +1950,28 @@ class MedicalAcademy:
             questions = self.store.get_questions(exam.question_ids)
             attempt.finished_at = utc_now()
             session = self.sessions.get()
+            # The scoring decision is taken now and saved with the result: a
+            # question whose support changes later keeps its place in this
+            # paper's history, and only an invalidation reaches back.
+            scoring = {question.question_id: self.scoring_of(question) for question in questions}
             with self.store.transaction():
                 if not exam.config.immediate_feedback:
                     # A study sitting recorded every answer as it was given;
                     # only a simulation's answers wait for the end.
                     for question in questions:
                         entry = attempt.answers.get(question.question_id)
-                        if entry is not None and entry.answer_key and entry.correct is not None:
+                        if entry is not None and entry.answer_key and entry.correct is not None and scoring[question.question_id]["scored"]:
                             self.learning.record(question, bool(entry.correct), chosen_key=entry.answer_key)
-                analysis = analyse_attempt(exam, questions, attempt, curriculum=self.curriculum, mastery_levels=self.learning.levels())
+                analysis = analyse_attempt(exam, questions, attempt, curriculum=self.curriculum, mastery_levels=self.learning.levels(), scoring=scoring)
+                analysis["scoring"] = scoring
+                analysis["policy"] = SCORING_POLICY
                 # What the student said about each answer travels with the
                 # result: a paper marked at the end records its understanding
                 # events here, once, by attempt and question.
                 events: dict[str, str] = {}
                 for question in questions:
                     entry = attempt.answers.get(question.question_id)
-                    if entry is None or not entry.answer_key or entry.correct is None:
+                    if entry is None or not entry.answer_key or entry.correct is None or not scoring[question.question_id]["scored"]:
                         continue
                     event = self.study.understanding.record_event(
                         question,
@@ -1628,12 +2009,21 @@ class MedicalAcademy:
         return self.store.delete_exam(exam_id)
 
     def question_bank(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
+        """A page of the bank under the filters, with the whole matched count.
+
+        ``offset`` and ``limit`` page through one stable order (newest first,
+        ties by id); ``matched`` is how many questions the filters select in
+        all, ``counts.total`` how many the bank holds. Nothing is skipped or
+        repeated between pages because the order does not depend on the page.
+        """
         filters = filters or {}
         subject = valid_subject(filters.get("subject"))
         if filters.get("subject") and subject is None:
             # An unknown subject must narrow to nothing: passing None down would
             # drop the filter and answer a typo with the whole bank.
-            return {"questions": [], "counts": self.store.count_questions(), "total": 0, "problems": [f"Bilinmeyen ders: {filters['subject']}"]}
+            return {"questions": [], "counts": self.store.count_questions(), "total": 0, "matched": 0, "offset": 0, "limit": BANK_LIST_LIMIT, "has_more": False, "problems": [f"Bilinmeyen ders: {filters['subject']}"]}
+        limit = max(1, min(500, int(filters.get("limit") or BANK_LIST_LIMIT)))
+        offset = max(0, int(filters.get("offset") or 0))
         questions = self.store.query_questions(
             subject=subject,
             topic_id=str(filters.get("topic_id") or "") or None,
@@ -1643,7 +2033,7 @@ class MedicalAcademy:
             document_id=str(filters.get("document_id") or "") or None,
             text=str(filters.get("text") or "") or None,
             with_answer_key=(bool(filters["with_answer_key"]) if "with_answer_key" in filters and filters["with_answer_key"] is not None else None),
-            limit=int(filters.get("limit") or BANK_LIST_LIMIT),
+            limit=BANK_SCAN_LIMIT,
         )
         answered: dict[str, bool | None] = {}
         for attempt in self.store.list_attempts(limit=200):
@@ -1660,16 +2050,19 @@ class MedicalAcademy:
                 or (wanted == "correct" and answered.get(question.question_id) is True)
                 or (wanted == "incorrect" and answered.get(question.question_id) is False)
             ]
+        matched = len(questions)
+        page = questions[offset : offset + limit]
         items = []
-        for question in questions:
+        for question in page:
             item = question_payload(question, reveal=True, include_explanation=True, curriculum=self.curriculum)
             item["last_result"] = answered.get(question.question_id)
             item["problems"] = validate_question(question, require_explanation=False)
             item["support"] = self.study.reviewer.status_of(question)
+            item["scoring"] = self.scoring_of(question)
             item["flags"] = len([flag for flag in question.metadata.get("flags", []) if isinstance(flag, dict)])
             item["invalidated"] = bool(question.metadata.get("invalidated"))
             items.append(item)
-        return {"questions": items, "counts": self.store.count_questions(), "total": len(items), "problems": []}
+        return {"questions": items, "counts": self.store.count_questions(), "total": len(items), "matched": matched, "offset": offset, "limit": limit, "has_more": offset + len(page) < matched, "problems": []}
 
     def delete_question(self, question_id: str) -> bool:
         return self.store.delete_question(question_id)
@@ -2138,7 +2531,7 @@ class MedicalAcademy:
         return self.anatomy.describe(structure_id)
 
     def anatomy_quiz(self, structure_id: str, *, count: int = 5) -> list[dict[str, Any]]:
-        return self.anatomy.quiz(structure_id, count=max(1, min(20, int(count))), seed=new_id("aq"))
+        return self.anatomy.quiz(structure_id, count=max(1, min(20, int(count))), seed=new_id("aq"), pinned=self.anatomy.pinned_landmarks(structure_id))
 
     def anatomy_mesh(self, structure_id: str) -> dict[str, Any]:
         try:
@@ -2228,6 +2621,11 @@ def create_medical_academy(
     academy.converter = converter
     if tool_executor is not None:
         academy.register_tools(tool_executor)
+    # A weekly safety copy of the store, taken in the background when due.
+    # The default lives on Settings; a bare test namespace has no flag and
+    # starts no thread.
+    if bool(getattr(settings, "medical_auto_backup", False)):
+        academy.start_weekly_backup()
     return academy
 
 

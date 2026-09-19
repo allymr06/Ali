@@ -269,6 +269,7 @@ def test_settings_reads_gemini_api_key(monkeypatch) -> None:
 
 def test_settings_reads_research_configuration(monkeypatch) -> None:
     monkeypatch.setenv("JARVIS_RESEARCH_ENABLED", "true")
+    monkeypatch.setenv("JARVIS_RESEARCH_PROVIDER", "SearXNG")
     monkeypatch.setenv("JARVIS_RESEARCH_SEARXNG_URL", "https://search.example")
     monkeypatch.setenv("JARVIS_RESEARCH_MAX_SOURCES", "7")
     monkeypatch.setenv("JARVIS_RESEARCH_ALLOW_HTTP", "true")
@@ -276,6 +277,7 @@ def test_settings_reads_research_configuration(monkeypatch) -> None:
     settings = Settings.from_environment()
 
     assert settings.research_enabled is True
+    assert settings.research_provider == "searxng"
     assert settings.research_searxng_url == "https://search.example"
     assert settings.research_max_sources == 7
     assert settings.research_allow_http is True
@@ -284,8 +286,18 @@ def test_settings_reads_research_configuration(monkeypatch) -> None:
 def test_settings_requires_search_endpoint_when_research_enabled() -> None:
     import pytest
 
+    # The default provider is the keyless DuckDuckGo backend: research
+    # can be enabled with no endpoint and no key at all.
+    assert Settings(research_enabled=True).research_provider == "duckduckgo"
     with pytest.raises(ValueError, match="searxng"):
-        Settings(research_enabled=True)
+        Settings(research_enabled=True, research_provider="searxng")
+    with pytest.raises(ValueError, match="research_provider"):
+        Settings(research_provider="bing")
+    assert Settings().daily_brief_time == "08:30"
+    with pytest.raises(ValueError, match="daily_brief_time"):
+        Settings(daily_brief_time="25:00")
+    with pytest.raises(ValueError, match="daily_brief_time"):
+        Settings(daily_brief_time="sabah")
     with pytest.raises(ValueError, match="between 1 and 10"):
         Settings(research_max_sources=11)
     with pytest.raises(ValueError, match="redirects"):

@@ -10,7 +10,7 @@ survived. What did not survive is reported, never shown.
 from __future__ import annotations
 
 import random
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -32,6 +32,7 @@ from app.medical.models import (
 )
 from app.medical.professor import StyleProfiler
 from app.medical.prompts import PIPELINE_SYSTEM, question_generation_prompt
+from app.medical.review import rule_decision
 from app.medical.questions import (
     SIMILARITY_THRESHOLD,
     build_question,
@@ -105,6 +106,10 @@ class QuestionGenerator:
         # The source-support reviewer (app/medical/review.py); None keeps the
         # paper as validation alone accepted it.
         self._reviewer = reviewer
+        # The scoring decision the bank picker applies (app/medical/review.py):
+        # the workflow swaps in the reviewer's fuller version of the same rule.
+        self.scoring: Callable[[Question], dict[str, Any]] = rule_decision
+        self.last_bank_report: dict[str, Any] = {}
 
     # ------------------------------------------------------------------
     # grounding
@@ -415,10 +420,12 @@ class QuestionGenerator:
         excluded = set(exclude)
         wanted = [question_id for question_id in wrong_question_ids if question_id not in excluded]
         chosen: list[Question] = []
+        report: dict[str, Any] = {"candidates": 0, "filtered_out": 0, "unscored": 0, "unscored_included": 0, "filters": self._bank_filter_labels(config)}
         if wanted:
             # A question the student had invalidated is no longer one of their mistakes.
             chosen.extend(question for question in self._store.get_questions(wanted) if not question.metadata.get("invalidated"))
         if only_wrong:
+            self.last_bank_report = report
             return chosen[: config.question_count]
         if len(chosen) < config.question_count:
             candidates: list[Question] = []
@@ -427,22 +434,99 @@ class QuestionGenerator:
             for subject in subjects:
                 for topic_id in topics:
                     candidates.extend(
-                        self._store.query_questions(subject=subject, topic_id=topic_id, with_answer_key=True, limit=300)
+                        self._store.query_questions(subject=subject, topic_id=topic_id, professor_id=config.professor_id, with_answer_key=True, limit=300)
                     )
             seen = {question.question_id for question in chosen} | excluded
-            pool = [question for question in candidates if question.question_id not in seen and not question.metadata.get("invalidated")]
+            unique: list[Question] = []
+            for question in candidates:
+                if question.question_id in seen:
+                    continue
+                seen.add(question.question_id)
+                unique.append(question)
+            report["candidates"] = len(unique)
+            # The filters mean what they say: a document and page range, a
+            # professor, figure questions. A candidate that does not fit is
+            # left out, never quietly replaced by one from elsewhere.
+            pool = [question for question in unique if self._bank_matches(question, config)]
+            report["filtered_out"] = len(unique) - len(pool)
+            scored_pool: list[Question] = []
+            unscored_pool: list[Question] = []
+            for question in pool:
+                (scored_pool if self.scoring(question)["scored"] else unscored_pool).append(question)
+            report["unscored"] = len(unscored_pool)
             if config.difficulty:
-                pool.sort(key=lambda question: abs(int(question.difficulty) - int(config.difficulty)))
+                scored_pool.sort(key=lambda question: abs(int(question.difficulty) - int(config.difficulty)))
+                unscored_pool.sort(key=lambda question: abs(int(question.difficulty) - int(config.difficulty)))
             rng = random.Random(config.title or new_id("seed"))
-            head = pool[: max(config.question_count * 2, 10)]
+            head = scored_pool[: max(config.question_count * 2, 10)]
             rng.shuffle(head)
+            picked = {question.question_id for question in chosen}
             for question in head:
                 if len(chosen) >= config.question_count:
                     break
-                if question.question_id not in seen:
-                    seen.add(question.question_id)
+                if question.question_id not in picked:
+                    picked.add(question.question_id)
                     chosen.append(question)
+            if len(chosen) < config.question_count and config.include_unscored:
+                # Asked for explicitly: study-only items fill the paper and are
+                # labelled on it; the score never sees them.
+                tail = unscored_pool[: max(config.question_count * 2, 10)]
+                rng.shuffle(tail)
+                for question in tail:
+                    if len(chosen) >= config.question_count:
+                        break
+                    if question.question_id not in picked:
+                        picked.add(question.question_id)
+                        chosen.append(question)
+                        report["unscored_included"] += 1
+        self.last_bank_report = report
         return chosen[: config.question_count]
+
+    def _bank_filter_labels(self, config: ExamConfig) -> list[str]:
+        labels: list[str] = []
+        for document_id in config.document_ids:
+            document = self._store.get_document(document_id)
+            title = document.title if document is not None else document_id
+            pages = f" s. {config.page_from or 1}-{config.page_to}" if (config.page_from or config.page_to) else ""
+            labels.append(f"{title}{pages}")
+        if config.professor_id:
+            profile = self._store.get_professor(config.professor_id)
+            labels.append(f"hoca: {profile.name if profile is not None else config.professor_id}")
+        if not config.include_images:
+            labels.append("görselsiz")
+        return labels
+
+    @staticmethod
+    def _bank_matches(question: Question, config: ExamConfig) -> bool:
+        """Does a bank question satisfy the filters the student set?"""
+        if config.document_ids:
+            wanted = set(config.document_ids)
+            low, high = int(config.page_from or 0), int(config.page_to or 0)
+
+            def in_range(page: int) -> bool:
+                if low and page < low:
+                    return False
+                if high and page > high:
+                    return False
+                return True
+
+            cited = [ref for ref in question.references if ref.document_id in wanted]
+            figure_page: int | None = None
+            if question.image_ref and "|" in question.image_ref:
+                figure_document, _, figure_number = question.image_ref.partition("|")
+                if figure_document in wanted and figure_number.isdigit():
+                    figure_page = int(figure_number)
+            read_from = question.metadata.get("source_document_id") in wanted and not (low or high)
+            if not (any(in_range(ref.page_number) for ref in cited) or (figure_page is not None and in_range(figure_page)) or read_from):
+                return False
+        if config.professor_id and question.professor_id != config.professor_id:
+            return False
+        # "Görselli sorular" lets figure questions in, as it does for a
+        # generated paper; switched off, a question that needs its figure
+        # is left out rather than shown without it.
+        if not config.include_images and question.image_ref:
+            return False
+        return True
 
 
 class ExamBuilder:
@@ -450,7 +534,8 @@ class ExamBuilder:
         self._store = store
         self._curriculum = curriculum
 
-    def title_for(self, config: ExamConfig) -> str:
+    def title_for(self, config: ExamConfig, *, count: int | None = None) -> str:
+        """The paper is named for the questions it holds, not for the number asked for."""
         if config.title.strip():
             return config.title.strip()[:120]
         parts: list[str] = []
@@ -466,7 +551,7 @@ class ExamBuilder:
             profile = self._store.get_professor(config.professor_id)
             if profile is not None:
                 parts.append(f"{profile.name} tarzı")
-        parts.append(f"{config.question_count} soru")
+        parts.append(f"{config.question_count if count is None else int(count)} soru")
         return " · ".join(parts)
 
     def build(self, config: ExamConfig, questions: list[Question], *, notes: Iterable[str] = ()) -> Exam:
@@ -474,14 +559,19 @@ class ExamBuilder:
             order = list(questions)
             random.Random(new_id("exam")).shuffle(order)
             questions = order
+        notes = list(notes)
+        if len(questions) < int(config.question_count):
+            shortfall = f"{config.question_count} soru istendi, {len(questions)} soru hazırlandı."
+            if shortfall not in notes:
+                notes.append(shortfall)
         exam = Exam(
             exam_id=new_id("exam"),
-            title=self.title_for(config),
+            title=self.title_for(config, count=len(questions)),
             config=config,
             question_ids=[question.question_id for question in questions],
             status="ready",
             mode="study" if config.immediate_feedback else "simulation",
-            generation_notes=list(notes),
+            generation_notes=notes,
         )
         self._store.save_exam(exam)
         return exam

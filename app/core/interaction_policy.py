@@ -17,6 +17,15 @@ _TURKISH_MONTHS = (
 )
 
 
+def turkish_date(now: datetime | None = None) -> str:
+    """A local date in Turkish words: '15 Eylul 2026, Sali'."""
+    moment = (now or datetime.now()).astimezone()
+    return (
+        f"{moment.day} {_TURKISH_MONTHS[moment.month - 1]} {moment.year}, "
+        f"{_TURKISH_DAYS[moment.weekday()]}"
+    )
+
+
 def clock_answer(now: datetime | None = None) -> str:
     """The current local time and date, spoken the way JARVIS would."""
     moment = (now or datetime.now()).astimezone()

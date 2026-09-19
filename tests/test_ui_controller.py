@@ -41,7 +41,7 @@ def test_desktop_snapshot_uses_live_application_state() -> None:
     assert snapshot.tool_count == snapshot.enabled_tools
     assert snapshot.voice_available is False
     assert snapshot.vision_available is False
-    assert snapshot.research_available is False
+    assert snapshot.research_available is True, "the keyless default backend is on"
     assert snapshot.windows_available is False
 
 
@@ -240,6 +240,8 @@ async def test_desktop_command_rejects_empty_text() -> None:
 @pytest.mark.asyncio
 async def test_optional_capabilities_fail_closed_when_disabled() -> None:
     controller = DesktopController(application())
+    # Research is on by default now; turn it off to prove the guard.
+    controller.application.research = None
     with pytest.raises(RuntimeError, match="Voice"):
         await controller.run_voice()
     with pytest.raises(RuntimeError, match="Vision"):

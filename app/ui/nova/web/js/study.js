@@ -74,6 +74,230 @@ function studyOptions(options, { chosen = null, correctKey = null, revealed = fa
    Study: plan, understanding, histology, and the answer's context
    ════════════════════════════════════════════════════════════════════ */
 
+
+/* ── Kartlar: spaced repetition over the student's own material ────────
+   A grade is the student's own word: it schedules the next repetition and
+   counts as study time, and it never moves mastery, findings or results. */
+const Cards = {
+  overview: null,
+  queue: [],
+  index: 0,
+  revealed: false,
+  imageCache: new Map(),
+
+  request(action, params) { return Study.request(action, params); },
+
+  async open() {
+    const [overview, queue] = await Promise.all([this.request("cards_overview", {}), this.request("cards_queue", { limit: 60 })]);
+    if (overview.ok === false) { toast(overview.error || "Kartlar okunamadı.", true); return; }
+    this.overview = overview;
+    this.queue = queue.ok === false ? [] : (queue.cards || []);
+    this.index = 0;
+    this.revealed = false;
+    this.renderPanel();
+    this.renderReview();
+  },
+
+  renderPanel() {
+    const overview = this.overview || {};
+    const count = $("#med-cards-count");
+    if (count) count.textContent = overview.total ? `${overview.total} kart` : "";
+    const summary = $("#med-cards-summary");
+    if (summary) {
+      const chips = [
+        ["accent", `${overview.due || 0} tekrar`],
+        ["", `${Math.min(overview.new_available || 0, overview.new_budget || 0)} yeni`],
+        ["ok", `${overview.reviewed_today || 0} bugün yapıldı`],
+      ];
+      if (overview.suspended) chips.push(["warn", `${overview.suspended} askıda`, "suspended"]);
+      (overview.by_source || []).forEach((row) => chips.push(["violet", `${row.label} · ${row.count}`]));
+      summary.innerHTML = chips.map(([tone, text, action]) => action
+        ? `<button type="button" class="chip ${tone}" data-cards-panel="${action}" title="Askıya alınan kartları listeler; geri alınabilir">${esc(text)}</button>`
+        : `<span class="chip ${tone}">${esc(text)}</span>`).join("");
+      $$("[data-cards-panel]", summary).forEach((node) => node.addEventListener("click", () => this.showSuspended()));
+    }
+    const newInput = $("#med-cards-new");
+    if (newInput && overview.settings) newInput.value = String(overview.settings.new_per_day);
+    const forecast = $("#med-cards-forecast");
+    if (forecast) {
+      const rows = overview.forecast || [];
+      forecast.innerHTML = rows.length
+        ? rows.map((row, position) => `<div class="med-row"><span class="med-row-title">${position === 0 ? "Bugün" : esc(studyDate(row.date))}</span><span class="med-row-side">${row.due} kart</span></div>`).join("")
+        : "";
+    }
+  },
+
+  current() { return this.queue[this.index] || null; },
+
+  async renderReview() {
+    const host = $("#med-cards-review");
+    if (!host) return;
+    const card = this.current();
+    if (!card) {
+      const overview = this.overview || {};
+      host.innerHTML = `<div class="panel med-card">${medEmpty(
+        overview.total ? "Bugünlük bitti" : "Henüz kart yok",
+        overview.total ? "Tekrarı gelen kart kalmadı; yarınki yük soldaki listede." : (overview.empty_state || ""))}</div>`;
+      return;
+    }
+    const remaining = this.queue.length - this.index;
+    const image = card.has_image ? `<div class="study-crop" data-card-image="${esc(card.card_id)}"><span class="mq-figure-wait">Görüntü yükleniyor…</span></div>` : "";
+    const grades = ["again", "hard", "good", "easy"];
+    const gradeLabels = card.preview_labels || { again: "Tekrar", hard: "Zor", good: "İyi", easy: "Kolay" };
+    const previews = card.previews || {};
+    host.innerHTML = `<div class="panel med-card study-flashcard">
+      <div class="panel-title"><span class="kicker">${esc(card.state_label)} · ${remaining} kart kaldı</span>
+        <span class="med-chips"><span class="chip">${esc(card.source_label)}</span>${card.topic_label ? `<span class="chip">${esc(card.topic_label)}</span>` : ""}</span></div>
+      ${image}
+      <div class="fc-front">${esc(card.front).replace(/\n/g, "<br>")}</div>
+      ${this.revealed
+        ? `<div class="fc-back">${esc(card.back).replace(/\n/g, "<br>")}</div>
+           <div class="fc-grades">${grades.map((grade) => `<button type="button" class="btn ${grade === "good" ? "btn-primary" : "btn-ghost"} small" data-grade="${grade}">${esc(gradeLabels[grade] || grade)}<i>${esc(previews[grade] || "")}</i></button>`).join("")}</div>
+           <p class="settings-note">1–4 tuşları da not verir. Notun yalnız tekrar zamanını belirler; ölçmeye girmez.</p>`
+        : `<div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-primary small" data-card-reveal>Cevabı göster · Boşluk</button></div>`}
+      <div class="mb-meta">
+        <span class="chip" title="Kaynağı">${esc(card.provenance)}</span>
+        <span class="spacer"></span>
+        <button type="button" class="chip" data-card-suspend="${esc(card.card_id)}">Askıya al</button>
+      </div>
+    </div>`;
+    if (card.has_image) this.loadImage(host, card.card_id);
+    const reveal = host.querySelector("[data-card-reveal]");
+    if (reveal) reveal.addEventListener("click", () => { this.revealed = true; this.renderReview(); });
+    $$("[data-grade]", host).forEach((node) => node.addEventListener("click", () => this.answer(node.dataset.grade)));
+    $$("[data-card-suspend]", host).forEach((node) => node.addEventListener("click", async () => {
+      const result = await this.request("cards_suspend", { card_id: node.dataset.cardSuspend });
+      if (result.ok === false) { toast(result.error || "Askıya alınamadı.", true); return; }
+      this.queue.splice(this.index, 1);
+      this.revealed = false;
+      await this.refreshOverview();
+      this.renderReview();
+    }));
+  },
+
+  /* The suspended cards, each with its way back into the queue. */
+  async showSuspended() {
+    const host = $("#med-cards-review");
+    if (!host) return;
+    const result = await this.request("cards_suspended", {});
+    if (result.ok === false) { toast(result.error || "Askıdakiler okunamadı.", true); return; }
+    const cards = result.cards || [];
+    host.innerHTML = `<div class="panel med-card">
+      <div class="panel-title"><span class="kicker">Askıdaki kartlar</span><span class="faint">${cards.length}</span></div>
+      ${cards.length ? `<div class="med-bank-list">${cards.map((card) => `<div class="med-row"><span class="med-row-title">${esc(card.front.split("\n")[0])}</span>
+        <span class="med-row-side"><button type="button" class="chip" data-card-restore="${esc(card.card_id)}">Geri al</button></span>
+        <span class="med-row-meta">${esc(card.source_label)}${card.topic_label ? ` · ${esc(card.topic_label)}` : ""}</span></div>`).join("")}</div>` : medEmpty("Askıda kart yok")}
+      <div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-ghost small" data-cards-back>Tekrara dön</button></div></div>`;
+    $$("[data-card-restore]", host).forEach((node) => node.addEventListener("click", async () => {
+      const restored = await this.request("cards_suspend", { card_id: node.dataset.cardRestore, suspended: false });
+      if (restored.ok === false) { toast(restored.error || "Geri alınamadı.", true); return; }
+      await this.open();
+      this.showSuspended();
+    }));
+    const back = host.querySelector("[data-cards-back]");
+    if (back) back.addEventListener("click", () => this.open());
+  },
+
+  async loadImage(host, cardId) {
+    let image = this.imageCache.get(cardId);
+    if (!image) {
+      const result = await this.request("cards_image", { card_id: cardId });
+      if (result.ok === false || !result.image) { const node = host.querySelector("[data-card-image]"); if (node) node.innerHTML = `<span class="mq-figure-wait">${esc((result && result.error) || "Görüntü alınamadı.")}</span>`; return; }
+      image = result.image;
+      this.imageCache.set(cardId, image);
+    }
+    const node = host.querySelector(`[data-card-image="${cardId}"]`);
+    if (node) node.innerHTML = `<img src="${image}" alt="Kartın görseli">`;
+  },
+
+  async answer(grade) {
+    const card = this.current();
+    if (!card || !this.revealed) return;
+    const result = await this.request("cards_answer", { card_id: card.card_id, grade, submission_id: Study.submissionId(card.card_id, String(card.reps || 0), grade) });
+    if (result.ok === false) { toast(result.error || "Not kaydedilemedi.", true); return; }
+    const updated = result.card || {};
+    this.queue.splice(this.index, 1);
+    if (updated.interval_days === 0 && updated.state === "learning") {
+      // "Again" comes back at the end of today's queue with fresh previews.
+      const requeued = await this.request("cards_queue", { limit: 60 });
+      const found = requeued.ok !== false ? (requeued.cards || []).find((item) => item.card_id === card.card_id) : null;
+      this.queue.push(found || { ...card, ...updated });
+    }
+    this.revealed = false;
+    await this.refreshOverview();
+    this.renderReview();
+  },
+
+  async refreshOverview() {
+    const overview = await this.request("cards_overview", {});
+    if (overview.ok !== false) { this.overview = overview; this.renderPanel(); }
+    if (Medical.state && Medical.state.study) {
+      Medical.state.study.cards_due = (overview.ok !== false ? overview.due : 0) || 0;
+      Medical.state.study.cards_new = overview.ok !== false ? Math.min(overview.new_available || 0, overview.new_budget || 0) : 0;
+      Medical.markTabs();
+    }
+  },
+
+  keydown(event) {
+    if (!Study.viewIs("cards") || !this.current()) return false;
+    if (/INPUT|TEXTAREA|SELECT/.test((event.target || {}).tagName || "")) return false;
+    if ((event.key === " " || event.key === "Enter") && !this.revealed) { this.revealed = true; this.renderReview(); return true; }
+    const grades = { "1": "again", "2": "hard", "3": "good", "4": "easy" };
+    if (this.revealed && grades[event.key]) { this.answer(grades[event.key]); return true; }
+    return false;
+  },
+
+  async build(action, params, label) {
+    const result = await this.request(action, params || {});
+    if (result.ok === false) { toast(result.error || `${label} yapılamadı.`, true); return; }
+    const parts = [`${result.added || 0} kart eklendi`];
+    if (result.existing) parts.push(`${result.existing} zaten vardı`);
+    if (result.skipped_unscored) parts.push(`${result.skipped_unscored} puansız soru alınmadı`);
+    toast(`${label}: ${parts.join(", ")}.`, "ok");
+    await this.open();
+    await this.refreshOverview();
+  },
+
+  /* Labels the page itself prints, chosen in a dialog, masked on the figure. */
+  async occlusionFromPage(documentId, pageNumber) {
+    const found = await this.request("cards_occlusion_scan", { document_id: documentId, page_number: pageNumber });
+    if (found.ok === false) { toast(found.error || "Etiketler okunamadı.", true); return; }
+    const candidates = found.candidates || [];
+    if (!candidates.length) { toast(found.reason || "Bu sayfada metin katmanında etiket yok.", true); return; }
+    const chosen = await Study.dialog({
+      title: `Etiket kartları · s. ${pageNumber}`,
+      okLabel: "KART YAP",
+      html: `<p class="med-review-note">Sayfanın kendi bastığı etiketler. Seçtiklerin şekil üzerinde gri kutuyla kapatılır; kartın cevabı etiketin kendisidir.</p>
+        <div class="fc-occlusion-list">${candidates.map((item, position) => `<label class="switch-row small"><span>${esc(item.label)} <i class="faint">(${item.boxes.length} yerde)</i></span><input class="switch" type="checkbox" data-occ-label="${position}" ${position < 8 ? "checked" : ""}></label>`).join("")}</div>`,
+      collect: (host) => Array.from(host.querySelectorAll("[data-occ-label]")).filter((node) => node.checked).map((node) => candidates[Number(node.dataset.occLabel)].label),
+    });
+    if (!chosen || !chosen.length) return;
+    const result = await this.request("cards_occlusion_add", { document_id: documentId, page_number: pageNumber, labels: chosen });
+    if (result.ok === false) { toast(result.error || "Kartlar üretilemedi.", true); return; }
+    toast(`${result.added} etiket kartı eklendi${result.existing ? `, ${result.existing} zaten vardı` : ""}.`, "ok");
+    Medical.refreshCounts();
+  },
+
+  bind() {
+    const topic = $("#med-cards-topic");
+    if (topic) topic.addEventListener("click", () => {
+      const session = (Medical.state && Medical.state.session) || {};
+      if (!session.topic_id) { toast("Önce Panel'den bir konu seç.", true); return; }
+      this.build("cards_build_topic", { topic_id: session.topic_id }, "Konu kartları");
+    });
+    const wrongs = $("#med-cards-wrongs");
+    if (wrongs) wrongs.addEventListener("click", () => this.build("cards_add_wrongs", {}, "Yanlış kartları"));
+    const histo = $("#med-cards-histo");
+    if (histo) histo.addEventListener("click", () => this.build("cards_add_histology", {}, "Histoloji kartları"));
+    const newInput = $("#med-cards-new");
+    if (newInput) newInput.addEventListener("change", async () => {
+      const result = await this.request("cards_settings", { fields: { new_per_day: Number(newInput.value) || 0 } });
+      if (result.ok !== false) { toast(`Günlük yeni kart: ${result.settings.new_per_day}.`, "ok"); this.open(); }
+    });
+    addEventListener("keydown", (event) => { if (this.keydown(event)) event.preventDefault(); });
+  },
+};
+
 const Study = {
   plans: [],
   plan: null,
@@ -159,7 +383,7 @@ const Study = {
       <div class="sa-head"><span class="chip ${STUDY_ACTIVITY_TONE[status] || ""}">${esc(activity.status_label || status)}</span>
         <span class="chip">${esc(activity.kind_label || activity.kind)}</span>
         <span class="sa-estimate" title="${esc(activity.estimate_label || "tahmini")}">≈ ${studyMinutes(activity.estimate_minutes)} <i>(${esc(activity.estimate_label || "tahmini")})</i></span></div>
-      <div class="sa-title">${esc(activity.title)}</div>
+      <div class="sa-title">${esc(activity.title)}${status === "started" && activity.started_at ? ` <span class="chip accent" data-elapsed="${esc(activity.started_at)}">${studyMinutes(Math.max(1, Math.round((Date.now() - Date.parse(activity.started_at)) / 60000)))} sürüyor</span>` : ""}</div>
       <div class="sa-reason">${esc(activity.reason || "")}</div>
       ${actions && (status === "planned" || status === "started") ? `<div class="btn-row" style="justify-content:flex-start">
         <button type="button" class="btn btn-primary small" data-activity-run="${esc(activity.activity_id)}">${status === "started" ? "Devam et" : "Başla"}</button>
@@ -399,6 +623,17 @@ const Study = {
     </div>`;
   },
 
+  /* What is known about the explanation right now: still with the model,
+     assessed, or not assessable. "Gerekçe yok ya da tahmin" is a verdict and
+     is shown only once there is one. */
+  assessmentStateMarkup(result) {
+    const status = result.assessment_status || (result.classification ? "done" : "not_needed");
+    if (status === "pending") return `<span class="chip accent">Gerekçe değerlendiriliyor…</span> <span class="faint">Sonuç birkaç saniye içinde burada görünür; cevabın ve gerekçen kaydedildi.</span>`;
+    if (status === "unavailable") return `<span class="chip warn">Gerekçe değerlendirilemedi</span> <span class="faint">${esc(result.assessment_note || "Model yanıt vermedi; gerekçe kaydedildi.")}</span> <button type="button" class="btn btn-ghost small" data-check-retry="${esc(result.event_id || "")}">Yeniden dene</button>`;
+    const classification = { classification: result.classification, classification_label: result.classification_label };
+    return `<span class="chip ${String(result.classification || "").startsWith("wrong") || result.classification === "correct_contradictory" ? "warn" : "ok"}">${esc(this.classificationLabel(classification))}</span>${result.suspected_misconception ? ` <span class="faint">olası yanlış anlama: ${esc(result.suspected_misconception)}</span>` : ""}`;
+  },
+
   checkMarkup(check) {
     if (!check) return "";
     const question = check.question || {};
@@ -408,7 +643,7 @@ const Study = {
       <div class="mq-stem">${esc(question.stem || "")}</div>
       ${result ? "" : this.confidenceChips(null)}
       ${studyOptions(question.options, { chosen: result ? result.answer_key : null, correctKey: result ? question.correct_key : null, revealed: !!result })}
-      ${result ? `<div class="med-explain">${esc(question.explanation || "")}<br><span class="chip">${esc(this.classificationLabel({ classification: result.classification }))}</span></div>`
+      ${result ? `<div class="med-explain">${esc(question.explanation || "")}<br>${this.assessmentStateMarkup(result)}</div>`
         : `<textarea class="study-textarea" data-check-text rows="2" maxlength="1200" placeholder="Neden bu şık? (zorunlu)"></textarea>
            <div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-primary small" data-check-send>Cevapla</button><button type="button" class="btn btn-ghost small" data-check-close>Vazgeç</button></div>`}
       ${result ? '<div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-ghost small" data-check-close>Kapat</button></div>' : ""}
@@ -416,10 +651,17 @@ const Study = {
   },
 
   specimenRow(specimen, { active = false } = {}) {
+    if (specimen.masked) {
+      // A specimen a timed session still asks about: the row says only that.
+      return `<button type="button" class="med-row ${active ? "active" : ""}" data-specimen="${esc(specimen.specimen_id)}" aria-label="Sınavdaki örnek (adı gizli)">
+        <span class="med-row-title">Sınavdaki örnek · adı gizli</span>
+        <span class="med-row-side"><span class="chip accent">sınav sürüyor</span></span>
+        <span class="med-row-meta">kaynak ve ad oturum bitince görünür</span></button>`;
+    }
     return `<button type="button" class="med-row ${active ? "active" : ""}" data-specimen="${esc(specimen.specimen_id)}">
       <span class="med-row-title">${esc(specimen.label || "(adsız örnek)")}</span>
       <span class="med-row-side"><span class="chip ${specimen.status === "eligible" ? "ok" : specimen.status === "unreadable" ? "bad" : ""}">${esc(specimen.status_label)}</span></span>
-      <span class="med-row-meta">${esc(specimen.document_title || "")} · s. ${specimen.page_number}${specimen.source_changed ? ' · <span class="warn-text">kaynak değişti</span>' : ""}</span></button>`;
+      <span class="med-row-meta">${esc(specimen.document_title || "")} · s. ${specimen.page_number}${specimen.source_changed ? ' · <span class="warn-text">kaynak değişti</span>' : ""}${specimen.status === "study_only" && specimen.status_reason ? ` · <span class="warn-text">${esc(specimen.status_reason)}</span>` : ""}</span></button>`;
   },
 
   specimenMarkup(specimen, { reveal = true } = {}) {
@@ -434,11 +676,19 @@ const Study = {
          ${features ? `<h4 class="study-h4">Ayırt edici özellikler</h4><ul class="study-features">${features}</ul>` : '<p class="med-review-note">Özellik kaydedilmedi.</p>'}
          ${specimen.model_description ? `<div class="med-explain"><h4>Model betimlemesi (cevap değil)</h4>${esc(specimen.model_description)}</div>` : ""}
          ${specimen.caption_excerpt ? `<div class="med-explain"><h4>Sayfa metni</h4>${esc(specimen.caption_excerpt)}</div>` : ""}
-         ${specimen.notes ? `<div class="med-explain">${esc(specimen.notes)}</div>` : ""}`
+         ${specimen.notes ? `<div class="med-explain">${esc(specimen.notes)}</div>` : ""}
+         ${specimen.status === "study_only" && specimen.status_reason ? `<p class="med-review-note warn-text">${esc(specimen.status_reason)}</p>` : ""}
+         ${specimen.answer_visible && !(specimen.masks || []).length ? `<div class="btn-row" style="justify-content:flex-start"><button type="button" class="btn btn-ghost small" data-specimen-act="hide" title="Sayfanın metin katmanında adın yazdığı yerler kırpma üzerinde gri kutuyla örtülür; sayfa ve asıl kırpma değişmez">Görseldeki adı gizle</button></div>` : ""}
+         ${(specimen.masks || []).length ? `<p class="med-review-note">${specimen.masks.length} maske: sınavda görsel maskeli gösterilir.</p>` : ""}`
       : `<div class="med-chips">${specimen.stain ? `<span class="chip">boya: ${esc(specimen.stain)}</span>` : ""}<span class="chip">${esc(specimen.status_label)}</span></div>`;
+    // While the answer is hidden the caption is too: a document called
+    // "Epitel Doku" would name the tissue family.
+    const caption = reveal && !specimen.masked
+      ? `${esc(specimen.document_title || "")} · s. ${specimen.page_number}${specimen.source_changed ? " · kaynak belge değişti" : ""}`
+      : "kaynak gizli · oturum bitince görünür";
     return `<div class="study-specimen">
-      <div class="study-crop" data-crop="${esc(specimen.specimen_id)}"><span class="mq-figure-wait">Görüntü yükleniyor…</span></div>
-      <figcaption class="faint">${esc(specimen.document_title || "")} · s. ${specimen.page_number}${specimen.source_changed ? " · kaynak belge değişti" : ""}</figcaption>
+      <div class="study-crop" data-crop="${esc(specimen.specimen_id)}" data-crop-masked="${reveal && !specimen.masked ? "0" : "1"}"><span class="mq-figure-wait">Görüntü yükleniyor…</span></div>
+      <figcaption class="faint">${caption}</figcaption>
       ${answerBlock}</div>`;
   },
 
@@ -666,7 +916,14 @@ const Study = {
       const question = (Medical.exam.questions || []).find((item) => item.question_id === event.question_id);
       if (question) question.assessment = event;
     }
-    if (this.check && this.check.result && this.check.result.event_id === event.event_id) { this.check.result.classification = event.classification; }
+    if (this.check && this.check.result && this.check.result.event_id === event.event_id) {
+      const assessment = event.assessment || {};
+      this.check.result.classification = event.classification;
+      this.check.result.classification_label = event.classification_label || this.classificationLabel(event);
+      this.check.result.assessment_status = assessment.status || "done";
+      this.check.result.assessment_note = assessment.note || "";
+      this.check.result.suspected_misconception = assessment.suspected_misconception || "";
+    }
     toast(`Gerekçe değerlendirildi: ${note}`, String(event.classification || "").startsWith("wrong") || event.classification === "correct_contradictory" ? "" : "ok");
     if (this.viewIs("exam")) Medical.renderRunner();
     if (this.viewIs("understanding")) this.openUnderstanding();
@@ -691,7 +948,8 @@ const Study = {
           <span class="chip ${study.findings_active ? "bad" : study.findings_open ? "warn" : "ok"}">${study.findings_open || 0} açık bulgu${study.findings_active ? ` · ${study.findings_active} desteklenen` : ""}</span>
           <span class="chip ${study.open_flags ? "warn" : ""}">${study.open_flags || 0} soru işareti</span>
           <span class="chip">${(histology.eligible || 0) + (histology.study_only || 0)} histoloji örneği${histology.eligible ? ` · ${histology.eligible} sınava uygun` : ""}</span>
-          <span class="chip">${study.plans || 0} plan</span></div>
+          <span class="chip">${study.plans || 0} plan</span>
+          ${(study.cards_due || 0) + (study.cards_new || 0) ? `<button type="button" class="chip accent" data-study-go="cards" title="Tekrarı gelen ve günün yeni kartları">${(study.cards_due || 0) + (study.cards_new || 0)} kart bekliyor</button>` : ""}</div>
         <div class="btn-row" style="justify-content:flex-start">
           <button type="button" class="btn btn-ghost small" data-study-go="understanding">Bulgular</button>
           <button type="button" class="btn btn-ghost small" data-study-check title="Bankadan bir soru: cevap, güven ve gerekçe birlikte kaydedilir">Anlama kontrolü</button>
@@ -738,14 +996,64 @@ const Study = {
     if (!item) return;
     if (item.kind === "repair") { Medical.show("understanding"); await this.openUnderstanding(); const finding = (this.understanding && this.understanding.findings || []).find((entry) => entry.concept_id === item.concept_id || entry.topic_id === item.topic_id); if (finding) this.openFinding(finding.finding_id); return; }
     if (item.kind === "prerequisite") { Medical.show("understanding"); if (item.concept_id) this.startDiagnosis(item.concept_id, "Plandaki ön koşul kontrolü"); return; }
-    if (item.kind === "read") { Medical.show("library"); toast(`${item.title}: ilgili belgeyi Kütüphane'den aç; okuduğun sayfalar plana işlenir.`, "ok"); return; }
+    if (item.kind === "read") { await this.openReading(item, result.sources); return; }
     if (item.kind === "recap") { Medical.quickAsk(`${item.title} konusunu kısaca hatırlat`); return; }
     Medical.quickAsk(`${item.title} konusundan 5 soruluk kısa test hazırla`);
   },
 
+  /* A reading goes to its material: the plan's own document at its pages,
+     or the library document filed under the topic; two or more are offered
+     by name; none leaves the search filled with the topic and says so. The
+     document that happened to be open before is closed either way. */
+  async openReading(item, sources) {
+    const documents = (sources && sources.documents) || [];
+    Medical.show("library");
+    Medical.document = null;
+    Medical.page = null;
+    const search = $("#med-doc-search");
+    if (documents.length === 1) {
+      if (search) search.value = "";
+      Medical.renderDocuments();
+      const opened = await Medical.openDocument(documents[0].document_id);
+      if (opened && documents[0].page_from) await Medical.openPage(Number(documents[0].page_from));
+      toast(`${item.title}: ${documents[0].title}${documents[0].page_from ? ` s. ${documents[0].page_from}` : ""} açıldı; okuduğun sayfalar plana işlenir.`, "ok");
+      return;
+    }
+    if (documents.length > 1) {
+      Medical.renderDocument();
+      const chosen = await this.dialog({
+        title: `${item.title} · kaynak seç`,
+        okLabel: "AÇ",
+        html: `<p class="med-review-note">Bu konu için birden çok belge var; hangisinden okuyacaksın?</p>
+          <select id="study-reading-choice" class="mem-edit">${documents.map((doc) => `<option value="${esc(doc.document_id)}|${doc.page_from || 0}">${esc(doc.title)}${doc.page_from ? ` · s. ${doc.page_from}–${doc.page_to || "son"}` : ""} (${esc(doc.reason)})</option>`).join("")}</select>`,
+        collect: (host) => host.querySelector("#study-reading-choice").value,
+      });
+      if (!chosen) return;
+      const [documentId, page] = String(chosen).split("|");
+      if (search) search.value = "";
+      Medical.renderDocuments();
+      const opened = await Medical.openDocument(documentId);
+      if (opened && Number(page)) await Medical.openPage(Number(page));
+      return;
+    }
+    if (search) search.value = (sources && sources.search) || item.title || "";
+    Medical.renderDocuments();
+    Medical.renderDocument();
+    toast(`${item.title} için kaynak eşleşmedi: Kütüphane'de aramadan bir belge seç; okuduğun sayfalar plana işlenir.`, "");
+  },
+
   /* ── plan view ───────────────────────────────────────────────── */
 
+  tickElapsed() {
+    // The started activity's badge stays honest without re-rendering the view.
+    $$("[data-elapsed]").forEach((node) => {
+      const started = Date.parse(node.dataset.elapsed);
+      if (Number.isFinite(started)) node.textContent = `${studyMinutes(Math.max(1, Math.round((Date.now() - started) / 60000)))} sürüyor`;
+    });
+  },
+
   async openPlan() {
+    if (!this.elapsedTimer) this.elapsedTimer = setInterval(() => this.tickElapsed(), 30000);
     const result = await this.request("plans", {});
     if (result.ok === false) { toast(result.error || "Planlar okunamadı.", true); return; }
     this.plans = result.plans || [];
@@ -1158,6 +1466,12 @@ const Study = {
       }
     });
     $$("[data-check-close]", host).forEach((node) => node.addEventListener("click", () => { this.check = null; this.openUnderstanding(); }));
+    $$("[data-check-retry]", host).forEach((node) => node.addEventListener("click", async () => {
+      const started = await this.request("understanding_assess", { event_id: node.dataset.checkRetry });
+      if (started.ok === false) { toast(started.error || "Değerlendirme başlatılamadı.", true); return; }
+      if (this.check && this.check.result) { this.check.result.assessment_status = "pending"; this.renderUnderstandingDetail(); }
+      toast(started.message || "Gerekçe yeniden değerlendiriliyor.", "ok");
+    }));
   },
 
   /* ── histology view ───────────────────────────────────────────── */
@@ -1190,10 +1504,15 @@ const Study = {
   },
 
   async openSpecimen(specimenId) {
+    const underTest = ((this.histology && this.histology.under_test) || []).includes(specimenId);
+    if (this.session && this.session.status === "open" && underTest) {
+      toast("Bu örnek süreli oturumda: adı ve kaynağı oturum bitince görünür.", true);
+      return;
+    }
     const result = await this.request("histology_specimen", { specimen_id: specimenId });
     if (result.ok === false) { toast(result.error || "Örnek okunamadı.", true); return; }
     this.specimen = result.specimen;
-    this.session = null;
+    if (!(this.session && this.session.status === "open")) this.session = null;
     this.renderSpecimens();
     this.renderSpecimenDetail();
   },
@@ -1202,12 +1521,14 @@ const Study = {
     const nodes = $$("[data-crop]", host);
     for (const node of nodes) {
       const id = node.dataset.crop;
-      let image = this.cropCache.get(id);
+      const masked = node.dataset.cropMasked === "1";
+      const key = `${id}:${masked ? "m" : "p"}`;
+      let image = this.cropCache.get(key);
       if (!image) {
-        const result = await this.request("histology_crop", { specimen_id: id });
+        const result = await this.request("histology_crop", { specimen_id: id, masked });
         if (result.ok === false || !result.image) { node.innerHTML = `<span class="mq-figure-wait">${esc((result && result.error) || "Görüntü üretilemedi: kaynak sayfa yok.")}</span>`; continue; }
         image = result.image;
-        this.cropCache.set(id, image);
+        this.cropCache.set(key, image);
       }
       node.innerHTML = `<img src="${image}" alt="Histoloji örneği">`;
     }
@@ -1282,6 +1603,15 @@ const Study = {
       await this.openHistology();
       return;
     }
+    if (action === "hide") {
+      const result = await this.request("histology_hide_answer", { specimen_id: specimen.specimen_id });
+      if (result.ok === false) { toast(result.error || "Ad gizlenemedi.", true); return; }
+      this.specimen = result.specimen;
+      this.cropCache.delete(`${specimen.specimen_id}:m`);
+      toast(`${result.specimen.status_label}${result.specimen.masks && result.specimen.masks.length ? ` · ${result.specimen.masks.length} maske` : " · görselde ad bulunamadı; bölgeyi daralt"}.`, result.specimen.status === "eligible" ? "ok" : "");
+      await this.openHistology();
+      return;
+    }
     if (action === "unreadable") {
       const result = await this.request("histology_update", { specimen_id: specimen.specimen_id, fields: { unreadable: specimen.status !== "unreadable" } });
       if (result.ok === false) { toast(result.error || "Güncellenemedi.", true); return; }
@@ -1295,8 +1625,10 @@ const Study = {
       const result = await this.request("histology_delete", { specimen_id: specimen.specimen_id, confirmed: true });
       if (result.ok === false) { toast(result.error || "Silinemedi.", true); return; }
       this.specimen = null;
-      this.cropCache.delete(specimen.specimen_id);
+      this.cropCache.delete(`${specimen.specimen_id}:p`);
+      this.cropCache.delete(`${specimen.specimen_id}:m`);
       await this.openHistology();
+      Medical.refreshCounts();
     }
   },
 
@@ -1455,10 +1787,11 @@ const Study = {
       const features = $("#study-region-features").value.split("\n").map((line) => line.trim()).filter(Boolean);
       const result = await this.request("histology_add", { document_id: documentId, page_number: pageNumber, region, label, latin: $("#study-region-latin").value.trim(), basis, stain: $("#study-region-stain").value.trim() || null, magnification: $("#study-region-mag").value.trim() || null, features });
       if (result.ok === false) { toast(result.error || "Örnek kaydedilemedi.", true); return; }
-      toast(`Örnek kaydedildi: ${result.specimen.status_label}.`, "ok");
+      toast(`Örnek kaydedildi: ${result.specimen.status_label}${result.specimen.status_reason ? " · " + result.specimen.status_reason : ""}.`, result.specimen.status === "eligible" ? "ok" : "");
       host.innerHTML = "";
       this.endRegionSelect();
       this.histology = null;
+      Medical.refreshCounts();
     });
   },
 
@@ -1503,5 +1836,6 @@ const Study = {
     if (study) study.addEventListener("click", () => this.startSession("study"));
     const timed = $("#med-histo-timed");
     if (timed) timed.addEventListener("click", () => this.startSession("timed"));
+    Cards.bind();
   },
 };

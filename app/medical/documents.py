@@ -156,13 +156,82 @@ class PdfReader:
             except Exception:
                 pass
 
-    def render_png(self, page_number: int, scale: float = DEFAULT_RENDER_SCALE, *, region: tuple[float, float, float, float] | None = None) -> bytes:
+    def text_in_region(self, page_number: int, region: tuple[float, float, float, float]) -> str:
+        """The page text that lies inside ``region`` (page fractions, top-left origin).
+
+        What a crop shows is what the student will see: a caption inside the
+        rectangle is on the picture, whatever the page says elsewhere.
+        """
+        page = self._document[page_number - 1]
+        try:
+            x, y, width, height = (max(0.0, min(1.0, float(value))) for value in region)
+            if width <= 0 or height <= 0:
+                return ""
+            page_width, page_height = float(page.get_width()), float(page.get_height())
+            left, right = x * page_width, (x + width) * page_width
+            top, bottom = (1.0 - y) * page_height, (1.0 - y - height) * page_height
+            try:
+                textpage = page.get_textpage()
+                try:
+                    return str(textpage.get_text_bounded(left=left, bottom=bottom, right=right, top=top) or "")
+                finally:
+                    textpage.close()
+            except Exception:
+                return ""
+        finally:
+            try:
+                page.close()
+            except Exception:
+                pass
+
+    def text_boxes(self, page_number: int, needle: str) -> list[tuple[float, float, float, float]]:
+        """Where ``needle`` is printed on the page: rectangles as page fractions (x, y, w, h)."""
+        page = self._document[page_number - 1]
+        boxes: list[tuple[float, float, float, float]] = []
+        try:
+            wanted = " ".join(str(needle or "").split())
+            if len(wanted) < 3:
+                return []
+            page_width, page_height = float(page.get_width()), float(page.get_height())
+            try:
+                textpage = page.get_textpage()
+            except Exception:
+                return []
+            try:
+                searcher = textpage.search(wanted, match_case=False, match_whole_word=False)
+                try:
+                    while True:
+                        found = searcher.get_next()
+                        if not found:
+                            break
+                        index, count = found
+                        for rect_index in range(textpage.count_rects(index, count)):
+                            left, bottom, right, top = textpage.get_rect(rect_index)
+                            boxes.append((left / page_width, 1.0 - top / page_height, (right - left) / page_width, (top - bottom) / page_height))
+                        if len(boxes) > 40:
+                            break
+                finally:
+                    searcher.close()
+            finally:
+                textpage.close()
+        except Exception:
+            return boxes
+        finally:
+            try:
+                page.close()
+            except Exception:
+                pass
+        return boxes
+
+    def render_png(self, page_number: int, scale: float = DEFAULT_RENDER_SCALE, *, region: tuple[float, float, float, float] | None = None, masks: list[tuple[float, float, float, float]] | None = None) -> bytes:
         """Render a page, or the part of it ``region`` names, to PNG bytes.
 
         ``region`` is (x, y, width, height) as fractions of the page from its
         top-left corner. The page itself is never altered: a crop is a new
         rendering of that rectangle, which is how a histology specimen keeps
-        its link to the page it came from.
+        its link to the page it came from. ``masks`` are rectangles, as
+        fractions of the rendered image, painted flat grey over it: the way
+        an answer printed on the picture is kept off the practical.
         """
         page = self._document[page_number - 1]
         try:
@@ -189,6 +258,12 @@ class PdfReader:
                             offset = column * channels
                             base = (row * width + column) * 3
                             rgb[base : base + 3] = source[offset : offset + 3]
+                for mask in masks or []:
+                    mx, my, mw, mh = (max(0.0, min(1.0, float(value))) for value in mask)
+                    x0, x1 = int(mx * width), min(width, int((mx + mw) * width + 0.999))
+                    y0, y1 = int(my * height), min(height, int((my + mh) * height + 0.999))
+                    for row in range(y0, y1):
+                        rgb[(row * width + x0) * 3 : (row * width + x1) * 3] = b"\x80\x80\x80" * max(0, x1 - x0)
                 image = PixelImage(width, height, rgb, captured_at=utc_now())
                 return bytes(image.to_png())
             finally:
@@ -817,7 +892,7 @@ class DocumentPipeline:
         self._store.put_page_image(document_id, page_number, chosen, png)
         return png
 
-    def render_region(self, document_id: str, page_number: int, region: tuple[float, float, float, float], *, scale: float | None = None) -> bytes:
+    def render_region(self, document_id: str, page_number: int, region: tuple[float, float, float, float], *, scale: float | None = None, masks: list[tuple[float, float, float, float]] | None = None) -> bytes:
         """A fresh rendering of one rectangle of a page; the page image stays as it is."""
         document = self._store.get_document(document_id)
         if document is None:
@@ -828,7 +903,33 @@ class DocumentPipeline:
         with PdfReader(self._bytes(document)) as reader:
             if page_number < 1 or page_number > reader.page_count:
                 raise DocumentError("Sayfa numarası aralık dışında.")
-            return reader.render_png(page_number, chosen, region=region)
+            return reader.render_png(page_number, chosen, region=region, masks=masks)
+
+    def text_in_region(self, document_id: str, page_number: int, region: tuple[float, float, float, float]) -> str | None:
+        """The printed text inside a page rectangle; None when the page cannot be read that way."""
+        document = self._store.get_document(document_id)
+        if document is None or document.kind != "pdf":
+            return None
+        try:
+            with PdfReader(self._bytes(document)) as reader:
+                if page_number < 1 or page_number > reader.page_count:
+                    return None
+                return reader.text_in_region(page_number, region)
+        except DocumentError:
+            return None
+
+    def text_boxes(self, document_id: str, page_number: int, needle: str) -> list[tuple[float, float, float, float]]:
+        """Where ``needle`` is printed on the page, as page-fraction rectangles."""
+        document = self._store.get_document(document_id)
+        if document is None or document.kind != "pdf":
+            return []
+        try:
+            with PdfReader(self._bytes(document)) as reader:
+                if page_number < 1 or page_number > reader.page_count:
+                    return []
+                return reader.text_boxes(page_number, needle)
+        except DocumentError:
+            return []
 
     # ------------------------------------------------------------------
     # deletion

@@ -47,6 +47,7 @@ from datetime import date, datetime
 from enum import Enum
 from math import isfinite
 from pathlib import Path, PurePath
+from queue import SimpleQueue
 from threading import Lock, RLock
 from typing import Any
 from uuid import UUID, uuid4
@@ -126,6 +127,7 @@ MEDICAL_BACKGROUND_ACTIONS: frozenset[str] = frozenset(
         "compare_document",
         "create_note",
         "create_exam",
+        "backup_now",
         "import_questions",
         "import_folder",
         "process_lecture_set",
@@ -161,6 +163,7 @@ NOTIFICATION_TITLES: Mapping[str, str] = {
     "vision": "Görüş sonucu hazır",
     "research": "Araştırma tamamlandı",
     "observation": "Ekran gözlemi",
+    "brief": "Günün özeti",
 }
 DIAGNOSTIC_NOTIFICATION_TITLES: Mapping[str, str] = {
     "warning": "Uyarı",
@@ -241,6 +244,94 @@ def resolve_web_root() -> Path:
 def webview_storage_directory() -> Path:
     """Per-user WebView2 profile so theme/motion preferences persist."""
     return default_state_directory() / "webview"
+
+
+WINDOW_GEOMETRY_FILE = "window.json"
+DAILY_BRIEF_STAMP_FILE = "daily-brief.json"
+DAILY_BRIEF_POLL_SECONDS = 30.0
+
+
+def daily_brief_due(now: datetime, target: str, stamp: str | None) -> bool:
+    """True when the local clock passed today's target and nothing was sent today.
+
+    A malformed target disables the feature rather than guessing a time.
+    """
+    parts = str(target or "").strip().split(":")
+    if len(parts) != 2:
+        return False
+    try:
+        hour, minute = int(parts[0]), int(parts[1])
+    except ValueError:
+        return False
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return False
+    if stamp == now.date().isoformat():
+        return False
+    return (now.hour, now.minute) >= (hour, minute)
+
+
+def brief_notification_body(brief: Mapping[str, Any]) -> str:
+    """The day's summary as one honest notification line.
+
+    Counts what exists, in words; a day with nothing pending says so
+    instead of inventing urgency.
+    """
+    parts: list[str] = []
+    reminders = brief.get("reminders") or []
+    if reminders:
+        parts.append(f"{len(reminders)} hatırlatıcı")
+    medical = brief.get("medical") or {}
+    countdown = medical.get("countdown") or None
+    if countdown:
+        parts.append(f"{countdown.get('name')}: {countdown.get('days_left')} gün kaldı")
+    next_activity = medical.get("next_activity") or None
+    if next_activity:
+        parts.append(f"sırada {next_activity.get('title')}")
+    cards = int(medical.get("cards_waiting") or 0)
+    if cards:
+        parts.append(f"{cards} kart tekrar bekliyor")
+    findings = int(medical.get("findings_open") or 0)
+    if findings:
+        parts.append(f"{findings} açık bulgu")
+    tasks = int(brief.get("tasks_open") or 0)
+    if tasks:
+        parts.append(f"{tasks} açık görev")
+    if not parts:
+        return "Bugün için bekleyen bir şey görünmüyor."
+    return " · ".join(parts)[:220]
+
+MIN_REMEMBERED_SIZE = (900, 600)
+
+
+def load_window_geometry(storage: Path) -> dict[str, int] | None:
+    """The window frame the user last left, when it still makes sense.
+
+    A frame smaller than the minimum or thrown far off any screen falls back
+    to the defaults rather than opening an unusable window.
+    """
+    try:
+        raw = json.loads((storage / WINDOW_GEOMETRY_FILE).read_text(encoding="utf-8"))
+        frame = {key: int(raw[key]) for key in ("x", "y", "width", "height")}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if frame["width"] < MIN_REMEMBERED_SIZE[0] or frame["height"] < MIN_REMEMBERED_SIZE[1]:
+        return None
+    if not (-32 <= frame["x"] <= 20000 and -32 <= frame["y"] <= 20000):
+        return None
+    return frame
+
+
+def save_window_geometry(storage: Path, window: Any) -> bool:
+    """Remember the frame; never let a failure here touch the close path."""
+    try:
+        frame = {"x": int(window.x), "y": int(window.y), "width": int(window.width), "height": int(window.height)}
+        if frame["width"] < MIN_REMEMBERED_SIZE[0] or frame["height"] < MIN_REMEMBERED_SIZE[1]:
+            return False
+        storage.mkdir(parents=True, exist_ok=True)
+        (storage / WINDOW_GEOMETRY_FILE).write_text(json.dumps(frame), encoding="utf-8")
+        return True
+    except Exception:
+        return False
 
 
 ASSET_STAMP_FILE = "assets.stamp"
@@ -494,6 +585,80 @@ def _message_field(message: Any, name: str) -> Any:
     return getattr(message, name, None)
 
 
+class WindowWorker:
+    """One thread for work that must not run on the window's UI thread.
+
+    pywebview delivers ``closing``, ``minimized`` and the other window events
+    on the WinForms UI thread, and a bridge push has to evaluate JavaScript on
+    that same thread. Doing either inline means the UI thread waits for itself:
+    the window disappears into the tray and never comes back, and the next
+    launch hands its activation signal to an instance that can no longer
+    answer. Everything that touches the window from a UI callback is left
+    here instead.
+
+    One thread and one queue, so a hide and a show can never overtake each
+    other, and a job already waiting under the same key is not queued twice —
+    hammering the close button schedules one hide.
+    """
+
+    def __init__(self, on_error: Callable[[str, BaseException], None] | None = None) -> None:
+        self._queue: "SimpleQueue[tuple[str, Callable[[], None]] | None]" = SimpleQueue()
+        self._on_error = on_error
+        self._lock = Lock()
+        self._pending: set[str] = set()
+        self._thread: threading.Thread | None = None
+        self._stopped = False
+        self._idle = threading.Event()
+        self._idle.set()
+
+    def submit(self, key: str, job: Callable[[], None]) -> bool:
+        """Queue ``job``; ``False`` when one under ``key`` is already waiting."""
+        with self._lock:
+            if self._stopped or key in self._pending:
+                return False
+            self._pending.add(key)
+            self._idle.clear()
+            if self._thread is None:
+                self._thread = threading.Thread(target=self._run, name="nova-window", daemon=True)
+                self._thread.start()
+        self._queue.put((key, job))
+        return True
+
+    def _run(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is None:
+                return
+            key, job = item
+            try:
+                job()
+            except Exception as exc:  # never kill the thread: report and go on
+                if self._on_error is not None:
+                    try:
+                        self._on_error(key, exc)
+                    except Exception:
+                        pass
+            finally:
+                with self._lock:
+                    self._pending.discard(key)
+                    if not self._pending:
+                        self._idle.set()
+
+    def wait_idle(self, timeout: float = 5.0) -> bool:
+        return self._idle.wait(timeout)
+
+    def stop(self, timeout: float = 5.0) -> None:
+        with self._lock:
+            if self._stopped:
+                return
+            self._stopped = True
+            thread = self._thread
+        if thread is None:
+            return
+        self._queue.put(None)
+        thread.join(timeout)
+
+
 class NovaBridge:
     """The ``pywebview`` JS API: every UI action lands here.
 
@@ -521,15 +686,33 @@ class NovaBridge:
         # that is still holding this lock inside submit_command/start_voice.
         self._lock = RLock()
         self._push_lock = Lock()
+        # The window's UI thread, learned from the first event it delivers.
+        # A push raised on that thread is deferred instead of evaluated, or
+        # the thread would wait for the JavaScript result it has to deliver.
+        self._ui_thread_id: int | None = None
+        self._window_worker = WindowWorker(
+            lambda key, exc: self._record_ui_event(
+                "window.worker_failed",
+                "A window job failed off the UI thread.",
+                job=key,
+                error=type(exc).__name__,
+            )
+        )
         self._stream_buffer: list[str] = []
         self._stream_last_flush = 0.0
         self._command_future: Future[Any] | None = None
         self._voice_future: Future[Any] | None = None
         self._approvals: dict[str, Future[bool]] = {}
+        # Other surfaces (the mobile companion) watch the same approval
+        # requests; a decision from any of them resolves the one future.
+        self._approval_watchers: list[Callable[[str, dict[str, Any]], None]] = []
         self._detachers: list[Callable[[], None]] = []
         self._voice_level_last = 0.0
         self._compact = False
         self._pause_handler: Callable[[bool], None] | None = None
+        self._uri_launcher: Any | None = None
+        # The mobile companion server, when the desktop started one.
+        self._mobile: Any | None = None
         self._started_at = datetime.now().astimezone()
         self._webview2_version: str | None | bool = False  # False: not probed
         self._process = ProcessMonitor()
@@ -555,6 +738,17 @@ class NovaBridge:
     def _attach(self, window: webview.Window) -> None:
         self._window = window
 
+    def _note_ui_thread(self) -> None:
+        """Remember the thread pywebview delivers window events on."""
+        self._ui_thread_id = threading.get_ident()
+
+    def _defer(self, key: str, job: Callable[[], None]) -> bool:
+        """Run ``job`` off the UI thread; ``False`` if one is already queued.
+
+        A lifecycle hook for :func:`launch_nova`, not part of the page's API.
+        """
+        return self._window_worker.submit(key, job)
+
     def _push(self, kind: str, payload: Any = None) -> None:
         window = self._window
         if window is None or not self._ready or self._closing:
@@ -563,6 +757,19 @@ class NovaBridge:
             {"kind": kind, "payload": _jsonable(payload)},
             ensure_ascii=True,
         )
+        if self._ui_thread_id is not None and threading.get_ident() == self._ui_thread_id:
+            # Evaluating here would block the thread that has to run the
+            # script. A window event that records a diagnostic — hiding to
+            # the tray, minimising — reaches this line, and inline it hangs
+            # the whole application.
+            self._window_worker.submit(f"push:{kind}:{len(message)}", lambda: self._evaluate_push(message))
+            return
+        self._evaluate_push(message)
+
+    def _evaluate_push(self, message: str) -> None:
+        window = self._window
+        if window is None or self._closing:
+            return
         with self._push_lock:
             try:
                 window.evaluate_js(
@@ -649,6 +856,31 @@ class NovaBridge:
                 }
             )
         self._push("tool_activity", payload)
+        # A finished web research hands the page its sources, so the next
+        # assistant reply can wear them. Only what the tool actually
+        # returned is forwarded; no result, no chips.
+        if (
+            event.tool_name == "research_web"
+            and result is not None
+            and not result.error
+            and isinstance(result.data, Mapping)
+        ):
+            sources = [
+                {
+                    "title": str(item.get("title") or ""),
+                    "url": str(item.get("url") or ""),
+                }
+                for item in list(result.data.get("sources") or [])[:5]
+                if isinstance(item, Mapping)
+            ]
+            if sources:
+                self._push(
+                    "research_sources",
+                    {
+                        "query": str(result.data.get("question") or ""),
+                        "sources": sources,
+                    },
+                )
 
     def _on_diagnostic_event(self, event: Any) -> None:
         self._push(
@@ -1129,6 +1361,132 @@ class NovaBridge:
         except Exception as exc:
             return {"available": False, "reason": f"Tıp Akademisi okunamadı ({type(exc).__name__})."}
 
+    def open_external(self, url: Any) -> dict[str, Any]:
+        """Open one validated http(s) URL in the default browser.
+
+        Serves direct clicks on source links the page shows; the same
+        validation as the system-control tool, nothing else accepted.
+        """
+        from app.integrations.system_control import _validate_web_url
+
+        validated, problem = _validate_web_url(str(url or ""))
+        if validated is None:
+            return {"ok": False, "error": problem or "Geçersiz URL."}
+        launcher = self._uri_launcher
+        if launcher is None:
+            from app.integrations.runtime import UriLauncher
+
+            launcher = UriLauncher()
+        if not launcher.open(validated):
+            return {"ok": False, "error": "Varsayılan tarayıcı açılamadı."}
+        self._record_ui_event("external.opened", "A source link was opened in the browser.")
+        return {"ok": True, "url": validated}
+
+    def pick_folder(self) -> dict[str, Any]:
+        """The native folder picker, for any surface that saves a file."""
+        window = self._window
+        if window is None:
+            return {"ok": False, "error": "Pencere hazır değil."}
+        selection: list[Any] = []
+
+        def choose() -> None:
+            selection.append(window.create_file_dialog(webview.FOLDER_DIALOG, directory=str(Path.home())))
+
+        try:
+            _run_on_ui_thread(window, choose)
+        except Exception as exc:
+            return {"ok": False, "error": f"Klasör seçici açılamadı ({type(exc).__name__})."}
+        chosen = selection[0] if selection else None
+        if isinstance(chosen, (list, tuple)):
+            chosen = chosen[0] if chosen else None
+        return {"ok": True, "path": str(chosen) if chosen else None}
+
+    def export_conversation(self, conversation_id: Any, directory: Any) -> dict[str, Any]:
+        """One stored conversation as a Markdown file in the chosen folder."""
+        target_dir = Path(str(directory or ""))
+        if not target_dir.is_dir():
+            return {"ok": False, "error": "Klasör bulunamadı; önce bir klasör seç."}
+        try:
+            title, created, messages = self.controller.conversation_export(str(conversation_id))
+        except (KeyError, ValueError):
+            return {"ok": False, "error": "Konuşma bulunamadı."}
+        lines = [f"# {title}", "", f"*JARVIS konuşması · {created}*", ""]
+        for message in messages:
+            speaker = "Sen" if message.role == "user" else "JARVIS"
+            lines.append(f"**{speaker}:**")
+            lines.append(message.text.strip())
+            lines.append("")
+        import re as _re
+
+        stem = _re.sub(r"[^0-9A-Za-zÇĞİÖŞÜçğıöşü _.-]+", "", title).strip().replace(" ", "-")[:80] or "konusma"
+        target = target_dir / f"{stem}.md"
+        counter = 2
+        while target.exists():
+            target = target_dir / f"{stem}-{counter}.md"
+            counter += 1
+        newline = chr(10)
+        target.write_text(newline.join(lines) + newline, encoding="utf-8")
+        self._record_ui_event("conversation.exported", "A conversation was exported.")
+        return {"ok": True, "path": str(target), "file": target.name, "messages": len(messages)}
+
+    def daily_brief(self) -> dict[str, Any]:
+        """The day at a glance, read from the services that hold it.
+
+        Every section reports independently; one that cannot answer says so
+        instead of hiding the rest. Nothing here is estimated or generated.
+        """
+        application = self.controller.application
+        from app.core.interaction_policy import turkish_date
+
+        brief: dict[str, Any] = {"ok": True, "date": turkish_date()}
+        reminders = getattr(application, "reminders", None)
+        try:
+            result = reminders.list_active() if reminders is not None else None
+            brief["reminders"] = list((result.data or {}).get("reminders", []))[:4] if result is not None and result.succeeded else []
+            brief["reminders_available"] = reminders is not None
+        except Exception:
+            brief["reminders"], brief["reminders_available"] = [], False
+        routines = getattr(application, "routines", None)
+        try:
+            rows = routines.list() if routines is not None else []
+            brief["routines"] = [
+                {"name": row.get("name") or row.get("prompt", "")[:40], "schedule": row.get("schedule", ""), "next_run_local": row.get("next_run_local", "")}
+                for row in rows[:3]
+            ]
+            brief["routines_available"] = routines is not None
+        except Exception:
+            brief["routines"], brief["routines_available"] = [], False
+        try:
+            tasks = application.task_service.list(limit=100)
+            open_states = {"running", "waiting_for_input", "waiting_for_approval", "pending", "queued"}
+            brief["tasks_open"] = sum(1 for task in tasks if str(task.get("status")) in open_states)
+        except Exception:
+            brief["tasks_open"] = 0
+        try:
+            brief["notifications_unread"] = int(self._notifications.summary()["unread"])
+        except Exception:
+            brief["notifications_unread"] = 0
+        academy = self._medical()
+        medical: dict[str, Any] = {"available": academy is not None}
+        if academy is not None:
+            try:
+                block = academy.study.dashboard_block()
+                today = block.get("today") or {}
+                next_item = today.get("next") or None
+                medical["next_activity"] = {"title": next_item["title"], "kind_label": next_item.get("kind_label", "")} if next_item else None
+                medical["plan_message"] = str(today.get("message") or "")
+                medical["cards_waiting"] = int(block.get("cards_due") or 0) + int(block.get("cards_new") or 0)
+                medical["findings_open"] = int(block.get("findings_open") or 0)
+                countdowns = sorted(
+                    (academy.study.planner.summary(plan["plan_id"]) for plan in academy.study.planner.plans()),
+                    key=lambda summary: summary["days_left"],
+                )
+                medical["countdown"] = {"name": countdowns[0]["name"], "days_left": countdowns[0]["days_left"]} if countdowns else None
+            except Exception:
+                medical["available"] = False
+        brief["medical"] = medical
+        return brief
+
     def medical_pick_file(self, kind: str = "document") -> dict[str, Any]:
         """Open the native picker for a lecture document, an exam file or a
         folder of course material (``kind="folder"``)."""
@@ -1387,6 +1745,29 @@ class NovaBridge:
             return {"ok": removed, "professors": _jsonable(academy.professors()), "error": None if removed else "Hoca profili bulunamadı."}
         if name == "progress":
             return {"ok": True, **_jsonable(academy.progress())}
+        if name == "backups":
+            return {"ok": True, **_jsonable(academy.backups())}
+        if name == "export_markdown":
+            directory = Path(text("directory"))
+            if not directory.is_dir():
+                return {"ok": False, "error": "Klasör bulunamadı; önce bir klasör seç."}
+            kind = text("kind")
+            if kind == "note":
+                filename, content = academy.export_note_markdown(text("note_id"))
+            elif kind in ("exam", "exam_key"):
+                filename, content = academy.export_exam_markdown(text("exam_id"), include_answers=kind == "exam_key")
+            elif kind == "week":
+                filename, content = academy.export_week_markdown()
+            else:
+                return {"ok": False, "error": f"Bilinmeyen dışa aktarma türü: {kind}"}
+            target = directory / filename
+            counter = 2
+            while target.exists():
+                target = directory / f"{Path(filename).stem}-{counter}{Path(filename).suffix}"
+                counter += 1
+            target.write_text(content, encoding="utf-8")
+            self._record_ui_event("medical.exported", "A study artefact was exported.", kind=kind)
+            return {"ok": True, "path": str(target), "file": target.name}
         if name == "anatomy":
             return {"ok": True, **_jsonable(academy.anatomy_structures())}
         if name == "structure":
@@ -1469,18 +1850,26 @@ class NovaBridge:
             operation = academy.compare_document(text("document_id"), page_from=number("page_from"), page_to=number("page_to"))
             message = "Belge standart bilgiyle karşılaştırılıyor."
         elif name == "create_note":
-            operation = academy.generate_notes(
-                mode=text("mode", "medical.short_notes"),
-                subject=text("subject") or None,
-                topic_id=text("topic_id") or None,
-                document_ids=[str(item) for item in (payload.get("document_ids") or [])],
-                page_from=number("page_from"),
-                page_to=number("page_to"),
-                depth=text("depth", "standard"),
-            )
+            request = {
+                "mode": text("mode", "medical.short_notes"),
+                "subject": text("subject") or None,
+                "topic_id": text("topic_id") or None,
+                "document_ids": [str(item) for item in (payload.get("document_ids") or [])],
+                "page_from": number("page_from"),
+                "page_to": number("page_to"),
+                "depth": text("depth", "standard"),
+            }
+            running = academy.running_job("create_note", request)
+            if running is not None:
+                return {"ok": True, "started": False, "duplicate": True, "job": _jsonable(running), "message": "Bu not zaten hazırlanıyor; bitince listede görünecek."}
+            operation = academy.generate_notes_job(**request)
             message = "Not hazırlanıyor."
         elif name == "create_exam":
-            operation = academy.generate_exam(dict(payload.get("config") or {}))
+            request = dict(payload.get("config") or {})
+            running = academy.running_job("create_exam", request)
+            if running is not None:
+                return {"ok": True, "started": False, "duplicate": True, "job": _jsonable(running), "message": "Bu sınav zaten hazırlanıyor; bitince açılacak."}
+            operation = academy.generate_exam_job(request)
             message = "Sınav hazırlanıyor."
         elif name == "import_questions":
             operation = academy.import_questions(
@@ -1534,6 +1923,9 @@ class NovaBridge:
             operation = academy.continue_processing(set_id=set_id, document_id=document_id, vision=payload.get("vision") is not False, analysis=payload.get("analysis") is not False)
             message = "Taranmış sayfalar okunuyor, bekleyen şekiller inceleniyor, eksik analizler tamamlanıyor; model durursa kaldığı yerde bekler."
             report = "continue"
+        elif name == "backup_now":
+            operation = academy.backup_job()
+            message = "Yedek alınıyor; bitince bildirilir."
         elif name == "prepare_narration":
             if academy.store.get_document(text("document_id")) is None:
                 return {"ok": False, "error": "Belge bulunamadı."}
@@ -1712,6 +2104,63 @@ class NovaBridge:
         self._warm_up_provider()
         return payload
 
+    def _start_daily_brief(self, storage: Path) -> None:
+        """The morning-summary clock; reads services, never the model.
+
+        A daemon thread wakes twice a minute, and past the configured
+        local time it sends today's summary once - the sent date is
+        stamped to disk first, so a crash can skip a morning but never
+        double-send one.
+        """
+
+        def loop() -> None:
+            stamp_path = storage / DAILY_BRIEF_STAMP_FILE
+            while not self._closing:
+                time.sleep(DAILY_BRIEF_POLL_SECONDS)
+                if self._closing:
+                    return
+                settings = getattr(self.controller.application, "settings", None)
+                if settings is None or not bool(
+                    getattr(settings, "daily_brief_notification", False)
+                ):
+                    continue
+                now = datetime.now().astimezone()
+                try:
+                    stamp = json.loads(
+                        stamp_path.read_text(encoding="utf-8")
+                    ).get("sent")
+                except (OSError, ValueError):
+                    stamp = None
+                if not daily_brief_due(
+                    now, str(getattr(settings, "daily_brief_time", "")), stamp
+                ):
+                    continue
+                try:
+                    body = brief_notification_body(self.daily_brief())
+                except Exception:
+                    continue
+                try:
+                    stamp_path.write_text(
+                        json.dumps({"sent": now.date().isoformat()}),
+                        encoding="utf-8",
+                    )
+                except OSError:
+                    # Nowhere to remember the send: skip rather than
+                    # risk a notification every half minute all day.
+                    continue
+                self._publish(
+                    "brief",
+                    NOTIFICATION_TITLES["brief"],
+                    body,
+                    target="home",
+                    alert=True,
+                    dedupe_key=f"brief:{now.date().isoformat()}",
+                )
+
+        threading.Thread(
+            target=loop, name="nova-daily-brief", daemon=True
+        ).start()
+
     def _shutdown(self) -> None:
         """Fail every pending decision closed and stop reporting.
 
@@ -1735,6 +2184,7 @@ class NovaBridge:
             if acquired:
                 self._lock.release()
         self._detach_observers()
+        self._window_worker.stop()
         for decision in pending:
             if not decision.done():
                 decision.set_result(False)
@@ -1835,6 +2285,14 @@ class NovaBridge:
             ),
         }
 
+    def search_conversations(self, query: Any) -> dict[str, Any]:
+        """Find stored conversations by what was said in them."""
+        normalized = " ".join(str(query or "").split())
+        if len(normalized) < 2:
+            return {"ok": False, "error": "Arama için en az 2 karakter yaz."}
+        results = self.controller.search_conversations(normalized)
+        return {"ok": True, "query": normalized, "results": _jsonable(results)}
+
     def open_conversation(self, conversation_id: str) -> dict[str, Any]:
         with self._lock:
             blocked = self._conversation_switch_blocked()
@@ -1859,6 +2317,16 @@ class NovaBridge:
                 return {"ok": False, "error": blocked}
             conversation_id = self.controller.start_new_conversation()
         return {"ok": True, "conversation_id": conversation_id, "messages": []}
+
+    def unarchive_conversation(self, conversation_id: str) -> dict[str, Any]:
+        """The reverse of archiving; nothing else about the record changes."""
+        try:
+            self.controller.unarchive_conversation(str(conversation_id))
+        except KeyError:
+            return {"ok": False, "error": "Konuşma bulunamadı."}
+        except ValueError:
+            return {"ok": False, "error": "Konuşma kimliği geçersiz."}
+        return {"ok": True, "conversations": self.list_conversations()["conversations"]}
 
     def archive_conversation(self, conversation_id: str) -> dict[str, Any]:
         with self._lock:
@@ -2025,6 +2493,17 @@ class NovaBridge:
             return {"ok": False, "error": f"Analiz başlatılamadı ({exc})."}
         return {"ok": True}
 
+    def research_history(self) -> dict[str, Any]:
+        """Past research questions from the cache, newest first."""
+        research = self.controller.application.research
+        cache = getattr(research, "cache", None) if research is not None else None
+        if cache is None:
+            return {"ok": True, "items": []}
+        try:
+            return {"ok": True, "items": _jsonable(cache.recent(8))}
+        except Exception as exc:
+            return {"ok": False, "error": f"Geçmiş okunamadı ({type(exc).__name__})."}
+
     def run_research(self, query: str, max_sources: Any = 5) -> dict[str, Any]:
         normalized = str(query or "").strip()
         if not normalized:
@@ -2107,20 +2586,19 @@ class NovaBridge:
             request.expires_at - datetime.now(tz=request.expires_at.tzinfo)
         ).total_seconds() - APPROVAL_SAFETY_MARGIN_SECONDS
         wait_seconds = max(remaining, APPROVAL_MINIMUM_WAIT_SECONDS)
-        self._push(
-            "approval",
-            {
-                "token": token,
-                "tool": request.tool_name,
-                "operation": request.operation,
-                "risk": request.risk_level.value,
-                "reason": request.reason,
-                "parameters": dict(safe_approval_parameters(request.parameters)),
-                "seconds": max(int(wait_seconds), 1),
-                "source": request.request_source,
-                "description": self._tool_description(request.tool_name),
-            },
-        )
+        approval_payload = {
+            "token": token,
+            "tool": request.tool_name,
+            "operation": request.operation,
+            "risk": request.risk_level.value,
+            "reason": request.reason,
+            "parameters": dict(safe_approval_parameters(request.parameters)),
+            "seconds": max(int(wait_seconds), 1),
+            "source": request.request_source,
+            "description": self._tool_description(request.tool_name),
+        }
+        self._push("approval", approval_payload)
+        self._notify_approval_watchers("approval", approval_payload)
         if not self._attended:
             self._publish(
                 "approval",
@@ -2145,6 +2623,15 @@ class NovaBridge:
             if not decision.done():
                 decision.set_result(False)
             self._push("approval_closed", {"token": token})
+            self._notify_approval_watchers("approval_closed", {"token": token})
+
+    def _notify_approval_watchers(self, kind: str, payload: dict[str, Any]) -> None:
+        for watcher in list(self._approval_watchers):
+            try:
+                watcher(kind, payload)
+            except Exception:
+                # A watcher's failure must never decide an approval.
+                pass
 
     def resolve_approval(self, token: str, approved: bool) -> dict[str, Any]:
         with self._lock:
@@ -2682,6 +3169,223 @@ class NovaBridge:
             "settings": self.get_settings(),
         }
 
+    def _reminders(self) -> Any | None:
+        return getattr(self.controller.application, "reminders", None)
+
+    def list_reminders(self) -> dict[str, Any]:
+        """Active reminders straight from the service, waiting ones first."""
+        service = self._reminders()
+        if service is None:
+            return {"ok": False, "error": "Hatırlatıcı hizmeti kapalı."}
+        result = service.list_active()
+        if not result.succeeded:
+            return {"ok": False, "error": str(result.message or "Hatırlatıcılar okunamadı.")}
+        return {"ok": True, "reminders": _jsonable((result.data or {}).get("reminders", []))}
+
+    def create_reminder(self, text: Any, when: Any) -> dict[str, Any]:
+        """One reminder from the page: '+25' minutes from now or 'HH:MM' today.
+
+        The service owns the parsing rules and answers in Turkish; the
+        page only decides which of its two forms the input takes.
+        """
+        service = self._reminders()
+        if service is None:
+            return {"ok": False, "error": "Hatırlatıcı hizmeti kapalı."}
+        body = str(text or "").strip()
+        moment = str(when or "").strip()
+        minutes = 0
+        at = ""
+        if moment.startswith("+") and moment[1:].isdigit():
+            minutes = int(moment[1:])
+        elif moment.isdigit():
+            minutes = int(moment)
+        else:
+            at = moment
+        result = service.create(body, minutes=minutes, at=at)
+        if not result.succeeded:
+            return {"ok": False, "error": str(result.message or "Hatırlatıcı kurulamadı.")}
+        due = (result.data or {}).get("due_local", "")
+        self._record_ui_event("reminder.created", "A reminder was created from the page.")
+        return {"ok": True, "message": f"Hatırlatıcı kuruldu: {due}.", "due_local": str(due)}
+
+    def cancel_reminder(self, reminder_id: Any, confirmed: Any = False) -> dict[str, Any]:
+        """Cancel one reminder; the page asks the user first, then says so."""
+        if confirmed is not True:
+            return {"ok": False, "error": "İptal işlemi onaylanmadı."}
+        service = self._reminders()
+        if service is None:
+            return {"ok": False, "error": "Hatırlatıcı hizmeti kapalı."}
+        result = service.cancel(str(reminder_id or ""))
+        if not result.succeeded:
+            return {"ok": False, "error": str(result.message or "Hatırlatıcı iptal edilemedi.")}
+        self._record_ui_event("reminder.cancelled", "A reminder was cancelled from the page.")
+        return {"ok": True, "message": "Hatırlatıcı iptal edildi."}
+
+    # ------------------------------------------------------------------
+    # Mobile companion (Ayarlar > Telefon)
+    # ------------------------------------------------------------------
+    def mobile_status(self) -> dict[str, Any]:
+        """What the desktop card shows: server state, paired devices, no secrets."""
+        server = self._mobile
+        if server is None:
+            return {"ok": True, "enabled": False, "running": False, "port": None, "sessions": [], "pending_code": None}
+        try:
+            sessions = server.sessions_overview()
+            pending = server.store.pending_pairing()
+        except Exception as exc:
+            return {"ok": False, "error": f"Telefon oturumları okunamadı ({type(exc).__name__})."}
+        return {
+            "ok": True,
+            "enabled": True,
+            "running": bool(server.running),
+            "port": server.bound_port,
+            "local_url": f"http://127.0.0.1:{server.bound_port}/",
+            "sessions": sessions,
+            "pending_code": pending,
+        }
+
+    def mobile_pairing_code(self) -> dict[str, Any]:
+        """Mint a fresh single-use pairing code; shown once, never logged."""
+        server = self._mobile
+        if server is None:
+            return {"ok": False, "error": "Telefon eşleştirme sunucusu bu oturumda çalışmıyor."}
+        try:
+            code, expires = server.store.create_pairing_code(label="desktop")
+        except Exception as exc:
+            return {"ok": False, "error": f"Kod üretilemedi ({type(exc).__name__})."}
+        from app.mobile.sessions import format_pairing_code
+
+        self._record_ui_event("mobile.pairing_code", "A mobile pairing code was issued.")
+        return {"ok": True, "code": format_pairing_code(code), "expires_at": expires.isoformat()}
+
+    def mobile_revoke_session(self, session_id: Any, confirmed: Any = False) -> dict[str, Any]:
+        """Revoke one phone; its next request and its live channel both end."""
+        if confirmed is not True:
+            return {"ok": False, "error": "İptal işlemi onaylanmadı."}
+        server = self._mobile
+        if server is None:
+            return {"ok": False, "error": "Telefon eşleştirme sunucusu bu oturumda çalışmıyor."}
+        identifier = str(session_id or "")
+        if not server.store.revoke(identifier):
+            return {"ok": False, "error": "Oturum bulunamadı ya da zaten kapalı."}
+        server.close_session_channels(identifier)
+        self._record_ui_event("mobile.session_revoked", "A mobile session was revoked from the desktop.")
+        return {"ok": True, "sessions": server.sessions_overview()}
+
+    def mobile_revoke_all(self, confirmed: Any = False) -> dict[str, Any]:
+        if confirmed is not True:
+            return {"ok": False, "error": "İptal işlemi onaylanmadı."}
+        server = self._mobile
+        if server is None:
+            return {"ok": False, "error": "Telefon eşleştirme sunucusu bu oturumda çalışmıyor."}
+        for session in server.store.list_sessions():
+            server.close_session_channels(session.session_id)
+        count = server.store.revoke_all()
+        self._record_ui_event("mobile.sessions_revoked", "All mobile sessions were revoked.", count=count)
+        return {"ok": True, "revoked": count, "sessions": []}
+
+    def state_backup_summary(self) -> dict[str, Any]:
+        """What the settings card shows about the general state backups."""
+        from app.config.paths import default_state_directory
+        from app.state_backup import state_backup_summary
+
+        try:
+            return {"ok": True, **state_backup_summary(default_state_directory())}
+        except OSError as exc:
+            return {"ok": False, "error": f"Yedek dizini okunamadı ({type(exc).__name__})."}
+
+    def state_backup_now(self) -> dict[str, Any]:
+        """One safety copy of every state database, right now."""
+        from app.config.paths import default_state_directory
+        from app.state_backup import backup_state_now
+
+        try:
+            result = backup_state_now(default_state_directory())
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        except OSError as exc:
+            return {"ok": False, "error": f"Yedek alınamadı ({type(exc).__name__})."}
+        self._record_ui_event("state.backup", "State databases were backed up.")
+        size_mb = result["bytes"] / (1024 * 1024)
+        return {
+            "ok": True,
+            "message": f"Yedek alındı: {len(result['files'])} veritabanı, {size_mb:.1f} MB.",
+            "summary": self.state_backup_summary(),
+        }
+
+    def _start_state_backup(self) -> None:
+        """The weekly clock for the general state copies.
+
+        Checks shortly after launch and then every six hours; a copy is
+        made only when the newest one is older than a week, and the
+        result lands in the notification centre, OS toast included when
+        nobody is looking.
+        """
+
+        def loop() -> None:
+            from app.config.paths import default_state_directory
+            from app.state_backup import backup_state_now, state_backup_due
+
+            delay = 120.0
+            while not self._closing:
+                time.sleep(min(delay, 30.0) if delay < 30.0 else 30.0)
+                delay -= 30.0
+                if delay > 0 or self._closing:
+                    if self._closing:
+                        return
+                    continue
+                delay = 6 * 3600.0
+                settings = getattr(self.controller.application, "settings", None)
+                if settings is None or not bool(
+                    getattr(settings, "state_auto_backup", False)
+                ):
+                    continue
+                state_dir = default_state_directory()
+                try:
+                    if not state_backup_due(state_dir):
+                        continue
+                    result = backup_state_now(state_dir)
+                except Exception:
+                    # Next window tries again; a failed backup must never
+                    # take the desktop down with it.
+                    continue
+                size_mb = result["bytes"] / (1024 * 1024)
+                self._publish(
+                    "system",
+                    "Haftalık durum yedeği alındı",
+                    f"{len(result['files'])} veritabanı, {size_mb:.1f} MB.",
+                    target="settings",
+                    dedupe_key=f"state-backup:{result['folder']}",
+                )
+
+        threading.Thread(
+            target=loop, name="nova-state-backup", daemon=True
+        ).start()
+
+    def save_desktop_settings(self, payload: Any) -> dict[str, Any]:
+        """Non-secret assistant preferences: morning brief and web research."""
+        if self.api_settings is None:
+            return {"ok": False, "error": "Ayar hizmeti kullanılamıyor."}
+        data = payload if isinstance(payload, Mapping) else {}
+        try:
+            self.api_settings.save_desktop(
+                daily_brief_notification=bool(data.get("daily_brief_notification")),
+                daily_brief_time=str(data.get("daily_brief_time") or ""),
+                research_enabled=bool(data.get("research_enabled")),
+            )
+        except ValueError:
+            return {"ok": False, "error": "Saat biçimi SS:DD olmalı (örn. 08:30)."}
+        try:
+            self._rebuild_runtime()
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        self._push_snapshot()
+        return {
+            "ok": True,
+            "message": "Asistan ayarları kaydedildi ve uygulandı.",
+            "settings": self.get_settings(),
+        }
+
     def test_connection(
         self, provider: str, model: str, api_key: str
     ) -> dict[str, Any]:
@@ -2831,6 +3535,19 @@ class NovaTrayActions:
 
     def open(self) -> None:
         self._window.show()
+        # show() makes a minimised window visible without lifting it off the
+        # taskbar, so the shortcut looked dead when JARVIS had been minimised
+        # rather than closed. restore() puts it back to Normal.
+        restore = getattr(self._window, "restore", None)
+        if callable(restore):
+            try:
+                restore()
+            except Exception as exc:
+                self._bridge._record_ui_event(
+                    "window.restore_failed",
+                    "The window could not be restored from its minimised state.",
+                    error=type(exc).__name__,
+                )
         try:
             native = getattr(self._window, "native", None)
             if native is not None and hasattr(native, "BeginInvoke"):
@@ -2954,15 +3671,20 @@ def launch_nova(
                 except Exception:
                     pass
 
+    geometry = load_window_geometry(storage)
     window = webview.create_window(
         WINDOW_TITLE,
         url=str(web_root / "index.html"),
         js_api=bridge,
-        width=1440,
-        height=920,
+        width=geometry["width"] if geometry else 1440,
+        height=geometry["height"] if geometry else 920,
+        x=geometry["x"] if geometry else None,
+        y=geometry["y"] if geometry else None,
         min_size=(420, 300),
         background_color="#05080f",
-        maximized=True,
+        # The first run opens maximized; after that the window comes back
+        # exactly where and how the user left it.
+        maximized=geometry is None,
         text_select=False,
     )
     bridge._attach(window)
@@ -2995,6 +3717,35 @@ def launch_nova(
         return "toast" if show_windows_toast(title, body) else False
 
     bridge._os_notifier = notify_os
+    try:
+        bridge._start_daily_brief(storage)
+        bridge._start_state_backup()
+    except Exception:
+        # These are conveniences; launching matters more.
+        pass
+    mobile_server = None
+    if bool(getattr(runtime_settings, "mobile_enabled", False)):
+        try:
+            from app.config.paths import default_state_path
+            from app.mobile.server import MobileServer
+            from app.mobile.sessions import MobileSessionStore
+
+            mobile_store = MobileSessionStore(
+                default_state_path("jarvis_mobile.sqlite3"),
+                pairing_ttl_seconds=int(getattr(runtime_settings, "mobile_pairing_ttl_seconds", 600)),
+                session_days=int(getattr(runtime_settings, "mobile_session_days", 30)),
+            )
+            mobile_server = MobileServer(
+                controller, bridge, mobile_store,
+                port=int(getattr(runtime_settings, "mobile_port", 8765)),
+            )
+            mobile_server.start()
+            bridge._mobile = mobile_server
+        except Exception as exc:
+            # A busy port or a broken store must not keep the desktop from
+            # opening; the Telefon card says the server is not running.
+            mobile_server = None
+            _record_tray_problem(controller, None, exc)
     # pywebview fires ``restored`` only for a return to the Normal state;
     # a maximized window that was minimized comes back as ``maximized``.
     for event_name, visible in (
@@ -3006,24 +3757,43 @@ def launch_nova(
         hook = getattr(window.events, event_name, None)
         if hook is None:
             continue
+
+        def note(*_args: Any, visible: bool = visible) -> None:
+            # These arrive on the UI thread; the bridge needs to know which
+            # one that is before it evaluates anything on it.
+            bridge._note_ui_thread()
+            bridge._set_window_visible(visible)
+
         try:
-            hook += (lambda *_args, visible=visible: bridge._set_window_visible(visible))
+            hook += note
         except Exception:
             pass
     hidden_notice_shown = False
 
-    def on_closing() -> bool | None:
+    def hide_to_tray() -> None:
         nonlocal hidden_notice_shown
+        actions.hide()
+        if not hidden_notice_shown:
+            hidden_notice_shown = True
+            tray.notify(WINDOW_TITLE, TRAY_HIDDEN_NOTICE)
+
+    def on_closing() -> bool | None:
+        # Runs on the window's UI thread. Remember the frame first: both the
+        # hide-to-tray and the real close should reopen where the user was.
+        save_window_geometry(storage, window)
+        # Hiding here would take the bridge
+        # through a diagnostic push and back into JavaScript on this very
+        # thread, which then waits for itself: the window goes to the tray
+        # and never returns, and the next launch's activation signal reaches
+        # an instance that can no longer answer it. Cancel first, hide after.
+        bridge._note_ui_thread()
         if (
             close_to_tray
             and tray is not None
             and tray.active
             and not actions.exiting
         ):
-            actions.hide()
-            if not hidden_notice_shown:
-                hidden_notice_shown = True
-                tray.notify(WINDOW_TITLE, TRAY_HIDDEN_NOTICE)
+            bridge._defer("window:hide", hide_to_tray)
             return False  # cancel: the tray keeps JARVIS alive
         return None
 
@@ -3036,6 +3806,11 @@ def launch_nova(
         released = True
         if tray is not None:
             tray.stop()
+        if mobile_server is not None:
+            try:
+                mobile_server.stop()
+            except Exception:
+                pass
         bridge._shutdown()
         controller.close()
 
@@ -3051,7 +3826,11 @@ def launch_nova(
                 tray = None
                 actions.service = None
         if activation_watch is not None:
-            activation_watch(actions.open)
+            # A second launch signals this one to come back. The show goes
+            # through the same queue as the hide, so a relaunch that arrives
+            # while the window is still on its way to the tray cannot be
+            # overtaken by it and leave nothing on screen.
+            activation_watch(lambda: bridge._defer("window:show", actions.open))
         webview.start(**start_options)
     finally:
         release()

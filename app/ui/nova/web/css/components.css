@@ -541,3 +541,19 @@ details.disclosure > .disclosure-body { margin-top: 0.6rem; }
 }
 .tab:hover { color: var(--ink-1); background: rgba(var(--accent-rgb), 0.05); }
 .tab.active { color: var(--accent); background: rgba(var(--accent-rgb), 0.1); }
+
+
+
+/* ------ web sources under an answer ------------------------------- */
+
+.msg .msg-sources { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.45rem; }
+
+.msg .msg-sources-label { font-family: var(--font-system); font-size: var(--text-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-4); margin-right: 0.15rem; }
+
+/* ------ mini-Markdown inside assistant bubbles --------------------- */
+.msg-body .md-h { font-weight: 600; color: var(--ink-1); margin: 0.35rem 0 0.15rem; }
+.msg-body .md-gap { height: 0.45rem; }
+.msg-body code { font-family: var(--font-mono); font-size: 0.85em; background: rgba(var(--accent-rgb), 0.1); border-radius: 3px; padding: 0 0.25em; }
+.msg-body ul, .msg-body ol { margin: 0.25rem 0 0.35rem; padding-left: 1.25rem; }
+.msg-body li { margin: 0.12rem 0; }
+.msg-body strong { color: var(--ink-1); }

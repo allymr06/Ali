@@ -75,7 +75,9 @@ class _HTMLTextParser(HTMLParser):
             self._in_title = True
         if normalized == "meta" and self.published_at is None:
             values = {key.casefold(): value or "" for key, value in attrs}
-            key = (values.get("property") or values.get("name")).casefold()
+            # A meta tag with neither attribute (charset, http-equiv,
+            # or a bare content) is common and must not sink the page.
+            key = (values.get("property") or values.get("name") or "").casefold()
             if key in {
                 "article:published_time",
                 "date",

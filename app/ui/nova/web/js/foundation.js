@@ -304,11 +304,11 @@ const SETTING_LABELS = {
 };
 const NOTIFICATION_KIND_TR = {
   reminder: "Hatırlatıcı", approval: "Onay", reply: "Yanıt", task: "Görev",
-  diagnostic: "Tanılama", observation: "Ekran", system: "Sistem",
+  diagnostic: "Tanılama", observation: "Ekran", system: "Sistem", brief: "Günün özeti",
 };
 const NOTIFICATION_KIND_ICON = {
   reminder: "alarm", approval: "integrations", reply: "chat", task: "tasks",
-  diagnostic: "diagnostics", observation: "vision", system: "spark",
+  diagnostic: "diagnostics", observation: "vision", system: "spark", brief: "home",
 };
 const SETTING_GROUPS = {
   voice: ["voice_enabled", "voice_wake_word", "voice_require_wake_word", "voice_language",

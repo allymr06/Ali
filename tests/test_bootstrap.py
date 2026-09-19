@@ -24,7 +24,12 @@ def test_create_application_wires_core_components():
     assert application.engine is not None
     assert application.voice is None
     assert application.vision is None
-    assert application.research is None
+    # Research is on by default: the DuckDuckGo backend needs no key.
+    from app.research.search import DuckDuckGoSearchProvider
+
+    assert application.research is not None
+    assert isinstance(application.research.search_provider, DuckDuckGoSearchProvider)
+    assert application.tool_executor.contains("research_web")
     assert application.diagnostics is not None
     assert application.tool_executor.contains("diagnostics_health")
 
@@ -57,12 +62,41 @@ def test_create_application_can_wire_optional_research_pipeline() -> None:
         Settings(
             windows_integrations_enabled=False,
             research_enabled=True,
+            research_provider="searxng",
             research_searxng_url="https://search.example",
         )
     )
 
     assert isinstance(application.research, ResearchService)
     assert application.tool_executor.contains("research_web")
+
+
+def test_research_rides_the_stored_gemini_key_and_stays_off_without_one() -> None:
+    from app.config.settings import Settings
+    from app.research.search import GeminiGroundedSearch
+    from app.research.service import ResearchService
+
+    keyless = create_application(
+        Settings(
+            windows_integrations_enabled=False,
+            research_enabled=True,
+            research_provider="gemini",
+        )
+    )
+    assert keyless.research is None, "no key, no backend: research stays off"
+    assert not keyless.tool_executor.contains("research_web")
+
+    keyed = create_application(
+        Settings(
+            windows_integrations_enabled=False,
+            research_enabled=True,
+            research_provider="gemini",
+            gemini_api_key="unit-test-key",
+        )
+    )
+    assert isinstance(keyed.research, ResearchService)
+    assert isinstance(keyed.research.search_provider, GeminiGroundedSearch)
+    assert keyed.tool_executor.contains("research_web")
 
 
 def test_bootstrap_registers_only_gemini_in_production() -> None:

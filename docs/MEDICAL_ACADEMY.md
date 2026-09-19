@@ -584,13 +584,19 @@ BodyParts3D meshes; the two frames never meet in one scene.
 source name; the curriculum gives the teaching. Where both describe the same
 structure — an exact match of the Latin, the English, or either without its
 `musculus`/`nervus`/`arteria`/`vena`/`os`/`right`/`left` prefix, **and the same
-kind** — the atlas structure is shown the curated card: 176 of the 1,597 carry
-one of 83 lessons. The kind guard is not decoration: "Anterior tibial artery"
+kind** — the atlas structure can use the curated card. Of 176 links, 144
+primary-name matches inherit teaching and 32 synonym-only matches expose a
+related-lesson link instead. A synonym can name a member of a group (rectus
+femoris in the quadriceps lesson), so copying that group's origin/action into
+the individual model or its quiz would be incorrect. Ambiguous aliases are
+refused, independent of catalogue/set iteration order.
+The kind guard is not decoration: "Anterior tibial artery"
 matches the *muscle* card for tibialis anterior by name alone, which would put
 a muscle's origin and insertion on an artery. The card keeps the structure's
-own name and opens with the lesson it is showing ("Ders kartı: Musculi
-adductores…"), so a group card is never mistaken for one written about that
-single muscle. The other 1,421 keep their plain source card, which says to use
+own source name and English name, adds side to the Turkish lesson label and
+attributes teaching separately from mesh provenance. Related group lessons
+open through the relationships section; their facts are not scored as facts
+about the single muscle. The other 1,421 keep their plain source card, which says to use
 the lesson cards for detail.
 
 ### The scene
@@ -923,6 +929,21 @@ test asks JARVIS for one on that topic, a reading opens the library.
 
 ### Histology practicals from the student's own pages
 
+Two rules the user test added. The answer to a specimen is filed under a
+concept only on an exact name — the concept's name or one of its aliases,
+folded; "tek katlı kübik epitel" shares three words with "tek katlı yassı
+epitel" and is not it, so an unmatched answer gets its own stable id
+(`histology.specimen.<slug>`) named by the specimen. And while a timed
+session still asks about a specimen its name is off every screen: the side
+list, the detail panel, the crop's caption, the document title and page (a
+lecture called "Epitel Doku" names the family) and the direct specimen
+request all come back masked until the item is answered. A name the page
+prints inside the crop rectangle (read from the PDF's text layer) keeps the
+specimen out of the blind test with the reason shown; "Görseldeki adı gizle"
+masks exactly where the text layer says the name is, the practical then
+shows the masked rendering (the plain crop is never altered), and a late
+answer to a timed item is credited as late by the session's own clock.
+
 A *specimen* is a rectangle drawn on a page of an imported document ("Histoloji
 örneği seç" on the library page): the crop is rendered afresh from the PDF at
 2× and cached in the store's `media` table; the page itself is not touched, and
@@ -943,6 +964,125 @@ without a model). A timed answer that runs out counts as a blank. Exposures are
 tracked and the results say when repeated specimens inflated the score. Scored
 answers feed mastery and the understanding events; "Karıştırılanlarla kıyasla"
 puts the recorded features of confusable specimens side by side.
+
+### Flashcards: spaced repetition over the student's own material (15 September 2026)
+
+`app/medical/flashcards.py`, the **Kartlar** tab. Every card is cut from
+something already recorded, and says so on its face:
+
+- a curated anatomy fact (origin, insertion, innervation, action, course …)
+  for the structures of one curriculum topic — atlas mirrors of a lesson are
+  skipped so a fact is asked once;
+- a terminology entry tied to those structures (Latin front, Turkish back);
+- a question answered wrong in a *scored* paper — the back is the bank's own
+  key and explanation; study-only questions make no card;
+- a labelled histology specimen — the masked crop in front, the recorded
+  name and features behind;
+- **image occlusion**: labels the lecture page itself prints, read from the
+  PDF text layer, covered on the figure (`Etiket kartları üret` on a library
+  page). A label the page does not print is refused; a scanned page says it
+  has no text layer instead of guessing.
+
+The scheduler is a documented SM-2 variant (ease 2.5 start, clamped to
+[1.3, 3.0]; lapse −0.2 and back to today; hard ×1.2 −0.15; good ×ease;
+easy ×ease×1.3 +0.15; whole days, half-up, one year cap, no fuzz). The queue
+serves due cards oldest-first, then new cards under a daily budget
+(default 15, a setting on the tab). Each grade button shows what it would
+schedule. Answers are idempotent by submission id.
+
+A grade is the student's own word: it schedules repetition and (every
+twenty answers) logs five minutes of study to the planner — it never
+touches concept mastery, findings, events or exam analyses, and the tab
+says so. Deletion asks first; suspending keeps the card and its state.
+
+### Committee rehearsal, the weekly summary, and safety copies (15 September 2026)
+
+**Komite provası** (a button on the exam screen) assembles a timed paper in
+the real committee's shape: the student says how many questions each subject
+asks, and the paper takes only imported committee questions the scoring
+policy counts — grouped by subject in the given order, shuffled within each
+subject by a seedable draw, never padded from another subject. A subject
+that cannot fill its count contributes what it has and the paper says so.
+Time defaults to 72 seconds a question; the result's per-subject breakdown
+reads like the real committee report. `unseen_only` keeps to questions never
+answered before.
+
+**Haftalık özet** (top of İlerleme) is computed from the records alone:
+minutes from the planner's log and completed activities (read/recap minutes
+are not counted twice), answers from finished attempts with accuracy over
+scored questions only and unscored answers counted apart, card reviews from
+the review log, findings opened and closed, histology sessions, plan
+adherence, a streak of recorded days, and a countdown per exam plan. A day
+with nothing recorded is a zero, and the panel says nothing is estimated.
+
+**Yedekler**: `backup_now` (the dashboard quick action «Veritabanını
+yedekle») takes a consistent copy of `jarvis_medical.sqlite3` through
+SQLite's backup API into `<medical>/backups/`, writing to a temporary name
+first so an interrupted copy never masquerades as a good one; the newest
+three backups are kept and before-repair snapshots are never rotated away.
+A weekly copy runs in the background on startup when due
+(`JARVIS_MEDICAL_AUTO_BACKUP`). Restoring is deliberately manual — the
+`backups` view says how — because JARVIS never overwrites live data on its
+own; a copy is refused when the disk lacks twice the database size.
+
+### Paper exports and the running-activity badge (15 September 2026)
+
+A note or a paper can be written into a folder the student picks, as
+Markdown for printing (`export_markdown` through the bridge; buttons on the
+note card, the exam runner and the result). The question sheet carries no
+keys, no explanations and no marks — it is for sitting on paper; the
+answer-key sheet carries the key, the explanation, the sources and each
+question's scoring status, so a study-only item is labelled on paper too.
+An existing file is never overwritten; a numbered sibling is written
+instead. A started plan activity shows a live "N dk sürüyor" badge,
+refreshed twice a minute. The weekly summary exports the same way
+(kind `week`, button on the İlerleme panel): totals, a day table, the
+countdowns and the report's own honesty note — with marked answers and
+finished-paper scoring kept as separate lines, because a paper's scored
+total includes questions left blank.
+
+### One scoring decision (13 September 2026)
+
+Every place that measures asks one question of a question: does the scoring
+policy count it? `review.rule_decision` (and the reviewer's fuller
+`decision`, which adds the passage review when `JARVIS_MEDICAL_SOURCE_REVIEW`
+is on) answers with `scored`, `status`, `label` and `reason`. A key on its own
+is not enough:
+
+- no answer key → *Cevap anahtarı yok*, not scored;
+- invalidated → *Geçersiz sayıldı*, not scored;
+- imported or manual with a key → scored (the person's key stands);
+- generated with no source → *Kaynaksız (yalnız çalışma)*, not scored;
+- generated with a cited source → scored when the review found it supported
+  (or, with the review off, *Kaynak sayfası var*); *needs_review*, *stale*,
+  *unavailable*, *conflicting* and *insufficient* are not scored.
+
+The bank picker (`QuestionGenerator.from_bank`) takes only scored questions,
+and study-only ones only when the paper asks for them (`include_unscored`,
+the "Puansız soruları da al" switch); it applies the document and page range,
+the professor and the figure switch as filters and reports what it left out,
+and a paper that would be empty says why in terms the student can act on.
+The paper carries each question's decision; the runner shows *puansız* on the
+question; `answer` and `finish_exam` record mastery and understanding events
+only for scored questions; `analyse_attempt` scores only them, lists the rest
+under *Değerlendirme dışı* with the reason, and a paper of nothing but study
+items has no percentage rather than a misleading one. The decision is taken
+when the paper is finished and saved with the result (`analysis.scoring`,
+`analysis.policy`): a question whose support changes later keeps its place in
+that paper's history; only an invalidation reaches back, through the existing
+correction path. A blank is a blank: a concept is weak only on answered
+questions, and the questions left blank are listed apart.
+
+A paper is named for the questions it holds, not the number asked for; the
+list says *N soru · M istendi · K puanlı* when they differ.
+
+`scripts/repair_medical_learning.py` (`app/medical/repair.py`) puts summaries
+written under the old code back in line with the records: answers to unscored
+questions come out of mastery and out of the findings' evidence (events are
+marked `excluded`, never deleted), histology answers filed under a nearest
+name are moved to the exact concept, and the stored results of finished papers
+are recomputed. It backs the database up first and keeps a `learning_repair`
+ledger, so a second run applies nothing twice.
 
 ### Source support, the student's flag, and invalidation
 
@@ -965,6 +1105,19 @@ mismatch, figure problem) with an optional note; it never edits the question.
 "Geçersiz say" (confirmed, with a reason) keeps the attempt as history, marks
 the question invalid, subtracts its answers from mastery, withdraws the
 understanding evidence that rested on it and keeps it out of new papers.
+
+### Long jobs the page starts
+
+A paper or a note the model writes is a job with an identity (`app/medical/jobs.py`):
+*running* until the pipeline returns, then *done*, *failed* (with the error the
+pipeline raised, in its words), *timeout* (300 s for a paper, 240 s for a
+note) or *interrupted* when the process ended first. Jobs live in the store,
+so the page shows them after a reload and a restart; the exam and note screens
+list them with a retry that re-sends the saved request. Two identical requests
+while one is running are one job: the second click is told the first is under
+way. The 13 September test's "Sınav hazırlanıyor, sonra hiçbir şey" was a paper
+whose only question the source review quarantined — the failure was a toast
+that had faded by the time the tester looked. It is now a row that stays.
 
 ### Storage
 

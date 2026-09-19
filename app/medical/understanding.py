@@ -493,7 +493,7 @@ class UnderstandingEngine:
             if event.get("correct") is False:
                 kind = "answer_confident" if classification == "wrong_high_confidence" else "answer"
                 if finding is None:
-                    wrong_events = [item for item in self.events(concept_id=concept_id) if item.get("correct") is False and not item.get("invalidated")]
+                    wrong_events = [item for item in self.events(concept_id=concept_id) if item.get("correct") is False and not item.get("invalidated") and not item.get("excluded")]
                     if classification != "wrong_high_confidence" and len(wrong_events) < 2:
                         continue
                     statement = self._statement(concept_id, question, event)
@@ -872,6 +872,37 @@ class UnderstandingEngine:
     def check(self, check_id: str) -> dict[str, Any] | None:
         return self._store.get_record(CHECK_KIND, check_id)
 
+    def check_payload(self, check: dict[str, Any] | None) -> dict[str, Any] | None:
+        """The check as the page may show it: the verdict only once there is one.
+
+        Right after the answer the explanation is still with the model, so
+        the result carries ``assessment_status`` ("pending", "done",
+        "unavailable", "not_needed") and the classification of the moment;
+        "gerekçe yok ya da tahmin" is never shown for a reasoning that is
+        merely still being read.
+        """
+        if check is None:
+            return None
+        result = check.get("result")
+        if not result or not result.get("event_id"):
+            return check
+        event = self.event(str(result["event_id"]))
+        if event is None:
+            return check
+        assessment = event.get("assessment") or {}
+        status = str(assessment.get("status") or ("pending" if event.get("reasoning") else "not_needed"))
+        classification = str(event.get("classification") or result.get("classification") or "unknown")
+        merged = {
+            **result,
+            "classification": classification,
+            "classification_label": CLASSIFICATION_LABELS_TR.get(classification, classification),
+            "assessment_status": status,
+            "assessment_note": str(assessment.get("note") or ""),
+            "suspected_misconception": str(assessment.get("suspected_misconception") or ""),
+            "assessor": assessment.get("assessor"),
+        }
+        return {**check, "result": merged}
+
     def answer_check(self, check_id: str, answer_key: str | None, *, confidence: str | None, reasoning: str = "", submission_id: str | None = None) -> dict[str, Any]:
         check = self.check(check_id)
         if check is None:
@@ -884,11 +915,12 @@ class UnderstandingEngine:
         correct = grade(question, answer_key)
         event = self.record_event(question, correct=correct, answer_key=answer_key, confidence=confidence, reasoning=reasoning, source="check", submission_id=submission_id)
         self._learning.record(question, bool(correct), chosen_key=answer_key)
-        check["result"] = {"answer_key": answer_key, "correct": correct, "event_id": event["event_id"], "classification": event.get("classification"), "at": self._clock().isoformat()}
+        assessment = event.get("assessment") or {}
+        check["result"] = {"answer_key": answer_key, "correct": correct, "event_id": event["event_id"], "classification": event.get("classification"), "assessment_status": str(assessment.get("status") or "not_needed"), "at": self._clock().isoformat()}
         check["question"] = question_payload(question, reveal=True, include_explanation=True, curriculum=self._curriculum)
         check["status"] = "answered"
         self._store.save_record(CHECK_KIND, check_id, check, subject_key=check.get("concept_id") or check.get("topic_id") or question.subject)
-        return check
+        return self.check_payload(check) or check
 
     # ------------------------------------------------------------------
     # corrections from the question-review workflow
@@ -896,11 +928,25 @@ class UnderstandingEngine:
 
     def invalidate_question(self, question_id: str, reason: str) -> dict[str, int]:
         """A question found wrong: its events stay but no longer count as evidence."""
+        return self._withdraw_question(question_id, reason, flag="invalidated", note="geçersiz sayıldı")
+
+    def exclude_question(self, question_id: str, reason: str) -> dict[str, int]:
+        """A question the scoring policy does not count: its events stay, marked as no evidence.
+
+        Not an invalidation — the question is not wrong, it is study
+        material — so the events say ``excluded`` and why, and the findings
+        that leaned on them lose that support exactly as they would for an
+        invalid one.
+        """
+        return self._withdraw_question(question_id, reason, flag="excluded", note="puansız sayıldı")
+
+    def _withdraw_question(self, question_id: str, reason: str, *, flag: str, note: str) -> dict[str, int]:
         events = 0
+        reason_key = "invalidation_reason" if flag == "invalidated" else "exclusion_reason"
         for event in self._store.list_records(EVENT_KIND, limit=5000):
-            if event.get("question_id") == question_id and not event.get("invalidated"):
-                event["invalidated"] = True
-                event["invalidation_reason"] = _excerpt(reason, 200)
+            if event.get("question_id") == question_id and not event.get(flag):
+                event[flag] = True
+                event[reason_key] = _excerpt(reason, 200)
                 self._store.save_record(EVENT_KIND, event["event_id"], event, subject_key=event["concept_ids"][0])
                 events += 1
         findings = 0
@@ -915,14 +961,35 @@ class UnderstandingEngine:
                 continue
             remaining = self._distinct_support(finding)
             if remaining == 0 and finding.get("status") in OPEN_STATUSES | {"disputed"}:
-                self._transition(finding, "withdrawn", f"Dayandığı soru geçersiz sayıldı ({_excerpt(reason, 120)}); bulgu geri çekildi.")
+                self._transition(finding, "withdrawn", f"Dayandığı soru {note} ({_excerpt(reason, 120)}); bulgu geri çekildi.")
             elif finding.get("status") == "supported" and remaining < EVIDENCE_TO_SUPPORT:
-                self._transition(finding, "hypothesis", "Bir kanıt geçersiz sayıldı; bulgu hipoteze indi.")
+                self._transition(finding, "hypothesis", f"Bir kanıt {note}; bulgu hipoteze indi.")
             else:
-                finding.setdefault("history", []).append({"at": self._clock().isoformat(), "status": finding["status"], "note": "Bir kanıt geçersiz sayıldı; kalan kanıt yeterli.", "by": "rule"})
+                finding.setdefault("history", []).append({"at": self._clock().isoformat(), "status": finding["status"], "note": f"Bir kanıt {note}; kalan kanıt yeterli.", "by": "rule"})
             self._save_finding(finding)
             findings += 1
         return {"events": events, "findings": findings}
+
+    def relink_evidence(self, event_id: str, old_concept_id: str, new_concept_id: str) -> int:
+        """An event moved concept: findings on the old concept drop its evidence."""
+        touched = 0
+        for finding in self._store.list_records(FINDING_KIND, subject_key=old_concept_id, limit=2000):
+            changed = False
+            for item in finding.get("evidence", []):
+                if item.get("event_id") == event_id and item.get("valid", True):
+                    item["valid"] = False
+                    item["invalidation_reason"] = f"Kanıt {new_concept_id} kavramına taşındı."
+                    changed = True
+            if not changed:
+                continue
+            remaining = self._distinct_support(finding)
+            if remaining == 0 and finding.get("status") in OPEN_STATUSES | {"disputed"}:
+                self._transition(finding, "withdrawn", "Dayandığı kanıt başka kavrama taşındı; bulgu geri çekildi.")
+            elif finding.get("status") == "supported" and remaining < EVIDENCE_TO_SUPPORT:
+                self._transition(finding, "hypothesis", "Bir kanıt başka kavrama taşındı; bulgu hipoteze indi.")
+            self._save_finding(finding)
+            touched += 1
+        return touched
 
     # ------------------------------------------------------------------
     # payloads
@@ -957,5 +1024,5 @@ class UnderstandingEngine:
             ],
             "confidence_levels": [{"key": key, "label": label} for key, label in CONFIDENCE_LABELS_TR.items()],
             "confirmation": dict(self.confirmation),
-            "checks": [item for item in self._store.list_records(CHECK_KIND, limit=10) if item.get("status") == "open"],
+            "checks": [self.check_payload(item) for item in self._store.list_records(CHECK_KIND, limit=10) if item.get("status") == "open"],
         }

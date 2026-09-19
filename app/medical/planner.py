@@ -654,6 +654,45 @@ class StudyPlanner:
             raise ValueError("Etkinlik bulunamadı.")
         return record
 
+    def activity_sources(self, activity_id: str) -> dict[str, Any]:
+        """The documents a reading activity can be done from, in the order to try them.
+
+        The plan's own scope first (the documents the student confirmed, with
+        their page ranges), then every library document filed under the
+        activity's topic. Nothing is guessed: an activity whose topic no
+        document is filed under gets an empty list and a search term, not the
+        page that happened to be open.
+        """
+        activity = self._activity(activity_id)
+        topic_id = str(activity.get("topic_id") or "")
+        record = self.plan(str(activity.get("plan_id") or ""))
+        scope = (record or {}).get("scope") or {}
+        ranges = scope.get("page_ranges") or {}
+        candidates: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        documents = {document.document_id: document for document in self._store.list_documents()}
+        for document_id in scope.get("document_ids") or []:
+            document = documents.get(document_id)
+            if document is None or (topic_id and not any(self._curriculum.is_within(item, topic_id) for item in document.topic_ids)):
+                continue
+            span = (ranges.get(document_id) or [[0, 0]])[0]
+            candidates.append({"document_id": document_id, "title": document.title, "page_count": document.page_count, "page_from": int(span[0] or 0), "page_to": int(span[1] or 0), "reason": "plan kapsamında"})
+            seen.add(document_id)
+        if topic_id:
+            for document in documents.values():
+                if document.document_id in seen or not any(self._curriculum.is_within(item, topic_id) for item in document.topic_ids):
+                    continue
+                candidates.append({"document_id": document.document_id, "title": document.title, "page_count": document.page_count, "page_from": 0, "page_to": 0, "reason": "konusu eşleşiyor"})
+                seen.add(document.document_id)
+        topic = self._curriculum.get(topic_id) if topic_id else None
+        return {
+            "activity_id": activity_id,
+            "topic_id": topic_id or None,
+            "topic_label": self._curriculum.breadcrumb(topic_id) if topic_id else "",
+            "search": (topic.title_tr if topic is not None else str(activity.get("title") or "")),
+            "documents": candidates[:12],
+        }
+
     def start(self, activity_id: str) -> dict[str, Any]:
         activity = self._activity(activity_id)
         if activity.get("status") in ("planned", "missed", "skipped"):

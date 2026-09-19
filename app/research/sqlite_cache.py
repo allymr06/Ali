@@ -177,6 +177,39 @@ class SQLiteResearchCache:
                 raise
         return stored
 
+    def recent(self, limit: int = 8) -> list[dict[str, object]]:
+        """The newest cached questions, for reopening past research.
+
+        Expired entries are listed too: rerunning the question simply
+        refreshes them through the normal path.
+        """
+        bounded = max(1, min(int(limit), 25))
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT report_json, cached_at FROM research_cache
+                ORDER BY cached_at DESC LIMIT ?
+                """,
+                (bounded,),
+            ).fetchall()
+        items: list[dict[str, object]] = []
+        for report_json, cached_at in rows:
+            try:
+                payload = json.loads(report_json)
+            except json.JSONDecodeError:
+                continue
+            question = str(payload.get("question") or "").strip()
+            if not question:
+                continue
+            items.append(
+                {
+                    "question": question,
+                    "at": str(cached_at),
+                    "sources": len(payload.get("sources") or []),
+                }
+            )
+        return items
+
     def get(
         self,
         question: str,

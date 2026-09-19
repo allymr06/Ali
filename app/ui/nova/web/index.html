@@ -66,6 +66,8 @@
       <button id="palette-btn" class="top-btn" type="button" title="Komut paleti (Ctrl+K)"></button>
       <button id="context-btn" class="top-btn" type="button" title="Bağlam paneli (Ctrl+Shift+C)"></button>
       <button id="compact-btn" class="top-btn" type="button" title="Kompakt mod"></button>
+      <button id="exam-chip" class="top-btn exam-chip" type="button" hidden title="En yakın sınav · plana gider"></button>
+      <button id="focus-chip" class="top-btn focus-chip" type="button" hidden title="Odak sayacı · durdurmak için tıkla"></button>
       <div class="clock" aria-hidden="true">
         <span id="clock-time">--:--</span>
         <span id="clock-date">—</span>
@@ -102,6 +104,10 @@
           <div id="home-subline" class="greeting-sub"></div>
         </div>
         <div class="home-side left">
+          <div class="home-block">
+            <div class="ctx-title"><span>Günün özeti</span></div>
+            <div id="home-brief"></div>
+          </div>
           <div class="home-block">
             <div class="ctx-title"><span>Son etkinlik</span></div>
             <div id="home-activity"></div>
@@ -141,6 +147,7 @@
       <div class="chat-layout">
         <aside id="conv-list" class="conv-list panel raised" hidden>
           <div class="conv-head"><span class="kicker">Konuşmalar</span><button id="conv-new" class="btn btn-text" type="button">+ Yeni</button></div>
+          <input id="conv-search" class="conv-search" type="text" spellcheck="false" placeholder="Konuşmalarda ara… (içerikte)">
           <div id="conv-items" class="conv-items"></div>
           <div class="settings-note">Sağ tık: arşivle</div>
         </aside>
@@ -148,6 +155,7 @@
           <div class="chat-toolbar">
             <button id="conv-toggle" class="btn btn-text" type="button">Konuşmalar</button>
             <span id="chat-title" class="chat-title">Yeni konuşma</span>
+            <button id="chat-export" class="btn btn-text" type="button" title="Açık konuşmayı Markdown dosyası olarak kaydeder">Dışa aktar</button>
             <button id="chat-new" class="btn btn-text" type="button" title="Yeni konuşma (Ctrl+N)">+ Yeni</button>
           </div>
           <div id="chat-scroll" class="chat-scroll">
@@ -180,6 +188,15 @@
         <span class="kicker">Yürütme katmanı</span>
         <h1>Görevler</h1>
         <p>Dayanıklı planlar ve adımları. Her kayıt çekirdekten canlı okunur; adım durumları gerçek yürütmeyi yansıtır.</p>
+      </div>
+      <div id="reminders-panel" class="panel routines-panel">
+        <div class="panel-title"><span class="kicker">Hatırlatıcılar</span><span id="reminders-count" class="faint"></span><button id="reminders-refresh" class="icon-btn small" type="button" title="Yenile"></button></div>
+        <form id="reminder-form" class="reminder-form" autocomplete="off">
+          <input id="reminder-text" type="text" spellcheck="false" placeholder="Ne hatırlatayım?">
+          <input id="reminder-when" type="text" class="mono" spellcheck="false" placeholder="14:30 ya da +25 (dk)">
+          <button type="submit" class="btn btn-primary">Kur</button>
+        </form>
+        <div id="reminders-list" class="routine-list"></div>
       </div>
       <div id="tasks-list" class="task-list"></div>
       <div id="routines-panel" class="panel routines-panel">
@@ -276,6 +293,7 @@
         </select>
         <button type="submit" id="research-submit" class="btn btn-primary">Araştır</button>
       </form>
+      <div id="research-history" class="med-chips research-history"></div>
       <div id="research-result" class="result-panel panel" hidden></div>
     </section>
 
@@ -466,6 +484,7 @@
                   <button id="med-import-folder" class="btn btn-ghost small" type="button" title="Bir klasördeki tüm ders dosyalarını (PDF, PPT, PPTX, metin) tek ders seti olarak ekler">Klasör ekle</button>
                   <button id="med-doc-refresh" class="icon-btn small" type="button" title="Yenile"></button>
                 </div>
+                <div id="med-set-head" class="med-set-head" hidden><span class="kicker">Ders setleri</span><button id="med-set-toggle" class="btn btn-ghost small" type="button" aria-expanded="true">Daralt</button></div>
                 <div id="med-set-list" class="med-set-list"></div>
                 <label class="search med-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l6 6"/></svg><input id="med-doc-search" type="text" placeholder="Belge ara…" spellcheck="false"></label>
                 <div id="med-doc-list" class="med-list"></div>
@@ -492,8 +511,10 @@
                   <button id="med-note-add" class="btn btn-primary small" type="submit">Not hazırla</button>
                 </div>
                 <p class="settings-note">Notlar seçili konudan ve belgelerden üretilir; kullanılan her sayfa kaynak olarak işaretlenir.</p>
+                <p id="med-note-context" class="med-context" aria-live="polite"></p>
               </form>
             </div>
+            <div id="med-note-jobs" class="med-jobs" aria-live="polite"></div>
             <div id="med-note-list" class="med-note-list"></div>
           </section>
 
@@ -521,13 +542,18 @@
                   <label class="switch-row small"><span>Yalnız yanlışlarım</span><input id="med-exam-wrong" class="switch" type="checkbox"></label>
                   <label class="switch-row small" title="Yüklediğin ders notlarındaki şekil sayfalarından soru; JARVIS kendi anatomi görseli üretmez"><span>Görselli sorular</span><input id="med-exam-images" class="switch" type="checkbox" checked></label>
                   <label class="switch-row small"><span>Süreli (dk)</span><input id="med-exam-timed" type="number" min="0" max="240" value="0"></label>
+                  <label class="switch-row small" title="Bankadan derlerken kaynaksız ya da kaynak desteği doğrulanmamış soruları da alır; bunlar gösterilir ve açıklanır ama puana ve öğrenme kaydına girmez"><span>Puansız soruları da al</span><input id="med-exam-unscored" class="switch" type="checkbox"></label>
                 </div>
+                <p id="med-exam-context" class="med-context" aria-live="polite"></p>
                 <div class="btn-row">
-                  <button id="med-exam-bank" class="btn btn-ghost small" type="button">Bankadan derle</button>
+                  <button id="med-exam-committee" class="btn btn-ghost small" type="button" title="Hocaların gerçek komite sorularından, derslere böldüğün sayılarla süreli bir prova kurar">Komite provası</button>
+                  <button id="med-exam-bank" class="btn btn-ghost small" type="button" title="Bankadan derlemede belge, sayfa aralığı, hoca, zorluk, görsel ve yanlış süzgeçleri uygulanır; şık sayısı ve bilgi önceliği sorunun aslından gelir">Bankadan derle</button>
                   <button id="med-exam-create" class="btn btn-primary" type="submit">Sınav hazırla</button>
                 </div>
+                <p class="settings-note">Bankadan derlemede şık sayısı ve bilgi önceliği uygulanmaz; belge, sayfa, hoca, zorluk, görsel ve yanlış süzgeçleri uygulanır.</p>
               </form>
             </div>
+            <div id="med-exam-jobs" class="med-jobs" aria-live="polite"></div>
             <div id="med-exam-list" class="med-list med-exam-list"></div>
             <div id="med-exam-runner" class="med-runner" hidden></div>
           </section>
@@ -543,6 +569,28 @@
               <button id="med-bank-refresh" class="icon-btn small" type="button" title="Yenile"></button>
             </div>
             <div id="med-bank-list" class="med-bank-list"></div>
+          </section>
+
+          <!-- Kartlar -->
+          <section class="med-view" data-view="cards" hidden>
+            <div class="med-split">
+              <aside class="panel med-doc-panel">
+                <div class="panel-title"><span class="kicker">Kartlar</span><span id="med-cards-count" class="faint"></span></div>
+                <p class="settings-note">Aralıklı tekrar: her kart kendi kaynağını söyler; notların ölçmeye etkisi yoktur, yalnız tekrarı zamanlar.</p>
+                <div id="med-cards-summary" class="med-chips"></div>
+                <div class="btn-row" style="justify-content:flex-start">
+                  <button id="med-cards-topic" class="btn btn-primary small" type="button" title="Oturumda seçili konunun ders kartı bilgilerinden ve terim sözlüğünden kart üretir">Bu konudan kart yap</button>
+                </div>
+                <div class="btn-row" style="justify-content:flex-start">
+                  <button id="med-cards-wrongs" class="btn btn-ghost small" type="button" title="Puanlı sınavlarda yanlış yaptığın sorulardan kart üretir; puansız sorulardan üretmez">Yanlışlarımı ekle</button>
+                  <button id="med-cards-histo" class="btn btn-ghost small" type="button" title="Adı kayıtlı histoloji örneklerinden kart üretir">Histoloji örnekleri</button>
+                </div>
+                <label class="med-field"><span>Günlük yeni kart</span><input id="med-cards-new" type="number" min="0" max="100" value="15"></label>
+                <div class="panel-title" style="margin-top:0.4rem"><span class="kicker">Önümüzdeki günler</span></div>
+                <div id="med-cards-forecast" class="med-list"></div>
+              </aside>
+              <div id="med-cards-review" class="med-histo-detail"></div>
+            </div>
           </section>
 
           <!-- Hoca tarzı -->
@@ -570,6 +618,10 @@
           <!-- İlerleme -->
           <section class="med-view" data-view="progress" hidden>
             <div class="med-grid">
+              <div class="panel med-card med-span-2">
+                <div class="panel-title"><span class="kicker">Haftalık özet</span><span id="med-week-streak" class="faint"></span><button type="button" id="med-week-export" class="btn btn-ghost small" title="Haftalık özeti Markdown dosyası olarak kaydeder">Dışa aktar (.md)</button></div>
+                <div id="med-week"></div>
+              </div>
               <div class="panel med-card med-span-2">
                 <div class="panel-title"><span class="kicker">Öğrenme durumu</span></div>
                 <div id="med-progress-metrics" class="diag-metrics"></div>
@@ -601,7 +653,7 @@
                     <label class="med-field"><span>Sınav tarihi</span><input id="med-plan-date" type="date"></label>
                   </div>
                   <div class="med-form-row">
-                    <label class="med-field"><span>Dersler (boş bırakılırsa belgelerden önerilir)</span><select id="med-plan-subjects" multiple size="4" aria-label="Dersler"></select></label>
+                    <label class="med-field"><span>Dersler · Ctrl ile birden çok seç (boş: belgelerden önerilir)</span><select id="med-plan-subjects" multiple size="4" aria-label="Dersler (Ctrl ile birden çok seçilir)"></select></label>
                     <label class="med-field"><span>Günlük süre (dk)</span><input id="med-plan-minutes" type="number" min="5" max="600" value="45"></label>
                   </div>
                   <div class="med-switches">
@@ -726,6 +778,8 @@
         <nav id="settings-nav" class="settings-nav" aria-label="Ayar bölümleri">
           <button class="tab active" type="button" data-target="connection">Bağlantı</button>
           <button class="tab" type="button" data-target="appearance">Görünüm</button>
+          <button class="tab" type="button" data-target="assistant">Asistan</button>
+          <button class="tab" type="button" data-target="phone">Telefon</button>
           <button class="tab" type="button" data-target="voice">Ses</button>
           <button class="tab" type="button" data-target="vision">Görüş ve web</button>
           <button class="tab" type="button" data-target="memory">Hafıza</button>
@@ -759,6 +813,34 @@
             <label class="switch-row"><span>Hareketi azalt<small>Animasyonları durdurur; çekirdek tek karede kalır. İşletim sistemi ayarından bağımsızdır.</small></span><input type="checkbox" id="settings-motion" class="switch"></label>
             <label class="switch-row"><span>Ortam parçacıkları<small>Arka plandaki sakin toz katmanı. Kapatınca yalnızca ışık geçişleri kalır.</small></span><input type="checkbox" id="settings-ambient" class="switch"></label>
             <label class="switch-row"><span>Açık tema<small>Gündüz için aynı sistem. Koyu tema birincil tasarımdır.</small></span><input type="checkbox" id="settings-theme" class="switch"></label>
+          </div>
+          <div id="settings-assistant" class="panel settings-card">
+            <div class="panel-title"><span class="kicker">Asistan</span></div>
+            <label class="switch-row"><span>Sabah özeti bildirimi<small>Her gün ayarlı saatte günün özetini bildirim olarak gönderir. Servisleri okur; model çağrılmaz, kota harcanmaz.</small></span><input type="checkbox" id="settings-brief" class="switch"></label>
+            <label class="field" style="max-width:200px">
+              <span>Özet saati</span>
+              <input id="settings-brief-time" class="mono" type="time" value="08:30">
+            </label>
+            <label class="switch-row"><span>Web araştırması<small>Soru güncel bilgi gerektirdiğinde JARVIS webde arar ve kaynak gösterir. Kapatınca araştırma aracı hiç kaydedilmez.</small></span><input type="checkbox" id="settings-research" class="switch"></label>
+            <div id="settings-assistant-status" class="settings-status" role="status"></div>
+            <div class="btn-row">
+              <button type="button" id="settings-assistant-save" class="btn btn-primary">Kaydet</button>
+            </div>
+            <div class="panel-title" style="margin-top:.6rem"><span class="kicker">Veri yedekleri</span><span id="settings-backup-state" class="chip"></span></div>
+            <p class="settings-note">Konuşmalar, hatırlatıcılar, rutinler, bildirimler, hafıza ve görev kayıtları haftada bir yedeklenir; en yeni üç kopya tutulur. Geri yükleme bilinçli olarak elle yapılır: JARVIS kapalıyken kopyayı yerine koy.</p>
+            <div class="btn-row" style="justify-content:flex-start">
+              <button type="button" id="settings-backup-now" class="btn btn-ghost">Şimdi yedekle</button>
+            </div>
+          </div>
+          <div id="settings-phone" class="panel settings-card">
+            <div class="panel-title"><span class="kicker">Telefon</span><span id="phone-state" class="chip"></span></div>
+            <p class="settings-note">Telefon, bilgisayardaki bu JARVIS'e Tailscale özel ağı üzerinden bağlanır; bilgisayar açık ve JARVIS çalışırken yanıt alır. Kurulum: <span class="mono">docs/MOBILE.md</span>. Eşleştirme kodu 10 dakika geçerli ve tek kullanımlıktır; kodu yalnız kendi telefonuna yaz.</p>
+            <div class="btn-row" style="justify-content:flex-start">
+              <button type="button" id="phone-code" class="btn btn-primary">Eşleştirme kodu üret</button>
+            </div>
+            <div id="phone-code-box" class="phone-code" hidden><span id="phone-code-value" class="mono"></span><span id="phone-code-expiry" class="faint"></span></div>
+            <div class="panel-title" style="margin-top:.6rem"><span class="kicker">Bağlı cihazlar</span><button type="button" id="phone-revoke-all" class="btn btn-text">Tümünü çıkar</button></div>
+            <div id="phone-sessions" class="routine-list"></div>
           </div>
           <div id="settings-voice" class="panel settings-card">
             <div class="panel-title"><span class="kicker">Ses</span><span class="chip">salt okunur</span></div>

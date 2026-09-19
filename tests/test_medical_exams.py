@@ -90,12 +90,15 @@ def batch(*items: dict) -> str:
 
 
 def bank_question(question_id: str, stem: str, *, correct: str = "B", **overrides) -> Question:
+    # A keyed question the student or a professor put in the bank: the
+    # scoring policy counts those; a model draft with no source it does not.
     fields = {
         "subject": "anatomy",
         "topic_id": ARM,
         "correct_key": correct,
         "explanation": "Gerekce soru bankasinda kayitli durur.",
         "created_at": BASE,
+        "origin": QuestionOrigin.MANUAL,
     }
     fields.update(overrides)
     options = [QuestionOption(key, text) for key, text in zip("ABCD", OPTIONS)]

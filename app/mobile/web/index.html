@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#05080f">
+  <meta name="color-scheme" content="dark">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>JARVIS</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="stylesheet" href="/tokens.css?v=__STAMP__">
+  <link rel="stylesheet" href="/app.css?v=__STAMP__">
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="top">
+      <div class="brand"><span id="orb" class="orb" aria-hidden="true"></span><span class="brand-name">JARVIS</span><span id="pc-name" class="pc-name"></span></div>
+      <button id="conn" class="conn" type="button" title="Bağlantı durumu"><span class="dot"></span><span id="conn-text">bağlanıyor</span></button>
+    </header>
+
+    <div id="offline" class="banner warn" hidden>Bağlantı yok. JARVIS bilgisayarında çalışır; telefon şu an bilgisayara ulaşamıyor.</div>
+    <div id="paused" class="banner" hidden>JARVIS masaüstünde duraklatıldı; sürdürülene kadar komut almıyor.</div>
+
+    <main id="main" class="main">
+      <!-- Eşleştirme -->
+      <section id="screen-pair" class="screen pair" hidden>
+        <div class="pair-card">
+          <div class="kicker">Telefonu bağla</div>
+          <h1>Eşleştirme kodu</h1>
+          <p class="hint">Bilgisayardaki JARVIS'te <strong>Ayarlar › Telefon</strong> bölümünden ya da <code>scripts/mobile_pair.py</code> ile kod üret. Kod 10 dakika geçerli ve tek kullanımlıktır.</p>
+          <form id="pair-form" autocomplete="off">
+            <label class="field"><span>Kod</span><input id="pair-code" type="text" inputmode="latin" autocapitalize="characters" autocomplete="one-time-code" spellcheck="false" maxlength="9" placeholder="ABCD-EFGH" required></label>
+            <label class="field"><span>Bu cihazın adı</span><input id="pair-label" type="text" maxlength="40" placeholder="Telefonum" autocomplete="off"></label>
+            <div id="pair-error" class="error" role="alert" hidden></div>
+            <button id="pair-submit" class="btn primary wide" type="submit">Bağlan</button>
+          </form>
+          <p class="hint small">Bu uygulama yalnız bilgisayar açık, çevrimiçi ve JARVIS çalışırken yanıt verir.</p>
+        </div>
+      </section>
+
+      <!-- Sohbet -->
+      <section id="screen-chat" class="screen chat">
+        <div class="conv-bar">
+          <button id="conv-pick" class="conv-pick" type="button"><span id="conv-title">Yeni konuşma</span><span class="chev">▾</span></button>
+          <button id="conv-new" class="btn text" type="button">+ Yeni</button>
+        </div>
+        <div id="messages" class="messages" aria-live="polite">
+          <div id="chat-empty" class="empty">
+            <div class="empty-orb"></div>
+            <p>Bu konuşmada henüz mesaj yok.</p>
+            <p class="hint small">Yazdıkların bilgisayardaki JARVIS'e gider; aynı konuşmayı masaüstünde de görürsün.</p>
+          </div>
+        </div>
+        <form id="composer" class="composer" autocomplete="off">
+          <textarea id="composer-input" rows="1" placeholder="JARVIS'e yaz…" enterkeyhint="send"></textarea>
+          <button id="composer-send" class="send" type="submit" aria-label="Gönder">➤</button>
+        </form>
+      </section>
+
+      <!-- Görevler -->
+      <section id="screen-tasks" class="screen tasks" hidden>
+        <div class="screen-head"><div><div class="kicker">Yürütme katmanı</div><h1>Görevler</h1></div><button id="tasks-refresh" class="btn text" type="button">Yenile</button></div>
+        <div id="approvals-list" class="approvals"></div>
+        <div id="tasks-list" class="list"></div>
+      </section>
+
+      <!-- Ayarlar -->
+      <section id="screen-settings" class="screen settings" hidden>
+        <div class="screen-head"><div><div class="kicker">Bağlantı</div><h1>Ayarlar</h1></div></div>
+        <div class="card">
+          <div class="row"><span>Durum</span><strong id="set-conn">—</strong></div>
+          <div class="row"><span>Bilgisayar</span><strong id="set-pc">—</strong></div>
+          <div class="row"><span>Adres</span><strong id="set-origin" class="mono">—</strong></div>
+          <div class="row"><span>Bu cihaz</span><strong id="set-label">—</strong></div>
+          <div class="row"><span>Oturum bitişi</span><strong id="set-expires">—</strong></div>
+          <div class="row"><span>Uygulama sürümü</span><strong id="set-stamp" class="mono">—</strong></div>
+        </div>
+        <p class="hint">JARVIS bilgisayarında çalışır. Bilgisayar kapalıysa, uykudaysa ya da JARVIS açık değilse bu uygulama yanıt alamaz; telefon tek başına asistan çalıştırmaz. Bağlantı Tailscale özel ağı üzerinden gelir.</p>
+        <button id="logout" class="btn danger wide" type="button">Bu cihazın oturumunu kapat</button>
+        <p class="hint small">Diğer cihazların oturumları bilgisayardaki Ayarlar › Telefon bölümünden iptal edilir.</p>
+      </section>
+    </main>
+
+    <nav id="tabs" class="tabs" aria-label="Sekmeler">
+      <button class="tab active" type="button" data-tab="chat"><span class="tab-icon">💬</span>Sohbet</button>
+      <button class="tab" type="button" data-tab="tasks"><span class="tab-icon">▶</span>Görevler<span id="tasks-badge" class="badge" hidden></span></button>
+      <button class="tab" type="button" data-tab="settings"><span class="tab-icon">⚙</span>Ayarlar</button>
+    </nav>
+
+    <!-- Konuşma seçici -->
+    <div id="sheet" class="sheet" hidden>
+      <div class="sheet-body">
+        <div class="sheet-head"><span class="kicker">Konuşmalar</span><button id="sheet-close" class="btn text" type="button">Kapat</button></div>
+        <div id="conv-list" class="list"></div>
+      </div>
+    </div>
+
+    <!-- İzin onayı -->
+    <div id="approval" class="sheet" hidden>
+      <div class="sheet-body">
+        <div class="sheet-head"><span class="kicker">Onay bekleniyor</span><span id="approval-timer" class="mono"></span></div>
+        <div id="approval-body"></div>
+        <div class="btn-row">
+          <button id="approval-deny" class="btn wide" type="button">Reddet</button>
+          <button id="approval-allow" class="btn primary wide" type="button">Onayla</button>
+        </div>
+        <p class="hint small">Onay yalnız bu tek işlem için geçerlidir; süre dolarsa işlem reddedilmiş sayılır.</p>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" role="status" hidden></div>
+  </div>
+  <script src="/app.js?v=__STAMP__"></script>
+</body>
+</html>

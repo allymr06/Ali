@@ -280,6 +280,9 @@ def test_boot_returns_live_state_without_secrets(booted) -> None:
         "model": DEFAULT_GEMINI_MODEL,
         "credential_configured": True,
         "credential_required": True,
+        "daily_brief_notification": True,
+        "daily_brief_time": "08:30",
+        "research_enabled": True,
     }
     assert SECRET not in json.dumps(boot)
     assert SECRET not in json.dumps(booted.bridge.refresh())
@@ -318,6 +321,9 @@ def test_settings_snapshot_carries_only_non_secret_fields(booted) -> None:
         "model",
         "credential_configured",
         "credential_required",
+        "daily_brief_notification",
+        "daily_brief_time",
+        "research_enabled",
     }
     assert settings["credential_configured"] is True
 
@@ -2581,7 +2587,7 @@ def test_an_exam_answer_carries_confidence_over_the_bridge(booted) -> None:
 
     academy = booted.app.medical
     for index in range(2):
-        academy.store.save_question(Question(question_id=f"qb{index}", subject="anatomy", stem=f"Scapula sorusu {index}: hangi çıkıntı acromion ile eklem yapar?", options=[QuestionOption("A", "Clavicula"), QuestionOption("B", "Humerus")], correct_key="A", explanation="Clavicula.", topic_id="anatomy.musculoskeletal.upper_limb.shoulder"))
+        academy.store.save_question(Question(question_id=f"qb{index}", subject="anatomy", stem=f"Scapula sorusu {index}: hangi çıkıntı acromion ile eklem yapar?", options=[QuestionOption("A", "Clavicula"), QuestionOption("B", "Humerus")], correct_key="A", explanation="Clavicula.", topic_id="anatomy.musculoskeletal.upper_limb.shoulder", origin="manual"))
     paper = asyncio.run(academy.generate_exam({"from_bank": True, "question_count": 2, "subjects": ["anatomy"], "randomize": False, "immediate_feedback": True}))
     exam_id = paper["exam_id"]
     assert booted.bridge.medical_call("start_exam", {"exam_id": exam_id})["ok"] is True
@@ -2593,3 +2599,277 @@ def test_an_exam_answer_carries_confidence_over_the_bridge(booted) -> None:
     events = booted.bridge.medical_call("understanding_events", {})["events"]
     assert len(events) == 1 and events[0]["confidence"] == "sure" and events[0]["reasoning"] == "Akromioklaviküler eklem."
 
+
+def test_the_bridge_exports_markdown_into_the_chosen_folder_without_overwriting(booted, tmp_path) -> None:
+    from app.medical.models import Question, QuestionOption
+
+    academy = booted.app.medical
+    academy.store.save_question(Question(question_id="ex1", subject="anatomy", stem="Soru?", options=[QuestionOption("A", "x"), QuestionOption("B", "y")], correct_key="A", origin="manual"))
+    exam = academy.exam_builder.build(academy.exam_config({"subjects": ["anatomy"], "question_count": 1}), [academy.store.get_question("ex1")])
+
+    target = tmp_path / "cikti"
+    missing = booted.bridge.medical_call("export_markdown", {"kind": "exam", "exam_id": exam.exam_id, "directory": str(target)})
+    assert missing == {"ok": False, "error": "Klasör bulunamadı; önce bir klasör seç."}
+
+    target.mkdir()
+    first = booted.bridge.medical_call("export_markdown", {"kind": "exam", "exam_id": exam.exam_id, "directory": str(target)})
+    second = booted.bridge.medical_call("export_markdown", {"kind": "exam", "exam_id": exam.exam_id, "directory": str(target)})
+    assert first["ok"] is True and second["ok"] is True
+    assert first["file"] != second["file"] and second["file"].endswith("-2.md"), "a second export never overwrites the first"
+    content = (target / first["file"]).read_text(encoding="utf-8")
+    assert "Soru?" in content and "Cevap" not in content
+    unknown = booted.bridge.medical_call("export_markdown", {"kind": "pdf", "directory": str(target)})
+    assert unknown["ok"] is False and "Bilinmeyen dışa aktarma türü" in unknown["error"]
+
+
+# ---------------------------------------------------------------------------
+# general JARVIS: window geometry, conversation export, the daily brief
+# ---------------------------------------------------------------------------
+
+
+def test_window_geometry_is_remembered_but_never_nonsense(tmp_path) -> None:
+    storage = tmp_path / "store"
+    assert shell.load_window_geometry(storage) is None, "the first run has nothing to restore"
+
+    assert shell.save_window_geometry(storage, SimpleNamespace(x=120, y=80, width=1280, height=800)) is True
+    assert shell.load_window_geometry(storage) == {"x": 120, "y": 80, "width": 1280, "height": 800}
+
+    # A frame too small to use is not remembered; the last good one survives.
+    assert shell.save_window_geometry(storage, SimpleNamespace(x=0, y=0, width=300, height=200)) is False
+    assert shell.load_window_geometry(storage) == {"x": 120, "y": 80, "width": 1280, "height": 800}
+
+    # A frame thrown far off every screen, or a corrupt file, falls back to defaults.
+    geometry_file = storage / shell.WINDOW_GEOMETRY_FILE
+    geometry_file.write_text('{"x": -9000, "y": 40, "width": 1280, "height": 800}', encoding="utf-8")
+    assert shell.load_window_geometry(storage) is None
+    geometry_file.write_text("not json", encoding="utf-8")
+    assert shell.load_window_geometry(storage) is None
+
+    # Saving never lets an odd window object break the close path.
+    assert shell.save_window_geometry(storage, SimpleNamespace(x=None, y=None, width=None, height=None)) is False
+
+
+def test_the_bridge_exports_a_conversation_without_switching_or_leaking(booted, tmp_path) -> None:
+    engine = booted.app.conversation_engine
+    stored = engine.create()
+    exported_id = stored.conversation_id
+    stored.turns.append(ConversationTurn(exported_id, MessageRole.USER, "Böbrek nerede?"))
+    stored.turns.append(ConversationTurn(exported_id, MessageRole.ASSISTANT, "Retroperitoneal bölgede."))
+    stored.turns.append(ConversationTurn(exported_id, MessageRole.SYSTEM, "gizli sistem notu"))
+    engine.store.save(stored)
+    open_before = booted.controller.context.conversation_id
+
+    missing = booted.bridge.export_conversation(str(exported_id), str(tmp_path / "yok"))
+    assert missing == {"ok": False, "error": "Klasör bulunamadı; önce bir klasör seç."}
+    unknown = booted.bridge.export_conversation(str(uuid4()), str(tmp_path))
+    assert unknown == {"ok": False, "error": "Konuşma bulunamadı."}
+
+    first = booted.bridge.export_conversation(str(exported_id), str(tmp_path))
+    assert first["ok"] is True and first["messages"] == 2
+    text = (tmp_path / first["file"]).read_text(encoding="utf-8")
+    assert "Böbrek nerede?" in text and "**Sen:**" in text and "**JARVIS:**" in text
+    assert "gizli sistem notu" not in text, "system turns are not part of the student's transcript"
+
+    # Exporting reads the store; it never activates or switches the open conversation.
+    assert booted.controller.context.conversation_id == open_before
+
+    second = booted.bridge.export_conversation(str(exported_id), str(tmp_path))
+    assert second["ok"] is True and second["file"] != first["file"] and second["file"].endswith("-2.md")
+
+
+def test_daily_brief_reads_each_section_from_its_own_service(booted) -> None:
+    booted.app.reminders.create("Anatomi tekrarı", minutes=120)
+
+    brief = booted.bridge.daily_brief()
+
+    assert brief["ok"] is True
+    from app.core.interaction_policy import _TURKISH_MONTHS, turkish_date
+
+    assert any(month in brief["date"] for month in _TURKISH_MONTHS), "the date speaks Turkish, not the C locale"
+    assert turkish_date(datetime(2026, 9, 15, 12, 0)) == "15 Eylül 2026, Salı"
+    assert brief["reminders_available"] is True
+    assert [item["text"] for item in brief["reminders"]] == ["Anatomi tekrarı"]
+    assert all("due_local" in item for item in brief["reminders"])
+    assert brief["routines_available"] is True and brief["routines"] == []
+    assert brief["tasks_open"] == 0
+    assert brief["notifications_unread"] == booted.bridge.list_notifications()["unread"]
+    medical = brief["medical"]
+    assert medical["available"] is True
+    assert medical["cards_waiting"] == 0 and medical["findings_open"] == 0
+    assert medical["countdown"] is None, "no exam plan means no countdown, not an invented one"
+
+
+def test_conversation_search_finds_words_with_turkish_folding(booted, tmp_path) -> None:
+    engine = booted.app.conversation_engine
+    first = engine.create()
+    first.turns.append(ConversationTurn(first.conversation_id, MessageRole.USER, "Böbrek anatomisini anlatır mısın?"))
+    first.turns.append(ConversationTurn(first.conversation_id, MessageRole.ASSISTANT, "Böbrek retroperitoneal bir organdır ve İDRAR üretir."))
+    engine.store.save(first)
+    second = engine.create()
+    second.turns.append(ConversationTurn(second.conversation_id, MessageRole.USER, "Kalp kapakları nelerdir?"))
+    second.turns.append(ConversationTurn(second.conversation_id, MessageRole.SYSTEM, "böbrek kelimesi gizli sistem notunda"))
+    engine.store.save(second)
+
+    short = booted.bridge.search_conversations("b")
+    assert short == {"ok": False, "error": "Arama için en az 2 karakter yaz."}
+
+    found = booted.bridge.search_conversations("BÖBREK")
+    assert found["ok"] is True and len(found["results"]) == 1, "system turns never match"
+    hit = found["results"][0]
+    assert hit["conversation_id"] == str(first.conversation_id)
+    assert hit["matches"] == 2 and "Böbrek" in hit["excerpt"] and hit["excerpt_role"] == "user"
+
+    dotless = booted.bridge.search_conversations("idrar")
+    assert len(dotless["results"]) == 1, "casefold matches Turkish dotted I"
+
+    nothing = booted.bridge.search_conversations("pankreas")
+    assert nothing["ok"] is True and nothing["results"] == []
+
+
+def test_the_morning_brief_clock_and_line_are_exact_and_honest() -> None:
+    # Due: only past the target, only once per local day, never on nonsense.
+    base = datetime(2026, 9, 15, 8, 30)
+    assert shell.daily_brief_due(base, "08:30", None) is True
+    assert shell.daily_brief_due(base.replace(hour=8, minute=29), "08:30", None) is False
+    assert shell.daily_brief_due(base, "08:30", "2026-09-15") is False, "already sent today"
+    assert shell.daily_brief_due(base, "08:30", "2026-09-14") is True, "yesterday's stamp does not block today"
+    for broken in ("25:00", "08:61", "8h30", "", "08:30:00"):
+        assert shell.daily_brief_due(base, broken, None) is False, broken
+
+    # The line counts what exists and says when nothing does.
+    full = shell.brief_notification_body({
+        "reminders": [{"text": "Anatomi"}, {"text": "Fizyoloji"}],
+        "tasks_open": 1,
+        "medical": {"countdown": {"name": "Komite 2", "days_left": 9},
+                     "next_activity": {"title": "Düzlemler"}, "cards_waiting": 14, "findings_open": 1},
+    })
+    for piece in ("2 hatırlatıcı", "Komite 2: 9 gün kaldı", "sırada Düzlemler", "14 kart", "1 açık bulgu", "1 açık görev"):
+        assert piece in full, piece
+    assert shell.brief_notification_body({}) == "Bugün için bekleyen bir şey görünmüyor."
+
+
+def test_the_bridge_saves_assistant_settings_and_applies_them_live(booted) -> None:
+    bad = booted.bridge.save_desktop_settings({"daily_brief_notification": True, "daily_brief_time": "sabah", "research_enabled": True})
+    assert bad == {"ok": False, "error": "Saat biçimi SS:DD olmalı (örn. 08:30)."}
+
+    before = booted.controller.application
+    result = booted.bridge.save_desktop_settings({
+        "daily_brief_notification": False,
+        "daily_brief_time": "07:15",
+        "research_enabled": False,
+    })
+    assert result["ok"] is True
+    assert result["settings"]["daily_brief_time"] == "07:15"
+    assert result["settings"]["research_enabled"] is False
+
+    application = booted.controller.application
+    assert application is not before, "the runtime was rebuilt with the new preferences"
+    assert application.settings.daily_brief_notification is False
+    assert application.settings.daily_brief_time == "07:15"
+    assert application.research is None, "web research off means the tool is not registered"
+    assert not application.tool_executor.contains("research_web")
+
+
+def test_a_finished_web_research_hands_the_page_its_sources(booted) -> None:
+    from app.core.models import ToolExecutionStatus
+
+    def event(tool, data, error=None):
+        result = SimpleNamespace(status=ToolExecutionStatus.SUCCESS, verified=True, message="", error=error,
+                                 data=data, started_at=None, finished_at=None)
+        return SimpleNamespace(phase="finished", execution_id="x1", tool_name=tool, operation=None, result=result)
+
+    booted.bridge._on_tool_event(event("research_web", {
+        "question": "TUS 2026 ne zaman?",
+        "sources": [{"title": "ÖSYM Takvimi", "url": "https://osym.gov.tr/takvim", "extra": "dropped"}],
+    }))
+    pushes = booted.window.payloads("research_sources")
+    assert pushes == [{"query": "TUS 2026 ne zaman?", "sources": [{"title": "ÖSYM Takvimi", "url": "https://osym.gov.tr/takvim"}]}]
+
+    # Other tools, failed runs and sourceless reports push nothing.
+    booted.bridge._on_tool_event(event("medical_search_library", {"sources": [{"title": "x", "url": "y"}]}))
+    booted.bridge._on_tool_event(event("research_web", {"question": "q", "sources": []}))
+    booted.bridge._on_tool_event(event("research_web", {"question": "q", "sources": [{"title": "t", "url": "u"}]}, error="boom"))
+    assert len(booted.window.payloads("research_sources")) == 1
+
+
+def test_the_bridge_backs_up_the_state_directory_on_demand(booted) -> None:
+    summary = booted.bridge.state_backup_summary()
+    assert summary["ok"] is True and summary["count"] == 0 and summary["databases"] >= 1
+
+    result = booted.bridge.state_backup_now()
+    assert result["ok"] is True and "veritabanı" in result["message"]
+    assert result["summary"]["count"] == 1
+
+    again = booted.bridge.state_backup_now()
+    assert again["ok"] is True and again["summary"]["count"] == 2
+
+
+def test_reminders_have_a_full_surface_on_the_bridge(booted) -> None:
+    empty = booted.bridge.list_reminders()
+    assert empty == {"ok": True, "reminders": []}
+
+    refused = booted.bridge.create_reminder("", "+10")
+    assert refused["ok"] is False and refused["error"]
+
+    created = booted.bridge.create_reminder("Anatomi tekrarı", "+25")
+    assert created["ok"] is True and created["due_local"]
+
+    absolute = booted.bridge.create_reminder("Fizyoloji oku", "23:59")
+    assert absolute["ok"] is True
+
+    nonsense = booted.bridge.create_reminder("Ders", "yarın öğlen")
+    assert nonsense["ok"] is False, "free text is the chat's job; the field takes +dk or HH:MM"
+
+    rows = booted.bridge.list_reminders()["reminders"]
+    # Sorted by due time; near midnight the two could swap, so compare as a set.
+    assert {row["text"] for row in rows} == {"Anatomi tekrarı", "Fizyoloji oku"}
+    target = next(row for row in rows if row["text"] == "Anatomi tekrarı")["reminder_id"]
+
+    unconfirmed = booted.bridge.cancel_reminder(target)
+    assert unconfirmed == {"ok": False, "error": "İptal işlemi onaylanmadı."}
+    cancelled = booted.bridge.cancel_reminder(target, True)
+    assert cancelled["ok"] is True
+    assert {row["text"] for row in booted.bridge.list_reminders()["reminders"]} == {"Fizyoloji oku"}
+
+
+def test_an_archived_conversation_can_come_back(booted) -> None:
+    engine = booted.app.conversation_engine
+    stored = engine.create()
+    stored.turns.append(ConversationTurn(stored.conversation_id, MessageRole.USER, "Arşiv testi"))
+    engine.store.save(stored)
+
+    booted.bridge.archive_conversation(str(stored.conversation_id))
+    listed = booted.bridge.list_conversations()["conversations"]
+    assert next(row for row in listed if row["conversation_id"] == str(stored.conversation_id))["status"] == "archived"
+
+    result = booted.bridge.unarchive_conversation(str(stored.conversation_id))
+    assert result["ok"] is True
+    row = next(row for row in result["conversations"] if row["conversation_id"] == str(stored.conversation_id))
+    assert row["status"] == "active"
+
+    missing = booted.bridge.unarchive_conversation(str(uuid4()))
+    assert missing == {"ok": False, "error": "Konuşma bulunamadı."}
+
+
+def test_open_external_validates_and_uses_the_launcher(booted) -> None:
+    class FakeLauncher:
+        def __init__(self) -> None:
+            self.opened: list[str] = []
+
+        def open(self, uri: str) -> bool:
+            self.opened.append(uri)
+            return True
+
+    launcher = FakeLauncher()
+    booted.bridge._uri_launcher = launcher
+
+    assert booted.bridge.open_external("javascript:alert(1)")["ok"] is False
+    assert booted.bridge.open_external("file:///C:/secret.txt")["ok"] is False
+    assert booted.bridge.open_external("")["ok"] is False
+    assert launcher.opened == [], "nothing invalid ever reaches the launcher"
+
+    result = booted.bridge.open_external("https://osym.gov.tr/takvim")
+    assert result == {"ok": True, "url": "https://osym.gov.tr/takvim"}
+    bare = booted.bridge.open_external("nobelprize.org")
+    assert bare["ok"] is True and bare["url"] == "https://nobelprize.org"
+    assert launcher.opened == ["https://osym.gov.tr/takvim", "https://nobelprize.org"]

@@ -4,6 +4,22 @@ Last verified: 9 September 2026
 
 ## Current status
 
+- Review of PRs #30/#31 (9 September 2026): reproduced and repaired group
+  lesson facts being inherited by individual muscles (including generated
+  quiz answers), source English-name replacement, and late selection/mesh
+  replies replacing a newer selection or clearing a newly opened scene.
+  Of 176 atlas-to-lesson links, 144 primary-name matches inherit teaching;
+  32 synonym-only matches retain a related-lesson link, without inherited
+  group facts or quizzes. Ambiguous aliases are refused deterministically.
+  No mesh files, user study records or security/core boundaries were changed.
+  Verification: `scripts/verify.py` passed (2,472 passed, 6 skipped, 278.95 s),
+  including dependency integrity and compilation. Targeted anatomy/atlas/Nova
+  tests: 156 passed. A read-only check of the installed atlas loaded all 1,597
+  supplemental cards (1,724 including curated cards), kept rectus femoris's
+  actual model available, and verified its group reference and empty quiz.
+  This review used deterministic windowless UI regressions; no new live
+  microphone/provider qualification or clinical visual accuracy claim is made.
+
 - Anatomy Lab inspection upgrade (8 September 2026): fullscreen/expanded stage,
   camera presets and Fit, isolated structure inspection, bounded supersampling,
   adjustable matte lighting, separated labels and WebGL-loss recovery implemented.
@@ -176,6 +192,281 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 142 px from every Medical screen — including the Anatomy Lab, whose stage grew
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
+
+## Mobile companion: the PC's JARVIS from an Android phone (17 September 2026)
+
+A first phone release, built as a narrow authenticated HTTP surface inside
+the desktop process rather than a second backend: `app/mobile/server.py`
+binds a small `ThreadingHTTPServer` to 127.0.0.1 only and Tailscale Serve
+carries it to the phone over the private network with HTTPS
+(`docs/MOBILE.md`). A message from the phone runs through
+`DesktopController.submit_command` with the phone's own `Context`, so it
+enters the same core, validation, permission and conversation pipeline as
+a desktop message and lands in the same SQLite records the desktop lists;
+the desktop's busy flag and message list stay untouched.
+
+- **Enrollment** (`app/mobile/sessions.py`): a single-use, ten-minute
+  pairing code minted on the PC (Ayarlar › Telefon or
+  `scripts/mobile_pair.py`) exchanged over HTTPS for a 30-day session in an
+  HttpOnly, SameSite=Strict cookie; codes and tokens stored as SHA-256
+  digests only; five attempts a minute per client; revocation from the PC
+  ends the phone's next request and its live channel. Mutations need the
+  page's own header and a matching origin (Host or X-Forwarded-Host
+  behind Serve); there are no CORS headers at all.
+- **PWA** (`app/mobile/web/`): three tabs - Sohbet, Görevler, Ayarlar -
+  on the desktop's own tokens, a server-sent-events channel for streamed
+  replies and approvals, a service worker that caches only the versioned
+  shell and never an API response, an offline page that says an offline
+  shell is not an offline assistant. Each message carries a client id: a
+  retry after a dropped connection finds the existing turn instead of
+  running the command twice, "sonuç bilinmiyor" is shown until the PC
+  answers, and a message the PC never received offers an explicit
+  "Yeniden gönder" - never an automatic one.
+- **Approvals** ride the bridge's existing single-use tokens: the phone
+  sees the same request the desktop sees and either side's decision
+  resolves the one future; stale, repeated or unauthenticated decisions
+  are refused. Task pause/resume/cancel call `TaskControlService` and are
+  offered only when the task's state allows.
+- Tailscale is not installed on the development PC: the Serve steps were
+  checked against the current documentation and written down, not run;
+  real Android, Tailscale and mobile-data checks remain for the user.
+
+## Night additions: cards, rehearsal, weekly summary, backups, exports (15 September 2026)
+
+Built overnight on explicit standing authorization, each verified live in
+the real window on a copy of the study store and pinned by tests
+(`scripts/verify.py`: 2,526 passed, 4 skipped):
+
+- **Kartlar** — spaced repetition cut only from recorded material: curated
+  anatomy facts, terminology, questions answered wrong in scored papers,
+  histology crops, and image occlusion of labels the lecture page itself
+  prints (PDF text layer; a scanned page says so). Documented SM-2 variant,
+  daily new-card budget, previews on every grade, idempotent answers.
+  A grade schedules repetition and counts as study time; it never moves
+  mastery, findings or results.
+- **Komite provası** — a timed paper in the real committee's shape from the
+  imported committee questions only, grouped by subject, shortfalls stated,
+  never padded across subjects; per-subject result like the real report.
+- **Haftalık özet** on İlerleme — minutes, answers (accuracy over scored
+  only), cards, findings, adherence, streak and exam countdowns, computed
+  from records alone and saying so.
+- **Yedekler** — weekly background safety copy when due plus a quick
+  action; SQLite backup API, temp-then-rename, newest three kept, repair
+  snapshots spared, full disk refused; restore stays manual by design
+  (`JARVIS_MEDICAL_AUTO_BACKUP`).
+- **Exports** — a note or a paper as printable Markdown into a chosen
+  folder: the question sheet carries no keys; the answer key labels
+  unscored items and lists sources; nothing is overwritten. A started plan
+  activity wears a live elapsed badge.
+
+The same night, on "genel JARVIS'e de" (the general shell, not only the
+Academy):
+
+- **Gunun ozeti** on the command centre — reminders, routines, open tasks,
+  unread notifications and the Academy's day (next activity, waiting cards,
+  open findings, nearest exam countdown) read live from their services;
+  a section that cannot answer says so; nothing is estimated. Rows jump to
+  their screens; the date is written in Turkish words, not the C locale.
+- **Konusma disa aktarma** — the open chat as Markdown into a picked
+  folder ("Sen:"/"JARVIS:", creation date, collision-safe filename);
+  reading for export never activates or switches the open conversation;
+  system turns stay out.
+- **Odak sayaci** — a 25-minute focus countdown as a topbar chip
+  (quick action or Ctrl+Shift+F, click to stop, chime at the end); purely
+  a clock, records nothing and claims no study time.
+- **Pencere gecmisi** — the window reopens at the frame it was closed in
+  (first run stays maximized); nonsense frames (too small, off-screen,
+  corrupt file) fall back to defaults instead of trapping the user.
+- A native **folder picker** on the bridge serves both exports.
+- **Drawer date groups** - the conversations drawer groups its rows
+  by local calendar days (Bugün, Dün, Bu hafta, Bu ay, Daha eski), so
+  a hundred stored conversations read as a timeline instead of a wall;
+  search results stay ungrouped because they are matches, not history.
+- **Exam chip on the topbar** - the nearest committee countdown sits
+  next to the clock permanently ("🎓 Komite 2 · 9 gün", amber within a
+  week, "bugün" on the day, hidden past the date or with no plan);
+  clicking it opens the study plan. Reminder changes refresh the home
+  brief immediately instead of waiting out its one-minute throttle.
+- **Research history** - the Araştırma screen lists the newest cached
+  questions (the model's own chat-turn queries included) as chips; one
+  click refills and reruns, served instantly from the cache, expired
+  entries simply refreshing through the normal path. The command
+  palette (Ctrl+K) gains the night's features: the focus timer, a
+  reminder jump, conversation export and an on-demand state backup.
+- **Sources open in the browser** - the source chips under answers
+  and the URLs in the Araştırma report are clickable: a validated
+  http(s) open in the default browser (same validation as the
+  system-control tool; file:, javascript: and friends refuse in
+  words). The chip row also carries a "rapor" chip that reopens the
+  full cached report. Chips live with the turn that earned them; a
+  restart shows the plain text again and the report stays in the
+  research cache.
+- **Markdown in answers** - assistant bubbles render the safe subset
+  the model actually writes (bold, italics, inline code, simple lists,
+  heading lines) after escaping everything, so \*\*15 Mart 2026\*\* shows
+  as bold instead of asterisks and no HTML from the model or a web
+  page can ever execute. Multiplication signs stay multiplication;
+  user bubbles stay plain text.
+- **Unarchive** - a right-click on an archived conversation offers
+  "arşivden çıkar" behind the usual confirm dialog; the record returns
+  to the active list unchanged.
+- **Weekly summary on paper** - the İlerleme panel's weekly report
+  exports as Markdown (kind "week" of the same export path): totals,
+  a day table, countdowns and the report's own honesty note. Marked
+  answers and finished-paper scoring stay separate facts on paper,
+  because a paper's scored total includes questions left blank.
+- **Reminders got a surface** - the Görevler screen now lists active
+  reminders from the service (text, local due time, honest delivery
+  states like "yeniden denenecek"), cancels one behind the same
+  confirm dialog the rest of the app uses, and creates one from a
+  two-field form: "+25" minutes from now or "14:30" today (tomorrow if
+  already past). Free-text times stay the chat's job; the field says
+  so instead of guessing.
+- **General state backups** - conversations, reminders, routines,
+  notifications, memory and task records (every first-level SQLite in
+  the state directory) now get the same treatment the medical store
+  already had: a weekly consistent copy via SQLite's backup API into
+  one stamped folder, newest three kept, tmp-then-rename so an
+  interrupted run never poses as a good backup, disk-space refusal in
+  words, and a "Şimdi yedekle" button with a live status chip on the
+  Ayarlar > Asistan card (`JARVIS_STATE_AUTO_BACKUP`). Restoring stays
+  manual by design.
+- **Web sources under answers** - when a chat turn runs the research
+  tool, the reply wears a "Web kaynakları" chip row: the bare host of
+  each source, the full title and URL in the tooltip, and a click
+  reruns the exact research on its own screen (served from the cache).
+  Only what the tool actually returned is forwarded - no result, no
+  chips - and a new command clears pending sources so they can never
+  attach to an unrelated reply.
+- **Assistant settings in the UI** - a new Ayarlar > Asistan card
+  edits the morning brief (on/off, time) and web research (on/off)
+  without environment variables: values persist in the non-secret
+  profile next to the model choice, saving rebuilds the runtime live
+  (turning research off unregisters the tool and dims the WEB light on
+  the spot), and explicit environment variables keep precedence over
+  the profile exactly like the model name does.
+- **Morning brief notification** - once a day, at the configured local
+  time (default 08:30, `JARVIS_DAILY_BRIEF_TIME` / off with
+  `JARVIS_DAILY_BRIEF_NOTIFICATION=false`), one OS notification with
+  the day's actual holdings: reminders, the nearest committee
+  countdown, the next plan activity, waiting cards, open findings,
+  open tasks - or the honest "nothing pending today". Reads services,
+  never the model; the sent date is stamped to disk before publishing,
+  so a crash can skip a morning but never double-send one; a launch
+  after the target time catches up the same day.
+- **Conversation search** - a search box in the conversations drawer
+  finds stored chats by what was said in them, not just titles: visible
+  turns only (system notes never match), Turkish-aware folding (dotted
+  and dotless i both ways, offsets kept exact for the excerpt), a
+  highlighted excerpt with the speaker, match counts, Enter opens the
+  top hit and Escape restores the list.
+
+On "web arastirmasi da ekle" (mid-night request): the research pipeline
+that always existed finally has a backend that works out of the box.
+
+- **DuckDuckGo provider (default)** - keyless search over the no-script
+  HTML endpoint; organic-result redirects are decoded to their real
+  URLs and every destination passes the same URL policy as any fetch;
+  ad links never decode, so they never appear. Region tr-tr, safe
+  search on, day/month/year ranges mapped.
+- **Gemini grounding provider (optional)** - Google Search grounding
+  over the stored key for anyone with grounding quota
+  (`JARVIS_RESEARCH_PROVIDER=gemini`); the generated prose is discarded,
+  only the grounding chunks become hits, and the pipeline still fetches
+  and cites every page itself. Ali's free tier returned 429 for
+  grounded calls (plain generation fine), which is exactly why it is
+  not the default.
+- **Research on by default** - `research_enabled` now defaults to true
+  and the SYSTEM panel shows it ready; a provider whose requirement is
+  missing leaves it off honestly instead of failing at first use.
+- **The model reaches for it by itself** - the tool schema selector
+  exposes `research_web` for arastir/guncel/haber/kaynak requests, the
+  tool description says when to use it, and medical tutor turns carry
+  it too: course material stays the medical source of truth, but exam
+  calendars, application dates and official announcements are looked
+  up and cited, never recalled. Verified live in chat: "2026 TUS 1.
+  donem ne zaman?" now researches and answers "15 Mart 2026" with the
+  OSYM calendar as the source, instead of "arama aracim yok".
+- **Extractor fix** - a meta tag with neither property nor name
+  (charset, http-equiv, bare content) crashed the whole page fetch;
+  DuckDuckGo's own results page tripped it. Now ignored, with a
+  regression test.
+
+## Medical Academy: the user test of 13 September 2026 repaired (14 September 2026)
+
+An eighteen-finding user test of the Academy on 96e5f41 (report under
+`docs/qa/2026-09-13-tip-akademisi/`) was reproduced on a copy of the tester's
+database and repaired end to end; `DUZELTME_RAPORU.md` beside the report has
+the per-finding status and the live evidence.
+
+- **One scoring decision.** A question the bank itself labelled *puansız* had
+  been scored, learned and read as a finding. `review.rule_decision` (and the
+  reviewer's `decision`) is now the only judge, applied by the bank picker,
+  the paper, the answer, the finish, the analysis and the learning record;
+  study-only items are shown, explained and listed under *Değerlendirme dışı*.
+  Blanks are blanks, not weak concepts. A paper is named for what it holds.
+  `scripts/repair_medical_learning.py` corrected the derived summaries from
+  the source records with a backup and a ledger.
+- **Histology.** Exact concept matching (kübik ≠ yassı), the answer hidden on
+  every screen during a timed session, a printed answer detected from the
+  PDF text layer with a mask that hides it, a session clock of its own.
+- **Bank papers.** Document, page range, professor and figure filters applied;
+  an empty result explained; study items only on request; the form keeps its
+  draft; the effective context shown before generation, with the document
+  taking precedence over a stale session topic and a note refused when the
+  pages do not cover the topic.
+- **Reach and honesty.** The bank pages through all 718 questions; a
+  professor's questions fold thirty at a time; sources are buttons that open
+  the page; statuses and concept names are Turkish and readable; badges
+  follow the events; date and time fields follow the theme (contrast 16.5:1).
+- **Anatomy Lab.** Esc leaves either kind of fullscreen and stays on the lab;
+  the licence line folds; a landmark the model has no pin for is asked by its
+  description, never as "the pinned structure".
+- **Jobs.** A paper or note the model writes has an identity and a visible
+  end state that survives reload and restart, with a retry; the unresolved
+  test case turned out to be a paper whose only question the source review
+  quarantined — now a row with the reason, not a faded toast.
+
+Open: a physical keyboard for the fullscreen Esc (desktop control was
+declined; the browser input pipeline was used), voice, and a clinical review
+of every question.
+
+## The window that went to the tray and never came back (10 September 2026)
+
+Closing JARVIS hid it to the tray, and from then on the desktop shortcut did
+nothing: the second launch found the running instance, signalled it and
+exited, and no window appeared. The instance was not crashed — it was waiting
+for itself.
+
+pywebview raises `closing` on the WinForms UI thread. The handler hid the
+window, which told the bridge the window had become unattended, which recorded
+a diagnostic, which the bridge pushes to the page — and a push evaluates
+JavaScript, which the EdgeChromium backend can only run on that same UI
+thread. The thread blocked on a semaphore it alone could release. The
+activation signal from the next launch then queued behind it in
+`SingleInstanceGuard.watch → NovaTrayActions.open → window.show → Invoke`, and
+waited there. Read-only stacks (py-spy, no locals) showed both chains.
+
+The repair is one thread. `WindowWorker` owns a single queue for work that
+must not run on the UI thread: the closing handler now cancels the close and
+returns at once, leaving the hide and the tray notice to that thread; a push
+raised on the UI thread — a window event recording a diagnostic — is deferred
+to it instead of evaluated inline; and the activation signal's show goes
+through the same queue, so a relaunch arriving while the hide is still on its
+way cannot be overtaken by it. A job whose key is already waiting is not
+queued twice, a failing job is recorded rather than swallowed, and the thread
+survives it.
+
+A second fault was hiding behind the first: `window.show()` makes a minimised
+window visible without lifting it off the taskbar, so the shortcut looked dead
+for a minimised window too. `NovaTrayActions.open` now calls pywebview's
+`restore()` as well.
+
+Verified on this machine with the shipped shortcut and a real `WM_CLOSE`, not
+a harness: open from the shortcut, close, open again — three rounds, each time
+the same process, responding, one instance — then minimise and reopen. The
+deadlocked instance from before the fix could not be shut down normally (its
+UI thread was blocked) and was stopped; nothing else was touched.
 
 ## The study workflow in the live window (9 September 2026)
 

@@ -44,6 +44,16 @@ BASIS_LABELS_TR: dict[str, str] = {
     "none": "Dayanak kaydedilmedi",
 }
 STATUS_LABELS_TR: dict[str, str] = {"eligible": "Puanlı sınava uygun", "study_only": "Yalnız çalışma", "unreadable": "Okunamıyor"}
+STATUS_REASONS_TR: dict[str, str] = {
+    "unreadable": "Okunamıyor olarak işaretlendi.",
+    "no_label": "Adı kaydedilmedi.",
+    "weak_basis": "Adın dayanağı yetersiz: öğrenci onayı ya da sayfadaki başlık gerekli.",
+    "answer_visible": "Cevap görselin üzerinde yazıyor: kör sınava girmez. Yazıyı maskele ya da bölgeyi daralt.",
+    "eligible": "",
+}
+# The grace a late answer gets after a timed item's clock runs out: the page
+# sends the answer it had at the bell, and a slow bridge is not a slow student.
+TIMED_GRACE_SECONDS = 5
 QUALITY_LABELS_TR: dict[str, str] = {"specific": "Özgül", "partial": "Kısmen", "generic": "Genel", "wrong": "Yanlış", "unassessed": "Değerlendirilmedi"}
 ELIGIBLE_BASES = frozenset({"user_confirmed", "page_caption"})
 MAX_SPECIMENS_PER_SESSION = 10
@@ -106,19 +116,105 @@ class HistologyBank:
         return {key: round(number, 4) for key, number in region.items()}
 
     def _status(self, specimen: dict[str, Any]) -> str:
-        if specimen.get("unreadable"):
-            return "unreadable"
-        if specimen.get("label") and specimen.get("basis") in ELIGIBLE_BASES:
-            return "eligible"
-        return "study_only"
+        return self._status_and_reason(specimen)[0]
 
-    def _concept_for(self, label: str) -> str:
-        if self._concepts is not None and label:
-            for concept in self._concepts.find(label, limit=3):
-                if concept.subject == "histology":
+    @staticmethod
+    def _status_and_reason(specimen: dict[str, Any]) -> tuple[str, str]:
+        if specimen.get("unreadable"):
+            return "unreadable", "unreadable"
+        if not specimen.get("label"):
+            return "study_only", "no_label"
+        if specimen.get("basis") not in ELIGIBLE_BASES:
+            return "study_only", "weak_basis"
+        # A name printed inside the crop is on the picture: a blind test of
+        # it would test reading. A mask over that text puts it back.
+        if specimen.get("answer_visible") and not specimen.get("masks"):
+            return "study_only", "answer_visible"
+        return "eligible", "eligible"
+
+    def _concept_for(self, label: str, latin: str = "") -> str:
+        """The concept a specimen's answer is learning evidence for.
+
+        Only an exact name — the concept's own name or one of its recorded
+        aliases, folded — links the two. "Tek katlı kübik epitel" shares three
+        of four words with "Tek katlı yassı epitel"; a nearest-match lookup
+        would file the cuboid answer under the squamous concept, so nearness
+        is no link at all. An unmatched answer gets its own stable id.
+        """
+        names = [_fold(name) for name in (label, latin) if name and _fold(name)]
+        if self._concepts is not None and names:
+            for concept in self._concepts.by_subject("histology"):
+                known = {_fold(concept.name)} | {_fold(alias) for alias in concept.aliases}
+                known.discard("")
+                if any(name in known for name in names):
                     return concept.concept_id
         slug = re.sub(r"[^a-z0-9]+", "_", _fold(label)).strip("_") or "unknown"
         return f"histology.specimen.{slug}"
+
+    def _answer_visible(self, specimen: dict[str, Any]) -> bool | None:
+        """Is the specimen's own name printed inside its rectangle? None when the page cannot say."""
+        names = [name for name in (specimen.get("label"), specimen.get("latin")) if name]
+        if not names:
+            return False
+        region = specimen.get("region") or {}
+        try:
+            text = self._pipeline.text_in_region(specimen["document_id"], int(specimen["page_number"]), (region["x"], region["y"], region["w"], region["h"]))
+        except Exception:
+            text = None
+        if text is None:
+            return None
+        folded = " " + " ".join(_fold(text).split()) + " "
+        return any(f" {_fold(name)} " in folded for name in names if _fold(name))
+
+    def _refresh_visibility(self, specimen: dict[str, Any]) -> None:
+        specimen["answer_visible"] = self._answer_visible(specimen)
+
+    def hide_printed_answer(self, specimen_id: str) -> dict[str, Any]:
+        """Mask the specimen's own name where it is printed inside the crop.
+
+        The rectangles come from the page's text layer, never from guessing;
+        when the name is printed nowhere the page can locate, nothing is
+        masked and the specimen stays study-only until the region is redrawn.
+        """
+        specimen = self._require(specimen_id)
+        region = specimen.get("region") or {}
+        added = 0
+        # The page may print the name with or without its diacritics, or split
+        # over a line; the whole name is tried first, then its longer words.
+        needles: list[str] = []
+        for name in (specimen.get("label"), specimen.get("latin")):
+            if not name:
+                continue
+            for form in (name, _fold(name)):
+                if form and form not in needles:
+                    needles.append(form)
+        words = [word for needle in list(needles) for word in needle.split() if len(word) >= 4]
+        for x, y, w, h in self._search_boxes(specimen, needles) or self._search_boxes(specimen, words):
+            if True:
+                # Page fractions → crop fractions, kept only where the two overlap.
+                left, top = max(x, region["x"]), max(y, region["y"])
+                right, bottom = min(x + w, region["x"] + region["w"]), min(y + h, region["y"] + region["h"])
+                if right <= left or bottom <= top:
+                    continue
+                pad = 0.01
+                points = [[max(0.0, (left - region["x"]) / region["w"] - pad), max(0.0, (top - region["y"]) / region["h"] - pad)], [min(1.0, (right - region["x"]) / region["w"] + pad), min(1.0, (bottom - region["y"]) / region["h"] + pad)]]
+                self.add_mask(specimen_id, kind="rect", points=points, label="ad gizlendi")
+                added += 1
+        specimen = self._require(specimen_id)
+        specimen["hidden_answer_masks"] = added
+        self._forget_crop(specimen_id)
+        return self._save(specimen, f"Görseldeki ad {added} maskeyle gizlendi." if added else "Görselde gizlenecek ad bulunamadı; bölgeyi daralt.")
+
+    def _search_boxes(self, specimen: dict[str, Any], needles: list[str]) -> list[tuple[float, float, float, float]]:
+        boxes: list[tuple[float, float, float, float]] = []
+        seen: set[tuple[float, float, float, float]] = set()
+        for needle in needles:
+            for box in self._pipeline.text_boxes(specimen["document_id"], int(specimen["page_number"]), needle):
+                rounded = tuple(round(value, 4) for value in box)
+                if rounded not in seen:
+                    seen.add(rounded)
+                    boxes.append(box)
+        return boxes
 
     def add_specimen(
         self,
@@ -175,8 +271,11 @@ class HistologyBank:
             "created_at": now,
             "history": [{"at": now, "note": "Örnek eklendi."}],
         }
-        specimen["status"] = self._status(specimen)
+        self._refresh_visibility(specimen)
+        specimen["concept_id"] = self._concept_for(specimen["label"], specimen["latin"]) if specimen["label"] else None
+        specimen["status"], reason = self._status_and_reason(specimen)
         specimen["status_label"] = STATUS_LABELS_TR[specimen["status"]]
+        specimen["status_reason"] = STATUS_REASONS_TR.get(reason, "")
         self._store.save_record(SPECIMEN_KIND, specimen["specimen_id"], specimen, subject_key=document_id)
         return specimen
 
@@ -186,13 +285,22 @@ class HistologyBank:
     def specimens(self, *, document_id: str | None = None, eligible_only: bool = False) -> list[dict[str, Any]]:
         # Oldest first: the order the student added them in is the order they expect.
         items = self._store.list_records(SPECIMEN_KIND, subject_key=document_id, limit=1000, newest_first=False)
+        # A specimen saved before the page was read for a printed answer is
+        # read now, once, so an old specimen cannot slip into a blind test
+        # with its name on the picture.
+        for index, item in enumerate(items):
+            if "answer_visible" not in item and item.get("label"):
+                self._refresh_visibility(item)
+                items[index] = self._save(item, "Görselde ad denetimi yapıldı.")
         if eligible_only:
             items = [item for item in items if item.get("status") == "eligible"]
         return items
 
     def _save(self, specimen: dict[str, Any], note: str = "") -> dict[str, Any]:
-        specimen["status"] = self._status(specimen)
+        specimen["concept_id"] = self._concept_for(specimen.get("label", ""), specimen.get("latin", "")) if specimen.get("label") else None
+        specimen["status"], reason = self._status_and_reason(specimen)
         specimen["status_label"] = STATUS_LABELS_TR[specimen["status"]]
+        specimen["status_reason"] = STATUS_REASONS_TR.get(reason, "")
         specimen["basis_label"] = BASIS_LABELS_TR.get(specimen.get("basis", "none"), specimen.get("basis", ""))
         if note:
             specimen.setdefault("history", []).append({"at": self._clock().isoformat(), "note": note})
@@ -221,6 +329,7 @@ class HistologyBank:
         if magnification is not None:
             specimen["magnification"] = " ".join(str(magnification).split())[:40] or None
         specimen["basis"] = "user_confirmed"
+        self._refresh_visibility(specimen)
         return self._save(specimen, f"Ad onaylandı: {name}.")
 
     def update_specimen(self, specimen_id: str, fields: dict[str, Any]) -> dict[str, Any]:
@@ -252,6 +361,8 @@ class HistologyBank:
             notes.append("okunamıyor" if specimen["unreadable"] else "okunuyor")
         if specimen.get("label") and specimen.get("basis") == "none":
             raise ValueError("Adı olan bir örneğin dayanağı 'none' olamaz.")
+        if "label" in fields or "latin" in fields:
+            self._refresh_visibility(specimen)
         return self._save(specimen, "Güncellendi: " + ", ".join(notes) + "." if notes else "")
 
     def delete_specimen(self, specimen_id: str) -> bool:
@@ -263,19 +374,43 @@ class HistologyBank:
     # the image: a crop, and masks kept apart from it
     # ------------------------------------------------------------------
 
-    def crop(self, specimen_id: str, *, scale: float = CROP_SCALE) -> bytes:
+    def crop(self, specimen_id: str, *, scale: float = CROP_SCALE, masked: bool = False) -> bytes:
+        """The specimen's image: the plain crop, or the crop with its masks painted on.
+
+        The plain crop is the page as printed and is never altered; the masked
+        one is what a practical shows when the answer is printed on the
+        picture. Both are renderings of the page, cached apart.
+        """
         specimen = self._require(specimen_id)
-        key = f"crop:{specimen_id}:{scale}"
+        key = f"crop:{specimen_id}:{scale}" + (":masked" if masked else "")
         cached = self._store.get_media(key)
         if cached is not None:
             return cached
         region = specimen["region"]
-        png = self._pipeline.render_region(specimen["document_id"], specimen["page_number"], (region["x"], region["y"], region["w"], region["h"]), scale=scale)
+        rects: list[tuple[float, float, float, float]] = []
+        for mask in specimen.get("masks", []) if masked else []:
+            points = mask.get("points") or []
+            if mask.get("kind") == "rect" and len(points) == 2:
+                (x0, y0), (x1, y1) = points
+                rects.append((min(x0, x1), min(y0, y1), abs(x1 - x0), abs(y1 - y0)))
+            elif points:
+                xs, ys = [p[0] for p in points], [p[1] for p in points]
+                rects.append((min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)))
+        png = self._pipeline.render_region(specimen["document_id"], specimen["page_number"], (region["x"], region["y"], region["w"], region["h"]), scale=scale, masks=rects)
         self._store.put_media(key, "histology_crop", png)
         return png
 
-    def crop_data_url(self, specimen_id: str) -> str:
-        return "data:image/png;base64," + base64.b64encode(self.crop(specimen_id)).decode("ascii")
+    def _forget_crop(self, specimen_id: str) -> None:
+        """A mask changed: the masked rendering is stale, the plain one is not."""
+        delete = getattr(self._store, "delete_media", None)
+        if callable(delete):
+            try:
+                delete(f"crop:{specimen_id}:{CROP_SCALE}:masked")
+            except Exception:
+                pass
+
+    def crop_data_url(self, specimen_id: str, *, masked: bool = False) -> str:
+        return "data:image/png;base64," + base64.b64encode(self.crop(specimen_id, masked=masked)).decode("ascii")
 
     def add_mask(self, specimen_id: str, *, kind: str = "rect", points: list[list[float]] | None = None, label: str = "") -> dict[str, Any]:
         """An annotation over the crop, stored beside it; the crop and the page stay untouched."""
@@ -291,12 +426,14 @@ class HistologyBank:
             raise ValueError("Maske noktaları kırpma alanının içinde (0-1) olmalı.")
         mask = {"mask_id": new_id("mask"), "kind": kind, "points": coordinates, "label": " ".join(str(label or "").split())[:80], "created_at": self._clock().isoformat()}
         specimen.setdefault("masks", []).append(mask)
+        self._forget_crop(specimen_id)
         self._save(specimen, "Maske eklendi.")
         return mask
 
     def remove_mask(self, specimen_id: str, mask_id: str) -> dict[str, Any]:
         specimen = self._require(specimen_id)
         specimen["masks"] = [item for item in specimen.get("masks", []) if item.get("mask_id") != mask_id]
+        self._forget_crop(specimen_id)
         return self._save(specimen, "Maske kaldırıldı.")
 
     def source(self, specimen_id: str) -> dict[str, Any]:
@@ -325,12 +462,39 @@ class HistologyBank:
         }
 
     def payload(self, specimen: dict[str, Any], *, reveal: bool) -> dict[str, Any]:
-        """What the page may show: during a test the answer, the features and the labels stay hidden."""
-        shared = {key: specimen.get(key) for key in ("specimen_id", "document_id", "document_title", "page_number", "region", "status", "status_label", "basis", "basis_label", "exposures", "topic_id", "created_at", "masks")}
+        """What the page may show: during a test the answer, the features and the labels stay hidden.
+
+        Hidden means hidden everywhere the page could print it: the name, the
+        Latin, the features, the page caption, the model's description, and
+        the document title and page number too (a lecture called "Epitel
+        Doku" names the tissue family). Only the crop and the stain remain.
+        """
+        shared = {key: specimen.get(key) for key in ("specimen_id", "document_id", "page_number", "region", "status", "status_label", "status_reason", "basis", "basis_label", "exposures", "topic_id", "created_at", "masks", "answer_visible", "concept_id")}
         shared["source_changed"] = self.source(specimen["specimen_id"])["changed"]
         if not reveal:
-            return {**shared, "stain": specimen.get("stain") if specimen.get("basis") == "user_confirmed" else None}
-        return {**shared, **{key: specimen.get(key) for key in ("label", "latin", "stain", "magnification", "features", "notes", "caption_excerpt", "model_description", "model_labels", "confusable_with", "history")}}
+            hidden = {**shared, "document_title": "", "page_number": None, "document_id": None, "concept_id": None, "masked": True, "stain": specimen.get("stain") if specimen.get("basis") == "user_confirmed" else None}
+            return hidden
+        return {**shared, "document_title": specimen.get("document_title"), "masked": False, **{key: specimen.get(key) for key in ("label", "latin", "stain", "magnification", "features", "notes", "caption_excerpt", "model_description", "model_labels", "confusable_with", "history")}}
+
+    def concept_label(self, concept_id: str) -> str:
+        """The name of the specimen a ``histology.specimen.*`` concept stands for, or ""."""
+        if not concept_id.startswith("histology.specimen."):
+            return ""
+        for specimen in self.specimens():
+            if specimen.get("concept_id") == concept_id and specimen.get("label"):
+                return str(specimen["label"])
+        return ""
+
+    def under_test(self) -> set[str]:
+        """Specimens an open timed session is still asking about: their answers are off every screen."""
+        hidden: set[str] = set()
+        for session in self._store.list_records(SESSION_KIND, subject_key="timed", limit=50):
+            if session.get("status") != "open":
+                continue
+            for item in session.get("items", []):
+                if item.get("answer") is None:
+                    hidden.add(str(item.get("specimen_id")))
+        return hidden
 
     # ------------------------------------------------------------------
     # sessions
@@ -405,6 +569,17 @@ class HistologyBank:
             return self.session_payload(session)
         specimen = self._require(specimen_id)
         given = " ".join(str(text or "").split())[:120]
+        if session.get("mode") == "timed" and not timed_out and item.get("shown_at"):
+            # The bell is the session's, not the page's: an answer that
+            # arrives after the item's time (plus a short grace for the
+            # bridge) is recorded as it was typed, credited as late.
+            try:
+                shown = datetime.fromisoformat(str(item["shown_at"]))
+                elapsed = (self._clock() - shown).total_seconds()
+            except (TypeError, ValueError):
+                elapsed = 0.0
+            if elapsed > int(session.get("seconds") or 0) + TIMED_GRACE_SECONDS:
+                timed_out = True
         names = [specimen.get("label", ""), specimen.get("latin", "")]
         correct = (not timed_out) and identification_matches(given, [name for name in names if name])
         quality, features_named, note, assessor = "unassessed", [], "", "none"
@@ -421,7 +596,7 @@ class HistologyBank:
             note = "Model kapalı: açıklama kaydedildi, değerlendirilmedi."
         event_id = None
         if item.get("scored"):
-            concept_id = self._concept_for(specimen.get("label", ""))
+            concept_id = specimen.get("concept_id") or self._concept_for(specimen.get("label", ""), specimen.get("latin", ""))
             question = Question(question_id=f"histology-{specimen_id}", subject="histology", stem=f"Histoloji örneği: {specimen.get('label', '')}", options=[], correct_key=None, topic_id=specimen.get("topic_id"), concept_ids=[concept_id])
             self._learning.record(question, bool(correct))
             if self._understanding is not None:
@@ -480,8 +655,10 @@ class HistologyBank:
     def overview(self) -> dict[str, Any]:
         items = self.specimens()
         counts = {status: sum(1 for item in items if item.get("status") == status) for status in STATUS_LABELS_TR}
+        hidden = self.under_test()
         return {
-            "specimens": [self.payload(item, reveal=True) for item in items[:200]],
+            "specimens": [self.payload(item, reveal=item["specimen_id"] not in hidden) for item in items[:200]],
+            "under_test": sorted(hidden),
             "counts": counts,
             "total": len(items),
             "empty_state": EMPTY_STATE_TR if not items else "",

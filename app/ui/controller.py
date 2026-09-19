@@ -169,6 +169,83 @@ class DesktopController:
             for conversation in conversations[: max(1, limit)]
         ]
 
+    def search_conversations(self, query: str, limit: int = 12) -> list[dict[str, object]]:
+        """Stored conversations whose visible turns mention the query.
+
+        Matching is casefolded in Python so Turkish dotted and dotless I
+        behave (SQL LIKE only folds ASCII). Each hit carries an excerpt
+        around the first match; newest conversations come first.
+        """
+        def fold(text: str) -> str:
+            # Turkish-aware and length-preserving: casefold() turns the
+            # dotted capital i into "i" plus a combining dot, which both
+            # misses matches and skews excerpt offsets. Mapping the two
+            # Turkish capitals first and then lower() keeps offsets exact.
+            return text.replace("İ", "i").replace("I", "ı").lower()
+
+        needle = fold(" ".join(str(query or "").split()))
+        if not needle:
+            return []
+        results: list[dict[str, object]] = []
+        conversations = sorted(
+            self.application.conversation_engine.list(),
+            key=lambda item: (item.updated_at, item.created_at),
+            reverse=True,
+        )
+        for conversation in conversations:
+            turns = self._visible_turns(conversation)
+            matches = 0
+            excerpt = ""
+            excerpt_role = ""
+            for message in turns:
+                text = " ".join(message.text.split())
+                folded = fold(text)
+                if needle not in folded:
+                    continue
+                matches += 1
+                if not excerpt:
+                    start = folded.index(needle)
+                    begin = max(0, start - 40)
+                    end = min(len(text), start + len(needle) + 60)
+                    prefix = "…" if begin else ""
+                    suffix = "…" if end < len(text) else ""
+                    excerpt = f"{prefix}{text[begin:end]}{suffix}"
+                    excerpt_role = message.role
+            title = self.conversation_title(conversation)
+            if not matches and needle not in fold(title):
+                continue
+            results.append(
+                {
+                    "conversation_id": str(conversation.conversation_id),
+                    "title": title,
+                    "status": conversation.status.value,
+                    "matches": matches,
+                    "excerpt": excerpt,
+                    "excerpt_role": excerpt_role,
+                    "turn_count": len(turns),
+                    "updated_at": conversation.updated_at.isoformat(),
+                    "active": (
+                        conversation.conversation_id == self.context.conversation_id
+                    ),
+                }
+            )
+            if len(results) >= max(1, limit):
+                break
+        return results
+
+    def conversation_export(self, conversation_id: str) -> tuple[str, str, list[ChatMessage]]:
+        """(title, created date, visible messages) of a stored conversation.
+
+        Reading for export never activates or switches anything: the student
+        can print an old conversation while another one stays active.
+        """
+        conversation = self.application.conversation_engine.get(UUID(str(conversation_id)))
+        return (
+            self.conversation_title(conversation),
+            conversation.created_at.astimezone().strftime("%d.%m.%Y %H:%M"),
+            self._visible_turns(conversation),
+        )
+
     def open_conversation(self, conversation_id: str) -> list[ChatMessage]:
         """Switch the shared context to a stored conversation."""
         engine = self.application.conversation_engine
@@ -194,6 +271,10 @@ class DesktopController:
             self.start_new_conversation()
             return True
         return False
+
+    def unarchive_conversation(self, conversation_id: str) -> None:
+        """Bring an archived conversation back to the active list."""
+        self.application.conversation_engine.activate(UUID(str(conversation_id)))
 
     def snapshot(self) -> RuntimeSnapshot:
         settings = self.application.settings
@@ -285,10 +366,22 @@ class DesktopController:
         *,
         stream_callback: Callable[[str], None] | None = None,
         manage_state: bool = True,
+        context: Context | None = None,
+        source: RequestSource = RequestSource.TEXT,
     ) -> ChatMessage:
+        """Run one turn through the core.
+
+        With an explicit ``context`` (a mobile session, for instance) the
+        turn uses that conversation and leaves the desktop's own state -
+        busy flag, status line, message list - untouched; the shared
+        conversation store still records both turns.
+        """
         normalized = text.strip()
         if not normalized:
             raise ValueError("Command cannot be empty.")
+        if context is not None:
+            manage_state = False
+        active_context = context if context is not None else self.context
         if manage_state:
             self.state.busy = True
             self.state.status = "PROCESSING"
@@ -296,7 +389,7 @@ class DesktopController:
         try:
             request = Request(
                 normalized,
-                source=RequestSource.TEXT,
+                source=source,
             )
 
             approval_options = (
@@ -307,13 +400,13 @@ class DesktopController:
             if stream_callback is None:
                 response = await self.application.engine.handle(
                     request,
-                    self.context,
+                    active_context,
                     **approval_options,
                 )
             else:
                 response = await self.application.engine.handle(
                     request,
-                    self.context,
+                    active_context,
                     stream_callback=stream_callback,
                     **approval_options,
                 )

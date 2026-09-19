@@ -97,11 +97,16 @@ class LearningEngine:
         concepts: ConceptGraph | None = None,
         *,
         clock: Callable[[], datetime] | None = None,
+        namer: Callable[[str], str] | None = None,
     ) -> None:
         self._store = store
         self._curriculum = curriculum
         self._concepts = concepts
+        self.namer = namer
         self._clock = clock or utc_now
+        # Names for concept ids the graph does not carry (the lab's
+        # structures and landmarks); returns "" for an id it does not know.
+        self.namer = namer
 
     # ------------------------------------------------------------------
     # naming
@@ -116,6 +121,17 @@ class LearningEngine:
             topic_id = concept_id[len("topic:") :]
             crumb = self._curriculum.breadcrumb(topic_id)
             return crumb or topic_id
+        # A concept the graph does not carry may still have a name someone
+        # else knows: the lab names its structures and landmarks, the
+        # histology bank its specimens. An unknown id stays an id — no name
+        # is invented for it.
+        if self.namer is not None:
+            try:
+                named = self.namer(concept_id)
+            except Exception:
+                named = ""
+            if named:
+                return named
         return fallback or concept_id
 
     @staticmethod
@@ -154,6 +170,46 @@ class LearningEngine:
             updated.append(mastery)
         return updated
 
+    def retract(self, concept_id: str, correct: bool, *, reason: str = "") -> ConceptMastery | None:
+        """Take one recorded answer back out of a concept's summary.
+
+        The counts move by one; the recent window loses its latest entry of
+        that outcome; streak, level and next review follow from what is left.
+        A row with nothing left is removed rather than kept as a "0/0". Used
+        by the repair when an answer was filed under the wrong concept.
+        """
+        mastery = self._store.get_mastery(concept_id)
+        if mastery is None:
+            return None
+        mastery.attempts = max(0, mastery.attempts - 1)
+        if correct:
+            mastery.correct = max(0, mastery.correct - 1)
+        recent = list(mastery.recent)
+        for index in range(len(recent) - 1, -1, -1):
+            if recent[index] == bool(correct):
+                del recent[index]
+                break
+        mastery.recent = recent
+        streak = 0
+        for item in reversed(recent):
+            if not item:
+                break
+            streak += 1
+        mastery.streak = streak
+        if mastery.attempts == 0:
+            self._store.delete_mastery(concept_id)
+            return None
+        mastery.level = level_for(mastery)
+        mastery.next_review_at = next_review_for(mastery, self._clock())
+        mastery.reason = reason_for(mastery) + (f" {reason}" if reason else "")
+        self._store.save_mastery(mastery)
+        return mastery
+
+    def credit(self, concept_id: str, correct: bool, *, subject: str = "") -> ConceptMastery:
+        """Record one answer under a concept by id: the repair's way to file a moved answer."""
+        question = Question(question_id=f"repair-{concept_id}", subject=subject, stem="", options=[], correct_key=None, concept_ids=[concept_id])
+        return self.record(question, correct)[0]
+
     def exclude_question(self, question: Question, *, reason: str = "") -> list[ConceptMastery]:
         """Take a question found wrong out of the mastery it moved.
 
@@ -191,6 +247,12 @@ class LearningEngine:
                     break
                 streak += 1
             mastery.streak = streak
+            if mastery.attempts == 0:
+                # Nothing on record is left for this concept: a "0/0" row would
+                # claim the concept is being tracked, so the row goes.
+                self._store.delete_mastery(concept_id)
+                corrected.append(mastery)
+                continue
             mastery.level = level_for(mastery)
             mastery.next_review_at = next_review_for(mastery, self._clock()) if mastery.attempts else None
             mastery.reason = reason_for(mastery) + " Bir soru geçersiz sayıldı; kayıt düzeltildi." + (f" ({reason})" if reason else "")

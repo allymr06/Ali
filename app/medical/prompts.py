@@ -44,7 +44,11 @@ HONESTY_RULES = (
     "Honesty: if you do not know, say so. If sources disagree, say which says what. Never "
     "fabricate citations, page numbers, textbook statements, statistics, professor patterns "
     "or anatomical relationships. Do not report invented confidence percentages; use words "
-    "like 'yüksek destek', 'sınırlı kanıt'."
+    "like 'yüksek destek', 'sınırlı kanıt'. Medical knowledge comes from the course "
+    "material and curated references. But for current administrative facts - exam "
+    "calendars, application dates, official announcements, anything that changes by "
+    "year - never answer from memory: if the research_web tool is available, call it "
+    "and cite what it returns; if it is not, say you cannot verify today's facts."
 )
 
 SAFETY_RULES = (
@@ -459,6 +463,7 @@ def notes_prompt(*, mode: str, subject: str | None, topic_path: str, evidence_te
         f"Write {style} in Turkish (Markdown) for a first-year medical student.",
         f"Subject: {SUBJECT_LABELS_TR.get(subject or '', subject or 'mixed')}. Topic: {topic_path or 'as the material indicates'}. Depth: {depth}.",
         "Keep official Latin terms in Latin. Cite the source page after a fact that comes from the material as (s. N) using only pages that appear below, and list every page you used in cited_pages. Do not add facts the material contradicts; if the material is unclear, say so in one line.",
+        "If the material given does not cover the requested subject and topic at all, set source_covers_topic to false and leave markdown to one line saying what the material is about instead; never write the requested notes from memory in that case. Otherwise set source_covers_topic to true.",
     ]
     if evidence_text:
         parts.append("Material:\n" + evidence_text)

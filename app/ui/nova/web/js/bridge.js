@@ -186,6 +186,38 @@ const DemoBridge = {
     }, 1300);
     return { ok: true };
   },
+  async daily_brief() {
+    return { ok: true, date: "15 Eylül 2026, Pazartesi", reminders: [{ text: "Anatomi tekrarı", due_local: "09.00" }], reminders_available: true,
+      routines: [{ name: "Sabah özeti", schedule: "her gün 08:30", next_run_local: "yarın 08:30" }], routines_available: true,
+      tasks_open: 1, notifications_unread: 2,
+      medical: { available: true, next_activity: { title: "Düzlemler ve eksenler", kind_label: "Materyali oku" }, plan_message: "", cards_waiting: 12, findings_open: 1, countdown: { name: "Komite 2", days_left: 9 } } };
+  },
+
+  async research_history() {
+    return { ok: true, items: [] };
+  },
+
+  async open_external() {
+    return { ok: false, error: "Demo modunda tarayıcı açılmaz." };
+  },
+
+  async pick_folder() {
+    return { ok: true, path: null };
+  },
+
+  async export_conversation() {
+    return { ok: false, error: "Demo modunda dışa aktarma yok." };
+  },
+
+  async search_conversations(query) {
+    const needle = String(query || "").trim().toLocaleLowerCase("tr-TR");
+    if (needle.length < 2) return { ok: false, error: "Arama için en az 2 karakter yaz." };
+    const rows = (await this.list_conversations()).conversations
+      .filter((item) => item.title.toLocaleLowerCase("tr-TR").includes(needle))
+      .map((item) => ({ ...item, matches: 1, excerpt: item.title, excerpt_role: "user" }));
+    return { ok: true, query: needle, results: rows };
+  },
+
   async list_conversations() {
     return { ok: true, active: "demo-conv-1", conversations: (await DemoBridge.boot()).conversations };
   },
@@ -382,9 +414,60 @@ const DemoBridge = {
     return { ok: false, error: "Demo modu: bu i\u015flem yap\u0131lmad\u0131 (" + String(action) + ")." };
   },
   async get_settings() { return { provider: "gemini", model: "gemini-2.5-pro",
-    credential_configured: true, credential_required: true }; },
+    credential_configured: true, credential_required: true,
+    daily_brief_notification: true, daily_brief_time: "08:30", research_enabled: true }; },
   async save_settings() {
     return { ok: true, message: "Demo modu: ayarlar kaydedilmedi." };
+  },
+
+  async save_desktop_settings() {
+    return { ok: true, message: "Demo modu: ayarlar kaydedilmedi." };
+  },
+
+  async unarchive_conversation() {
+    return { ok: false, error: "Demo modunda arşiv işlemi yapılmaz." };
+  },
+
+  async list_reminders() {
+    return { ok: true, reminders: [
+      { reminder_id: "demo-r1", text: "Anatomi tekrarı", due_local: "15.09 18:00", status: "waiting", attempts: 0 },
+    ] };
+  },
+
+  async create_reminder() {
+    return { ok: false, error: "Demo modunda hatırlatıcı kurulmaz." };
+  },
+
+  async cancel_reminder(_id, confirmed) {
+    if (confirmed !== true) return { ok: false, error: "İptal işlemi onaylanmadı." };
+    return { ok: false, error: "Demo modunda hatırlatıcı yok." };
+  },
+
+  async mobile_status() {
+    return { ok: true, enabled: true, running: true, port: 8765, local_url: "http://127.0.0.1:8765/", pending_code: null,
+      sessions: [{ session_id: "demo-m1", label: "Demo telefon", created_at: new Date().toISOString(), last_seen_at: new Date().toISOString(), expires_at: new Date(Date.now() + 864e5).toISOString(), revoked: false, active: true }] };
+  },
+
+  async mobile_pairing_code() {
+    return { ok: false, error: "Demo modunda eşleştirme kodu üretilmez." };
+  },
+
+  async mobile_revoke_session(_id, confirmed) {
+    if (confirmed !== true) return { ok: false, error: "İptal işlemi onaylanmadı." };
+    return { ok: false, error: "Demo modunda cihaz yok." };
+  },
+
+  async mobile_revoke_all(confirmed) {
+    if (confirmed !== true) return { ok: false, error: "İptal işlemi onaylanmadı." };
+    return { ok: false, error: "Demo modunda cihaz yok." };
+  },
+
+  async state_backup_summary() {
+    return { ok: true, count: 0, newest_at: null, newest_bytes: 0, databases: 0 };
+  },
+
+  async state_backup_now() {
+    return { ok: false, error: "Demo modunda yedek alınmaz." };
   },
   async test_connection() {
     return { ok: false, message: "Demo modu: bağlantı sınaması yapılmadı." };
@@ -523,8 +606,13 @@ const PUSH = {
     setBusy(false, READY);
   },
 
+  /* Sources collected by research_web during the running turn; the
+     reply that follows wears them as chips. */
+  research_sources(payload) { State.pendingSources = payload; },
+
   research_result({ ok, report, error }) {
     renderResearch(ok, report, error);
+    renderResearchHistory();
     setBusy(false, READY);
   },
 

@@ -55,8 +55,11 @@ SUPPORT_STATUS_LABELS_TR: dict[str, str] = {
     "stale": "Kaynak değişti; inceleme eski",
     "unavailable": "Kaynak silinmiş",
     "invalidated": "Geçersiz sayıldı",
+    "no_answer_key": "Cevap anahtarı yok",
+    "source_cited": "Kaynak sayfası var (inceleme kapalı)",
 }
-SCORED_STATUSES = frozenset({"source_supported", "imported"})
+SCORED_STATUSES = frozenset({"source_supported", "imported", "source_cited"})
+SCORING_POLICY = "scoring-1"
 
 FLAG_KINDS_TR: dict[str, str] = {
     "disputed_answer": "Cevap anahtarı tartışmalı",
@@ -101,12 +104,42 @@ def status_from_review(data: dict[str, Any], *, correct_key: str | None, has_fig
     return "source_supported", "Pasaj anahtarı ve açıklamayı destekliyor."
 
 
+def rule_decision(question: Question) -> dict[str, Any]:
+    """The scoring decision the rules alone can make, without a reviewer.
+
+    One answer for every place that measures: the bank picker, the paper,
+    the answer, the finish, the analysis and the learning record all ask this
+    (or the reviewer's fuller version of it) and never decide on their own.
+    An answer key by itself is not enough: a question the generator wrote
+    from no source is study material, and a question found wrong stays out.
+    """
+    if not question.has_answer_key:
+        return {"scored": False, "status": "no_answer_key", "label": SUPPORT_STATUS_LABELS_TR["no_answer_key"], "reason": "Cevap anahtarı olmayan soru puanlanamaz."}
+    invalidated = question.metadata.get("invalidated")
+    if invalidated:
+        return {"scored": False, "status": "invalidated", "label": SUPPORT_STATUS_LABELS_TR["invalidated"], "reason": str(invalidated.get("reason", "")) if isinstance(invalidated, dict) else ""}
+    if question.origin in (QuestionOrigin.IMPORTED_EXAM, QuestionOrigin.MANUAL):
+        return {"scored": True, "status": "imported", "label": SUPPORT_STATUS_LABELS_TR["imported"], "reason": "Hocanın ya da öğrencinin verdiği anahtar aynen korunur."}
+    if not question.references and not question.image_ref:
+        return {"scored": False, "status": "not_applicable", "label": SUPPORT_STATUS_LABELS_TR["not_applicable"], "reason": "Kaynak pasaj yok: çalışma içeriği, kaynak destekli ölçme değil."}
+    support = question.metadata.get("support")
+    if isinstance(support, dict) and support.get("status"):
+        status = str(support["status"])
+        return {"scored": status in SCORED_STATUSES, "status": status, "label": SUPPORT_STATUS_LABELS_TR.get(status, status), "reason": str(support.get("reason", ""))}
+    return {"scored": True, "status": "source_cited", "label": SUPPORT_STATUS_LABELS_TR["source_cited"], "reason": "Kaynak sayfası var; kaynak incelemesi kapalı olduğu için doğrulanmadı."}
+
+
 class SourceSupportReviewer:
-    def __init__(self, store: Any, model: Any, *, clock: Callable[[], datetime] | None = None, batch_limit: int = MAX_REVIEWS_PER_BATCH) -> None:
+    def __init__(self, store: Any, model: Any, *, clock: Callable[[], datetime] | None = None, batch_limit: int = MAX_REVIEWS_PER_BATCH, gate: bool = True) -> None:
         self._store = store
         self._model = model
         self._clock = clock or utc_now
         self._batch_limit = max(1, int(batch_limit))
+        # With the gate off (``JARVIS_MEDICAL_SOURCE_REVIEW=false``) a cited
+        # source is taken at its word; with it on, only a passage the reviewer
+        # found supportive counts. Either way an unsourced item is study
+        # material and an invalidated one is out.
+        self.gate_enabled = bool(gate)
 
     # ------------------------------------------------------------------
     # what the question rests on
@@ -158,9 +191,22 @@ class SourceSupportReviewer:
         status = str(support.get("status"))
         return {"status": status, "label": SUPPORT_STATUS_LABELS_TR.get(status, status), "scored": status in SCORED_STATUSES, "reason": str(support.get("reason", "")), "checked_at": support.get("checked_at"), "assessor": support.get("assessor"), "version": support.get("version")}
 
-    def scored_eligible(self, question: Question) -> tuple[bool, str]:
+    def decision(self, question: Question) -> dict[str, Any]:
+        """The one scoring decision: ``scored``, ``status``, ``label``, ``reason``.
+
+        Only a decision from here (or :func:`rule_decision` where there is no
+        reviewer) may put a question into a score or a learning record.
+        """
+        if not question.has_answer_key:
+            return rule_decision(question)
+        if not self.gate_enabled:
+            return rule_decision(question)
         status = self.status_of(question)
-        return bool(status["scored"]), status["label"]
+        return {"scored": bool(status["scored"]), "status": str(status["status"]), "label": str(status["label"]), "reason": str(status.get("reason", ""))}
+
+    def scored_eligible(self, question: Question) -> tuple[bool, str]:
+        decided = self.decision(question)
+        return bool(decided["scored"]), decided["label"]
 
     # ------------------------------------------------------------------
     # the review

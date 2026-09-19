@@ -249,6 +249,7 @@ class Settings:
     # Review every newly generated, source-grounded question against its
     # cited passage before it can sit in a scored paper.
     medical_source_review: bool = True
+    medical_auto_backup: bool = True
     medical_narration_checkpoint_every: int = 3
 
     spotify_client_id: str | None = None
@@ -264,7 +265,29 @@ class Settings:
     memory_auto_capture_enabled: bool = True
     memory_extraction_model: str = "gemini-3.5-flash-lite"
 
-    research_enabled: bool = False
+    # Web research: on by default over the keyless DuckDuckGo backend.
+    # "gemini" switches to Google Search grounding (needs the stored key
+    # and grounding quota); "searxng" needs a self-hosted endpoint. A
+    # provider whose requirement is missing leaves research off, honestly.
+    # The morning summary: one OS notification a day, at the configured
+    # local time, with what the day actually holds. Purely informative;
+    # sending it reads services, never the model.
+    daily_brief_notification: bool = True
+    daily_brief_time: str = "08:30"
+    # Weekly safety copies of the general state databases (conversations,
+    # reminders, routines, notifications, memory, tasks).
+    state_auto_backup: bool = True
+
+    # Mobile companion: a loopback-only HTTP server inside the desktop
+    # process. Reaching it from a phone is Tailscale Serve's job; every
+    # request still needs a paired device session (see app/mobile).
+    mobile_enabled: bool = True
+    mobile_port: int = 8765
+    mobile_session_days: int = 30
+    mobile_pairing_ttl_seconds: int = 600
+
+    research_enabled: bool = True
+    research_provider: str = "duckduckgo"
     research_searxng_url: str | None = None
     research_allow_http: bool = False
     research_timeout_seconds: float = 10.0
@@ -453,12 +476,32 @@ class Settings:
             raise ValueError("Vision image limits must be positive.")
         if self.vision_taskbar_height < 0:
             raise ValueError("vision_taskbar_height cannot be negative.")
-        if self.research_enabled and (
-            self.research_searxng_url is None
-            or not self.research_searxng_url.strip()
+        brief_time = self.daily_brief_time.strip()
+        parts = brief_time.split(":")
+        if len(parts) != 2 or not all(part.isdigit() for part in parts) or not (
+            0 <= int(parts[0]) <= 23 and 0 <= int(parts[1]) <= 59
+        ):
+            raise ValueError("daily_brief_time must be HH:MM on a 24-hour clock.")
+        if not 1024 <= self.mobile_port <= 65535:
+            raise ValueError("mobile_port must be between 1024 and 65535.")
+        if not 1 <= self.mobile_session_days <= 365:
+            raise ValueError("mobile_session_days must be between 1 and 365.")
+        if not 30 <= self.mobile_pairing_ttl_seconds <= 3600:
+            raise ValueError("mobile_pairing_ttl_seconds must be between 30 and 3600.")
+        if self.research_provider not in {"duckduckgo", "gemini", "searxng"}:
+            raise ValueError(
+                "research_provider must be duckduckgo, gemini or searxng."
+            )
+        if (
+            self.research_enabled
+            and self.research_provider == "searxng"
+            and (
+                self.research_searxng_url is None
+                or not self.research_searxng_url.strip()
+            )
         ):
             raise ValueError(
-                "research_searxng_url is required when research is enabled."
+                "research_searxng_url is required for the searxng provider."
             )
         if self.research_searxng_url is not None and not self.research_searxng_url.strip():
             raise ValueError("research_searxng_url cannot be empty when set.")
@@ -765,6 +808,7 @@ class Settings:
             medical_office_conversion=_get_bool("JARVIS_MEDICAL_OFFICE_CONVERSION", True),
             medical_narration_voice=os.getenv("JARVIS_MEDICAL_NARRATION_VOICE", "local").strip().lower() or "local",
             medical_source_review=_get_bool("JARVIS_MEDICAL_SOURCE_REVIEW", True),
+            medical_auto_backup=_get_bool("JARVIS_MEDICAL_AUTO_BACKUP", True),
             medical_narration_checkpoint_every=_get_non_negative_int("JARVIS_MEDICAL_NARRATION_CHECKPOINT_EVERY", 3),
             medical_directory=os.getenv(
                 "JARVIS_MEDICAL_DIRECTORY",
@@ -800,7 +844,22 @@ class Settings:
                 "JARVIS_NOTIFICATIONS_DATABASE_PATH",
                 default_state_path("jarvis_notifications.sqlite3"),
             ),
-            research_enabled=_get_bool("JARVIS_RESEARCH_ENABLED"),
+            daily_brief_notification=_get_bool(
+                "JARVIS_DAILY_BRIEF_NOTIFICATION", True
+            ),
+            daily_brief_time=os.getenv("JARVIS_DAILY_BRIEF_TIME", "08:30"),
+            state_auto_backup=_get_bool("JARVIS_STATE_AUTO_BACKUP", True),
+            mobile_enabled=_get_bool("JARVIS_MOBILE_ENABLED", True),
+            mobile_port=_get_positive_int("JARVIS_MOBILE_PORT", 8765),
+            mobile_session_days=_get_positive_int("JARVIS_MOBILE_SESSION_DAYS", 30),
+            mobile_pairing_ttl_seconds=_get_positive_int(
+                "JARVIS_MOBILE_PAIRING_TTL_SECONDS", 600
+            ),
+            research_enabled=_get_bool("JARVIS_RESEARCH_ENABLED", True),
+            research_provider=(
+                os.getenv("JARVIS_RESEARCH_PROVIDER", "duckduckgo").strip().casefold()
+                or "duckduckgo"
+            ),
             research_searxng_url=os.getenv("JARVIS_RESEARCH_SEARXNG_URL"),
             research_allow_http=_get_bool("JARVIS_RESEARCH_ALLOW_HTTP"),
             research_timeout_seconds=_get_float(

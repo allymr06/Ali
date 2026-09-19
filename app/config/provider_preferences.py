@@ -26,15 +26,37 @@ def validate_model(model: str) -> str:
     return normalized
 
 
+def validate_brief_time(value: str) -> str:
+    """HH:MM on a 24-hour clock, normalized to two digits each."""
+    parts = str(value).strip().split(":")
+    if len(parts) != 2 or not all(part.isdigit() for part in parts):
+        raise ValueError("daily_brief_time must be HH:MM on a 24-hour clock.")
+    hour, minute = int(parts[0]), int(parts[1])
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError("daily_brief_time must be HH:MM on a 24-hour clock.")
+    return f"{hour:02d}:{minute:02d}"
+
+
 @dataclass(frozen=True, slots=True)
 class ProviderPreferences:
     provider: str = "gemini"
     model: str = DEFAULT_GEMINI_MODEL
     version: int = 1
+    # Non-secret assistant preferences, editable from the Settings screen.
+    daily_brief_notification: bool = True
+    daily_brief_time: str = "08:30"
+    research_enabled: bool = True
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "provider", validate_provider(self.provider))
         object.__setattr__(self, "model", validate_model(self.model))
+        object.__setattr__(
+            self, "daily_brief_notification", bool(self.daily_brief_notification)
+        )
+        object.__setattr__(
+            self, "daily_brief_time", validate_brief_time(self.daily_brief_time)
+        )
+        object.__setattr__(self, "research_enabled", bool(self.research_enabled))
         if self.version != 1:
             raise ValueError("Unsupported provider preference version.")
 
@@ -63,6 +85,11 @@ class ProviderPreferencesStore:
                 provider=str(payload.get("provider", "gemini")),
                 model=str(payload.get("model", DEFAULT_GEMINI_MODEL)),
                 version=int(payload.get("version", 1)),
+                daily_brief_notification=bool(
+                    payload.get("daily_brief_notification", True)
+                ),
+                daily_brief_time=str(payload.get("daily_brief_time", "08:30")),
+                research_enabled=bool(payload.get("research_enabled", True)),
             )
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return ProviderPreferences()

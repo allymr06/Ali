@@ -680,6 +680,9 @@ class MedicalStore:
     def clear_mastery(self) -> int:
         return self._write("DELETE FROM mastery", indexed=False)
 
+    def delete_mastery(self, concept_id: str) -> bool:
+        return self._write("DELETE FROM mastery WHERE concept_id = ?", (concept_id,), indexed=False) > 0
+
     # ------------------------------------------------------------------
     # professors
     # ------------------------------------------------------------------

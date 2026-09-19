@@ -20,6 +20,7 @@ function renderSnapshot() {
   renderHomeSystem();
   renderHomeSession();
   renderHomeActivity();
+  renderHomeBrief();
   renderTasks(s.tasks || []);
   renderTools(s.tools || []);
   renderRiskBars(s.tools || []);
@@ -30,6 +31,67 @@ function renderSnapshot() {
 }
 
 /* ── command centre ───────────────────────────────────────────────── */
+
+/* ── the day at a glance ──────────────────────────────────────────
+   Read from the services that hold it; a section that cannot answer says
+   so, and nothing is estimated. Pure markup builder, testable alone. */
+function homeBriefMarkup(brief) {
+  if (!brief || brief.ok === false) return emptyState("Özet okunamadı", "Çekirdek köprüsü yanıt vermedi.");
+  const rows = [];
+  if ((brief.reminders || []).length) {
+    rows.push(...brief.reminders.map((item) => `<button type="button" class="hb-row" data-brief-go="tasks"><span class="hb-icon">⏰</span><span class="hb-text">${esc(item.text)}</span><span class="hb-side">${esc(item.due_local || "")}</span></button>`));
+  } else if (brief.reminders_available) {
+    rows.push(`<div class="hb-row muted"><span class="hb-icon">⏰</span><span class="hb-text">Bugün için hatırlatıcı yok</span></div>`);
+  }
+  (brief.routines || []).forEach((routine) => rows.push(`<button type="button" class="hb-row" data-brief-go="automation"><span class="hb-icon">🔁</span><span class="hb-text">${esc(routine.name)}</span><span class="hb-side">${esc(routine.next_run_local || routine.schedule || "")}</span></button>`));
+  if (brief.tasks_open) rows.push(`<button type="button" class="hb-row" data-brief-go="tasks"><span class="hb-icon">▶</span><span class="hb-text">${brief.tasks_open} açık görev</span></button>`);
+  if (brief.notifications_unread) rows.push(`<button type="button" class="hb-row" data-brief-notify><span class="hb-icon">🔔</span><span class="hb-text">${brief.notifications_unread} okunmamış bildirim</span></button>`);
+  const medical = brief.medical || {};
+  if (medical.available) {
+    if (medical.countdown) rows.push(`<button type="button" class="hb-row ${medical.countdown.days_left <= 7 ? "warn" : ""}" data-brief-medical="plan"><span class="hb-icon">🎓</span><span class="hb-text">${esc(medical.countdown.name)}</span><span class="hb-side">${medical.countdown.days_left} gün</span></button>`);
+    if (medical.next_activity) rows.push(`<button type="button" class="hb-row" data-brief-medical="plan"><span class="hb-icon">📖</span><span class="hb-text">Sırada: ${esc(medical.next_activity.title)}</span><span class="hb-side">${esc(medical.next_activity.kind_label || "")}</span></button>`);
+    else if (medical.plan_message) rows.push(`<div class="hb-row muted"><span class="hb-icon">📖</span><span class="hb-text">${esc(medical.plan_message)}</span></div>`);
+    if (medical.cards_waiting) rows.push(`<button type="button" class="hb-row" data-brief-medical="cards"><span class="hb-icon">🗂</span><span class="hb-text">${medical.cards_waiting} kart tekrar bekliyor</span></button>`);
+    if (medical.findings_open) rows.push(`<button type="button" class="hb-row" data-brief-medical="understanding"><span class="hb-icon">🩺</span><span class="hb-text">${medical.findings_open} açık bulgu</span></button>`);
+  }
+  if (!rows.length) return emptyState("Bugün için bekleyen bir şey yok", "Hatırlatıcılar, rutinler, görevler ve Akademi buraya düşer.");
+  return `<div class="hb-date">${esc(brief.date || "")}</div>` + rows.join("");
+}
+
+/* The nearest exam countdown as a permanent topbar chip. Pure text
+   builder so the wording is testable alone; null hides the chip. */
+function examChipText(countdown) {
+  if (!countdown || countdown.days_left === undefined || countdown.days_left === null) return null;
+  const days = Number(countdown.days_left);
+  const name = String(countdown.name || "Sınav");
+  if (!Number.isFinite(days)) return null;
+  if (days < 0) return null;
+  return { text: days === 0 ? `🎓 ${name} · bugün` : `🎓 ${name} · ${days} gün`, warn: days <= 7 };
+}
+
+function renderExamChip(countdown) {
+  const chip = $("#exam-chip");
+  if (!chip) return;
+  const built = examChipText(countdown);
+  if (!built) { chip.hidden = true; return; }
+  chip.hidden = false;
+  chip.textContent = built.text;
+  chip.classList.toggle("warn", built.warn);
+}
+
+let briefFetchedAt = 0;
+async function renderHomeBrief(force) {
+  const host = $("#home-brief");
+  if (!host || State.demo) { if (host && State.demo) host.innerHTML = emptyState("Demo modu", "Özet çekirdek bağlıyken okunur."); return; }
+  if (!force && Date.now() - briefFetchedAt < 60000) return;
+  briefFetchedAt = Date.now();
+  const brief = await call("daily_brief");
+  host.innerHTML = homeBriefMarkup(brief);
+  renderExamChip(brief && brief.medical ? brief.medical.countdown : null);
+  $$("[data-brief-go]", host).forEach((node) => node.addEventListener("click", () => showScreen(node.dataset.briefGo)));
+  $$("[data-brief-notify]", host).forEach((node) => node.addEventListener("click", () => Notify.set(true)));
+  $$("[data-brief-medical]", host).forEach((node) => node.addEventListener("click", () => { showScreen("medical"); if (typeof Medical !== "undefined") Medical.show(node.dataset.briefMedical); }));
+}
 
 function renderGreeting() {
   const s = State.snapshot;
@@ -90,6 +152,7 @@ function buildQuickActions() {
     ["vision", "Ekranı incele", () => showScreen("vision"), () => !!State.snapshot?.vision_available],
     ["research", "Araştır", () => showScreen("research"), () => !!State.snapshot?.research_available],
     ["plus", "Yeni konuşma", () => newConversation(), () => true],
+    ["alarm", "25 dk odak", () => Focus.start(25), () => true],
     ["palette", "Komut paleti", () => Palette.show(), () => true],
   ];
   host.innerHTML = "";
@@ -142,6 +205,59 @@ function renderTasks(tasks) {
   }
   host.innerHTML = tasks.map((task) => taskCardHTML(task)).join("");
 }
+
+/* ── reminders ────────────────────────────────────────────────────── */
+
+const Reminders = {
+  markup(rows) {
+    if (!rows.length) return emptyState("Aktif hatırlatıcı yok", "Yukarıdan kur ya da sohbette söyle: \"yarın 9'da anatomi tekrarı\" gibi.");
+    return rows.map((row) => `
+      <div class="routine-row">
+        <span class="routine-icon">⏰</span>
+        <span class="routine-main"><span class="routine-name">${esc(row.text)}</span>
+        <span class="routine-meta">${esc(row.due_local || "")}${row.status && row.status !== "bekliyor" ? ` · ${esc(row.status)}` : ""}</span></span>
+        <button type="button" class="btn btn-text" data-reminder-cancel="${esc(row.reminder_id)}">İptal</button>
+      </div>`).join("");
+  },
+
+  async load() {
+    const host = $("#reminders-list");
+    if (!host) return;
+    const result = await call("list_reminders");
+    if (result.ok === false) { host.innerHTML = emptyState("Hatırlatıcılar okunamadı", esc(result.error || "")); return; }
+    const rows = result.reminders || [];
+    $("#reminders-count").textContent = rows.length ? `${rows.length} aktif` : "";
+    host.innerHTML = this.markup(rows);
+    $$("[data-reminder-cancel]", host).forEach((button) => button.addEventListener("click", async () => {
+      const row = rows.find((item) => item.reminder_id === button.dataset.reminderCancel);
+      const confirmed = await confirmDialog({
+        title: "Hatırlatıcı iptal edilsin mi?",
+        body: `“${row ? row.text : ""}” bir daha bildirilmeyecek.`,
+        confirmLabel: "İPTAL ET",
+      });
+      if (!confirmed) return;
+      const done = await call("cancel_reminder", button.dataset.reminderCancel, true);
+      toast(done.message || done.error, done.ok ? "ok" : true);
+      Reminders.load();
+      renderHomeBrief(true);
+    }));
+  },
+
+  async create(event) {
+    event.preventDefault();
+    if (!bridgeReady()) return;
+    const text = $("#reminder-text").value.trim();
+    const when = $("#reminder-when").value.trim();
+    const result = await call("create_reminder", text, when);
+    toast(result.message || result.error, result.ok ? "ok" : true);
+    if (result.ok) { $("#reminder-text").value = ""; $("#reminder-when").value = ""; Reminders.load(); renderHomeBrief(true); }
+  },
+
+  bind() {
+    $("#reminder-form")?.addEventListener("submit", (event) => this.create(event));
+    $("#reminders-refresh")?.addEventListener("click", () => this.load());
+  },
+};
 
 /* ── memory ───────────────────────────────────────────────────────── */
 
@@ -322,6 +438,19 @@ function renderVisionResult(ok, text, error) {
   if (State.busy) setBusy(false, READY);
 }
 
+async function renderResearchHistory() {
+  const host = $("#research-history");
+  if (!host || !bridgeReady()) return;
+  const history = await call("research_history");
+  if (history.ok === false || !(history.items || []).length) { host.innerHTML = ""; return; }
+  host.innerHTML = '<span class="msg-sources-label">Son araştırmalar</span>' + history.items.map((item) =>
+    `<button type="button" class="chip" data-history-query="${esc(item.question)}" title="${item.sources} kaynak · yeniden açar">${esc(item.question.length > 60 ? item.question.slice(0, 60) + "…" : item.question)}</button>`).join("");
+  $$("[data-history-query]", host).forEach((chip) => chip.addEventListener("click", () => {
+    $("#research-input").value = chip.dataset.historyQuery;
+    $("#research-form").requestSubmit();
+  }));
+}
+
 async function submitResearch(event) {
   event.preventDefault();
   if (State.paused) { toast(PAUSED_NOTICE, true); return; }
@@ -353,7 +482,7 @@ function renderResearch(ok, report, error) {
   if (Array.isArray(sources) && sources.length) {
     parts.push("<h3>KAYNAKLAR</h3>" + sources.map((src) => {
       const title = src.title || src.url || String(src);
-      const url = src.url ? ` — ${esc(src.url)}` : "";
+      const url = src.url ? ` — <button type="button" class="src-link" data-open-url="${esc(src.url)}" title="Tarayıcıda açar">${esc(src.url)}</button>` : "";
       return `<span class="src">▸ ${esc(title)}${url}</span>`;
     }).join(""));
   }
@@ -362,6 +491,10 @@ function renderResearch(ok, report, error) {
     parts.push("<h3>BELİRSİZLİKLER</h3>" + uncertainties.map((u) => `<span class="src">▸ ${esc(u)}</span>`).join(""));
   }
   panel.innerHTML = parts.join("") || esc(JSON.stringify(report, null, 2));
+  $$("[data-open-url]", panel).forEach((node) => node.addEventListener("click", async () => {
+    const opened = await call("open_external", node.dataset.openUrl);
+    if (opened.ok === false) toast(opened.error || "Bağlantı açılamadı.", true);
+  }));
 }
 
 /* ── diagnostics ──────────────────────────────────────────────────── */
@@ -532,11 +665,18 @@ function renderSettings() {
     $("#settings-key-state").innerHTML = s.credential_configured
       ? '<span class="chip ok">anahtar kayıtlı</span>' : '<span class="chip warn">anahtar yok · deneme modu</span>';
   }
+  if (s) {
+    $("#settings-brief").checked = s.daily_brief_notification !== false;
+    $("#settings-brief-time").value = s.daily_brief_time || "08:30";
+    $("#settings-research").checked = s.research_enabled !== false;
+  }
   $("#settings-motion").checked = State.reducedMotion;
   $("#settings-ambient").checked = State.ambient;
   $("#settings-theme").checked = document.body.classList.contains("light");
   renderConfig();
   Files.render();
+  renderStateBackups();
+  Phone.render();
 }
 
 function renderConfig() {
@@ -674,6 +814,110 @@ async function saveSettings(event) {
   }
 }
 
+async function renderStateBackups() {
+  const chip = $("#settings-backup-state");
+  if (!chip || !bridgeReady()) return;
+  const summary = await call("state_backup_summary");
+  if (summary.ok === false) { chip.textContent = "okunamadı"; return; }
+  chip.textContent = summary.count
+    ? `${summary.count} kopya · son: ${fmtRelative(summary.newest_at)}`
+    : "henüz kopya yok";
+}
+
+async function runStateBackup() {
+  if (!bridgeReady()) return;
+  const button = $("#settings-backup-now");
+  button.disabled = true;
+  button.textContent = "Yedekleniyor…";
+  const result = await call("state_backup_now");
+  button.disabled = false;
+  button.textContent = "Şimdi yedekle";
+  toast(result.message || result.error, result.ok ? "ok" : true);
+  renderStateBackups();
+}
+
+/* ── mobile companion (Ayarlar › Telefon) ────────────────────────── */
+
+const Phone = {
+  async render() {
+    const state = $("#phone-state");
+    const host = $("#phone-sessions");
+    if (!state || !host || !bridgeReady()) return;
+    const status = await call("mobile_status");
+    if (status.ok === false) { state.textContent = "okunamadı"; host.innerHTML = emptyState("Telefon durumu okunamadı", esc(status.error || "")); return; }
+    if (!status.enabled || !status.running) {
+      state.className = "chip warn";
+      state.textContent = status.enabled ? "çalışmıyor" : "kapalı";
+      host.innerHTML = emptyState("Sunucu çalışmıyor", "JARVIS_MOBILE_ENABLED açık olmalı ve port boş olmalı.");
+      $("#phone-code").disabled = true;
+      return;
+    }
+    $("#phone-code").disabled = false;
+    state.className = "chip ok";
+    state.textContent = `127.0.0.1:${status.port} · ${status.sessions.length} cihaz`;
+    const rows = status.sessions || [];
+    host.innerHTML = rows.length ? rows.map((row) => `
+      <div class="routine-row">
+        <span class="routine-icon">📱</span>
+        <span class="routine-main"><span class="routine-name">${esc(row.label)}</span>
+        <span class="routine-meta">bağlandı ${esc(fmtRelative(row.created_at))} · son ${esc(fmtRelative(row.last_seen_at))} · bitiş ${esc(new Date(row.expires_at).toLocaleDateString("tr-TR"))}</span></span>
+        <button type="button" class="btn btn-text" data-phone-revoke="${esc(row.session_id)}">Çıkar</button>
+      </div>`).join("") : emptyState("Bağlı cihaz yok", "Kod üret, telefondaki JARVIS sayfasına yaz.");
+    $$("[data-phone-revoke]", host).forEach((button) => button.addEventListener("click", async () => {
+      const row = rows.find((item) => item.session_id === button.dataset.phoneRevoke);
+      const confirmed = await confirmDialog({
+        title: "Cihaz çıkarılsın mı?",
+        body: `“${row ? row.label : ""}” bir sonraki isteğinde erişimi kaybeder; yeniden bağlanmak için yeni kod gerekir.`,
+        confirmLabel: "ÇIKAR",
+      });
+      if (!confirmed) return;
+      const done = await call("mobile_revoke_session", button.dataset.phoneRevoke, true);
+      toast(done.ok ? "Cihaz çıkarıldı." : (done.error || "Çıkarılamadı."), done.ok ? "ok" : true);
+      Phone.render();
+    }));
+  },
+
+  async code() {
+    if (!bridgeReady()) return;
+    const result = await call("mobile_pairing_code");
+    const box = $("#phone-code-box");
+    if (result.ok === false) { toast(result.error || "Kod üretilemedi.", true); return; }
+    box.hidden = false;
+    $("#phone-code-value").textContent = result.code;
+    $("#phone-code-expiry").textContent = `${new Date(result.expires_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })} sonuna kadar · tek kullanımlık`;
+    Phone.render();
+  },
+
+  async revokeAll() {
+    if (!bridgeReady()) return;
+    const confirmed = await confirmDialog({ title: "Tüm cihazlar çıkarılsın mı?", body: "Bağlı her telefon erişimini kaybeder.", confirmLabel: "TÜMÜNÜ ÇIKAR" });
+    if (!confirmed) return;
+    const done = await call("mobile_revoke_all", true);
+    toast(done.ok ? `${done.revoked} cihaz çıkarıldı.` : (done.error || "Çıkarılamadı."), done.ok ? "ok" : true);
+    Phone.render();
+  },
+
+  bind() {
+    $("#phone-code")?.addEventListener("click", () => this.code());
+    $("#phone-revoke-all")?.addEventListener("click", () => this.revokeAll());
+  },
+};
+
+async function saveAssistantSettings() {
+  if (!bridgeReady()) return;
+  const status = $("#settings-assistant-status");
+  status.textContent = "Kaydediliyor…";
+  status.className = "settings-status";
+  const result = await call("save_desktop_settings", {
+    daily_brief_notification: $("#settings-brief").checked,
+    daily_brief_time: $("#settings-brief-time").value.trim(),
+    research_enabled: $("#settings-research").checked,
+  });
+  status.textContent = result.message || result.error || "";
+  status.className = `settings-status ${result.ok ? "ok" : "err"}`;
+  if (result.ok && result.settings) { State.settings = result.settings; renderSettings(); }
+}
+
 async function testConnection() {
   if (!bridgeReady()) return;
   settingsStatus("Bağlantı sınanıyor…");
@@ -786,6 +1030,11 @@ function bindPanels() {
   $("#vision-form").addEventListener("submit", submitVision);
   $("#research-form").addEventListener("submit", submitResearch);
   $("#settings-form").addEventListener("submit", saveSettings);
+  $("#settings-assistant-save").addEventListener("click", saveAssistantSettings);
+  $("#settings-backup-now").addEventListener("click", runStateBackup);
+  Reminders.bind();
+  Phone.bind();
+  $("#exam-chip").addEventListener("click", () => { showScreen("medical"); if (typeof Medical !== "undefined") Medical.show("plan"); });
   $("#settings-test").addEventListener("click", testConnection);
   $("#settings-delete").addEventListener("click", deleteKey);
   $("#settings-motion").addEventListener("change", (event) => applyMotionPreference(event.target.checked));

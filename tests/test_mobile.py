@@ -90,7 +90,7 @@ class Client:
         return connection, response
 
 
-def next_event(response, timeout: float = 10.0):
+def next_event(response, timeout: float = 10.0, want=None):
     deadline = time.time() + timeout
     kind = None
     while time.time() < deadline:
@@ -101,7 +101,11 @@ def next_event(response, timeout: float = 10.0):
         if text.startswith("event: "):
             kind = text[7:]
         elif text.startswith("data: ") and kind:
-            return kind, json.loads(text[6:])
+            # Desktop pushes mirrored as "push" events may interleave with
+            # the lite channel's own kinds; a caller can wait for specific ones.
+            if want is None or kind in want:
+                return kind, json.loads(text[6:])
+            kind = None
         elif not text:
             kind = None
     raise TimeoutError("no event arrived")
@@ -223,7 +227,7 @@ def test_logout_and_desktop_revocation_end_the_session_and_its_channel(mobile) -
     assert mobile.bridge.mobile_revoke_session(session_id) == {"ok": False, "error": "İptal işlemi onaylanmadı."}
     revoked = mobile.bridge.mobile_revoke_session(session_id, True)
     assert revoked["ok"] is True and revoked["sessions"] == []
-    kind, payload = next_event(stream)
+    kind, payload = next_event(stream, want={"session_ended"})
     assert kind == "session_ended" and payload["reason"] == "revoked"
     connection.close()
     status_code, payload = client.request("GET", "/api/state")
@@ -317,7 +321,7 @@ def test_approvals_are_bound_to_the_pending_action_and_never_repeat(mobile) -> N
     assert next_event(stream)[0] == "hello"
 
     future = mobile.controller.submit_background(mobile.bridge._request_approval(approval_request(seconds=30)), lambda _f: None)
-    kind, payload = next_event(stream)
+    kind, payload = next_event(stream, want={"approval"})
     assert kind == "approval" and payload["tool"] == "fs.write" and payload["parameters"]["api_key"] == "<gizli>"
     token = payload["token"]
     assert [item["token"] for item in mobile.server.pending_approvals()] == [token]
@@ -328,7 +332,7 @@ def test_approvals_are_bound_to_the_pending_action_and_never_repeat(mobile) -> N
     status, decided = client.request("POST", f"/api/approvals/{token}", {"approved": True})
     assert status == 200 and decided["ok"] is True
     assert future.result(timeout=5) is True
-    kind, closed = next_event(stream)
+    kind, closed = next_event(stream, want={"approval_closed"})
     assert kind == "approval_closed" and closed["token"] == token
 
     status, repeated = client.request("POST", f"/api/approvals/{token}", {"approved": True})
@@ -388,3 +392,71 @@ def test_static_shell_is_served_versioned_without_leaking_anything(mobile) -> No
     assert client.request("GET", "/offline.html")[0] == 200
     assert client.request("GET", "/../app/config/settings.py")[0] == 404
     assert client.request("GET", "/api/nope")[0] == 401, "unknown API paths still need a session"
+
+
+# ---------------------------------------------------------------------------
+# the whole desktop page on the phone
+# ---------------------------------------------------------------------------
+
+
+def test_the_nova_page_is_served_only_to_paired_phones_with_the_shim(mobile) -> None:
+    stranger = Client(mobile.port)
+    status, _ = stranger.request("GET", "/nova/")
+    assert status == 302, "an unpaired phone is sent to the pairing screen"
+    assert stranger.request("GET", "/nova/js/foundation.js")[0] == 302
+
+    client = paired(mobile)
+    status, body = client.request("GET", "/nova/")
+    assert status == 200
+    assert b'js/nova-shim.js?v=' in body and body.index(b"nova-shim.js") < body.index(b"js/foundation.js"), "the shim loads before every Nova script"
+    assert b"css/phone.css" in body and b'href="/manifest.webmanifest"' in body
+    assert b"Content-Security-Policy" in body, "the desktop page's own CSP travels with it"
+    for path in ("/nova/js/nova-shim.js", "/nova/js/foundation.js", "/nova/css/tokens.css", "/nova/css/phone.css", "/nova/js/medical.js"):
+        assert client.request("GET", path)[0] == 200, path
+    assert client.request("GET", "/nova/js/../../mobile/server.py")[0] == 404
+    assert client.request("GET", "/nova/css/nope.css")[0] == 404
+    assert client.request("GET", "/nova/index.html/extra")[0] == 404
+
+
+def test_bridge_calls_from_the_phone_reach_the_real_bridge_and_denied_ones_do_not(mobile) -> None:
+    client = paired(mobile)
+    stranger = Client(mobile.port)
+    assert stranger.request("POST", "/api/bridge/list_conversations", {"args": []})[0] == 401
+
+    status, payload = client.request("POST", "/api/bridge/list_conversations", {"args": []})
+    assert status == 200 and payload["ok"] is True and "conversations" in payload
+
+    status, payload = client.request("POST", "/api/bridge/search_conversations", {"args": ["merhaba"]})
+    assert status == 200 and payload["ok"] is True and payload["query"] == "merhaba"
+
+    for denied in ("save_settings", "delete_api_key", "mobile_pairing_code", "pick_folder", "start_voice", "set_compact", "run_vision", "open_external"):
+        status, payload = client.request("POST", f"/api/bridge/{denied}", {"args": []})
+        assert status == 403 and "telefondan yapılamaz" in payload["error"], denied
+
+    for unknown in ("_shutdown", "_push", "nonexistent", "__class__"):
+        status, _ = client.request("POST", f"/api/bridge/{unknown}", {"args": []})
+        assert status in (404, 400), unknown
+    assert client.request("POST", "/api/bridge/list_conversations", {"args": "x"})[0] == 400
+    assert client.request("POST", "/api/bridge/list_conversations", {"args": [1, 2, 3]})[0] == 400, "wrong arity is a bad request, not a crash"
+
+    # A phone message runs the desktop's own submit path: same conversation, same state.
+    status, payload = client.request("POST", "/api/bridge/submit_command", {"args": ["Telefondan tam arayüz mesajı"]})
+    assert status == 200 and payload == {"ok": True}
+    wait_for(lambda: not mobile.controller.state.busy and any(m.role == "assistant" for m in mobile.controller.state.messages))
+    assert [m.role for m in mobile.controller.state.messages][:2] == ["user", "assistant"]
+    assert "reply" in [json.loads(script.split("push(", 1)[1].rstrip(")"))["kind"] for script in mobile.window.scripts if "push(" in script]
+
+
+def test_desktop_pushes_are_mirrored_to_the_phone(mobile) -> None:
+    client = paired(mobile)
+    connection, stream = client.events()
+    assert next_event(stream)[0] == "hello"
+
+    mobile.bridge._push("busy", {"busy": True, "status": "PROCESSING"})
+    kind, payload = next_event(stream, want={"push"})
+    assert kind == "push" and payload == {"kind": "busy", "payload": {"busy": True, "status": "PROCESSING"}}
+    assert any("busy" in script for script in mobile.window.scripts), "the desktop window still gets it too"
+
+    status, refreshed = client.request("POST", "/api/bridge/refresh", {"args": []})
+    assert status == 200 and "snapshot" in refreshed, "reconnecting phones re-read the live snapshot"
+    connection.close()

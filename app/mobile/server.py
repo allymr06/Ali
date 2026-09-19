@@ -42,7 +42,7 @@ WEB_ROOT = Path(__file__).resolve().parent / "web"
 TOKENS_CSS = Path(__file__).resolve().parents[1] / "ui" / "nova" / "web" / "css" / "tokens.css"
 COOKIE_NAME = "jarvis_mobile"
 CLIENT_HEADER = "X-JARVIS-Client"
-MAX_BODY_BYTES = 64 * 1024
+MAX_BODY_BYTES = 256 * 1024
 MAX_MESSAGE_CHARS = 8000
 MAX_TURNS_PER_SESSION = 50
 EVENT_HEARTBEAT_SECONDS = 15.0
@@ -62,6 +62,22 @@ STATIC_FILES: dict[str, tuple[str, str]] = {
     "/icons/icon-512.png": ("icons/icon-512.png", "image/png"),
 }
 TEMPLATED_FILES = {"index.html", "sw.js"}
+NOVA_WEB_ROOT = Path(__file__).resolve().parents[1] / "ui" / "nova" / "web"
+NOVA_SHIM = WEB_ROOT / "nova-shim.js"
+NOVA_CONTENT_TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8"}
+# Kept in step with the DENIED set in nova-shim.js: window and native
+# dialogs, the PC microphone and screen, credential and pairing management
+# stay on the PC. Everything else the desktop page can do, the phone can.
+PHONE_DENIED = frozenset({
+    "delete_api_key", "save_settings", "test_connection",
+    "mobile_pairing_code", "mobile_revoke_all", "mobile_revoke_session", "mobile_status",
+    "medical_pick_file", "pick_file_root", "pick_folder", "export_conversation", "open_external",
+    "grant_file_root", "revoke_file_root", "restore_snapshot",
+    "set_compact", "set_visible", "start_voice", "stop_voice", "run_vision",
+})
+PHONE_DENIED_MESSAGE = "Bu işlem telefondan yapılamaz; bilgisayardaki JARVIS'te yap."
+BRIDGE_METHOD_PATTERN = re.compile(r"^[a-z][a-z0-9_]{1,60}$")
+NL_BYTES = b'\n'
 CLIENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 CANCELLABLE_STATUSES = {"queued", "running", "paused", "waiting_for_input", "waiting_for_approval"}
 PAUSED_MESSAGE = "JARVIS duraklatıldı; masaüstünden sürdürülene kadar komut almıyor."
@@ -237,6 +253,44 @@ class MobileServer:
                 item.put_nowait((kind, payload))
             except queue.Full:
                 pass
+
+    def broadcast_push(self, kind: str, payload: Any) -> None:
+        """Mirror one desktop push (window.NOVA.push) to every phone."""
+        if not self._streams:
+            return
+        try:
+            data = json.loads(_dumps({"kind": kind, "payload": payload}))
+        except (TypeError, ValueError):
+            return
+        self.emit(None, "push", data)
+
+    def bridge_method(self, name: str) -> Callable[..., Any] | None:
+        """The NovaBridge method a phone may call, or None."""
+        if not BRIDGE_METHOD_PATTERN.match(name) or name in PHONE_DENIED:
+            return None
+        attribute = getattr(type(self.bridge), name, None)
+        if attribute is None or not callable(attribute):
+            return None
+        return getattr(self.bridge, name)
+
+    def nova_index(self) -> bytes | None:
+        """The desktop page with the phone shim and stylesheet injected."""
+        index = NOVA_WEB_ROOT / "index.html"
+        if not index.is_file():
+            return None
+        stamp = self.stamp.encode("ascii")
+        body = index.read_bytes()
+        body = body.replace(
+            b"</head>",
+            b'<link rel="manifest" href="/manifest.webmanifest">' + NL_BYTES + b"</head>",
+            1,
+        )
+        body = body.replace(
+            b'<script src="js/foundation.js"></script>',
+            b'<script src="js/nova-shim.js?v=' + stamp + b'"></script>' + NL_BYTES + b'<script src="js/foundation.js"></script>',
+            1,
+        )
+        return body
 
     def close_session_channels(self, session_id: str) -> None:
         with self._lock:
@@ -596,6 +650,8 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
             try:
                 if path.startswith("/api/"):
                     self._api(method, path)
+                elif path == "/nova" or path.startswith("/nova/"):
+                    self._nova(method, path)
                 elif method == "GET":
                     self._static(path)
                 else:
@@ -637,6 +693,69 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
             if relative == "sw.js":
                 extra["Service-Worker-Allowed"] = "/"
             self._send(HTTPStatus.OK, body, content_type, extra)
+
+        def _nova(self, method: str, path: str) -> None:
+            """The full desktop page for a paired phone; strangers get the pairing screen."""
+            if method != "GET":
+                self._json(HTTPStatus.METHOD_NOT_ALLOWED, {"ok": False, "error": "Yöntem desteklenmiyor."})
+                return
+            if self._session() is None:
+                self._send(HTTPStatus.FOUND, b"", "text/plain; charset=utf-8", {"Location": "/?expired=1", "Cache-Control": "no-store"})
+                return
+            relative = path[len("/nova"):].lstrip("/")
+            if relative in ("", "index.html"):
+                body = server.nova_index()
+                if body is None:
+                    self._send(HTTPStatus.NOT_FOUND, "Nova sayfası bulunamadı.".encode("utf-8"), "text/plain; charset=utf-8")
+                    return
+                self._send(HTTPStatus.OK, body, "text/html; charset=utf-8", {"Cache-Control": "no-store"})
+                return
+            if relative == "js/nova-shim.js":
+                candidate = NOVA_SHIM
+            else:
+                parts = PurePath(relative).parts
+                if len(parts) != 2 or parts[0] not in ("css", "js") or ".." in parts or not parts[1]:
+                    self._send(HTTPStatus.NOT_FOUND, b"", "text/plain; charset=utf-8")
+                    return
+                candidate = NOVA_WEB_ROOT / parts[0] / parts[1]
+            suffix = candidate.suffix.lower()
+            if suffix not in NOVA_CONTENT_TYPES or not candidate.is_file():
+                self._send(HTTPStatus.NOT_FOUND, b"", "text/plain; charset=utf-8")
+                return
+            cache = "public, max-age=31536000, immutable" if "v=" in self.path else "no-cache"
+            self._send(HTTPStatus.OK, candidate.read_bytes(), NOVA_CONTENT_TYPES[suffix], {"Cache-Control": cache})
+
+        def _bridge(self, session: DeviceSession, name: str) -> None:
+            """One NovaBridge call from the phone: the very method the desktop page calls."""
+            if name in PHONE_DENIED:
+                self._json(HTTPStatus.FORBIDDEN, {"ok": False, "error": PHONE_DENIED_MESSAGE})
+                return
+            target = server.bridge_method(name)
+            if target is None:
+                self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Bilinmeyen köprü yöntemi."})
+                return
+            try:
+                body = self._read_json()
+            except (ValueError, json.JSONDecodeError):
+                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "İstek gövdesi okunamadı."})
+                return
+            args = body.get("args") or []
+            if not isinstance(args, list) or len(args) > 8:
+                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Köprü argümanları geçersiz."})
+                return
+            try:
+                result = target(*args)
+            except TypeError:
+                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Köprü argümanları uyuşmuyor."})
+                return
+            except Exception as exc:
+                self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": f"Köprü hatası ({type(exc).__name__})."})
+                return
+            if result is None:
+                result = {"ok": True, "result": None}
+            elif not isinstance(result, dict):
+                result = {"ok": True, "result": result}
+            self._json(HTTPStatus.OK, result)
 
         def _api(self, method: str, path: str) -> None:
             if path == "/api/health" and method == "GET":
@@ -686,6 +805,10 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
                 return
             if path == "/api/chat" and method == "POST":
                 self._chat(session)
+                return
+            match = re.fullmatch(r"/api/bridge/([A-Za-z0-9_]{2,60})", path)
+            if match and method == "POST":
+                self._bridge(session, match.group(1))
                 return
             match = re.fullmatch(r"/api/turns/([A-Za-z0-9_-]{8,64})", path)
             if match and method == "GET":

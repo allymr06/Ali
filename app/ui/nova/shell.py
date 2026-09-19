@@ -76,6 +76,7 @@ WEB_ASSETS: tuple[str, ...] = (
     "css/screens.css",
     "css/medical.css",
     "css/study.css",
+    "css/phone.css",
     "js/foundation.js",
     "js/bridge.js",
     "js/presence.js",
@@ -757,6 +758,14 @@ class NovaBridge:
             {"kind": kind, "payload": _jsonable(payload)},
             ensure_ascii=True,
         )
+        mobile = self._mobile
+        if mobile is not None:
+            # A paired phone shows the same page: it gets every push the
+            # window gets. Queue puts only, safe from any thread.
+            try:
+                mobile.broadcast_push(kind, _jsonable(payload))
+            except Exception:
+                pass
         if self._ui_thread_id is not None and threading.get_ident() == self._ui_thread_id:
             # Evaluating here would block the thread that has to run the
             # script. A window event that records a diagnostic — hiding to

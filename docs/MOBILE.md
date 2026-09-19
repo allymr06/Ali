@@ -92,6 +92,27 @@ Chrome or Edge on Android: open the address, menu ⋮ → **Uygulamayı yükle**
 the JARVIS icon. The installed shell opens offline and says so plainly; an
 offline shell is not an offline assistant.
 
+## The whole desktop page on the phone
+
+After pairing, the phone is sent to `https://…ts.net/nova/`: the desktop
+Nova page itself, served by the same loopback server with a small shim
+in front of it (`app/mobile/web/nova-shim.js`). Every `window.pywebview.api`
+call becomes an authenticated `POST /api/bridge/<method>` answered by the
+real `NovaBridge`, and every push the desktop window receives is mirrored
+over the event channel - so the Medical Academy (plan, subjects, library,
+notes, exams, question bank, understanding, histology, cards, professor
+style, progress, Anatomy Lab), tasks, memory, research, routines and the
+rest work on the phone exactly as on the PC, on the same records. A
+phone layer (`css/phone.css`, active only under `body.phone`) turns the
+rail into a bottom bar, stacks every layout, grows touch targets and
+gives the WebGL lab a fixed viewport: one finger turns the model, two
+fingers pinch to zoom and drag to pan, the on-screen arrows still work.
+
+Stays on the PC, refused in words from the phone: API key and model
+settings, pairing and device management, native file and folder
+dialogs (imports and exports), the PC microphone and screen, window
+controls (compact mode). The light client remains at `/?lite=1`.
+
 ## What the phone can do in this release
 
 - **Sohbet**: text chat with streamed replies, switch or start

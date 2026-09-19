@@ -1,0 +1,110 @@
+/* Phone layer for the Nova page.
+   Loaded only when the page is served to a paired phone (the mobile shim
+   adds body.phone), so the desktop window keeps its exact layout. The
+   rail becomes a bottom bar, every multi-column layout stacks, targets
+   grow to a fingertip, and the WebGL lab gets a fixed viewport height so
+   it can be dragged without scrolling the page away. */
+
+body.phone { -webkit-text-size-adjust: 100%; }
+body.phone #app {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "top" "stage" "rail";
+  height: 100dvh;
+}
+body.phone #app.rail-collapsed, body.phone #app.context-open, body.phone #app.rail-collapsed.context-open { grid-template-columns: minmax(0, 1fr); }
+
+/* ---- top bar ---------------------------------------------------------- */
+body.phone #topbar { padding: calc(env(safe-area-inset-top) + 0.3rem) 0.6rem 0.3rem; gap: 0.4rem; min-height: var(--top-h); }
+body.phone .system-chips, body.phone .clock, body.phone #compact-btn, body.phone .presence-detail, body.phone .kbd, body.phone #fullscreen-btn { display: none; }
+body.phone .topbar-right { gap: 0.3rem; flex-shrink: 0; }
+body.phone .brand { gap: 0.35rem; min-width: 0; }
+body.phone .brand-name { letter-spacing: 0.16em; font-size: 0.8rem; }
+body.phone .presence { min-width: 0; }
+body.phone .presence-label { font-size: 0.58rem; letter-spacing: 0.1em; }
+body.phone #palette-btn .kbd, body.phone #palette-btn kbd, body.phone #palette-btn span { display: none; }
+body.phone #exam-chip, body.phone #focus-chip { max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 0.45rem; font-size: 0.6rem; }
+body.phone #topbar .top-btn { width: 2.2rem; min-width: 2.2rem; }
+body.phone #exam-chip, body.phone #focus-chip { width: auto; }
+
+/* ---- bottom rail ------------------------------------------------------ */
+body.phone #rail {
+  grid-area: rail;
+  flex-direction: row; align-items: stretch;
+  padding: 0.15rem 0.15rem calc(0.15rem + env(safe-area-inset-bottom));
+  border-right: none; border-top: 1px solid var(--line-1);
+  background: var(--bg-2);
+}
+body.phone #rail-items { flex-direction: row; overflow-x: auto; overflow-y: hidden; gap: 0; scrollbar-width: none; flex: 1; }
+body.phone #rail-items::-webkit-scrollbar { display: none; }
+body.phone .nav-btn { flex: 0 0 auto; min-width: 4.4rem; height: 3.4rem; flex-direction: column; justify-content: center; gap: 0.2rem; padding: 0.3rem 0.4rem; font-size: 0.58rem; letter-spacing: 0.06em; }
+body.phone .nav-btn svg { width: 1.3rem; height: 1.3rem; }
+body.phone .nav-btn .nav-label { display: block; overflow: visible; white-space: nowrap; opacity: 1; }
+body.phone .nav-btn .nav-key, body.phone .rail-toggle, body.phone #rail-indicator { display: none; }
+body.phone .nav-btn.active { color: var(--accent); background: rgba(var(--accent-rgb), 0.08); border-radius: var(--radius-2); }
+
+/* ---- screens ---------------------------------------------------------- */
+body.phone .screen { padding: 0.8rem 0.8rem 1.2rem; }
+body.phone .screen-head { margin-bottom: 0.8rem; gap: 0.3rem; }
+body.phone .screen-head h1 { font-size: 1.3rem; }
+body.phone .screen-head p { font-size: 0.85rem; }
+body.phone #context { position: fixed; top: var(--top-h); right: 0; bottom: 0; left: 0; width: 100%; max-width: none; }
+body.phone .home { grid-template-columns: 1fr; grid-template-areas: "greet" "centre" "left" "right"; grid-template-rows: auto auto auto auto; height: auto; }
+body.phone .core-frame { width: min(15rem, 55vw); }
+body.phone .settings-layout { grid-template-columns: 1fr; }
+body.phone .settings-nav { position: static; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+body.phone .settings-nav::-webkit-scrollbar { display: none; }
+body.phone .diag-card.span-4, body.phone .diag-card.span-6, body.phone .diag-card.span-8 { grid-column: span 12; }
+
+/* ---- chat ------------------------------------------------------------- */
+body.phone .screen[data-screen="chat"] { padding: 0.4rem 0.5rem 0.5rem; }
+body.phone .chat-layout { gap: 0; }
+body.phone .conv-list { position: fixed; top: var(--top-h); right: 0; bottom: 0; left: 0; width: 100%; z-index: 30; }
+body.phone .msg { max-width: 94%; }
+body.phone #chat-input, body.phone #quick-input, body.phone input[type="text"], body.phone textarea, body.phone select { font-size: 16px; }
+
+/* ---- touch targets ---------------------------------------------------- */
+body.phone .btn, body.phone .chip, body.phone .tab, body.phone .icon-btn, body.phone .top-btn { min-height: 2.5rem; }
+body.phone .icon-btn.small { min-height: 2.2rem; }
+body.phone .btn-row { flex-wrap: wrap; }
+
+/* ---- Medical Academy -------------------------------------------------- */
+body.phone .med-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 0.4rem; -webkit-overflow-scrolling: touch; }
+body.phone .med-tabs::-webkit-scrollbar { display: none; }
+body.phone .med-tabs .tab, body.phone .med-tabs .med-tab { flex: 0 0 auto; }
+/* A single-column grid must not be forced into implicit columns by the
+   desktop's span classes: every span becomes one cell on the phone. */
+body.phone [class*="med-span-"], body.phone [class*="study-span-"], body.phone .diag-card { grid-column: auto; }
+body.phone .med-question { padding: 0.9rem 0.9rem; max-width: none; }
+body.phone .med-question .mq-stem { font-size: 1rem; }
+body.phone .med-option { padding: 0.7rem 0.8rem; min-height: 3.1rem; }
+body.phone .med-runner-head .med-runner-title { flex-basis: 100%; }
+body.phone #toasts, body.phone .toast-host, body.phone #toast-host { bottom: calc(4.4rem + env(safe-area-inset-bottom)); }
+body.phone .med-option:hover { transform: none; }
+body.phone .med-runner-head { gap: 0.4rem; }
+body.phone .med-split, body.phone .med-page-view, body.phone .med-committee { grid-template-columns: 1fr; }
+body.phone .med-grid, body.phone .med-note-list, body.phone .med-breakdown, body.phone .med-mastery, body.phone .med-structures, body.phone .med-session-form { grid-template-columns: 1fr; }
+body.phone .study-days, body.phone .study-compare { grid-template-columns: 1fr; }
+
+/* ---- Anatomy Lab ------------------------------------------------------ */
+/* The model comes first on a phone; the structure list and the card
+   follow below it, each scrolling on its own. */
+body.phone .lab { display: flex; flex-direction: column; gap: 0.6rem; height: auto; }
+body.phone .lab > * { min-height: 0; }
+body.phone #lab-stage { order: -1; }
+body.phone .lab-viewport { height: 52vh; min-height: 280px; flex: none; }
+body.phone .lab-list { max-height: 30vh; overflow-y: auto; }
+body.phone #lab-info { max-height: none; }
+body.phone .lab-layer-group, body.phone .lab-layers { flex-wrap: wrap; max-width: 100%; }
+body.phone .lab-table th, body.phone .lab-table td { min-width: 4.5rem; }
+body.phone .lab-info, body.phone .lab-info > *, body.phone .lab-stage > * { min-width: 0; max-width: 100%; }
+body.phone .lab-layer-group .chip { max-width: 100%; white-space: normal; text-align: left; }
+body.phone .lab-stage.expanded { position: fixed; inset: 0; z-index: 1000; }
+body.phone #lab-canvas { touch-action: none; }
+body.phone .lab-nav { grid-template-columns: repeat(3, 44px); gap: 6px; }
+
+/* ---- link state from the shim ---------------------------------------- */
+#phone-link { position: fixed; top: calc(var(--top-h) + 0.35rem); left: 50%; transform: translateX(-50%); z-index: 90; max-width: 92vw; padding: 0.4rem 0.9rem; border-radius: var(--radius-pill); font-size: 0.78rem; background: var(--surface-3); border: 1px solid var(--line-2); color: var(--ink-1); box-shadow: var(--shadow-1); }
+#phone-link.warn { color: var(--warn); border-color: rgba(var(--warn-rgb), 0.5); }
+#phone-link.ok { color: var(--ok); border-color: rgba(var(--ok-rgb), 0.5); }
+#phone-link[hidden] { display: none; }

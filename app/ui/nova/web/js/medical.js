@@ -3449,7 +3449,22 @@ const Lab = {
       if (this.scene) this.scene.items.forEach((item) => { item.buffers = null; });
       this.scheduleDraw();
     });
+    /* Touch: one finger turns, two fingers pinch to zoom and drag to pan.
+       Every active pointer is tracked; the single-pointer drag below is
+       suspended while a second finger is down. */
+    this.pointers = new Map();
+    const pinchState = { distance: 0, x: 0, y: 0 };
     canvas.addEventListener("pointerdown", (event) => {
+      this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (this.pointers.size === 2) {
+        const [a, b] = Array.from(this.pointers.values());
+        pinchState.distance = Math.hypot(a.x - b.x, a.y - b.y);
+        pinchState.x = (a.x + b.x) / 2;
+        pinchState.y = (a.y + b.y) / 2;
+        this.dragging = null;
+        canvas.setPointerCapture(event.pointerId);
+        return;
+      }
       this.dragging = { x: event.clientX, y: event.clientY, pan: event.shiftKey || event.button === 1 || event.button === 2, startX: event.clientX, startY: event.clientY, moved: 0 };
       canvas.classList.add("dragging");
       canvas.setPointerCapture(event.pointerId);
@@ -3469,6 +3484,23 @@ const Lab = {
     const bellButton = $("#lab-bell");
     if (bellButton) bellButton.addEventListener("click", () => this.startBellRinger());
     canvas.addEventListener("pointermove", (event) => {
+      if (this.pointers.has(event.pointerId)) this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (this.pointers.size >= 2) {
+        const [a, b] = Array.from(this.pointers.values());
+        const distance = Math.hypot(a.x - b.x, a.y - b.y);
+        const midX = (a.x + b.x) / 2;
+        const midY = (a.y + b.y) / 2;
+        if (pinchState.distance > 0 && distance > 0) {
+          this.camera.distance = clamp(this.camera.distance * (pinchState.distance / distance), 0.8, 12);
+          this.camera.panX += (midX - pinchState.x) * 0.003 * this.camera.distance;
+          this.camera.panY -= (midY - pinchState.y) * 0.003 * this.camera.distance;
+        }
+        pinchState.distance = distance;
+        pinchState.x = midX;
+        pinchState.y = midY;
+        this.scheduleDraw();
+        return;
+      }
       if (!this.dragging) return;
       const dx = event.clientX - this.dragging.x;
       const dy = event.clientY - this.dragging.y;
@@ -3484,6 +3516,14 @@ const Lab = {
       this.scheduleDraw();
     });
     const release = (event) => {
+      if (event && event.pointerId !== undefined) this.pointers.delete(event.pointerId);
+      if (this.pointers.size >= 1 && !this.dragging) {
+        // A second finger lifted: the remaining one restarts a clean drag.
+        const rest = Array.from(this.pointers.values())[0];
+        pinchState.distance = 0;
+        this.dragging = { x: rest.x, y: rest.y, pan: false, startX: rest.x, startY: rest.y, moved: 9 };
+        return;
+      }
       const drag = this.dragging;
       this.dragging = null;
       canvas.classList.remove("dragging");

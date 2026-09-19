@@ -1066,3 +1066,21 @@ paired device.
 
 Not verified here: installation on a physical Android device, Tailscale
 Serve connectivity, mobile-data access. Those need the user's devices.
+
+## The whole desktop page on the phone (19 September 2026)
+
+`tests/test_mobile.py`: `/nova/` and its assets are served only to a
+paired phone (strangers are sent to the pairing screen), the shim is
+injected before every Nova script and the page's own CSP travels with
+it, traversal and unknown assets are refused; `/api/bridge/<method>`
+needs a session, answers real bridge calls (`list_conversations`,
+`search_conversations`, `refresh`), refuses the deny list with 403,
+rejects private, unknown, ill-typed and wrong-arity calls without
+crashing, and a `submit_command` from the phone runs the desktop's own
+submit path (same conversation, same busy state, reply pushed to the
+window); a desktop `_push` is mirrored as a `push` event on the phone's
+channel while the window still receives it. Browser (360 px): Nova
+booted over HTTP with `body.phone`, twelve rail items in the bottom bar,
+the Academy dashboard with no overflow, a four-question rehearsal built
+and answered from the phone, the Anatomy Lab with a live WebGL context
+and the skull loaded, a chat turn answered through the mirrored pushes.

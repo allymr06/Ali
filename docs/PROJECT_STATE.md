@@ -193,6 +193,52 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## WhatsApp, the way a person uses it (21 September 2026)
+
+The delegation agent had gone blind without anyone noticing: WhatsApp
+Desktop 2.26xx is a Chromium page whose bubbles no longer carry a
+timestamped DataItem name, so `read_conversation` returned nothing and
+the agent polled an empty list every six seconds while fronting the
+window each time. Fourteen masked UIA probes (message text never left
+the machine) mapped the real tree: chat rows are the children of one
+DataGrid; the message list is the nearest ancestor of any bubble that
+has DataItem children; a bubble's words exist only in the document's
+TextPattern, as an optional author line ("Siz:" or "<Name>:"), the
+text, and HH:MM; an outgoing bubble carries a "HH:MM Okundu / Teslim
+edildi / Gönderildi" button, an incoming one does not. Reading through
+that path takes ~0.1 s and works with another window focused; only a
+minimized window publishes nothing, so it is restored without
+activation (SW_SHOWNOACTIVATE). The integration now returns who wrote
+what, the chat list with unread counts (the badge can trail the time),
+and the open chat's title.
+
+On top of that the agent behaves like a person (`whatsapp_human.py`,
+pure and tested): it never answers its own or unattributed bubbles, it
+stops reading when the user switches to another chat, it measures the
+user's style from their own bubbles (case, punctuation, length, emoji,
+favourite words) and puts the measurement in the prompt - honestly
+saying when there are too few samples - it leaves a plain "tamam" or an
+emoji unanswered, it holds replies through quiet hours (00:30-08:00)
+without forgetting them, it takes a moment to read and types at a
+human pace (the other side sees "yazıyor…"), and it sends the model's
+lines as separate short bubbles. Every send still goes through the
+verified, HIGH-risk send path; delegation is still approval-gated and
+bounded by turns and time.
+
+## Vision is on, from the Settings screen (21 September 2026)
+
+Screen vision had been wired since Phase 11 but never reached the
+desktop: `vision_enabled` lived only as an environment default of
+`false`, the profile did not carry it, and the Settings screen showed it
+as a read-only "kapalı". The desktop profile now owns the switch the way
+it owns research - `ProviderPreferences.vision_enabled`, default on, an
+assistant-card switch, `JARVIS_VISION_ENABLED` keeping precedence, and
+the flag folded to off where no Windows screen source exists. Nothing in
+the consent chain changed: the Vision screen's request still mints a
+one-use grant bound to the exact purpose, the taskbar is masked, and the
+raw capture is discarded. A page that omits the key keeps the stored
+choice, so an older client cannot switch the screen off by omission.
+
 ## The palette learns Turkish (20 September 2026)
 
 `app/integrations/dictionary.py` asks TDK's Güncel Türkçe Sözlük

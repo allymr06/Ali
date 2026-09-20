@@ -1226,6 +1226,26 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## WhatsApp manners and the vision that finally ran (21 September 2026)
+
+`tests/test_whatsapp_human.py` pins the pure layer: nods and emoji are
+acknowledgements (vocatives like "kanka" do not change that), a
+question is not; the style profile is measured and says when it is
+thin; quiet hours wrap midnight; pacing is bounded, capped and
+reproducible with a seeded RNG; replies split into at most three
+bubbles. `tests/test_whatsapp_agent.py` drives the agent with structured
+snapshots: replies only to the contact's fresh bubbles, never to its own
+or unattributed ones, leaves a "tamam 👍" alone, holds a night message
+and sends it at 08:30, refuses to read a switched chat, types each
+bubble at a pace, and one exchange is one turn however many bubbles.
+`tests/test_integrations.py` covers the parsers with the shapes the
+probes recorded (badge before or after the time, author inheritance
+across unlabeled runs, media rows) and the paced send that types
+instead of prefilling. The vision path is tested against the real
+`VisionSessionResult` now: two test doubles had invented a `response`
+field the controller then read, which is why the first live capture
+failed with an AttributeError the suite had never seen.
+
 ## The dictionary and the honest month (20 September 2026)
 
 `tests/test_dictionary.py` cans the live sozluk.gov.tr shape captured

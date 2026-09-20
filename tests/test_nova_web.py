@@ -2320,3 +2320,91 @@ def test_a_room_remembers_its_switches_and_defaults_to_day_and_sound() -> None:
     context.eval("sound.set(false); night.set(true); night.apply()")
     assert context.eval("sound.on()") is False and context.eval("document.body.classes['x-dark']") is True
     assert context.eval('preferences["k.sound"]') == "off" and context.eval('preferences["k.theme"]') == "dark"
+
+
+# ---------------------------------------------------------------------------
+# toolbox: the palette answers arithmetic; the academy computes at the bedside
+# ---------------------------------------------------------------------------
+
+
+def test_the_palette_calculator_answers_and_stays_out_of_the_way() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    answer = lambda q: context.eval("JSON.stringify(paletteMath(" + json.dumps(q) + "))")
+    assert json.loads(answer("12*(3+2)"))["display"] == "12*(3+2) = 60"
+    assert json.loads(answer("3,5+1,5"))["display"] == "3,5+1,5 = 5"
+    assert json.loads(answer("2^10"))["value"] == 1024
+    assert json.loads(answer("sqrt(144)+1"))["value"] == 13
+    assert json.loads(answer("sin(30)"))["display"] == "sin(30) = 0,5", "trig speaks degrees on this surface"
+    assert json.loads(answer("-3+5"))["value"] == 2
+    assert json.loads(answer("70 kg lb"))["display"] == "70 kg = 154,324 lb"
+    assert json.loads(answer("37 c f"))["display"] == "37 c = 98,6 f"
+    assert json.loads(answer("120 mmhg kpa"))["value"] == pytest.approx(15.9987, abs=0.001)
+    assert json.loads(answer("90 dk sa"))["display"] == "90 dk = 1,5 sa"
+    assert json.loads(answer("5 mi km"))["value"] == pytest.approx(8.04672, abs=0.001)
+    # The guard: ordinary queries, junk and undefined arithmetic stay out.
+    for query in ("notlar", "3 elma", "hatırlatıcı kur 5", "1/0", "", "kg lb", "12*", "5 kg kg", "alert(1)"):
+        assert json.loads(answer(query)) is None, query
+    assert "eval(" not in JS_SOURCES["js/toolbox.js"]
+
+
+def test_the_clinical_calculators_apply_the_formulas_they_name() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/medcalc.js"], "const MEDCALC = [", "\n/* ── render"))
+    run = lambda calc, values: json.loads(context.eval(
+        "JSON.stringify(medcalcResult(MEDCALC.find((item) => item.id === " + json.dumps(calc) + "), " + json.dumps(values) + "))"))
+    assert run("bmi", {"weight": 70, "height": 175})["value"] == pytest.approx(22.9, abs=0.01)
+    assert run("bsa", {"height": 175, "weight": 70})["value"] == pytest.approx(1.84, abs=0.01)
+    assert run("ibw", {"height": 175, "sex": "male"})["value"] == pytest.approx(70.5, abs=0.1)
+    assert run("ibw", {"height": 175, "sex": "female"})["value"] == pytest.approx(66.0, abs=0.1)
+    assert run("crcl", {"age": 40, "weight": 70, "creatinine": 1.0, "sex": "male"})["value"] == pytest.approx(97.2, abs=0.1)
+    assert run("crcl", {"age": 40, "weight": 70, "creatinine": 1.0, "sex": "female"})["value"] == pytest.approx(82.6, abs=0.1)
+    assert run("aniongap", {"sodium": 140, "chloride": 104, "bicarbonate": 24})["value"] == 12
+    assert run("corrca", {"calcium": 8.0, "albumin": 2.0})["value"] == pytest.approx(9.6)
+    assert run("corrna", {"sodium": 130, "glucose": 600})["value"] == pytest.approx(138.0)
+    assert run("ldl", {"total": 200, "hdl": 50, "tg": 150})["value"] == 120
+    assert "geçerli değildir" in run("ldl", {"total": 200, "hdl": 50, "tg": 450})["warn"]
+    assert run("map", {"systolic": 120, "diastolic": 80})["value"] == 93
+    assert run("osm", {"sodium": 140, "glucose": 90, "bun": 14})["value"] == 290
+    assert run("maxhr", {"age": 20})["value"] == 200
+    assert run("units", {"value": 90, "what": "glucose"})["value"] == pytest.approx(5.0, abs=0.01)
+    assert run("units", {"value": 5, "what": "glucose_r"})["value"] == pytest.approx(90.08, abs=0.01)
+    assert run("units", {"value": 1.0, "what": "cr"})["value"] == pytest.approx(88.4)
+    # Missing inputs answer with silence, never zero.
+    assert run("bmi", {"weight": 70}) is None
+    assert run("crcl", {"age": 40, "weight": 70, "creatinine": 1.0}) is None
+
+
+def test_batch_one_surfaces_are_declared_and_wired() -> None:
+    for name in ("js/toolbox.js", "js/medcalc.js"):
+        assert name in shell.WEB_ASSETS, name
+    assert JS_FILES.index("js/toolbox.js") < JS_FILES.index("js/shell.js")
+    assert JS_FILES.index("js/medcalc.js") < JS_FILES.index("js/main.js")
+    for element_id in ("med-calc-grid", "med-term", "shortcuts", "shortcuts-close"):
+        assert f'id="{element_id}"' in HTML, element_id
+    assert 'data-view="calc"' in HTML and "Eğitim amaçlıdır" in HTML
+    tabs = section(JS_SOURCES["js/medical.js"], "const MED_TABS = [", "];")
+    assert '["calc", "Hesaplar",' in tabs
+    assert 'if (view === "calc") { MedCalc.render(); return; }' in JS_SOURCES["js/medical.js"]
+    # The palette's answer row and the F1 card exist, and every key the card
+    # names is a binding the shell actually has.
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "const math = paletteMath(q);" in shell_js
+    assert 'if (event.key === "F1")' in shell_js and "function setShortcutsOpen(" in shell_js
+    card = section(HTML, 'id="shortcuts"', "ARAŞTIRMA AÇILIŞI")
+    for key_markup, binding in (
+        ("<kbd>Ctrl</kbd>+<kbd>K</kbd>", 'key === "k"'),
+        ("<kbd>Ctrl</kbd>+<kbd>D</kbd>", 'key === "d"'),
+        ("<kbd>Ctrl</kbd>+<kbd>,</kbd>", 'event.key === ","'),
+        ("<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>", 'key === "b"'),
+        ("<kbd>F1</kbd>", 'event.key === "F1"'),
+    ):
+        assert key_markup in card, key_markup
+        assert binding in shell_js, binding
+    # The day's term renders only what the core sent and opens the lab.
+    medical_js = JS_SOURCES["js/medical.js"]
+    assert "this.state.term_of_day" in medical_js
+    assert "Lab.pendingSelect = termButton.dataset.term" in medical_js
+    assert "const pending = this.pendingSelect;" in medical_js

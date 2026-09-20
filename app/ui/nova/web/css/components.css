@@ -557,3 +557,11 @@ details.disclosure > .disclosure-body { margin-top: 0.6rem; }
 .msg-body ul, .msg-body ol { margin: 0.25rem 0 0.35rem; padding-left: 1.25rem; }
 .msg-body li { margin: 0.12rem 0; }
 .msg-body strong { color: var(--ink-1); }
+
+/* ── keyboard shortcut card ───────────────────────────────────────── */
+.modal.shortcuts { width: min(34rem, 92vw); }
+.kbd-list { display: flex; flex-direction: column; gap: 0.45rem; }
+.kbd-list > div { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 0.8rem; align-items: baseline; }
+.kbd-list dt { white-space: nowrap; }
+.kbd-list dd { color: var(--ink-2); font-size: var(--text-sm); line-height: 1.5; }
+.kbd-list kbd, .settings-note kbd { display: inline-block; min-width: 1.4rem; padding: 0.1rem 0.4rem; border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: var(--radius-1); background: var(--surface-2); color: var(--ink-1); font-family: var(--font-mono); font-size: 0.66rem; text-align: center; }

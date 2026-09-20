@@ -193,6 +193,31 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## A drawer of small instruments (20 September 2026)
+
+Ali asked for features, necessary and unnecessary alike, until he says
+stop. The first drawer, all offline and deterministic:
+
+- **The palette computes.** `js/toolbox.js` gives the command palette an
+  answer row: arithmetic ("12*(3+2)", Turkish decimal commas, powers,
+  sqrt/log/ln and degree-speaking trig) and unit conversions ("70 kg lb",
+  "37 c f", "120 mmhg kpa", "90 dk sa") over a hand-rolled tokenizer and
+  shunting-yard - never eval. The guard errs toward silence, so command
+  queries are left alone; six significant digits, comma decimals.
+- **Clinical calculators.** A "Hesaplar" section in the academy
+  (`js/medcalc.js`): twelve bedside formulas - VKİ, Mosteller VYA, Devine,
+  Cockcroft-Gault, anyon açığı, düzeltilmiş Ca ve Na, Friedewald (with its
+  own TG ≥ 400 refusal), OAB, hesaplanan ozmolalite, 220−yaş, and a lab
+  unit converter (glukoz, kolesterol, trigliserid, kreatinin). Each card
+  names its formula; the banner says education-only; missing inputs answer
+  with silence, never zero. Every formula is pinned by a test vector.
+- **The day's term.** The academy dashboard shows one Latin term a day,
+  picked deterministically (date ordinal over the sorted catalogue) from
+  the real anatomy cards, and clicking it opens that structure in the lab
+  through `Lab.pendingSelect`. Empty catalogue says so.
+- **F1.** A keyboard-shortcut card whose every named key is asserted by a
+  test to be a binding the shell actually has.
+
 ## Research: many doors, and a room of its own (20 September 2026)
 
 Ali asked for the research screen to get the academy's treatment and to

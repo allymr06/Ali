@@ -437,6 +437,7 @@ const Palette = {
       list.push({ group: "tıp", icon: "medical", label: "Beni sına (seçili konudan)", keywords: "quiz sina soru sor", run: () => Medical.quickAsk("bu konudan beni sına") });
     }
     list.push({ group: "eylem", icon: "chevron", label: State.railCollapsed ? "Gezinmeyi genişlet" : "Gezinmeyi daralt", keywords: "menü rail", run: () => setRailCollapsed(!State.railCollapsed) });
+    list.push({ group: "eylem", icon: "palette", label: "Klavye kısayolları", keywords: "kisayol tuş klavye yardım f1", run: () => setShortcutsOpen(true) });
     list.push({ group: "eylem", icon: "refresh", label: "Sistem sağlığını denetle", keywords: "tanılama health", run: () => { showScreen("diagnostics"); Diagnostics.refresh(); } });
     list.push({ group: "eylem", icon: "alarm", label: Focus.timer || Focus.endsAt ? "Odak sayacını durdur" : "25 dk odak sayacı", keywords: "odak pomodoro sayaç focus", run: () => Focus.toggle() });
     list.push({ group: "eylem", icon: "alarm", label: "Hatırlatıcı kur", keywords: "hatırlat alarm kur reminder", run: () => { showScreen("tasks"); setTimeout(() => $("#reminder-text")?.focus(), 350); } });
@@ -451,6 +452,8 @@ const Palette = {
       return { item, score };
     }).filter(({ score }) => !q || score >= 0).sort((a, b) => b.score - a.score).slice(0, 9).map(({ item }) => item);
     if (q) {
+      const math = paletteMath(q);
+      if (math) scored.unshift({ group: "hesap", icon: "tools", label: math.display, keywords: "", run: () => toast(math.display, "ok") });
       scored.push({ group: "sor", icon: "spark", label: `JARVIS'e sor: “${q}”`, run: () => { showScreen("chat"); sendCommand(q); } });
       if (State.snapshot?.research_available) scored.push({ group: "araştır", icon: "research", label: `Araştır: “${q}”`, run: () => { showScreen("research"); $("#research-input").value = q; $("#research-form").requestSubmit(); } });
       if (State.snapshot?.vision_available) scored.push({ group: "görüş", icon: "vision", label: `Ekranı incele: “${q}”`, run: () => { showScreen("vision"); $("#vision-input").value = q; $("#vision-form").requestSubmit(); } });
@@ -666,6 +669,12 @@ const Focus = {
   },
 };
 
+function setShortcutsOpen(open) {
+  const veil = $("#shortcuts");
+  if (!veil) return;
+  veil.hidden = !open;
+}
+
 function bindKeyboard() {
   addEventListener("keydown", (event) => {
     if (!State.booted) return;
@@ -678,6 +687,8 @@ function bindKeyboard() {
       else if (event.ctrlKey && key === "k") { event.preventDefault(); Palette.hide(); }
       return;
     }
+    if (event.key === "F1") { event.preventDefault(); setShortcutsOpen($("#shortcuts").hidden); return; }
+    if (event.key === "Escape" && !$("#shortcuts").hidden) { event.preventDefault(); setShortcutsOpen(false); return; }
     if (event.ctrlKey && key === "k") { event.preventDefault(); Palette.show(); return; }
     if (event.altKey && !event.ctrlKey && !event.shiftKey) {
       const digit = event.key === "0" ? 9 : parseInt(event.key, 10) - 1;

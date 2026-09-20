@@ -1179,3 +1179,16 @@ own; a click skips; the side column lists the sources the core enabled;
 a real query over Genel returns cards of more than one kind with an
 "Aç" button that opens the browser; the night switch and the sound switch
 remember themselves; `Esc` returns to Komuta Merkezi with the rail back.
+
+## The instrument drawer (20 September 2026)
+
+`tests/test_nova_web.py` gained three checks: the palette calculator
+answers the pinned cases (Turkish commas, degrees for trig, unit tables)
+and stays silent on nine command-like or undefined queries, with `eval`
+asserted absent; every clinical calculator reproduces its textbook vector
+(including Friedewald's refusal above 400 mg/dL and silence on missing
+inputs); and the wiring test walks the new assets, the calc view, the
+term card's read-only data path, and each key the F1 card names back to
+a real binding in the shell. `tests/test_medical_academy.py` pins the
+term of the day: same day same term, five consecutive days five terms,
+every term a real catalogue entry, and the key riding `dashboard()`.

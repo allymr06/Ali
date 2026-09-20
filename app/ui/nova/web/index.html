@@ -489,6 +489,10 @@
                 <div id="med-insights" class="med-list"></div>
               </div>
               <div class="panel med-card">
+                <div class="panel-title"><span class="kicker">Günün terimi</span></div>
+                <div id="med-term" class="med-term"></div>
+              </div>
+              <div class="panel med-card">
                 <div class="panel-title"><span class="kicker">Son belgeler</span></div>
                 <div id="med-recent-documents" class="med-list"></div>
               </div>
@@ -635,6 +639,11 @@
           </section>
 
           <!-- Hoca tarzı -->
+          <section class="med-view" data-view="calc" hidden>
+            <p class="med-calc-banner">Eğitim amaçlıdır: her kart yalnızca yazdığı formülün aritmetiğini uygular. Klinik karar için birincil kaynağa başvur.</p>
+            <div id="med-calc-grid" class="med-grid"></div>
+          </section>
+
           <section class="med-view" data-view="professor" hidden>
             <div class="med-split">
               <aside class="panel med-doc-panel">
@@ -1015,6 +1024,26 @@
   </div>
 </div>
 
+<!-- ══════════════════ KISAYOLLAR ══════════════════ -->
+<div id="shortcuts" class="veil" hidden>
+  <div class="modal shortcuts" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+    <div class="modal-head"><span id="shortcuts-title" class="modal-title">Klavye kısayolları</span><button id="shortcuts-close" class="icon-btn small" type="button" title="Kapat"></button></div>
+    <div class="modal-body">
+      <dl class="kbd-list">
+        <div><dt><kbd>Alt</kbd>+<kbd>1…0</kbd></dt><dd>Ekranlar arasında geç (Komuta Merkezi'nden Güven'e)</dd></div>
+        <div><dt><kbd>Ctrl</kbd>+<kbd>K</kbd></dt><dd>Komut paleti · hesap da yapar: “12*(3+2)”, “70 kg lb”</dd></div>
+        <div><dt><kbd>Ctrl</kbd>+<kbd>D</kbd></dt><dd>Tanılama</dd></div>
+        <div><dt><kbd>Ctrl</kbd>+<kbd>,</kbd></dt><dd>Ayarlar</dd></div>
+        <div><dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd></dt><dd>Gezinme rayını daralt / genişlet</dd></div>
+        <div><dt><kbd>Enter</kbd></dt><dd>Komuta Merkezi'nde hızlı soruya, diğer ekranlarda sohbete odaklan</dd></div>
+        <div><dt><kbd>Esc</kbd></dt><dd>Açık paneli kapat · odalardan ve ekranlardan Komuta Merkezi'ne dön</dd></div>
+        <div><dt><kbd>F1</kbd></dt><dd>Bu kart</dd></div>
+      </dl>
+      <p class="settings-note">Tıp Akademisi <kbd>Alt</kbd>+<kbd>3</kbd>, Araştırma <kbd>Alt</kbd>+<kbd>8</kbd> ile açılır; açılışları herhangi bir tuş geçer.</p>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════════ ARAŞTIRMA AÇILIŞI ══════════════════ -->
 <div id="research-intro" class="research-intro" hidden aria-hidden="true">
   <div class="ri-stage">
@@ -1067,6 +1096,7 @@
 <div id="toasts" aria-live="polite"></div>
 
 <script src="js/foundation.js"></script>
+<script src="js/toolbox.js"></script>
 <script src="js/bridge.js"></script>
 <script src="js/presence.js"></script>
 <script src="js/shell.js"></script>
@@ -1075,6 +1105,7 @@
 <script src="js/panels.js"></script>
 <script src="js/medical.js"></script>
 <script src="js/study.js"></script>
+<script src="js/medcalc.js"></script>
 <script src="js/rooms.js"></script>
 <script src="js/academy.js"></script>
 <script src="js/research.js"></script>

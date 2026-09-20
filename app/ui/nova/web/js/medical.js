@@ -22,6 +22,7 @@ const MED_TABS = [
   ["exam", "Sınav", "tasks"],
   ["bank", "Soru bankası", "tools"],
   ["cards", "Kartlar", "memory"],
+  ["calc", "Hesaplar", "tools"],
   ["understanding", "Anlama", "spark"],
   ["professor", "Hoca tarzı", "integrations"],
   ["progress", "İlerleme", "diagnostics"],
@@ -230,6 +231,7 @@ const Medical = {
     if (view === "understanding") { await Study.openUnderstanding(); return; }
     if (view === "histology") { await Study.openHistology(); return; }
     if (view === "cards") { await Cards.open(); return; }
+    if (view === "calc") { MedCalc.render(); return; }
     if (view === "anatomy") { await Lab.open(); return; }
   },
 
@@ -294,6 +296,23 @@ const Medical = {
             <span class="med-row-side">${esc(item.subject_label || "")}</span>
             <span class="med-row-meta"><span class="chip ${MED_LEVEL_TONE[item.level] || ""}">${esc(item.level_label)}</span>${esc(item.reason)}</span></div>`).join("")
         : medEmpty("Bugün tekrar bekleyen kavram yok", "Quiz çözdükçe zayıf kavramlar burada birikir.");
+    }
+
+    const term = this.state.term_of_day;
+    const termHost = $("#med-term");
+    if (termHost) {
+      termHost.innerHTML = term
+        ? `<button type="button" class="med-term-card" data-term="${esc(term.structure_id)}" title="Anatomi Lab'de aç">
+             <span class="mt-latin">${esc(term.latin)}</span>
+             <span class="mt-turkish">${esc(term.turkish)}</span>
+             <span class="med-row-meta">${esc(term.region_label)} · ${esc(term.kind_label)}</span>
+           </button>`
+        : medEmpty("Günün terimi yok", "Anatomi kataloğu boş.");
+      const termButton = $("[data-term]", termHost);
+      if (termButton) termButton.addEventListener("click", () => {
+        Lab.pendingSelect = termButton.dataset.term;
+        this.show("anatomy");
+      });
     }
 
     const weakHost = $("#med-weak");
@@ -2391,6 +2410,11 @@ const Lab = {
       this.renderList();
       this.renderLayers();
     }
+    // A card elsewhere (the day's term) may have asked for one structure
+    // before the lab was open; that wish wins over the default scene.
+    const pending = this.pendingSelect;
+    this.pendingSelect = null;
+    if (pending) { await this.select(pending); return; }
     if (!this.structure) {
       // Licensed meshes for a whole region are the richer first sight; a
       // single card is what remains when the manifest names no scene.

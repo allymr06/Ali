@@ -15,7 +15,7 @@ import random
 import threading
 from collections import Counter
 from collections.abc import Callable, Coroutine, Iterable
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -634,6 +634,7 @@ class MedicalAcademy:
             "insights": self.learning.insights(limit=4),
             "recent_documents": [self.pipeline.payload(document) for document in documents[:5]],
             "recent_exams": [self.exam_summary(exam) for exam in recent_exams],
+            "term_of_day": self.term_of_day(),
             "recent_attempts": [
                 {"attempt_id": attempt.attempt_id, "exam_id": attempt.exam_id, "score": attempt.score, "finished_at": attempt.finished_at.isoformat() if attempt.finished_at else None}
                 for attempt in attempts
@@ -2515,6 +2516,30 @@ class MedicalAcademy:
             "all": [self.learning.mastery_payload(item) for item in mastery[:200]],
             "insights": self.learning.insights(limit=6),
             "exams": self.exams()[:10],
+        }
+
+    def term_of_day(self, today: date | None = None) -> dict[str, Any] | None:
+        """One Latin term a day, the same all day, straight from the catalogue.
+
+        The pick is the calendar date's ordinal over the sorted structure
+        list, so every launch of the same day shows the same term and the
+        whole catalogue comes around before any term repeats. Nothing is
+        generated: the entry is the anatomy card as it stands.
+        """
+        structures: list[dict[str, Any]] = []
+        for region in self.anatomy.hierarchy():
+            for kind in region["kinds"]:
+                structures.extend(kind["structures"])
+        if not structures:
+            return None
+        structures.sort(key=lambda item: item["structure_id"])
+        chosen = structures[(today or date.today()).toordinal() % len(structures)]
+        return {
+            "structure_id": chosen["structure_id"],
+            "latin": chosen["canonical"],
+            "turkish": chosen["turkish"],
+            "region_label": chosen["region_label"],
+            "kind_label": chosen["kind_label"],
         }
 
     def anatomy_structures(self) -> dict[str, Any]:

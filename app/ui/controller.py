@@ -717,8 +717,11 @@ class DesktopController:
         request = service.request_consent(purpose)
         grant = service.approve_consent(request.request_id)
         result = await service.analyze(purpose, grant, context=self.context)
-        if result.response is not None:
-            return result.response.text
+        # VisionSessionResult carries the model's words as response_text;
+        # the first live capture found this reading a field that never
+        # existed, hidden by a test double that had invented it.
+        if result.response_text is not None:
+            return result.response_text
         return result.error_code or result.state.value
 
     def submit_background(

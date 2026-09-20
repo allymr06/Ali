@@ -2390,6 +2390,13 @@ def test_the_palette_hands_a_word_to_the_dictionary_and_the_card_escapes() -> No
     assert ".modal.dict" in CSS
 
 
+def test_the_settings_screen_carries_the_vision_switch() -> None:
+    assert 'id="settings-vision-toggle"' in HTML
+    panels = JS_SOURCES["js/panels.js"]
+    assert '$("#settings-vision-toggle").checked = s.vision_enabled !== false;' in panels
+    assert 'vision_enabled: $("#settings-vision-toggle").checked,' in panels
+
+
 def test_the_clinical_calculators_apply_the_formulas_they_name() -> None:
     quickjs = pytest.importorskip("quickjs")
     context = quickjs.Context()

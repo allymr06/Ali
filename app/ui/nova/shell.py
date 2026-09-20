@@ -3739,16 +3739,21 @@ class NovaBridge:
         ).start()
 
     def save_desktop_settings(self, payload: Any) -> dict[str, Any]:
-        """Non-secret assistant preferences: morning brief and web research."""
+        """Non-secret assistant preferences: morning brief, web research,
+        screen vision."""
         if self.api_settings is None:
             return {"ok": False, "error": "Ayar hizmeti kullanılamıyor."}
         data = payload if isinstance(payload, Mapping) else {}
+        # A caller that does not mention vision keeps the stored choice:
+        # an older page must not switch the screen off by omission.
+        stored_vision = self.api_settings.preferences.load().vision_enabled
         try:
             self.api_settings.save_desktop(
                 daily_brief_notification=bool(data.get("daily_brief_notification")),
                 daily_brief_time=str(data.get("daily_brief_time") or ""),
                 research_enabled=bool(data.get("research_enabled")),
                 almanac_city=str(data.get("almanac_city") or ""),
+                vision_enabled=bool(data.get("vision_enabled", stored_vision)),
             )
         except ValueError:
             return {"ok": False, "error": "Saat biçimi SS:DD olmalı (örn. 08:30)."}

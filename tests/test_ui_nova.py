@@ -284,6 +284,7 @@ def test_boot_returns_live_state_without_secrets(booted) -> None:
         "daily_brief_time": "08:30",
         "research_enabled": True,
         "almanac_city": "",
+        "vision_enabled": True,
     }
     assert SECRET not in json.dumps(boot)
     assert SECRET not in json.dumps(booted.bridge.refresh())
@@ -326,6 +327,7 @@ def test_settings_snapshot_carries_only_non_secret_fields(booted) -> None:
         "daily_brief_time",
         "research_enabled",
         "almanac_city",
+        "vision_enabled",
     }
     assert settings["credential_configured"] is True
 
@@ -1873,8 +1875,17 @@ def test_vision_and_research_results_on_a_hidden_window_are_collected(booted) ->
             return SimpleNamespace(request_id=request_id)
 
         async def analyze(self, purpose, grant, context=None):
-            return SimpleNamespace(
-                response=SimpleNamespace(text="Ekranda bir tablo var."), error_code=None
+            # The real result type: a double must not invent fields the
+            # controller then reads (the first live capture found exactly
+            # that).
+            from uuid import uuid4
+
+            from app.vision.models import VisionSessionResult, VisionSessionState
+
+            return VisionSessionResult(
+                session_id=uuid4(),
+                state=VisionSessionState.COMPLETED,
+                response_text="Ekranda bir tablo var.",
             )
 
     class Research:

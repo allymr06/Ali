@@ -686,6 +686,7 @@ function renderSettings() {
     $("#settings-brief").checked = s.daily_brief_notification !== false;
     $("#settings-brief-time").value = s.daily_brief_time || "08:30";
     $("#settings-research").checked = s.research_enabled !== false;
+    $("#settings-vision-toggle").checked = s.vision_enabled !== false;
     $("#settings-city").value = s.almanac_city || "";
     $("#settings-accent").value = ACCENTS.includes(store("nova.accent") || "") ? (store("nova.accent") || "") : "";
   }
@@ -932,6 +933,7 @@ async function saveAssistantSettings() {
     daily_brief_time: $("#settings-brief-time").value.trim(),
     research_enabled: $("#settings-research").checked,
     almanac_city: $("#settings-city").value.trim(),
+    vision_enabled: $("#settings-vision-toggle").checked,
   });
   status.textContent = result.message || result.error || "";
   status.className = `settings-status ${result.ok ? "ok" : "err"}`;

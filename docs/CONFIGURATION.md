@@ -240,7 +240,7 @@ Every analysis still requires a separately approved, short-lived consent grant.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `JARVIS_VISION_ENABLED` | `false` | Constructs the vision service at application startup. |
+| `JARVIS_VISION_ENABLED` | unset (desktop switch: on) | Constructs the vision service at application startup. The desktop shell follows the Settings screen's "Görüş" switch (on by default, stored in `settings.json`) unless this variable is set; the source-only default stays `false`. |
 | `JARVIS_VISION_MODEL` | unset | Optional dedicated Gemini vision model. When set and different from the general model, `VISION` requests route to it exclusively; when unset, vision uses the general model. |
 | `JARVIS_VISION_DETAIL` | `high` | Image detail: `low`, `high`, `original`, or `auto`. |
 | `JARVIS_VISION_OPERATION_TIMEOUT_SECONDS` | `60` | Timeout for each capture or analysis operation. |

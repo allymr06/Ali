@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 
 import pytest
@@ -302,3 +303,26 @@ def test_desktop_preferences_round_trip_and_validate(tmp_path, monkeypatch) -> N
     monkeypatch.setenv("JARVIS_RESEARCH_ENABLED", "true")
     overridden = instance.build_runtime_settings()
     assert overridden.daily_brief_time == "09:15" and overridden.research_enabled is True
+
+
+def test_vision_rides_the_profile_and_only_where_a_screen_exists(tmp_path, monkeypatch) -> None:
+    instance, _credentials, _preferences, _clients = service(tmp_path)
+    monkeypatch.delenv("JARVIS_VISION_ENABLED", raising=False)
+
+    assert instance.snapshot().vision_enabled is True, "the desktop default is on"
+    assert instance.build_runtime_settings().vision_enabled is (os.name == "nt")
+
+    instance.save_desktop(daily_brief_notification=True, daily_brief_time="08:30", research_enabled=True, vision_enabled=False)
+    assert instance.snapshot().vision_enabled is False
+    assert instance.build_runtime_settings().vision_enabled is False
+
+    # A profile written before the switch existed still means "on".
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"provider": "gemini", "model": "gemini-2.5-pro", "version": 1}), encoding="utf-8")
+    assert instance.snapshot().vision_enabled is True
+
+    # The environment keeps precedence in both directions.
+    monkeypatch.setenv("JARVIS_VISION_ENABLED", "false")
+    assert instance.build_runtime_settings().vision_enabled is False
+    monkeypatch.setenv("JARVIS_VISION_ENABLED", "true")
+    assert instance.build_runtime_settings().vision_enabled is True

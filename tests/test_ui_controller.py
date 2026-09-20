@@ -275,11 +275,16 @@ class FakeVision:
         assert purpose == "inspect"
         assert grant == "grant"
         assert context is not None
-        return type(
-            "VisionResult",
-            (),
-            {"response": Response("visible result"), "error_code": None, "state": None},
-        )()
+        # The real result type, so the fake cannot invent fields again.
+        from uuid import uuid4
+
+        from app.vision.models import VisionSessionResult, VisionSessionState
+
+        return VisionSessionResult(
+            session_id=uuid4(),
+            state=VisionSessionState.COMPLETED,
+            response_text="visible result",
+        )
 
 
 @pytest.mark.asyncio

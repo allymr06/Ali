@@ -49,6 +49,10 @@ class ProviderPreferences:
     # The one city the morning almanac reports the weather for; empty
     # means the brief simply carries no weather line.
     almanac_city: str = ""
+    # Screen vision. The desktop switches it on by default: every capture
+    # still needs the one-use consent the Vision screen's own request
+    # grants, and JARVIS_VISION_ENABLED keeps precedence like the others.
+    vision_enabled: bool = True
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "provider", validate_provider(self.provider))
@@ -60,6 +64,7 @@ class ProviderPreferences:
             self, "daily_brief_time", validate_brief_time(self.daily_brief_time)
         )
         object.__setattr__(self, "research_enabled", bool(self.research_enabled))
+        object.__setattr__(self, "vision_enabled", bool(self.vision_enabled))
         object.__setattr__(self, "almanac_city", str(self.almanac_city or "").strip()[:80])
         if self.version != 1:
             raise ValueError("Unsupported provider preference version.")
@@ -95,6 +100,7 @@ class ProviderPreferencesStore:
                 daily_brief_time=str(payload.get("daily_brief_time", "08:30")),
                 research_enabled=bool(payload.get("research_enabled", True)),
                 almanac_city=str(payload.get("almanac_city", "")),
+                vision_enabled=bool(payload.get("vision_enabled", True)),
             )
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return ProviderPreferences()

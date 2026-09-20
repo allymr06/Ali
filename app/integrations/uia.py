@@ -21,8 +21,23 @@ _TREE_SCOPE_CHILDREN = 2
 _TREE_SCOPE_DESCENDANTS = 4
 _CONTROL_BUTTON = 50000
 _CONTROL_EDIT = 50004
+_CONTROL_DATA_GRID = 50028
 _CONTROL_DATA_ITEM = 50029
+_CONTROL_DOCUMENT = 50030
 _INVOKE_PATTERN = 10000
+_TEXT_PATTERN = 10014
+_SW_SHOWNOACTIVATE = 4
+
+# An outgoing WhatsApp bubble carries a "HH:MM <status>" button; incoming
+# bubbles carry the time as plain text. This is how direction is read.
+_MESSAGE_STATUS_WORDS = (
+    "okundu", "teslim edildi", "gönderildi", "bekliyor", "iletildi",
+    "read", "delivered", "sent", "pending",
+)
+# The header strip's first button opens the profile; the title is the
+# button right after it. Group headers also carry a group-call button.
+_PROFILE_BUTTON_NAMES = ("Profil detayları", "Profile details")
+_GROUP_CALL_NAMES = ("Görüntülü grup araması", "Video group call")
 
 
 class UiaClient:
@@ -242,13 +257,21 @@ class UiaClient:
         return None
 
     def type_into_edit(
-        self, title: str, name_contains: str, text: str
+        self,
+        title: str,
+        name_contains: str,
+        text: str,
+        *,
+        per_char_seconds: float = 0.004,
     ) -> bool:
         """Click a named edit control and type text into it.
 
         Keystrokes go to whatever is focused, so the target window is
         re-fronted first and control characters are stripped: an Enter
         would submit, and a stray dialog must not receive the text.
+        ``per_char_seconds`` above the default paces the keystrokes like
+        a person typing, which is also what makes the other side see
+        "yazıyor…" for a believable while.
         """
         window = self.find_window(title)
         if window is None:
@@ -285,7 +308,7 @@ class UiaClient:
                 (rect.top + rect.bottom) // 2,
             )
             time.sleep(0.3)
-            self._type_unicode(text)
+            self._type_unicode(text, per_char_seconds=per_char_seconds)
             return True
         return False
 
@@ -354,9 +377,17 @@ class UiaClient:
         return self.invoke_button(title, button_names)
 
     @staticmethod
-    def _type_unicode(text: str) -> None:
-        """Send a string as Unicode keystrokes to the focused control."""
+    def _type_unicode(text: str, *, per_char_seconds: float = 0.004) -> None:
+        """Send a string as Unicode keystrokes to the focused control.
+
+        At the default pace this is a paste; at a human pace (tens of
+        milliseconds per character) the delay is jittered and a short
+        pause follows sentence punctuation, the way fingers actually move.
+        """
+        import random
+
         user32 = ctypes.WinDLL("user32", use_last_error=True)
+        human = per_char_seconds > 0.01
 
         class _KeyInput(ctypes.Structure):
             _fields_ = [
@@ -389,7 +420,12 @@ class UiaClient:
                     ),
                 )
                 user32.SendInput(1, ctypes.byref(event), ctypes.sizeof(event))
-            time.sleep(0.004)
+            if human:
+                time.sleep(per_char_seconds * random.uniform(0.6, 1.5))
+                if char in ".!?,":
+                    time.sleep(random.uniform(0.15, 0.45))
+            else:
+                time.sleep(per_char_seconds)
 
     def invoke_button(
         self, title: str, button_names: tuple[str, ...]
@@ -437,6 +473,293 @@ class UiaClient:
             if needle in name:
                 return True
         return False
+
+
+    # ------------------------------------------------------------------
+    # Focus-free reading (web-based WhatsApp Desktop, 2.26xx)
+    #
+    # The current WhatsApp Desktop is a Chromium page. Its chat rows are
+    # DataItems under one DataGrid, its message list is the nearest
+    # ancestor of any bubble that has DataItem children, and the text of
+    # a bubble is only reachable through the document's TextPattern -
+    # the words are not elements of their own. None of this needs the
+    # window in front: reading works while another window is focused,
+    # only a minimized window publishes nothing, so a minimized window
+    # is restored without activation first.
+    # ------------------------------------------------------------------
+
+    def show_without_activating(self, title: str) -> bool:
+        """Un-minimize the window without taking the user's focus."""
+        window = self.find_window(title)
+        if window is None:
+            return False
+        handle = window.CurrentNativeWindowHandle
+        if not handle:
+            return False
+        user32 = ctypes.WinDLL("user32")
+        if user32.IsIconic(handle):
+            user32.ShowWindow(handle, _SW_SHOWNOACTIVATE)
+            time.sleep(1.0)
+        return True
+
+    def _window_rect(self, window) -> tuple[int, int, int, int] | None:
+        rect = window.CurrentBoundingRectangle
+        if rect.right <= rect.left or rect.bottom <= rect.top:
+            return None
+        return (rect.left, rect.top, rect.right, rect.bottom)
+
+    def read_chat_rows(self, title: str, *, limit: int) -> list[str] | None:
+        """Accessible names of the chat-list rows, newest first.
+
+        Returns None without a window, and an empty list when the list
+        column is not on screen (a call or settings view, for example).
+        """
+        if not self.show_without_activating(title):
+            return None
+        window = self.find_window(title)
+        if window is None:
+            return None
+        bounds = self._window_rect(window)
+        if bounds is None:
+            return []
+        uia = self._uia()
+        grid = window.FindFirst(
+            _TREE_SCOPE_DESCENDANTS,
+            uia.CreatePropertyCondition(_CONTROL_TYPE_PROPERTY, _CONTROL_DATA_GRID),
+        )
+        if not grid:
+            return []
+        grid_rect = grid.CurrentBoundingRectangle
+        split = bounds[0] + (bounds[2] - bounds[0]) * 0.4
+        if grid_rect.left > split:
+            return []
+        rows = grid.FindAll(
+            _TREE_SCOPE_CHILDREN,
+            uia.CreatePropertyCondition(_CONTROL_TYPE_PROPERTY, _CONTROL_DATA_ITEM),
+        )
+        names: list[str] = []
+        for index in range(rows.Length):
+            with _suppress(Exception):
+                name = " ".join((rows.GetElement(index).CurrentName or "").split())
+                if name:
+                    names.append(name)
+            if len(names) >= limit:
+                break
+        return names
+
+    def _page(self, window):
+        """The document's text pattern plus the window frame, or None."""
+        bounds = self._window_rect(window)
+        if bounds is None:
+            return None
+        uia = self._uia()
+        document = window.FindFirst(
+            _TREE_SCOPE_DESCENDANTS,
+            uia.CreatePropertyCondition(_CONTROL_TYPE_PROPERTY, _CONTROL_DOCUMENT),
+        )
+        if not document:
+            return None
+        raw_pattern = document.GetCurrentPattern(_TEXT_PATTERN)
+        if not raw_pattern:
+            return None
+        return raw_pattern.QueryInterface(self._module.IUIAutomationTextPattern), bounds
+
+    def _main_area(self, pattern, bounds):
+        """The element spanning both columns, reached by climbing from a
+        text range in the conversation pane; None when nothing is there."""
+        from ctypes import wintypes
+
+        width = bounds[2] - bounds[0]
+        height = bounds[3] - bounds[1]
+        split = bounds[0] + width * 0.38
+        point = wintypes.POINT(int(bounds[0] + width * 0.7), int(bounds[1] + height * 0.6))
+        try:
+            node = pattern.RangeFromPoint(point).GetEnclosingElement()
+        except Exception:
+            return None
+        walker = self._uia().ControlViewWalker
+        for _ in range(16):
+            if not node:
+                return None
+            rect = node.CurrentBoundingRectangle
+            if rect.left < split - 40 and (rect.right - rect.left) >= width * 0.5:
+                return node
+            node = walker.GetParentElement(node)
+        return None
+
+    def _right_side_children(self, main, bounds):
+        width = bounds[2] - bounds[0]
+        split = bounds[0] + width * 0.38
+        walker = self._uia().ControlViewWalker
+        child = walker.GetFirstChildElement(main)
+        found = []
+        for _ in range(16):
+            if not child:
+                break
+            rect = child.CurrentBoundingRectangle
+            if rect.left >= split - 40 and rect.right > rect.left:
+                found.append(child)
+            child = walker.GetNextSiblingElement(child)
+        return found
+
+    def chat_title(self, title: str) -> tuple[str, bool] | None:
+        """(title, is_group) of the open chat from its header strip."""
+        window = self.find_window(title)
+        if window is None:
+            return None
+        page = self._page(window)
+        if page is None:
+            return None
+        pattern, bounds = page
+        main = self._main_area(pattern, bounds)
+        if main is None:
+            return None
+        uia = self._uia()
+        walker = uia.ControlViewWalker
+        height = bounds[3] - bounds[1]
+        for child in self._right_side_children(main, bounds):
+            rect = child.CurrentBoundingRectangle
+            if (rect.bottom - rect.top) > height * 0.3:
+                continue  # the list or the whole column, not the header strip
+            for name in _PROFILE_BUTTON_NAMES:
+                profile = child.FindFirst(
+                    _TREE_SCOPE_DESCENDANTS,
+                    uia.CreatePropertyCondition(_NAME_PROPERTY, name),
+                )
+                if profile:
+                    break
+            else:
+                continue
+            sibling = walker.GetNextSiblingElement(profile)
+            if not sibling:
+                return None
+            chat = " ".join((sibling.CurrentName or "").split())
+            if not chat:
+                return None
+            group = any(
+                child.FindFirst(
+                    _TREE_SCOPE_DESCENDANTS,
+                    uia.CreatePropertyCondition(_NAME_PROPERTY, name),
+                )
+                for name in _GROUP_CALL_NAMES
+            )
+            return chat, bool(group)
+        return None
+
+    def composer_name(self, title: str) -> str | None:
+        """Accessible name of the message box, which names the open chat.
+
+        Searched inside the conversation's own areas first (milliseconds);
+        the whole-window scan is the slow fallback for an unknown layout.
+        """
+        window = self.find_window(title)
+        if window is None:
+            return None
+        uia = self._uia()
+        edit_condition = uia.CreatePropertyCondition(_CONTROL_TYPE_PROPERTY, _CONTROL_EDIT)
+        scopes = []
+        page = self._page(window)
+        if page is not None:
+            main = self._main_area(*page)
+            if main is not None:
+                scopes = self._right_side_children(main, page[1])
+        for scope in scopes:
+            edits = scope.FindAll(_TREE_SCOPE_DESCENDANTS, edit_condition)
+            for index in range(edits.Length):
+                with _suppress(Exception):
+                    name = " ".join((edits.GetElement(index).CurrentName or "").split())
+                    if "mesaj yaz" in name.casefold() or "type a message" in name.casefold():
+                        return name
+        edits = window.FindAll(_TREE_SCOPE_DESCENDANTS, edit_condition)
+        for index in range(edits.Length):
+            with _suppress(Exception):
+                element = edits.GetElement(index)
+                name = " ".join((element.CurrentName or "").split())
+                lowered = name.casefold()
+                if "mesaj yaz" in lowered or "type a message" in lowered:
+                    rect = element.CurrentBoundingRectangle
+                    if rect.right > rect.left:
+                        return name
+        return None
+
+    def read_message_rows(self, title: str) -> list[tuple[str, bool]] | None:
+        """The open conversation as (row text, has outgoing status) pairs.
+
+        Row text is the bubble's own text run: an optional author label
+        line ("Siz:" or "<Name>:"), the message lines, and the HH:MM
+        line, in that order. Rows scrolled out of the virtualized list
+        come back empty and are dropped. Returns None without a window
+        and an empty list when no conversation is open.
+        """
+        if not self.show_without_activating(title):
+            return None
+        window = self.find_window(title)
+        if window is None:
+            return None
+        page = self._page(window)
+        if page is None:
+            return []
+        pattern, bounds = page
+        uia = self._uia()
+        width = bounds[2] - bounds[0]
+        height = bounds[3] - bounds[1]
+        split = bounds[0] + width * 0.38
+        from ctypes import wintypes
+
+        point = wintypes.POINT(int(bounds[0] + width * 0.7), int(bounds[1] + height * 0.6))
+        try:
+            node = pattern.RangeFromPoint(point).GetEnclosingElement()
+        except Exception:
+            return []
+        walker = uia.ControlViewWalker
+        item_condition = uia.CreatePropertyCondition(_CONTROL_TYPE_PROPERTY, _CONTROL_DATA_ITEM)
+        message_list = None
+        for _ in range(14):
+            if not node:
+                break
+            rect = node.CurrentBoundingRectangle
+            children = node.FindAll(_TREE_SCOPE_CHILDREN, item_condition)
+            if children.Length >= 1 and rect.left > split - 40:
+                message_list = node
+                break
+            if rect.left < split - 40 and (rect.right - rect.left) >= width * 0.5:
+                # The main area: the message list is inside its right column.
+                child = walker.GetFirstChildElement(node)
+                for _ in range(10):
+                    if not child:
+                        break
+                    child_rect = child.CurrentBoundingRectangle
+                    if child_rect.left >= split - 40 and (child_rect.right - child_rect.left) > 300:
+                        inner = child.FindAll(_TREE_SCOPE_DESCENDANTS, item_condition)
+                        message_list = child if inner.Length else None
+                        break
+                    child = walker.GetNextSiblingElement(child)
+                break
+            node = walker.GetParentElement(node)
+        if message_list is None:
+            return []
+        rows = message_list.FindAll(_TREE_SCOPE_CHILDREN, item_condition)
+        if rows.Length == 0:
+            rows = message_list.FindAll(_TREE_SCOPE_DESCENDANTS, item_condition)
+        button_condition = uia.CreatePropertyCondition(_CONTROL_TYPE_PROPERTY, _CONTROL_BUTTON)
+        result: list[tuple[str, bool]] = []
+        for index in range(rows.Length):
+            with _suppress(Exception):
+                row = rows.GetElement(index)
+                text = pattern.RangeFromChild(row).GetText(-1) or ""
+                if not text.strip():
+                    continue
+                outgoing = False
+                buttons = row.FindAll(_TREE_SCOPE_DESCENDANTS, button_condition)
+                for b in range(buttons.Length):
+                    name = " ".join((buttons.GetElement(b).CurrentName or "").split()).casefold()
+                    if name[:5].replace(".", ":").count(":") and any(
+                        name.endswith(word) for word in _MESSAGE_STATUS_WORDS
+                    ):
+                        outgoing = True
+                        break
+                result.append((text, outgoing))
+        return result
 
 
 class _suppress:

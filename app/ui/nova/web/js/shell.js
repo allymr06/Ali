@@ -124,6 +124,7 @@ function showScreen(id, { focus = true } = {}) {
   if (id === "chat") { scrollChat({ force: true, instant: true }); if (focus) $("#chat-input").focus(); }
   if (id === "home" && focus) $("#quick-input").focus();
   if (id === "diagnostics") { Diagnostics.refresh({ quiet: true }); Pulse.start(); } else Pulse.stop();
+  if (id === "home") Remote.start(); else Remote.stop();
   if (id === "memory") Memory.load();
   if (id === "integrations") Trust.refresh();
   if (id === "tasks") { renderTasks(State.snapshot?.tasks || []); Routines.load(); Reminders.load(); }

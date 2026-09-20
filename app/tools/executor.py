@@ -391,6 +391,12 @@ class ToolExecutor:
         if annotation is Any:
             return True
 
+        # PEP 484's numeric tower: an int (never a bool) satisfies float.
+        # It is also what JSON hands a tool for "100", so without this
+        # every float-typed parameter refused the model's whole numbers.
+        if annotation is float and isinstance(value, int) and not isinstance(value, bool):
+            return True
+
         if annotation is None:
             return value is None
 

@@ -193,6 +193,26 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The phone gets the whole house, and a remote in hand (21 September 2026)
+
+A paired phone loads the desktop Nova page itself (`/nova/`, shim
+first), and its assets are served unstamped with `no-cache`, so every
+card of the last days - calculator, dictionary, Hesaplar, the month's
+rhythm, the pulse, the almanac in the brief, the vision switch - reached
+the phone the moment the desktop restarted; `test_mobile` now pins that
+the served page carries them. What the phone could not do was hold a
+remote: the home screen (phone and desktop alike) now has a "Kumanda"
+card - what is playing, previous/play-pause/next, the heart, a volume
+slider, a 30-minute sleep timer, and the running WhatsApp delegation
+with its stop button. Every press is one bridge method,
+`run_remote_tool`, which runs an allow-listed LOW/read-only tool
+through the ToolExecutor (policy, timeout, verification) and returns
+the tool's own honest report; the bridge never calls an integration
+directly. Still desktop-only by design: vision (`run_vision`), the
+desktop voice session, native pickers and window operations
+(`PHONE_DENIED`), so the research export button on the phone answers
+"telefondan yapılamaz" rather than pretending.
+
 ## Spotify, the way a person uses it (21 September 2026)
 
 Beyond media keys and the search-and-press play path, JARVIS now uses

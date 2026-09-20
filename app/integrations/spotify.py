@@ -140,6 +140,9 @@ class SpotifyIntegration:
                 if value in (None, []) or key == "playing" or state.get(key):
                     continue
                 state[key] = value
+            volume = await asyncio.to_thread(self.volume_sync)
+            if volume is not None:
+                state["volume_percent"] = round(volume * 100)
         if state["playing"]:
             message = f"Çalıyor: {state['artist']} — {state['track']}"
         elif bar and bar.get("track"):

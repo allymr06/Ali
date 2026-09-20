@@ -220,6 +220,10 @@ const DemoBridge = {
              compounds: [] };
   },
 
+  async run_remote_tool(name) {
+    return { ok: false, error: "Demo modunda kumanda çalışmaz (" + String(name || "") + ")." };
+  },
+
   async research_sources() {
     return { ok: true, sources: [
       { id: "web", label: "Web", kind: "web", description: "Genel web araması (DuckDuckGo)." },

@@ -120,6 +120,97 @@ function renderGreeting() {
     : `Sistemler hazır · ${parts.join(" · ")}.`;
 }
 
+/* ── remote: the home card's markup (pure) ─────────────────────────────── */
+
+/* What the tools reported, drawn as a remote a thumb can use. The
+   phone loads this very page, so this is the phone's remote too. */
+function remoteMarkup(now, delegation) {
+  const parts = [];
+  const data = (now && now.data) || {};
+  if (!now || (now.ok === false && !data.running)) {
+    parts.push(`<div class="remote-off">${esc((now && (now.message || now.error)) || "Spotify durumu okunamadı.")}</div>`);
+  } else {
+    const artists = Array.isArray(data.artists) ? data.artists : [];
+    const who = data.playing ? (data.artist || "") : artists.join(", ");
+    const title = data.track ? `${who ? who + " — " : ""}${data.track}` : "Bir şey çalmıyor";
+    const clock = data.position && data.duration ? `${data.position} / ${data.duration}` : "";
+    parts.push(`<div class="remote-now"><span class="remote-track">${esc(title)}</span>` +
+      `${clock ? `<span class="remote-clock">${esc(clock)}</span>` : ""}</div>`);
+    parts.push('<div class="remote-buttons">' +
+      '<button type="button" class="remote-btn" data-tool="spotify_previous_track" title="Önceki">⏮</button>' +
+      `<button type="button" class="remote-btn primary" data-tool="spotify_play_pause" title="${data.playing ? "Duraklat" : "Çal"}">${data.playing ? "⏸" : "▶"}</button>` +
+      '<button type="button" class="remote-btn" data-tool="spotify_next_track" title="Sonraki">⏭</button>' +
+      `<button type="button" class="remote-btn ${data.liked ? "liked" : ""}" data-tool="spotify_like_track" title="${data.liked ? "Beğenilen Şarkılar'da" : "Beğen"}">♥</button>` +
+      '<button type="button" class="remote-btn" data-tool="spotify_sleep_timer" data-args=\'{"minutes":30}\' title="30 dakika sonra sesi kısıp duraklat">⏰ 30</button>' +
+      "</div>");
+    if (typeof data.volume_percent === "number") {
+      parts.push(`<label class="remote-volume-row"><span>Ses %${esc(String(data.volume_percent))}</span>` +
+        `<input type="range" class="remote-volume" min="0" max="100" step="5" value="${esc(String(data.volume_percent))}" aria-label="Spotify sesi"></label>`);
+    }
+  }
+  const wa = (delegation && delegation.data) || {};
+  if (wa.active) {
+    parts.push(`<div class="remote-wa"><span>WhatsApp: <b>${esc(wa.contact || "")}</b> için yazışıyor (${esc(String(wa.turns_taken ?? 0))}/${esc(String(wa.max_turns ?? 0))})</span>` +
+      '<button type="button" class="remote-btn" data-tool="whatsapp_stop_delegation" title="Devri durdur">Durdur</button></div>');
+  }
+  return parts.join("");
+}
+
+/* ── remote: runtime ───────────────────────────────────────────────── */
+
+const Remote = {
+  timer: 0,
+  busy: false,
+
+  async refresh() {
+    const host = $("#home-remote");
+    if (!host || this.busy) return;
+    if (!bridgeReady() || !State.snapshot || !State.snapshot.windows_available) {
+      host.innerHTML = '<div class="remote-off">Windows entegrasyonları kapalı; kumanda yok.</div>';
+      return;
+    }
+    this.busy = true;
+    try {
+      const [now, delegation] = await Promise.all([
+        call("run_remote_tool", "spotify_now_playing", {}),
+        call("run_remote_tool", "whatsapp_delegation_status", {}),
+      ]);
+      host.innerHTML = remoteMarkup(now, delegation);
+    } catch (error) {
+      host.innerHTML = `<div class="remote-off">${esc(String((error && error.message) || error || "Kumanda okunamadı."))}</div>`;
+    } finally {
+      this.busy = false;
+    }
+    $$("[data-tool]", host).forEach((button) => button.addEventListener("click", () => {
+      let args = {};
+      try { args = button.dataset.args ? JSON.parse(button.dataset.args) : {}; } catch (_error) { args = {}; }
+      this.act(button.dataset.tool, args);
+    }));
+    const volume = $(".remote-volume", host);
+    if (volume) volume.addEventListener("change", () => this.act("spotify_set_volume", { percent: Number(volume.value) }));
+  },
+
+  async act(tool, args) {
+    if (!bridgeReady()) return;
+    const result = await call("run_remote_tool", tool, args || {});
+    toast(result.message || result.error || "Tamam.", result.ok === false);
+    this.refresh();
+  },
+
+  start() {
+    this.refresh();
+    clearInterval(this.timer);
+    // A glance, not a watch: the card follows the music while the home
+    // screen is in front, and rests when it is not.
+    this.timer = setInterval(() => { if (State.screen === "home" && !document.hidden) this.refresh(); }, 12000);
+  },
+
+  stop() {
+    clearInterval(this.timer);
+    this.timer = 0;
+  },
+};
+
 function renderHomeSystem() {
   const s = State.snapshot;
   const host = $("#home-system");

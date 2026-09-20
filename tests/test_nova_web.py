@@ -2390,6 +2390,40 @@ def test_the_palette_hands_a_word_to_the_dictionary_and_the_card_escapes() -> No
     assert ".modal.dict" in CSS
 
 
+def test_the_home_remote_draws_what_the_tools_reported() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function esc(", "\nfunction store("))
+    context.eval(section(JS_SOURCES["js/panels.js"], "/* ── remote: the home card's markup (pure)", "/* ── remote: runtime"))
+    draw = lambda now, wa=None: context.eval("remoteMarkup(" + json.dumps(now) + ", " + json.dumps(wa) + ")")
+
+    playing = draw({"ok": True, "data": {"running": True, "playing": True, "artist": "Duman", "track": "Bal\u0131k", "position": "0:12", "duration": "2:48", "liked": True, "volume_percent": 80}})
+    assert "Duman — Balık" in playing and "0:12 / 2:48" in playing
+    assert "⏸" in playing and 'title="Duraklat"' in playing
+    assert 'class="remote-btn liked"' in playing and 'value="80"' in playing
+    assert 'data-tool="spotify_sleep_timer"' in playing and '{&quot;minutes&quot;:30}' not in playing, "the args stay valid JSON in the attribute"
+    assert "remote-wa" not in playing, "no delegation, no delegation line"
+
+    paused = draw({"ok": True, "data": {"running": True, "playing": False, "track": "Bal\u0131k", "artists": ["Duman"]}})
+    assert "Duman — Balık" in paused and "▶" in paused and 'title="Çal"' in paused
+    assert "remote-volume" not in paused, "no volume read, no slider invented"
+
+    closed = draw({"ok": False, "status": "blocked", "message": "Spotify çalışmıyor. Önce uygulamayı aç.", "data": {"running": False}})
+    assert 'class="remote-off"' in closed and "Spotify çalışmıyor" in closed and "remote-btn" not in closed
+
+    busy = draw({"ok": True, "data": {"running": True, "playing": False}}, {"ok": True, "data": {"active": True, "contact": "Ahmet", "turns_taken": 2, "max_turns": 8}})
+    assert "Bir şey çalmıyor" in busy
+    assert "<b>Ahmet</b>" in busy and "(2/8)" in busy and 'data-tool="whatsapp_stop_delegation"' in busy
+    hostile = draw({"ok": True, "data": {"running": True, "playing": True, "artist": "<img src=x>", "track": "x"}})
+    assert "<img" not in hostile and "&lt;img" in hostile
+
+    # Wiring: the card, its start/stop with the screen, the bridge call.
+    assert 'id="home-remote"' in HTML
+    assert 'if (id === "home") Remote.start(); else Remote.stop();' in JS_SOURCES["js/shell.js"]
+    assert 'call("run_remote_tool", "spotify_now_playing", {})' in JS_SOURCES["js/panels.js"]
+    assert ".remote-btn" in CSS
+
+
 def test_the_settings_screen_carries_the_vision_switch() -> None:
     assert 'id="settings-vision-toggle"' in HTML
     panels = JS_SOURCES["js/panels.js"]

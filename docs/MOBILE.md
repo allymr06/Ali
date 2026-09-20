@@ -171,3 +171,16 @@ camera, file uploads, the Medical Academy screens, a native APK.
   in a minute are refused for a minute.
 - The phone connects only on Wi-Fi → make sure the Tailscale Android app
   is connected (VPN key icon) on mobile data as well.
+
+## Telefonda neler var (21 Eylül 2026)
+
+Eşleşen telefon masaüstü Nova sayfasının aynısını yükler; hesap makinesi,
+sözlük, Tıp Akademisi (Hesaplar, aylık ritim), nabız, almanaklı brif,
+görüş anahtarı ve ana ekrandaki **Kumanda** kartı (Spotify: çalan parça,
+önceki/çal-duraklat/sonraki, beğen, ses, 30 dk uyku; WhatsApp devri
+durumu ve durdur) telefonda da vardır. Kumanda tek köprü yöntemiyle
+(`run_remote_tool`) izin listeli araçları ToolExecutor üzerinden çalıştırır.
+Bilerek yalnız masaüstünde kalanlar: görüş (ekran yakalama), masaüstü sesli
+oturum (telefon kendi döngüsünü kullanır), yerel dosya/klasör seçiciler
+(araştırma raporunu dışa aktarma) ve pencere işlemleri — telefon bunlara
+"telefondan yapılamaz" der.

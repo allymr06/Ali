@@ -303,6 +303,30 @@ def daily_brief_due(now: datetime, target: str, stamp: str | None) -> bool:
     return (now.hour, now.minute) >= (hour, minute)
 
 
+# The home screen's remote (and the phone, which loads the same page)
+# may run only these: media transport and the delegation's own status
+# and stop. Every one is LOW risk or read-only and needs no approval;
+# anything else on the executor stays a chat request.
+REMOTE_TOOLS: frozenset[str] = frozenset({
+    "spotify_now_playing",
+    "spotify_play_pause",
+    "spotify_next_track",
+    "spotify_previous_track",
+    "spotify_set_volume",
+    "spotify_seek",
+    "spotify_shuffle",
+    "spotify_repeat",
+    "spotify_like_track",
+    "spotify_library",
+    "spotify_play_library",
+    "spotify_queue_track",
+    "spotify_sleep_timer",
+    "spotify_cancel_sleep_timer",
+    "whatsapp_delegation_status",
+    "whatsapp_stop_delegation",
+})
+
+
 def compose_voice_state_callback(push: Callable[[Any], None], ducker: Any | None) -> Callable[[Any], None]:
     """The page hears every voice phase; the music ducks on SPEAKING and
     comes back after. A failing ducker must never break the voice turn."""
@@ -1754,6 +1778,52 @@ class NovaBridge:
         if not result.get("ok"):
             return {"ok": False, "error": str(result.get("reason") or "Sözlükte bulunamadı.")}
         return _jsonable(result)
+
+    def run_remote_tool(self, name: str, payload: Any = None) -> dict[str, Any]:
+        """One control from the home remote, run through the tool executor.
+
+        The executor keeps its policy, timeout and verification in the
+        loop; the bridge never calls an integration directly. The result
+        is the tool's own honest report - PARTIAL and BLOCKED included.
+        (The parameter is not called ``arguments``: pywebview builds the
+        page-side wrapper from these names, and ``arguments`` is
+        JavaScript's own reserved object - the wrapper then sends nothing.)
+        """
+        tool = str(name or "").strip()
+        if tool not in REMOTE_TOOLS:
+            return {"ok": False, "error": "Bu araç kumandadan çalıştırılamaz."}
+        if self.controller.paused:
+            return {"ok": False, "error": PAUSED_MESSAGE}
+        executor = self.controller.application.tool_executor
+        if not executor.contains(tool):
+            return {"ok": False, "error": "Bu araç bu yapılandırmada kayıtlı değil."}
+        parameters = dict(payload) if isinstance(payload, Mapping) else {}
+        # Tool handlers may be coroutines, and the executor runs those only
+        # inside an event loop: the controller's runner is that loop, and
+        # this thread waits for the verified result, as the settings
+        # connection test does.
+        timeout = float(getattr(executor.get(tool).definition, "timeout_seconds", 30.0) or 30.0) + 5.0
+
+        async def run() -> Any:
+            outcome = executor.execute(tool, parameters=parameters)
+            if hasattr(outcome, "__await__"):
+                outcome = await outcome
+            return outcome
+
+        try:
+            future = self.controller.submit_background(run(), lambda done: None)
+            result = future.result(timeout=timeout)
+        except Exception as exc:
+            return {"ok": False, "error": f"Araç çalıştırılamadı ({type(exc).__name__})."}
+        status = getattr(getattr(result, "status", None), "value", str(getattr(result, "status", "")))
+        return {
+            "ok": bool(getattr(result, "succeeded", False)),
+            "status": status,
+            "message": str(getattr(result, "message", "") or ""),
+            "data": _jsonable(getattr(result, "data", None) or {}),
+            "verified": bool(getattr(result, "verified", False)),
+            "error": getattr(result, "error", None),
+        }
 
     def medical_pick_file(self, kind: str = "document") -> dict[str, Any]:
         """Open the native picker for a lecture document, an exam file or a

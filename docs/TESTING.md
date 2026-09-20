@@ -1226,6 +1226,17 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The remote (21 September 2026)
+
+`test_ui_nova` runs `run_remote_tool` against a tool registered on the
+booted executor (once, result mirrored) and pins the two refusals: not
+on the allow-list, and allowed but unregistered. `test_nova_web` draws
+the remote from tool reports - playing, paused, Spotify closed, a
+delegation running, a hostile artist name escaped - and checks the
+wiring (card id, start/stop with the home screen, the bridge call).
+`test_mobile` asserts the served `/nova/` page carries the new cards
+and that the remote's bridge method answers from the phone.
+
 ## Spotify's hands (21 September 2026)
 
 `tests/test_spotify_desktop.py` pins the pure helpers with the names the

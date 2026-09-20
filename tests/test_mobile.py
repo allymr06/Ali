@@ -948,8 +948,15 @@ def test_the_nova_page_is_served_only_to_paired_phones_with_the_shim(mobile) -> 
     assert b'js/nova-shim.js?v=' in body and body.index(b"nova-shim.js") < body.index(b"js/foundation.js"), "the shim loads before every Nova script"
     assert b"css/phone.css" in body and b'href="/manifest.webmanifest"' in body
     assert b"Content-Security-Policy" in body, "the desktop page's own CSP travels with it"
-    for path in ("/nova/js/nova-shim.js", "/nova/js/foundation.js", "/nova/css/tokens.css", "/nova/css/phone.css", "/nova/js/medical.js"):
+    for path in ("/nova/js/nova-shim.js", "/nova/js/foundation.js", "/nova/css/tokens.css", "/nova/css/phone.css", "/nova/js/medical.js",
+                 "/nova/js/toolbox.js", "/nova/js/medcalc.js", "/nova/js/rooms.js"):
         assert client.request("GET", path)[0] == 200, path
+    # The phone gets the whole house: the newest cards ship in the very
+    # same page, and the remote's bridge method is reachable from it.
+    for marker in (b'id="home-remote"', b'id="dictcard"', b'data-view="calc"', b'id="settings-vision-toggle"'):
+        assert marker in body, marker
+    status, payload = client.request("POST", "/api/bridge/run_remote_tool", {"args": ["fs_delete", {}]})
+    assert status == 200 and payload == {"ok": False, "error": "Bu araç kumandadan çalıştırılamaz."}
     assert client.request("GET", "/nova/js/../../mobile/server.py")[0] == 404
     assert client.request("GET", "/nova/css/nope.css")[0] == 404
     assert client.request("GET", "/nova/index.html/extra")[0] == 404

@@ -2925,6 +2925,59 @@ def test_the_morning_brief_clock_and_line_are_exact_and_honest() -> None:
     assert shell.brief_notification_body({"almanac": dead}) == "Bugün için bekleyen bir şey görünmüyor."
 
 
+def test_the_home_remote_runs_only_allowed_tools_through_the_executor(booted) -> None:
+    from app.core.models import ToolDefinition, ToolExecutionStatus, ToolResult
+
+    calls: list[str] = []
+
+    def now_playing() -> ToolResult:
+        calls.append("now")
+        return ToolResult(
+            ToolExecutionStatus.SUCCESS, "spotify_now_playing",
+            message="Çalıyor: Duman — Balık", data={"playing": True, "track": "Balık", "volume_percent": 80}, verified=True,
+        )
+
+    booted.app.tool_executor.register(
+        ToolDefinition(
+            name="spotify_now_playing", description="test", risk_level=RiskLevel.READ_ONLY,
+            requires_confirmation=False, version="1.0.0", capabilities=frozenset({"spotify"}),
+            tags=frozenset({"spotify"}), timeout_seconds=5.0, metadata={},
+        ),
+        now_playing,
+        source="integration:spotify",
+    )
+
+    result = booted.bridge.run_remote_tool("spotify_now_playing", {})
+    assert result["ok"] is True and result["status"] == "success" and result["verified"] is True
+    assert result["message"] == "Çalıyor: Duman — Balık" and result["data"]["volume_percent"] == 80
+    assert calls == ["now"], "the executor ran the registered tool once"
+
+    # The real media tools are coroutines with float parameters; the
+    # bridge runs them on the controller's loop and JSON's 100 is a float.
+    async def set_volume(percent: float) -> ToolResult:
+        calls.append(f"volume:{percent}")
+        return ToolResult(ToolExecutionStatus.SUCCESS, "spotify_set_volume", message=f"Spotify sesi %{percent:g}.", verified=True)
+
+    booted.app.tool_executor.register(
+        ToolDefinition(
+            name="spotify_set_volume", description="test", risk_level=RiskLevel.LOW,
+            requires_confirmation=False, version="1.0.0", capabilities=frozenset({"spotify"}),
+            tags=frozenset({"spotify"}), timeout_seconds=5.0, metadata={},
+        ),
+        set_volume,
+        source="integration:spotify",
+    )
+    volume = booted.bridge.run_remote_tool("spotify_set_volume", {"percent": 100})
+    assert volume == {"ok": True, "status": "success", "message": "Spotify sesi %100.", "data": {}, "verified": True, "error": None}
+    assert calls[-1] == "volume:100"
+
+    # Not on the allow-list: refused before the executor is even asked.
+    assert booted.bridge.run_remote_tool("fs_delete", {}) == {"ok": False, "error": "Bu araç kumandadan çalıştırılamaz."}
+    assert booted.bridge.run_remote_tool("", None)["ok"] is False
+    # Allowed but not registered in this configuration: said plainly.
+    assert booted.bridge.run_remote_tool("spotify_seek", {"position": "+30"}) == {"ok": False, "error": "Bu araç bu yapılandırmada kayıtlı değil."}
+
+
 def test_voice_phases_reach_the_page_and_duck_the_music_without_risking_the_turn() -> None:
     pushed: list[str] = []
 

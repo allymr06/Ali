@@ -43,15 +43,27 @@ class SQLiteResearchCache:
         self._initialize()
 
     @staticmethod
-    def key_for(question: str, max_sources: int, time_range: str | None) -> str:
+    def key_for(
+        question: str,
+        max_sources: int,
+        time_range: str | None,
+        *,
+        sources: tuple[str, ...] = (),
+        site: str | None = None,
+    ) -> str:
         normalized_question = " ".join(question.split()).casefold()
         normalized_range = " ".join((time_range or "").split()).casefold() or None
+        # The source selection is part of the question: the same words
+        # asked of YouTube and of PubMed are two answers. A plain web
+        # question keeps the key it always had, so old entries still serve.
         material = json.dumps(
             {
                 "format_version": SQLiteResearchCache.SCHEMA_VERSION,
                 "question": normalized_question,
                 "max_sources": int(max_sources),
                 "time_range": normalized_range,
+                **({"sources": list(sources)} if sources and tuple(sources) != ("web",) else {}),
+                **({"site": site} if site else {}),
             },
             ensure_ascii=False,
             separators=(",", ":"),
@@ -140,6 +152,8 @@ class SQLiteResearchCache:
         report: ResearchReport,
         *,
         now: datetime | None = None,
+        sources: tuple[str, ...] = (),
+        site: str | None = None,
     ) -> ResearchReport:
         cached_at = (now or datetime.now(UTC)).astimezone(UTC)
         expires_at = cached_at + self.ttl
@@ -156,7 +170,7 @@ class SQLiteResearchCache:
             separators=(",", ":"),
             sort_keys=True,
         )
-        cache_key = self.key_for(question, max_sources, time_range)
+        cache_key = self.key_for(question, max_sources, time_range, sources=sources, site=site)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
@@ -218,8 +232,10 @@ class SQLiteResearchCache:
         *,
         allow_stale: bool = False,
         now: datetime | None = None,
+        sources: tuple[str, ...] = (),
+        site: str | None = None,
     ) -> ResearchReport | None:
-        cache_key = self.key_for(question, max_sources, time_range)
+        cache_key = self.key_for(question, max_sources, time_range, sources=sources, site=site)
         with self._connect() as connection:
             row = connection.execute(
                 """

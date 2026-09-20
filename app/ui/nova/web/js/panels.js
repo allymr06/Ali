@@ -463,64 +463,8 @@ function renderVisionResult(ok, text, error) {
   if (State.busy) setBusy(false, READY);
 }
 
-async function renderResearchHistory() {
-  const host = $("#research-history");
-  if (!host || !bridgeReady()) return;
-  const history = await call("research_history");
-  if (history.ok === false || !(history.items || []).length) { host.innerHTML = ""; return; }
-  host.innerHTML = '<span class="msg-sources-label">Son araştırmalar</span>' + history.items.map((item) =>
-    `<button type="button" class="chip" data-history-query="${esc(item.question)}" title="${item.sources} kaynak · yeniden açar">${esc(item.question.length > 60 ? item.question.slice(0, 60) + "…" : item.question)}</button>`).join("");
-  $$("[data-history-query]", host).forEach((chip) => chip.addEventListener("click", () => {
-    $("#research-input").value = chip.dataset.historyQuery;
-    $("#research-form").requestSubmit();
-  }));
-}
-
-async function submitResearch(event) {
-  event.preventDefault();
-  if (State.paused) { toast(PAUSED_NOTICE, true); return; }
-  if (State.busy || !bridgeReady()) return;
-  const query = $("#research-input").value.trim();
-  if (!query) return;
-  const panel = $("#research-result");
-  panel.hidden = false;
-  panel.classList.remove("err");
-  panel.innerHTML = '<span class="thinking"><span class="orbit"></span>kaynaklar taranıyor ve doğrulanıyor…</span>';
-  $("#research-submit").disabled = true;
-  setBusy(true, "RESEARCHING");
-  const result = await call("run_research", query, Number($("#research-sources").value));
-  if (result.ok === false) renderResearch(false, null, result.error || "Araştırma başlatılamadı.");
-}
-
-function renderResearch(ok, report, error) {
-  const panel = $("#research-result");
-  panel.hidden = false;
-  panel.classList.toggle("err", !ok);
-  $("#research-submit").disabled = false;
-  if (State.busy) setBusy(false, READY);
-  if (!ok) { panel.textContent = error || "Araştırma başarısız."; Presence.error("araştırma başarısız"); return; }
-  const parts = [];
-  if (report.query) parts.push(`<h3>SORGU</h3>${esc(report.query)}`);
-  const summary = report.summary || report.answer || report.text;
-  if (summary) parts.push(`<h3>ÖZET</h3>${esc(summary)}`);
-  const sources = report.sources || report.citations || [];
-  if (Array.isArray(sources) && sources.length) {
-    parts.push("<h3>KAYNAKLAR</h3>" + sources.map((src) => {
-      const title = src.title || src.url || String(src);
-      const url = src.url ? ` — <button type="button" class="src-link" data-open-url="${esc(src.url)}" title="Tarayıcıda açar">${esc(src.url)}</button>` : "";
-      return `<span class="src">▸ ${esc(title)}${url}</span>`;
-    }).join(""));
-  }
-  const uncertainties = report.uncertainties || [];
-  if (Array.isArray(uncertainties) && uncertainties.length) {
-    parts.push("<h3>BELİRSİZLİKLER</h3>" + uncertainties.map((u) => `<span class="src">▸ ${esc(u)}</span>`).join(""));
-  }
-  panel.innerHTML = parts.join("") || esc(JSON.stringify(report, null, 2));
-  $$("[data-open-url]", panel).forEach((node) => node.addEventListener("click", async () => {
-    const opened = await call("open_external", node.dataset.openUrl);
-    if (opened.ok === false) toast(opened.error || "Bağlantı açılamadı.", true);
-  }));
-}
+/* The research screen's own functions live in research.js: the room, the
+   source chips, the report. bindPanels still binds the form's submit. */
 
 /* ── diagnostics ──────────────────────────────────────────────────── */
 

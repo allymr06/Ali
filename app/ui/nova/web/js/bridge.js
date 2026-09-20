@@ -199,6 +199,20 @@ const DemoBridge = {
     return { ok: true, items: [] };
   },
 
+  async research_sources() {
+    return { ok: true, sources: [
+      { id: "web", label: "Web", kind: "web", description: "Genel web araması (DuckDuckGo)." },
+      { id: "youtube", label: "YouTube", kind: "video", description: "Videolar." },
+      { id: "github", label: "GitHub", kind: "repo", description: "Depolar." },
+      { id: "wikipedia", label: "Wikipedia", kind: "encyclopedia", description: "Maddeler." },
+      { id: "pubmed", label: "PubMed", kind: "paper", description: "Tıp literatürü." },
+      { id: "arxiv", label: "arXiv", kind: "paper", description: "Ön baskılar." },
+      { id: "stackoverflow", label: "Stack Overflow", kind: "discussion", description: "Soru ve cevaplar." },
+      { id: "hackernews", label: "Hacker News", kind: "discussion", description: "Tartışmalar." },
+      { id: "site", label: "Belirli site", kind: "web", description: "Verdiğin alan adında arar." },
+    ] };
+  },
+
   async open_external() {
     return { ok: false, error: "Demo modunda tarayıcı açılmaz." };
   },

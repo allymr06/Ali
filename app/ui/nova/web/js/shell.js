@@ -48,6 +48,11 @@ const ICONS = {
   sound: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.8a7.6 7.6 0 0 1 0 10.4"/>',
   mute: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
   sun: '<circle cx="12" cy="12" r="3.8"/><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M5.3 18.7 7 17M17 7l1.7-1.7"/>',
+  globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.6 2.6 14.4 0 17M12 3.5c-2.6 2.6-2.6 14.4 0 17"/>',
+  repo: '<circle cx="7" cy="5.5" r="2"/><circle cx="7" cy="18.5" r="2"/><circle cx="17" cy="8.5" r="2"/><path d="M7 7.5v9M17 10.5c0 3-3 4-6 4.5s-4 1.5-4 2.5"/>',
+  paper: '<path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20V4a.5.5 0 0 1 .5-.5z"/><path d="M14 3.5v4h4M9 12h6M9 15.5h6"/>',
+  discuss: '<path d="M4 5.5h11v8H8l-4 3z"/><path d="M15 9.5h5v8h-3l-3 2.5v-2.5h-2"/>',
+  book: '<path d="M4.5 5.5a2 2 0 0 1 2-2H12v16H6.5a2 2 0 0 0-2 2z"/><path d="M19.5 5.5a2 2 0 0 0-2-2H12v16h5.5a2 2 0 0 1 2 2z"/>',
 };
 function icon(name) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
@@ -108,6 +113,7 @@ function showScreen(id, { focus = true } = {}) {
   // The academy is a room of its own: entering it takes the rail and the
   // top bar away and plays its opening; leaving it gives the window back.
   if (id === "medical") Academy.enter(); else Academy.leave();
+  if (id === "research") ResearchRoom.enter(); else ResearchRoom.leave();
   if (Motion.allowed()) {
     next.animate(
       [{ opacity: 0, transform: "translateY(10px) scale(0.995)" },

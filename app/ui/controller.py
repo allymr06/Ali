@@ -687,14 +687,26 @@ class DesktopController:
         return bool(await interrupt())
 
     async def run_research(
-        self, query: str, *, max_sources: int = 5
+        self,
+        query: str,
+        *,
+        max_sources: int = 5,
+        sources: tuple[str, ...] = (),
+        site: str | None = None,
     ) -> dict[str, object]:
         if self.application.research is None:
             raise RuntimeError("Web research is not enabled in configuration.")
+        # Only a chosen source list or site travels: a research backend
+        # that knows nothing of them is asked the way it always was.
+        options: dict[str, object] = {"max_sources": max_sources}
+        if sources:
+            options["sources"] = tuple(sources)
+        if site:
+            options["site"] = site
         report = await asyncio.to_thread(
             self.application.research.research,
             query,
-            max_sources=max_sources,
+            **options,
         )
         return report.to_dict()
 

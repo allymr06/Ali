@@ -58,6 +58,7 @@ import webview
 from app.config.paths import default_state_directory
 from app.core.models import Context, Request, RequestSource
 from app.notifications import NotificationCenter, NotificationStore, ReminderWatch
+from app.research.sources import SOURCE_CATALOG, normalize_site, parse_sources
 from app.reminders.service import show_windows_toast
 from app.security.interactive import (
     InteractiveApprovalRequest,
@@ -78,6 +79,7 @@ WEB_ASSETS: tuple[str, ...] = (
     "css/medical.css",
     "css/study.css",
     "css/academy.css",
+    "css/research.css",
     "css/phone.css",
     "js/foundation.js",
     "js/bridge.js",
@@ -88,7 +90,9 @@ WEB_ASSETS: tuple[str, ...] = (
     "js/panels.js",
     "js/medical.js",
     "js/study.js",
+    "js/rooms.js",
     "js/academy.js",
+    "js/research.js",
     "js/main.js",
 )
 WEB_RELATIVE_PATH = PurePath("app", "ui", "nova", "web")
@@ -177,6 +181,24 @@ DIAGNOSTIC_NOTIFICATION_TITLES: Mapping[str, str] = {
 }
 SHUTDOWN_LOCK_TIMEOUT_SECONDS = 2.0
 MAX_RESEARCH_SOURCES = 10
+
+
+def research_source_limit(requested: object, service_maximum: object) -> int:
+    """How many sources a research request may ask for.
+
+    The page offers up to ten; the service refuses more than it was
+    configured for. Asking is clamped rather than refused, so "8 kaynak"
+    on a service capped at 5 gives five sources instead of an error.
+    """
+    try:
+        wanted = int(requested)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        wanted = 5
+    try:
+        ceiling = int(service_maximum)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        ceiling = MAX_RESEARCH_SOURCES
+    return max(1, min(wanted, MAX_RESEARCH_SOURCES, max(1, ceiling)))
 MAX_DIAGNOSTIC_EVENTS = 500
 MAX_MEMORY_LIST = 500
 MAX_CONVERSATION_LIST = 100
@@ -2662,7 +2684,33 @@ class NovaBridge:
         except Exception as exc:
             return {"ok": False, "error": f"Geçmiş okunamadı ({type(exc).__name__})."}
 
-    def run_research(self, query: str, max_sources: Any = 5) -> dict[str, Any]:
+    def research_sources(self) -> dict[str, Any]:
+        """The places research may look, as configured: the page builds its chips from this."""
+        research = self.controller.application.research
+        provider = (
+            (getattr(research, "sources", None) or getattr(research, "search_provider", None))
+            if research is not None
+            else None
+        )
+        available = tuple(getattr(provider, "available", ()) or ()) if provider is not None else ()
+        if research is not None and not available:
+            available = ("web",)
+        return {
+            "ok": True,
+            "sources": [
+                {"id": spec.id, "label": spec.label, "kind": spec.kind, "description": spec.description}
+                for spec in SOURCE_CATALOG
+                if spec.id in available
+            ],
+        }
+
+    def run_research(
+        self,
+        query: str,
+        max_sources: Any = 5,
+        sources: Any = None,
+        site: Any = None,
+    ) -> dict[str, Any]:
         normalized = str(query or "").strip()
         if not normalized:
             return {"ok": False, "error": "Araştırma sorgusu boş olamaz."}
@@ -2670,11 +2718,19 @@ class NovaBridge:
             return {"ok": False, "error": "Web araştırması ayarlanmamış."}
         if self.controller.paused:
             return {"ok": False, "error": PAUSED_MESSAGE}
+        bounded = research_source_limit(
+            max_sources,
+            getattr(self.controller.application.research, "max_sources", MAX_RESEARCH_SOURCES),
+        )
         try:
-            requested = int(max_sources)
-        except (TypeError, ValueError):
-            requested = 5
-        bounded = max(1, min(requested, MAX_RESEARCH_SOURCES))
+            chosen = parse_sources(sources)
+            host = normalize_site(str(site) if site else None)
+        except ValueError:
+            return {"ok": False, "error": "Kaynak seçimi geçersiz."}
+        if host is not None and "site" not in chosen:
+            chosen = chosen + ("site",)
+        if "site" in chosen and host is None:
+            return {"ok": False, "error": "Belirli site araması için bir alan adı yaz."}
 
         def done(future: Future[Any]) -> None:
             if future.cancelled():
@@ -2702,7 +2758,9 @@ class NovaBridge:
 
         try:
             self.controller.submit_background(
-                self.controller.run_research(normalized, max_sources=bounded),
+                self.controller.run_research(
+                    normalized, max_sources=bounded, sources=chosen, site=host
+                ),
                 done,
             )
         except RuntimeError as exc:

@@ -193,6 +193,44 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Research: many doors, and a room of its own (20 September 2026)
+
+Ali asked for the research screen to get the academy's treatment and to
+be able to look in YouTube, GitHub and many other places.
+
+- **Where it looks.** `app/research/sources.py` is the catalogue: the open
+  web (DuckDuckGo), YouTube (candidates from the web index, each confirmed
+  by YouTube's own oEmbed answer for title and channel), GitHub, Wikipedia
+  (Turkish first, English when short), PubMed, arXiv, Stack Overflow,
+  Hacker News, and one named site. Every source is keyless and read-only,
+  speaks JSON or Atom through the same pinned transport and URL policy as
+  every other fetch, and runs in its own thread under one deadline; a
+  source that fails is named in the report's uncertainties and never
+  takes the others down. A hit that carries its source's own evidence is
+  cited as it is, without fetching a page that would say less.
+- **The tool is unchanged unless asked.** `research_web` still searches
+  the web alone; the model may pass `sources` (a comma list) or a `site`.
+  The cache key includes both. `JARVIS_RESEARCH_SOURCES` bounds the
+  catalogue.
+- **The room.** `Alt+8` opens Araştırma the way `Alt+3` opens the
+  academy: the shell's chrome steps aside, a side column asks the core
+  where it may look and remembers the selection (with Genel, Kod, Bilim,
+  Video and Hepsi as starting points, and a field for one site), and the
+  report is drawn as cards by kind - depo, video, makale, tartışma,
+  ansiklopedi, web sayfası - with the facts each endpoint gave (stars and
+  language, channel, journal and year, score and answers), the findings
+  with their citations, and the uncertainties in Turkish. Indigo daylight
+  with an amber lamp, a night switch, a sound switch, and an opening in
+  which the eight sources light up one by one on their lines to the hub.
+- **Shared machinery.** `js/rooms.js` holds what the two rooms share: the
+  Web Audio engine, the remembered switches, and the veil runner.
+
+Tests: `tests/test_research_sources.py` (every source over a canned
+transport, gzip unpacking, interleaving, failure isolation, the direct
+evidence path, the cache key, the tool contract) and six page checks in
+`tests/test_nova_web.py` (wiring, palette and contrast, Turkish
+uncertainties, presets, card escaping, room switches).
+
 ## The academy as a room of its own (20 September 2026)
 
 Ali asked for a Medical Academy interface that is not another Nova screen:

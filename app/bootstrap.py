@@ -37,6 +37,8 @@ from app.research import (
     GeminiGroundedSearch,
     ResearchService,
     SQLiteResearchCache,
+    build_source_providers,
+    parse_sources,
     SafeWebFetcher,
     SearXNGSearchProvider,
     URLPolicy,
@@ -581,8 +583,34 @@ def create_application(
             )
 
     if search_provider is not None:
+        # Every keyless source the settings allow, around whichever web
+        # backend was chosen. YouTube and site searches ride the DuckDuckGo
+        # index even when another web backend is configured, because that
+        # is the one that can be told "only this host".
+        enabled = parse_sources(active_settings.research_sources)
+        if "web" not in enabled:
+            enabled = ("web",) + enabled
+        duckduckgo = (
+            search_provider
+            if isinstance(search_provider, DuckDuckGoSearchProvider)
+            else DuckDuckGoSearchProvider(
+                policy,
+                timeout_seconds=active_settings.research_timeout_seconds,
+                max_response_bytes=active_settings.research_max_response_bytes,
+            )
+        )
+        source_catalogue = build_source_providers(
+            policy,
+            web=search_provider,
+            duckduckgo=duckduckgo,
+            enabled=enabled,
+            timeout_seconds=active_settings.research_timeout_seconds,
+            max_response_bytes=active_settings.research_max_response_bytes,
+            user_agent=active_settings.research_user_agent,
+        )
         research = ResearchService(
             search_provider=search_provider,
+            sources=source_catalogue,
             fetcher=fetcher,
             max_sources=active_settings.research_max_sources,
             max_concurrency=active_settings.research_max_concurrency,

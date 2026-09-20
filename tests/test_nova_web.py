@@ -2212,3 +2212,111 @@ def test_the_academy_theme_defaults_to_daylight() -> None:
     assert context.eval("document.body.classes['academy-dark']") is True
     context.eval("AcademyTheme.set(false); AcademyTheme.apply()")
     assert context.eval("document.body.classes['academy-dark']") is False
+
+
+# ---------------------------------------------------------------------------
+# Araştırma: many doors, and a room of its own
+# ---------------------------------------------------------------------------
+
+
+def test_the_research_room_is_declared_and_wired() -> None:
+    for name in ("css/research.css", "js/rooms.js", "js/research.js"):
+        assert name in shell.WEB_ASSETS, name
+    assert JS_FILES.index("js/rooms.js") < JS_FILES.index("js/research.js") < JS_FILES.index("js/main.js")
+    for element_id in ("research-intro", "res-back", "res-theme", "res-sound", "res-presets", "res-sources",
+                       "research-site", "research-count", "research-form", "research-input", "research-submit",
+                       "research-history", "research-result"):
+        assert f'id="{element_id}"' in HTML, element_id
+    for source in ("web", "wikipedia", "youtube", "github", "pubmed", "arxiv", "stackoverflow", "hackernews"):
+        assert f'class="ri-node" data-source="{source}"' in HTML, source
+        assert f'class="ri-line" data-source="{source}"' in HTML, source
+    show = section(JS_SOURCES["js/shell.js"], "function showScreen(", "function setStatus(")
+    assert 'if (id === "research") ResearchRoom.enter(); else ResearchRoom.leave();' in show
+    assert JS_SOURCES["js/main.js"].count("bindResearch();") == 1
+    research_js = JS_SOURCES["js/research.js"]
+    assert "async function submitResearch(" in research_js and "submitResearch(" not in JS_SOURCES["js/panels.js"].replace("addEventListener(\"submit\", submitResearch)", "")
+    # The page asks the core where it may look and sends the selection back with the question.
+    assert 'call("research_sources")' in research_js
+    assert 'call("run_research", query, Number($("#research-count").value), sources, site || null)' in research_js
+    assert "Math.random" not in research_js and "Math.random" not in JS_SOURCES["js/rooms.js"]
+
+
+def test_the_research_palette_is_daylight_with_a_night_and_keeps_contrast() -> None:
+    tokens = (WEB / "css/tokens.css").read_text(encoding="utf-8")
+    assert tokens.index("body.research.research-dark {") > tokens.index("body.research, body.research.light {")
+    for header in ("body.research, body.research.light {", "body.research.research-dark {"):
+        block = section(tokens, header, "\n}")
+        colour = lambda name: re.search(name + r":\s+(#[0-9a-f]{6});", block).group(1)
+        assert _wcag_contrast(colour("--bg"), colour("--ink-1")) >= 7, header
+        assert _wcag_contrast(colour("--bg"), colour("--ink-2")) >= 7, header
+        assert _wcag_contrast(colour("--bg"), colour("--ink-3")) >= 4.5, header
+        assert _wcag_contrast(colour("--surface-solid"), colour("--accent-2")) >= 4.5, header
+    day = section(tokens, "body.research, body.research.light {", "\n}")
+    night = section(tokens, "body.research.research-dark {", "\n}")
+    assert _wcag_luminance(re.search(r"--bg:\s+(#[0-9a-f]{6});", day).group(1)) > 0.85
+    assert _wcag_luminance(re.search(r"--bg:\s+(#[0-9a-f]{6});", night).group(1)) < 0.05
+    research_css = (WEB / "css/research.css").read_text(encoding="utf-8")
+    for token in ("--accent:", "--bg:", "--ink-1:", "--font-display:", "--res-lamp:"):
+        assert token not in research_css, token
+
+
+def test_research_uncertainties_read_in_turkish_and_unknown_ones_verbatim() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/research.js"], "const RESEARCH_UNCERTAINTY_TR = [", "\nconst RESEARCH_FRESHNESS_TR"))
+    tr = lambda text: context.eval("researchUncertaintyTr(" + json.dumps(text) + ")")
+    assert tr("Source Hacker News was unavailable (SearchError).") == "Hacker News kaynağına ulaşılamadı (SearchError)."
+    assert tr("2 candidate source(s) could not be safely collected.") == "2 aday kaynak güvenle toplanamadı."
+    assert tr("The evidence was not corroborated across independent domains.") == "Kanıt bağımsız alan adlarında doğrulanmadı."
+    assert tr("Live research was unavailable; cached evidence was returned and may be outdated (FetchError).").startswith("Canlı araştırma yapılamadı")
+    assert tr("Some future service string.") == "Some future service string."
+    assert tr("") == "" and tr(None) == ""
+
+
+def test_research_presets_offer_only_sources_the_core_enabled() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/research.js"], "const RESEARCH_PRESETS = [", "\n/* The facts a card shows"))
+    catalogue = json.dumps([{"id": "web"}, {"id": "github"}, {"id": "youtube"}, {"id": "site"}])
+    preset = lambda name: json.loads(context.eval("JSON.stringify(researchPreset(" + json.dumps(name) + ", " + catalogue + "))"))
+    assert preset("general") == ["web", "youtube", "github"], "in the preset's order, only what exists, never the site"
+    assert preset("science") == ["web"]
+    assert preset("all") == ["web", "github", "youtube"]
+    assert preset("video") == ["youtube"]
+    assert preset("nonsense") == preset("general")
+
+
+def test_research_cards_escape_untrusted_source_text_and_name_their_facts() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function esc(", "\nfunction store("))
+    context.eval("function icon(name) { return '<svg data-icon=\"' + name + '\"></svg>'; }")
+    context.eval(section(JS_SOURCES["js/research.js"], "const RESEARCH_KINDS = {", "\n/* A preset is"))
+    context.eval(section(JS_SOURCES["js/research.js"], "const RESEARCH_FRESHNESS_TR = {", "\n/* ── the workspace"))
+    catalogue = json.dumps([{"id": "github", "label": "GitHub"}, {"id": "youtube", "label": "YouTube"}])
+    repo = {"id": "S1", "title": "octo/atlas <script>alert(1)</script>", "url": "https://github.com/octo/atlas", "kind": "repo",
+            "source": "github", "freshness": "current", "excerpt": "3D atlas \"quoted\"", "meta": {"stars": "1240", "language": "Python", "updated": "2026-09-01"},
+            "prompt_injection_findings": ["ignore_previous"]}
+    html = context.eval("researchSourceMarkup(" + json.dumps(repo) + ", " + catalogue + ")")
+    assert "<script" not in html and "&lt;script&gt;" in html and "&quot;quoted&quot;" in html
+    assert "★ 1240" in html and "Python" in html and "güncelleme 2026-09-01" in html
+    assert "yönlendirme kalıbı" in html and "güncel" in html and 'data-icon="repo"' in html and "GitHub" in html
+    video = {"id": "S2", "title": "Ders", "url": "https://www.youtube.com/watch?v=x", "kind": "video", "source": "youtube",
+             "freshness": "unknown", "excerpt": "", "meta": {"channel": "Anatomi", "confirmed": "no"}}
+    html = context.eval("researchSourceMarkup(" + json.dumps(video) + ", " + catalogue + ")")
+    assert "Anatomi" in html and "kanal doğrulanamadı" in html and "tarih bilinmiyor" in html
+    claims = context.eval("researchClaimsMarkup(" + json.dumps([{"text": "a <b>claim</b>", "citations": ["S1", "S2"], "confidence": 0.8}]) + ")")
+    assert "&lt;b&gt;" in claims and "S1" in claims and "birden çok kaynak" in claims
+
+
+def test_a_room_remembers_its_switches_and_defaults_to_day_and_sound() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval("var preferences = {}; function store(key, value) { if (value === undefined) return preferences[key] === undefined ? null : preferences[key]; preferences[key] = value; return value; }")
+    context.eval("var document = { body: { classes: {}, classList: { toggle(name, on) { document.body.classes[name] = !!on; } } } };")
+    context.eval(section(JS_SOURCES["js/rooms.js"], "function roomSwitch(", "\n/* ── the opening"))
+    context.eval('var sound = roomSwitch("k.sound"); var night = roomNight("k.theme", "x-dark");')
+    assert context.eval("sound.on()") is True and context.eval("night.dark()") is False
+    context.eval("sound.set(false); night.set(true); night.apply()")
+    assert context.eval("sound.on()") is False and context.eval("document.body.classes['x-dark']") is True
+    assert context.eval('preferences["k.sound"]') == "off" and context.eval('preferences["k.theme"]') == "dark"

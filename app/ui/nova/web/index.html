@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="css/medical.css">
 <link rel="stylesheet" href="css/study.css">
 <link rel="stylesheet" href="css/academy.css">
+<link rel="stylesheet" href="css/research.css">
 <link rel="stylesheet" href="css/phone.css">
 </head>
 <body>
@@ -281,22 +282,47 @@
 
     <!-- ── ARAŞTIRMA ───────────────────────────────── -->
     <section class="screen" data-screen="research">
-      <div class="screen-head">
-        <span class="kicker">Sınırlı web erişimi</span>
-        <h1>Araştırma</h1>
-        <p>Kaynak damgalı, tazelik denetimli ve alıntı doğrulamalı raporlar.</p>
+      <div class="res-shell">
+        <aside class="res-side" aria-label="Araştırma">
+          <div class="res-brand">
+            <button id="res-back" class="res-back" type="button" title="JARVIS'e dön (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>JARVIS</button>
+            <button id="res-theme" class="res-side-btn" type="button" aria-pressed="false" title="Araştırma teması"></button>
+            <button id="res-sound" class="res-side-btn" type="button" aria-pressed="true" title="Açılış sesleri"></button>
+            <div class="res-brand-mark">
+              <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13.5" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.5"/><circle cx="16" cy="16" r="4" fill="currentColor"/><path d="M16 3v4M16 25v4M3 16h4M25 16h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M16 16l7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              <span class="res-brand-name">Araştırma<small>JARVIS</small></span>
+            </div>
+          </div>
+          <div class="res-side-section">
+            <span class="res-side-title">Nerede aransın?</span>
+            <div id="res-presets" class="res-presets"></div>
+            <div id="res-sources" class="res-sources" role="group" aria-label="Kaynak seçimi"></div>
+            <label class="res-site"><span>Belirli bir site</span><input id="research-site" type="text" spellcheck="false" placeholder="örn. docs.python.org" aria-label="Belirli site"></label>
+          </div>
+          <div class="res-side-section res-side-history">
+            <span class="res-side-title">Son araştırmalar</span>
+            <div id="research-history" class="res-history"></div>
+          </div>
+        </aside>
+        <div class="res-main">
+          <header class="res-head">
+            <span class="kicker">Kaynak damgalı, alıntı doğrulamalı</span>
+            <h1>Araştırma</h1>
+            <p>Web, YouTube, GitHub, Wikipedia, PubMed, arXiv, Stack Overflow ve Hacker News'te arar. Her kaynak damgalanır, tazeliği söylenir, alıntılar doğrulanır; kaynağın söylemediği hiçbir şey rapora girmez.</p>
+          </header>
+          <form id="research-form" class="res-form panel" autocomplete="off">
+            <input id="research-input" type="text" spellcheck="false" placeholder="Ne araştıralım?">
+            <select id="research-count" aria-label="Kaynak sayısı">
+              <option value="3">3 kaynak</option>
+              <option value="5" selected>5 kaynak</option>
+              <option value="8">8 kaynak</option>
+              <option value="10">10 kaynak</option>
+            </select>
+            <button type="submit" id="research-submit" class="btn btn-primary">Araştır</button>
+          </form>
+          <div id="research-result" class="res-result" hidden></div>
+        </div>
       </div>
-      <form id="research-form" class="tool-form panel" autocomplete="off">
-        <input id="research-input" type="text" spellcheck="false" placeholder="Araştırma sorgusu…">
-        <select id="research-sources" aria-label="Kaynak sayısı">
-          <option value="3">3 kaynak</option>
-          <option value="5" selected>5 kaynak</option>
-          <option value="8">8 kaynak</option>
-        </select>
-        <button type="submit" id="research-submit" class="btn btn-primary">Araştır</button>
-      </form>
-      <div id="research-history" class="med-chips research-history"></div>
-      <div id="research-result" class="result-panel panel" hidden></div>
     </section>
 
     <!-- ── OTOMASYON ───────────────────────────────── -->
@@ -989,6 +1015,38 @@
   </div>
 </div>
 
+<!-- ══════════════════ ARAŞTIRMA AÇILIŞI ══════════════════ -->
+<div id="research-intro" class="research-intro" hidden aria-hidden="true">
+  <div class="ri-stage">
+    <svg class="ri-map" viewBox="0 0 720 300" aria-hidden="true">
+      <line class="ri-line" data-source="web" x1="360" y1="160" x2="110" y2="70"/>
+      <line class="ri-line" data-source="wikipedia" x1="360" y1="160" x2="235" y2="30"/>
+      <line class="ri-line" data-source="youtube" x1="360" y1="160" x2="360" y2="18"/>
+      <line class="ri-line" data-source="github" x1="360" y1="160" x2="485" y2="30"/>
+      <line class="ri-line" data-source="pubmed" x1="360" y1="160" x2="610" y2="70"/>
+      <line class="ri-line" data-source="arxiv" x1="360" y1="160" x2="150" y2="238"/>
+      <line class="ri-line" data-source="stackoverflow" x1="360" y1="160" x2="360" y2="262"/>
+      <line class="ri-line" data-source="hackernews" x1="360" y1="160" x2="570" y2="238"/>
+      <circle class="ri-hub-ring" cx="360" cy="160" r="30"/>
+      <circle class="ri-hub" cx="360" cy="160" r="12"/>
+      <g class="ri-node" data-source="web" transform="translate(110 70)"><g class="ri-pop"><circle r="15"/><text y="4">W</text><text class="ri-node-name" y="34">Web</text></g></g>
+      <g class="ri-node" data-source="wikipedia" transform="translate(235 30)"><g class="ri-pop"><circle r="15"/><text y="4">Wi</text><text class="ri-node-name" y="34">Wikipedia</text></g></g>
+      <g class="ri-node" data-source="youtube" transform="translate(360 18)"><g class="ri-pop"><circle r="15"/><text y="4">YT</text><text class="ri-node-name" y="34">YouTube</text></g></g>
+      <g class="ri-node" data-source="github" transform="translate(485 30)"><g class="ri-pop"><circle r="15"/><text y="4">GH</text><text class="ri-node-name" y="34">GitHub</text></g></g>
+      <g class="ri-node" data-source="pubmed" transform="translate(610 70)"><g class="ri-pop"><circle r="15"/><text y="4">PM</text><text class="ri-node-name" y="34">PubMed</text></g></g>
+      <g class="ri-node" data-source="arxiv" transform="translate(150 238)"><g class="ri-pop"><circle r="15"/><text y="4">aX</text><text class="ri-node-name" y="-24">arXiv</text></g></g>
+      <g class="ri-node" data-source="stackoverflow" transform="translate(360 262)"><g class="ri-pop"><circle r="15"/><text y="4">SO</text><text class="ri-node-name" y="-24">Stack Overflow</text></g></g>
+      <g class="ri-node" data-source="hackernews" transform="translate(570 238)"><g class="ri-pop"><circle r="15"/><text y="4">HN</text><text class="ri-node-name" y="-24">Hacker News</text></g></g>
+    </svg>
+    <div class="ri-word">
+      <span class="ri-kicker">JARVIS</span>
+      <h1 class="ri-title">Araştırma</h1>
+      <p class="ri-line-text">Web · YouTube · GitHub · Wikipedia · PubMed · arXiv · Stack Overflow · Hacker News</p>
+    </div>
+  </div>
+  <p class="ri-skip">Geçmek için tıkla</p>
+</div>
+
 <!-- ══════════════════ TIP AKADEMİSİ AÇILIŞI ══════════════════ -->
 <div id="academy-intro" class="academy-intro" hidden aria-hidden="true">
   <div class="ai-stage">
@@ -1017,7 +1075,9 @@
 <script src="js/panels.js"></script>
 <script src="js/medical.js"></script>
 <script src="js/study.js"></script>
+<script src="js/rooms.js"></script>
 <script src="js/academy.js"></script>
+<script src="js/research.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

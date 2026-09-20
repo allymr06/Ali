@@ -411,18 +411,37 @@ and TLS certificate verification. Proxies, cookies, credentials, automatic
 redirects, authentication, and compressed responses are not used. Every
 redirect target passes the complete policy again and HTTPS cannot downgrade.
 
+TLS verification is never relaxed; on Windows, where the root store as
+Python reads it can lag behind the browser's, the certifi bundle is loaded
+on top of the system store when it is installed, so a site whose chain
+rests on a newer root does not fail as "expired" here while Edge opens it.
+
 `SafeWebFetcher` bounds time, redirect count, response bytes, extracted
 characters, content types, and status codes. Attachments and binary downloads
 fail closed. HTML extraction removes active and hidden elements. Web text is
 always marked as untrusted data; prompt-injection indicators are hashed and
 reported but never interpreted as instructions.
 
-`SearXNGSearchProvider` uses the administrator-configured JSON endpoint. The
-`ResearchService` deduplicates and bounds candidates, collects independent
-sources concurrently, records observation/publication times, resolved IPs and
+`DuckDuckGoSearchProvider` is the keyless default; `SearXNGSearchProvider`
+and `GeminiGroundedSearch` are the alternatives. Around whichever web backend
+is chosen, `app/research/sources.py` adds the places that have their own
+doors - GitHub, YouTube (candidates from the web index, confirmed by
+YouTube's oEmbed), Wikipedia (Turkish first), PubMed, arXiv, Stack Overflow,
+Hacker News, and one named site - each a keyless read-only endpoint spoken
+to through the same pinned transport and URL policy. `MultiSourceSearchProvider`
+runs the chosen sources concurrently, interleaves their answers, and names
+a source that failed instead of hiding it. A hit that carries its source's
+own evidence (a repository's description, a paper's abstract, a video's
+channel) is cited as it is; only web hits are fetched. The `ResearchService`
+deduplicates and bounds candidates, collects independent sources
+concurrently, records observation/publication times, resolved IPs and
 content hashes, assigns freshness, cross-checks excerpts, and validates every
 claim citation against the returned source set. The structured report labels
-every claim as observation or inference and lists unresolved limitations.
+every claim as observation or inference, lists unresolved limitations, and
+carries each source's kind, origin and facts. The tool `research_web` keeps
+searching the web alone unless the model asks for `sources` or a `site`; the
+cache key includes both, so a YouTube question is not answered from a web
+one.
 
 ## Desktop interface
 
@@ -477,6 +496,17 @@ plays it while the in-app motion switch is off. The line under the title is
 the nearest exam countdown exactly as the topbar chip shows it, or nothing.
 A switch in the side column turns the academy dark (`body.academy-dark`,
 the same identity with the lights down) and remembers the choice.
+
+Research (`Alt+8`) is the second such room. `js/rooms.js` holds what the
+two share - the Web Audio engine, the remembered switches and the veil
+runner that plays an opening timeline until a click ends it - and
+`js/research.js` builds the room on it: `body.research` and its indigo
+daylight (night under `body.research-dark`), a side column that asks the
+core where it may look (`research_sources`) and remembers the selection,
+presets for a starting choice, a constellation opening in which each source
+lights up on its own line to the hub, and a report drawn as cards by kind
+with the facts each source's endpoint gave, the findings with their
+citations, and the uncertainties the service admitted, in Turkish.
 
 Nova's honesty rules: the page waits for the real bridge and shows an explicit
 failure screen if it never arrives; the demo bridge is reachable only with

@@ -1153,3 +1153,29 @@ lifts on its own; a click or `Esc` during it skips; `Esc` afterwards
 returns to Komuta Merkezi with the rail back; the side column groups the
 thirteen sections; "Ses kapalı" silences the next opening; at 375 px with
 `body.phone` the column becomes a strip and nothing overflows.
+
+## Research sources and the research room (20 September 2026)
+
+`tests/test_research_sources.py` drives every source over a canned
+transport keyed by host: GitHub facts as evidence, YouTube candidates from
+the web index confirmed by oEmbed (and an unconfirmed one that says so),
+Wikipedia Turkish first, PubMed's two-step lookup, arXiv's Atom entries,
+Stack Overflow's gzip answer, Hacker News' fallback to the discussion
+link, a site search held to its host, non-200 and bad JSON as errors,
+interleaving with one failure named, the build wiring exactly the enabled
+sources, evidence-bearing hits cited without a fetch, a web-only backend
+refusing other sources honestly, the cache key telling a YouTube question
+from a web one, and the tool accepting a source list and a site.
+
+`tests/test_nova_web.py` pins the room: assets and script order, the ids
+and the eight constellation nodes, the `showScreen` hook and the single
+binding, the two palettes and their contrast, Turkish uncertainties with
+unknown strings verbatim, presets that only offer what the core enabled,
+card markup that escapes untrusted text and names the facts, and room
+switches that default to day and sound.
+
+Manual live acceptance: `Alt+8` shows the constellation and lifts on its
+own; a click skips; the side column lists the sources the core enabled;
+a real query over Genel returns cards of more than one kind with an
+"Aç" button that opens the browser; the night switch and the sound switch
+remember themselves; `Esc` returns to Komuta Merkezi with the rail back.

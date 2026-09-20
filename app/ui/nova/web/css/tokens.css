@@ -233,3 +233,93 @@ body.academy.academy-dark {
   --shadow-2:      0 20px 56px rgba(0, 0, 0, 0.50);
   --inset-light:   inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
+
+/* ── Araştırma: a palette of its own ─────────────────────────────────
+   The research room is bright like the academy but is not the academy:
+   paper with a blue cast, deep navy ink set heavier, indigo for the
+   accent, and an amber lamp for its mark and its opening. Bound under
+   body.research the same way, with a night variant last so the room's
+   own switch outranks the shell's theme. */
+:root {
+  --res-lamp:        #f2a93b;
+  --res-lamp-rgb:    242, 169, 59;
+  --res-lamp-ink:    #b06a0e;
+}
+
+body.research, body.research.light {
+  --bg:            #f4f6fb;
+  --bg-2:          #f9fafd;
+  --bg-3:          #ffffff;
+  --surface-1:     rgba(255, 255, 255, 0.74);
+  --surface-2:     rgba(255, 255, 255, 0.88);
+  --surface-3:     rgba(255, 255, 255, 0.97);
+  --surface-solid: #ffffff;
+  --line-1:        rgba(21, 29, 53, 0.09);
+  --line-2:        rgba(21, 29, 53, 0.17);
+  --line-3:        rgba(21, 29, 53, 0.32);
+  --ink-1:         #151d35;
+  --ink-2:         #39436a;
+  --ink-3:         #5b6690;
+  --ink-4:         #8f97b8;
+  --accent:        #4a55d8;
+  --accent-2:      #3a44b8;
+  --accent-3:      #aeb5f2;
+  --accent-rgb:    74, 85, 216;
+  --ok:            #1f9a6a;
+  --ok-rgb:        31, 154, 106;
+  --warn:          #c7791a;
+  --warn-rgb:      199, 121, 26;
+  --bad:           #d24b4b;
+  --bad-rgb:       210, 75, 75;
+  --violet:        #8a5bd6;
+  --violet-rgb:    138, 91, 214;
+  --on-accent:     #ffffff;
+  --glow-1:        0 0 12px rgba(74, 85, 216, 0.22);
+  --glow-2:        0 0 28px rgba(74, 85, 216, 0.18);
+  --shadow-1:      0 8px 24px rgba(21, 29, 53, 0.08);
+  --shadow-2:      0 20px 50px rgba(21, 29, 53, 0.12);
+  --inset-light:   inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --radius-1:      8px;
+  --radius-2:      14px;
+  --radius-3:      22px;
+  --font-display:  "Cambria", "Georgia", "Palatino Linotype", "Book Antiqua", serif;
+  --font-system:   "Cambria", "Georgia", "Palatino Linotype", serif;
+}
+
+body.research.research-dark {
+  --bg:            #0b1020;
+  --bg-2:          #10162a;
+  --bg-3:          #161d35;
+  --surface-1:     rgba(28, 36, 66, 0.55);
+  --surface-2:     rgba(32, 41, 74, 0.74);
+  --surface-3:     rgba(38, 48, 86, 0.90);
+  --surface-solid: #141b33;
+  --line-1:        rgba(190, 200, 240, 0.10);
+  --line-2:        rgba(190, 200, 240, 0.20);
+  --line-3:        rgba(190, 200, 240, 0.36);
+  --ink-1:         #eef1fb;
+  --ink-2:         #c3c9e3;
+  --ink-3:         #9aa3c8;
+  --ink-4:         #5f6889;
+  --accent:        #8f9bff;
+  --accent-2:      #7b88ff;
+  --accent-3:      #3d47a3;
+  --accent-rgb:    143, 155, 255;
+  --ok:            #6fd3a6;
+  --ok-rgb:        111, 211, 166;
+  --warn:          #f2b46a;
+  --warn-rgb:      242, 180, 106;
+  --bad:           #ff8a80;
+  --bad-rgb:       255, 138, 128;
+  --violet:        #c0a7f0;
+  --violet-rgb:    192, 167, 240;
+  --on-accent:     #0b1020;
+  --glow-1:        0 0 12px rgba(143, 155, 255, 0.22);
+  --glow-2:        0 0 28px rgba(143, 155, 255, 0.18);
+  --shadow-1:      0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-2:      0 20px 56px rgba(0, 0, 0, 0.50);
+  --inset-light:   inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --res-lamp:      #ffc266;
+  --res-lamp-rgb:  255, 194, 102;
+  --res-lamp-ink:  #ffc266;
+}

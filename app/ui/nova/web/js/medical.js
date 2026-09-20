@@ -3832,7 +3832,11 @@ function monthRhythmMarkup(days) {
   if (!Array.isArray(days) || !days.length) return "";
   const names = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
   const cells = days.map((day) => {
-    const level = monthRhythmLevel(Number(day.minutes) || 0);
+    // A day with recorded answers or card reviews is active even when no
+    // study minutes were logged - the legend counts it as active, so the
+    // cell must not sit there looking empty.
+    const worked = (Number(day.answers) || 0) + (Number(day.cards) || 0) > 0 ? 1 : 0;
+    const level = Math.max(monthRhythmLevel(Number(day.minutes) || 0), worked);
     const date = new Date(String(day.date) + "T12:00:00");
     const title = `${esc(day.date)} · ${Number(day.minutes) || 0} dk · ${Number(day.answers) || 0} soru · ${Number(day.cards) || 0} kart`;
     return `<span class="mr-cell l${level}" title="${title}" data-day="${esc(String(day.date))}">` +

@@ -212,6 +212,14 @@ const DemoBridge = {
     return { ok: false, error: "Demo modunda dosya yazılmaz." };
   },
 
+  async define_word(word) {
+    // One canned entry so the card can be seen; the demo never asks TDK.
+    return { ok: true, word: String(word || "kalp"),
+             origin: "Demo verisi (canlı sözlük yalnız masaüstünde)",
+             meanings: [{ features: "isim", sense: "Demo modunda TDK'ya sorulmaz; bu satır örnektir.", example: "" }],
+             compounds: [] };
+  },
+
   async research_sources() {
     return { ok: true, sources: [
       { id: "web", label: "Web", kind: "web", description: "Genel web araması (DuckDuckGo)." },

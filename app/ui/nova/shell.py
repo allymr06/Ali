@@ -329,9 +329,23 @@ def brief_notification_body(brief: Mapping[str, Any]) -> str:
     tasks = int(brief.get("tasks_open") or 0)
     if tasks:
         parts.append(f"{tasks} açık görev")
-    if not parts:
+    # The almanac rides along when it answered; its absence stays silent
+    # here because the brief page already prints the reason in full.
+    ambient: list[str] = []
+    almanac = brief.get("almanac") or {}
+    weather = almanac.get("weather") or {}
+    if weather.get("available") and weather.get("temperature") is not None:
+        label = str(weather.get("label") or "").strip()
+        ambient.append(f"{weather.get('city')} {weather.get('temperature')}°" + (f", {label}" if label else ""))
+    rates = almanac.get("rates") or {}
+    if rates.get("available") and rates.get("usd_try") is not None:
+        lira = str(rates.get("usd_try")).replace(".", ",")
+        ambient.append(f"1 $ = {lira} ₺")
+    if not parts and not ambient:
         return "Bugün için bekleyen bir şey görünmüyor."
-    return " · ".join(parts)[:220]
+    if not parts:
+        parts.append("Bekleyen iş yok")
+    return " · ".join(parts + ambient)[:220]
 
 MIN_REMEMBERED_SIZE = (900, 600)
 
@@ -1708,6 +1722,23 @@ class NovaBridge:
                     "rates": {"available": False, "reason": reason},
                 }
         return brief
+
+    def define_word(self, word: str = "") -> dict[str, Any]:
+        """One TDK dictionary entry for the palette's lookup card.
+
+        The service already answers with honest reasons; the bridge only
+        translates its refusals into the card's error shape.
+        """
+        dictionary = getattr(self.controller.application, "dictionary", None)
+        if dictionary is None:
+            return {"ok": False, "error": "Sözlük servisi hazır değil."}
+        try:
+            result = dictionary.lookup(str(word or ""))
+        except Exception as exc:
+            return {"ok": False, "error": f"Sözlük okunamadı ({type(exc).__name__})."}
+        if not result.get("ok"):
+            return {"ok": False, "error": str(result.get("reason") or "Sözlükte bulunamadı.")}
+        return _jsonable(result)
 
     def medical_pick_file(self, kind: str = "document") -> dict[str, Any]:
         """Open the native picker for a lecture document, an exam file or a

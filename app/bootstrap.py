@@ -33,6 +33,7 @@ from app.providers.models import ModelProfile, TaskType
 from app.providers.registry import ProviderRegistry
 from app.providers.router import ModelRouter
 from app.integrations.almanac import AlmanacService
+from app.integrations.dictionary import DictionaryService
 from app.research import (
     DuckDuckGoSearchProvider,
     GeminiGroundedSearch,
@@ -83,6 +84,7 @@ class JARVISApplication:
     vision: VisionService | None = None
     research: ResearchService | None = None
     almanac: AlmanacService | None = None
+    dictionary: DictionaryService | None = None
     reminders: object | None = None
     routines: object | None = None
     screen_watcher: object | None = None
@@ -641,6 +643,13 @@ def create_application(
         user_agent=active_settings.research_user_agent,
     )
 
+    # The palette's dictionary is the same shape: keyless, read-only,
+    # policy-pinned, and only ever asked when the user asks for a word.
+    dictionary = DictionaryService(
+        timeout_seconds=active_settings.research_timeout_seconds,
+        user_agent=active_settings.research_user_agent,
+    )
+
     from app.config.paths import default_state_path
     from app.reminders import ReminderService
 
@@ -854,6 +863,7 @@ def create_application(
         vision=vision,
         research=research,
         almanac=almanac,
+        dictionary=dictionary,
         reminders=reminders,
         routines=routines,
         screen_watcher=screen_watcher,

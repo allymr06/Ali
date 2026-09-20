@@ -193,6 +193,27 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The palette learns Turkish (20 September 2026)
+
+`app/integrations/dictionary.py` asks TDK's Güncel Türkçe Sözlük
+(sozluk.gov.tr, keyless JSON) through the same URL policy and pinned
+transport as web research, reshapes one entry - headword, origin, up to
+six senses with one example, the compound words - and caches it for
+half an hour, misses and dead-service answers included. The palette
+recognises `sözlük <kelime>` (also `sozluk`, `tdk`) and opens a card
+over the `define_word` bridge; the card credits TDK and marks the data
+a live query. Python's `casefold` broke Turkish here (İ became i plus a
+combining dot, so HEKİM missed hekim): the service folds I/İ the
+Turkish way before asking. Found along the way and fixed in the same
+batch: the F1 card's close button had no glyph and no click handler
+(both cards now close by X and by a click on the veil), a month cell
+with answers or cards but no logged minutes sat empty while the legend
+called the day active (it now wears the first shade), and the morning
+notification line carries the almanac when it answered - `Bekleyen iş
+yok · İstanbul 21°, parçalı bulutlu · 1 $ = 41,2 ₺` - and stays
+silent about it when it did not, because the brief page already prints
+the reason in full.
+
 ## A backup must never overwrite a backup (20 September 2026)
 
 The third defect the flake hunt surfaced, and the worst of the three:

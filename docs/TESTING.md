@@ -1226,6 +1226,21 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The dictionary and the honest month (20 September 2026)
+
+`tests/test_dictionary.py` cans the live sozluk.gov.tr shape captured
+by probe (list of entries, senses under `anlamlarListe`, compounds as
+one comma-joined string) and pins: the reshape invents nothing, the
+Turkish case fold (HEKİM→hekim, ISPARTA→ısparta) hits one transport
+call for every casing, misses and dead services answer with named
+reasons and are cached, guards run before any network, and the cache
+cap evicts the oldest word. `test_nova_web.py` walks `dictionaryQuery`
+prefixes and the card markup (hostile words stay escaped), checks the
+shortcuts X is actually wired, and demands an answers-only day wear
+`l1` while a truly empty day stays `l0`. `test_ui_nova.py` drives the
+`define_word` bridge against a stub and reads the morning line with
+and without the almanac.
+
 ## Rhythm, pulse and noise (20 September 2026)
 
 `tests/test_medical_scoring.py` gained the frozen-clock backup test:

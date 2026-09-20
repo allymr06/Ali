@@ -458,6 +458,8 @@ const Palette = {
     if (q) {
       const math = paletteMath(q);
       if (math) scored.unshift({ group: "hesap", icon: "tools", label: math.display, keywords: "", run: () => toast(math.display, "ok") });
+      const wordQuery = dictionaryQuery(q);
+      if (wordQuery) scored.unshift({ group: "sözlük", icon: "book", label: `Sözlükte ara: “${wordQuery}” (TDK)`, keywords: "", run: () => Dict.lookup(wordQuery) });
       scored.push({ group: "sor", icon: "spark", label: `JARVIS'e sor: “${q}”`, run: () => { showScreen("chat"); sendCommand(q); } });
       if (State.snapshot?.research_available) scored.push({ group: "araştır", icon: "research", label: `Araştır: “${q}”`, run: () => { showScreen("research"); $("#research-input").value = q; $("#research-form").requestSubmit(); } });
       if (State.snapshot?.vision_available) scored.push({ group: "görüş", icon: "vision", label: `Ekranı incele: “${q}”`, run: () => { showScreen("vision"); $("#vision-input").value = q; $("#vision-form").requestSubmit(); } });
@@ -690,6 +692,29 @@ function setShortcutsOpen(open) {
   veil.hidden = !open;
 }
 
+/* ── the dictionary card: one live TDK entry, never rephrased ────── */
+
+const Dict = {
+  async lookup(word) {
+    const veil = $("#dictcard");
+    if (!veil) return;
+    if (!bridgeReady()) { toast("Sözlük masaüstü köprüsünü ister.", true); return; }
+    veil.hidden = false;
+    $("#dict-body").innerHTML = '<div class="dict-wait">Sözlükte aranıyor…</div>';
+    const result = await call("define_word", word);
+    if (veil.hidden) return; // closed while the lookup was in flight
+    if (!result || result.ok === false) {
+      $("#dict-body").innerHTML = `<div class="dict-miss">${esc((result && result.error) || "Sözlüğe ulaşılamadı.")}</div>`;
+      return;
+    }
+    $("#dict-body").innerHTML = dictionaryMarkup(result);
+  },
+  close() {
+    const veil = $("#dictcard");
+    if (veil) veil.hidden = true;
+  },
+};
+
 function bindKeyboard() {
   addEventListener("keydown", (event) => {
     if (!State.booted) return;
@@ -704,6 +729,7 @@ function bindKeyboard() {
     }
     if (event.key === "F1") { event.preventDefault(); setShortcutsOpen($("#shortcuts").hidden); return; }
     if (event.key === "Escape" && !$("#shortcuts").hidden) { event.preventDefault(); setShortcutsOpen(false); return; }
+    if (event.key === "Escape" && !$("#dictcard").hidden) { event.preventDefault(); Dict.close(); return; }
     if (event.ctrlKey && key === "k") { event.preventDefault(); Palette.show(); return; }
     if (event.altKey && !event.ctrlKey && !event.shiftKey) {
       const digit = event.key === "0" ? 9 : parseInt(event.key, 10) - 1;
@@ -876,6 +902,12 @@ function bindShell() {
   $("#pause-btn").innerHTML = icon("pause");
   $("#pause-btn").addEventListener("click", togglePause);
   $("#palette").addEventListener("click", (event) => { if (event.target === $("#palette")) Palette.hide(); });
+  $("#shortcuts-close").innerHTML = icon("close");
+  $("#shortcuts-close").addEventListener("click", () => setShortcutsOpen(false));
+  $("#shortcuts").addEventListener("click", (event) => { if (event.target === $("#shortcuts")) setShortcutsOpen(false); });
+  $("#dict-close").innerHTML = icon("close");
+  $("#dict-close").addEventListener("click", () => Dict.close());
+  $("#dictcard").addEventListener("click", (event) => { if (event.target === $("#dictcard")) Dict.close(); });
   $("#palette-input").addEventListener("input", () => { Palette.selected = 0; Palette.render(); });
   $("#mini-expand").innerHTML = icon("expand");
   $("#mini-expand").addEventListener("click", () => setCompact(false));

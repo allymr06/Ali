@@ -185,3 +185,39 @@ function paletteMath(query) {
   if (formatted === null) return null;
   return { kind: "math", value, display: `${raw} = ${formatted}` };
 }
+
+/* ── the palette's dictionary hand-off (pure; UI lives in shell.js) ── */
+
+const DICT_PREFIXES = ["sözlük", "sozluk", "tdk"];
+
+function dictionaryQuery(query) {
+  const text = String(query || "").trim();
+  const lowered = text.toLocaleLowerCase("tr");
+  for (const prefix of DICT_PREFIXES) {
+    if (lowered === prefix) return null; // no word typed yet
+    if (lowered.startsWith(prefix + " ")) {
+      const word = text.slice(prefix.length + 1).trim();
+      return word && word.length <= 64 ? word : null;
+    }
+  }
+  return null;
+}
+
+const dictEscape = (value) => String(value == null ? "" : value)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+function dictionaryMarkup(entry) {
+  if (!entry || entry.ok === false || !entry.word) return "";
+  const senses = (entry.meanings || []).map((meaning) => {
+    const features = meaning.features ? `<i class="dict-feat">${dictEscape(meaning.features)}</i> ` : "";
+    const example = meaning.example ? `<div class="dict-example">“${dictEscape(meaning.example)}”</div>` : "";
+    return `<li><span class="dict-sense">${features}${dictEscape(meaning.sense)}</span>${example}</li>`;
+  }).join("");
+  const origin = entry.origin ? `<div class="dict-origin">${dictEscape(entry.origin)}</div>` : "";
+  const compounds = (entry.compounds || []).length
+    ? `<div class="dict-compounds"><b>Birleşikler:</b> ${entry.compounds.map(dictEscape).join(", ")}</div>` : "";
+  return `<div class="dict-word">${dictEscape(entry.word)}</div>${origin}` +
+    `<ol class="dict-senses">${senses}</ol>${compounds}` +
+    '<div class="dict-credit">Kaynak: TDK Güncel Türkçe Sözlük (sozluk.gov.tr) · canlı sorgu</div>';
+}

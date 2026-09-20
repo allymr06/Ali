@@ -2901,6 +2901,43 @@ def test_the_morning_brief_clock_and_line_are_exact_and_honest() -> None:
         assert piece in full, piece
     assert shell.brief_notification_body({}) == "Bugün için bekleyen bir şey görünmüyor."
 
+    # The almanac rides along when it answered - and only then.
+    almanac = {
+        "weather": {"available": True, "city": "İstanbul", "temperature": 21, "label": "parçalı bulutlu"},
+        "rates": {"available": True, "usd_try": 41.2, "eur_try": 44.8},
+    }
+    with_almanac = shell.brief_notification_body({"tasks_open": 1, "almanac": almanac})
+    assert "1 açık görev · İstanbul 21°, parçalı bulutlu · 1 $ = 41,2 ₺" == with_almanac
+    ambient_only = shell.brief_notification_body({"almanac": almanac})
+    assert ambient_only == "Bekleyen iş yok · İstanbul 21°, parçalı bulutlu · 1 $ = 41,2 ₺"
+    dead = {"weather": {"available": False, "reason": "Şehir ayarlanmadı."}, "rates": {"available": False, "reason": "x"}}
+    assert shell.brief_notification_body({"almanac": dead}) == "Bugün için bekleyen bir şey görünmüyor."
+
+
+def test_the_bridge_hands_the_palette_one_dictionary_entry(booted) -> None:
+    class _StubDictionary:
+        def __init__(self) -> None:
+            self.asked: list[str] = []
+
+        def lookup(self, word: str) -> dict:
+            self.asked.append(word)
+            if word == "kalp":
+                return {"ok": True, "word": "kalp", "origin": "Arapça ḳalb",
+                        "meanings": [{"features": "isim", "sense": "Organ.", "example": ""}], "compounds": []}
+            if word == "patla":
+                raise RuntimeError("boom")
+            return {"ok": False, "reason": f"Sözlükte bulunamadı: {word}."}
+
+    stub = _StubDictionary()
+    booted.controller.application.dictionary = stub
+
+    entry = booted.bridge.define_word("kalp")
+    assert entry["ok"] is True and entry["word"] == "kalp" and stub.asked == ["kalp"]
+    assert booted.bridge.define_word("yok") == {"ok": False, "error": "Sözlükte bulunamadı: yok."}
+    assert booted.bridge.define_word("patla") == {"ok": False, "error": "Sözlük okunamadı (RuntimeError)."}
+    booted.controller.application.dictionary = None
+    assert booted.bridge.define_word("kalp") == {"ok": False, "error": "Sözlük servisi hazır değil."}
+
 
 def test_the_bridge_saves_assistant_settings_and_applies_them_live(booted) -> None:
     bad = booted.bridge.save_desktop_settings({"daily_brief_notification": True, "daily_brief_time": "sabah", "research_enabled": True})

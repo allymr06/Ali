@@ -2349,6 +2349,47 @@ def test_the_palette_calculator_answers_and_stays_out_of_the_way() -> None:
     assert "eval(" not in JS_SOURCES["js/toolbox.js"]
 
 
+def test_the_palette_hands_a_word_to_the_dictionary_and_the_card_escapes() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    ask = lambda q: context.eval("dictionaryQuery(" + json.dumps(q) + ")")
+    assert ask("sözlük kalp") == "kalp"
+    assert ask("sozluk yürek") == "yürek"
+    assert ask("TDK göz") == "göz"
+    assert ask("SÖZLÜK Kalp") == "Kalp", "the word keeps its casing; the service folds it"
+    assert ask("sözlük iki kelime") == "iki kelime"
+    for query in ("sözlük", "tdk", "kalp", "hesap 12*3", "sözlük " + "a" * 65, ""):
+        assert ask(query) is None, query
+
+    entry = {"ok": True, "word": "kalp", "origin": "Arapça ḳalb",
+             "meanings": [{"features": "isim, anatomi", "sense": "Organ.", "example": "Kalbim çarpıyor."}],
+             "compounds": ["kalp ağrısı"]}
+    markup = context.eval("dictionaryMarkup(" + json.dumps(entry) + ")")
+    assert '<div class="dict-word">kalp</div>' in markup
+    assert '<i class="dict-feat">isim, anatomi</i>' in markup and "Organ." in markup
+    assert "“Kalbim çarpıyor.”" in markup and "kalp ağrısı" in markup
+    assert "TDK Güncel Türkçe Sözlük" in markup and "canlı sorgu" in markup
+    hostile = dict(entry, word="<script>alert(1)</script>", compounds=["<img src=x>"])
+    poisoned = context.eval("dictionaryMarkup(" + json.dumps(hostile) + ")")
+    assert "<script>" not in poisoned and "&lt;script&gt;" in poisoned and "<img" not in poisoned
+    assert context.eval("dictionaryMarkup(null)") == ""
+    assert context.eval("dictionaryMarkup({ok: false})") == ""
+
+    # Wiring: the palette row, the card, its Escape, and close buttons
+    # that actually close (the shortcuts X used to be dead).
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "const wordQuery = dictionaryQuery(q);" in shell_js
+    assert "Dict.lookup(wordQuery)" in shell_js
+    assert 'if (event.key === "Escape" && !$("#dictcard").hidden)' in shell_js
+    assert '$("#dict-close").addEventListener("click", () => Dict.close());' in shell_js
+    assert '$("#shortcuts-close").addEventListener("click", () => setShortcutsOpen(false));' in shell_js
+    for element_id in ("dictcard", "dict-close", "dict-body"):
+        assert f'id="{element_id}"' in HTML, element_id
+    assert "sözlük kalp" in HTML, "the F1 card teaches the prefix"
+    assert ".modal.dict" in CSS
+
+
 def test_the_clinical_calculators_apply_the_formulas_they_name() -> None:
     quickjs = pytest.importorskip("quickjs")
     context = quickjs.Context()
@@ -2492,6 +2533,12 @@ def test_the_months_rhythm_draws_exactly_what_the_records_say() -> None:
     days = [{"date": f"2026-09-{index:02d}", "minutes": index % 3 and index or 0, "answers": index, "cards": 0} for index in range(1, 29)]
     markup = context.eval("monthRhythmMarkup(" + json.dumps(days) + ")")
     assert markup.count("mr-cell") == 28 and 'data-day="2026-09-28"' in markup
+    # Day 3 logged no minutes but 3 answers: the legend counts it active,
+    # so the cell wears the first shade instead of sitting empty.
+    assert 'class="mr-cell l1" title="2026-09-03' in markup
+    quiet = context.eval("monthRhythmMarkup(" + json.dumps(
+        [{"date": "2026-09-01", "minutes": 0, "answers": 0, "cards": 0}]) + ")")
+    assert 'class="mr-cell l0"' in quiet, "a truly empty day stays empty"
     assert "2026-09-05 · 5 dk · 5 soru · 0 kart" in markup
     assert "aktif gün" in markup and "dk</span>" in markup
     assert context.eval("monthRhythmMarkup([])") == ""

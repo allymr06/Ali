@@ -566,6 +566,20 @@ details.disclosure > .disclosure-body { margin-top: 0.6rem; }
 .kbd-list dd { color: var(--ink-2); font-size: var(--text-sm); line-height: 1.5; }
 .kbd-list kbd, .settings-note kbd { display: inline-block; min-width: 1.4rem; padding: 0.1rem 0.4rem; border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: var(--radius-1); background: var(--surface-2); color: var(--ink-1); font-family: var(--font-mono); font-size: 0.66rem; text-align: center; }
 
+/* ── dictionary card ───────────────────────────────────────────── */
+.modal.dict { width: min(30rem, 92vw); }
+.dict-body { display: flex; flex-direction: column; gap: 0.55rem; max-height: 60vh; overflow-y: auto; }
+.dict-word { font-family: var(--font-display); font-size: var(--text-xl); color: var(--ink-0); }
+.dict-origin { color: var(--ink-2); font-size: var(--text-sm); font-style: italic; }
+.dict-senses { margin: 0; padding-left: 1.3rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.dict-senses li::marker { color: var(--ink-3); font-size: var(--text-sm); }
+.dict-sense { color: var(--ink-1); line-height: 1.55; }
+.dict-feat { color: var(--accent-strong, var(--accent)); font-style: italic; margin-right: 0.15rem; }
+.dict-example { color: var(--ink-2); font-size: var(--text-sm); font-style: italic; margin-top: 0.15rem; line-height: 1.5; }
+.dict-compounds { color: var(--ink-2); font-size: var(--text-sm); line-height: 1.55; border-top: 1px solid var(--line-1); padding-top: 0.5rem; }
+.dict-credit { color: var(--ink-3); font-size: var(--text-xs); }
+.dict-wait, .dict-miss { color: var(--ink-2); font-size: var(--text-sm); padding: 0.4rem 0; }
+
 /* ── read-aloud ───────────────────────────────────────────────────── */
 .msg-speak { margin-left: 0.35rem; padding: 0 0.25rem; opacity: 0; font-size: 0.8rem; transition: opacity var(--motion-normal); }
 .msg:hover .msg-speak, .msg-speak.speaking { opacity: 0.85; }

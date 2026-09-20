@@ -140,6 +140,19 @@ body.light {
   --inset-light:   inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
+/* ── Accents to taste ─────────────────────────────────────────────────
+   The shell's one intelligence colour, in five moods. Only the accent
+   family changes; ground, ink and semantics stay. Declared before the
+   rooms so the academy and research keep their own identities. */
+body[data-accent="zumrut"] { --accent: #7fe8c3; --accent-2: #3ecf9a; --accent-3: #157a56; --accent-rgb: 127, 232, 195; }
+body[data-accent="kehribar"] { --accent: #ffce7a; --accent-2: #f0a83c; --accent-3: #96641a; --accent-rgb: 255, 206, 122; }
+body[data-accent="gul"] { --accent: #ff9fb2; --accent-2: #ef6f8b; --accent-3: #9c3350; --accent-rgb: 255, 159, 178; }
+body[data-accent="leylak"] { --accent: #c5b3ff; --accent-2: #a186f5; --accent-3: #5e4a9e; --accent-rgb: 197, 179, 255; }
+body.light[data-accent="zumrut"] { --accent: #0d7a55; --accent-2: #109467; --accent-3: #6fd0ac; --accent-rgb: 13, 122, 85; }
+body.light[data-accent="kehribar"] { --accent: #94610f; --accent-2: #b07716; --accent-3: #e3b566; --accent-rgb: 148, 97, 15; }
+body.light[data-accent="gul"] { --accent: #a83a55; --accent-2: #c24a68; --accent-3: #eda0b2; --accent-rgb: 168, 58, 85; }
+body.light[data-accent="leylak"] { --accent: #5b45a8; --accent-2: #6d55c4; --accent-3: #b3a3e8; --accent-rgb: 91, 69, 168; }
+
 /* ── Tıp Akademisi: a palette of its own ──────────────────────────────
    The academy is a room inside the window, and a bright one: where the
    shell is night, the academy is daylight. Under body.academy every token

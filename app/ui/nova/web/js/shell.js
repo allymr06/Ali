@@ -669,6 +669,17 @@ const Focus = {
   },
 };
 
+const ACCENTS = ["", "zumrut", "kehribar", "gul", "leylak"];
+
+function applyAccent(name) {
+  const accent = ACCENTS.includes(name) ? name : "";
+  if (accent) document.body.dataset.accent = accent;
+  else delete document.body.dataset.accent;
+  store("nova.accent", accent);
+  const picker = $("#settings-accent");
+  if (picker && picker.value !== accent) picker.value = accent;
+}
+
 function setShortcutsOpen(open) {
   const veil = $("#shortcuts");
   if (!veil) return;

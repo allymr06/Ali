@@ -101,8 +101,10 @@ function appendMessage(host, message, slim, { animate = true } = {}) {
   const node = el("div", `msg ${esc(message.role)}`);
   const roleLabel = message.role === "user" ? "SEN" : message.role === "assistant" ? "JARVIS" : "";
   const time = message.at ? `<span class="msg-time">${esc(fmtClock(new Date(message.at)))}</span>` : "";
+  const speakButton = message.role === "assistant" && !slim && State.snapshot?.voice_available
+    ? '<button type="button" class="msg-speak" data-speak title="Sesli oku">🔊</button>' : "";
   node.innerHTML =
-    (roleLabel && !slim ? `<div class="msg-meta"><span class="msg-role">${roleLabel}</span>${time}</div>` : "") +
+    (roleLabel && !slim ? `<div class="msg-meta"><span class="msg-role">${roleLabel}</span>${time}${speakButton}</div>` : "") +
     `<div class="msg-body"></div>` +
     (message.role === "assistant" && !slim ? assuranceChips(message.metadata) : "");
   if (message.role === "assistant") node.querySelector(".msg-body").innerHTML = renderMarkdownLite(message.text);
@@ -564,4 +566,47 @@ function bindConversation() {
   /* The core itself is the voice switch: click it, start talking. */
   $$("#stage .core-frame").forEach((frame) => frame.addEventListener("click", () => toggleVoice()));
   updateVoiceUI();
+}
+
+/* ── read a reply aloud ───────────────────────────────────────────────
+   One shared <audio> element: starting a bubble stops the previous one,
+   clicking the same bubble again stops it. The audio comes back from the
+   bridge as base64 through the same cloud-then-local voices the phone
+   uses; a refusal keeps the text and says why. */
+const Readaloud = {
+  audio: null,
+  active: null,
+
+  stop() {
+    if (this.audio) { try { this.audio.pause(); } catch (_error) { /* already stopped */ } }
+    if (this.active) this.active.classList.remove("speaking");
+    this.audio = null;
+    this.active = null;
+  },
+
+  async toggle(button) {
+    if (this.active === button) { this.stop(); return; }
+    this.stop();
+    const body = button.closest(".msg")?.querySelector(".msg-body");
+    const text = body ? body.textContent : "";
+    if (!text.trim() || !bridgeReady()) return;
+    button.classList.add("speaking");
+    this.active = button;
+    const result = await call("speak_text", text);
+    if (this.active !== button) return;   // stopped or replaced while synthesizing
+    if (result.ok === false) { this.stop(); toast(result.error || "Ses üretilemedi.", true); return; }
+    const audio = new Audio(`data:${result.mime};base64,${result.audio}`);
+    this.audio = audio;
+    audio.addEventListener("ended", () => { if (this.active === button) this.stop(); });
+    audio.play().catch(() => { this.stop(); toast("Ses çalınamadı.", true); });
+  },
+};
+
+function bindReadaloud() {
+  const host = $("#chat-list");
+  if (!host) return;
+  host.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-speak]");
+    if (button) Readaloud.toggle(button);
+  });
 }

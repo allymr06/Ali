@@ -1213,3 +1213,15 @@ serves a normal request, proving the drain ceiling clears the voice cap.
 The streaming lifecycle test that was flaky under load is deterministic
 now that `turn_started` is emitted before the hand-over; the ordering is
 by construction, not by scheduler luck.
+
+## Voice, ink and accents (20 September 2026)
+
+`tests/test_ui_nova.py` pins `speak_text` on a fake synthesizer - a
+playable RIFF WAV from PCM, markup stripped before speech, honest
+refusals for no service and empty text - and `save_markdown`'s
+boundaries: sanitized basename, no overwrite, missing folder, empty and
+oversized content. `tests/test_nova_web.py` pins the wiring (the
+speaker button gated on `voice_available`, the export button and
+`State.lastResearchReport`, accent blocks in `tokens.css` declared
+before the rooms, the settings select) and the report Markdown builder
+against a fixture, uncertainty translation included.

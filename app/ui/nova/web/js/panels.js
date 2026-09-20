@@ -653,6 +653,7 @@ function renderSettings() {
     $("#settings-brief-time").value = s.daily_brief_time || "08:30";
     $("#settings-research").checked = s.research_enabled !== false;
     $("#settings-city").value = s.almanac_city || "";
+    $("#settings-accent").value = ACCENTS.includes(store("nova.accent") || "") ? (store("nova.accent") || "") : "";
   }
   $("#settings-motion").checked = State.reducedMotion;
   $("#settings-ambient").checked = State.ambient;
@@ -1014,6 +1015,7 @@ function bindPanels() {
   buildQuickActions();
   $("#vision-form").addEventListener("submit", submitVision);
   $("#research-form").addEventListener("submit", submitResearch);
+  $("#settings-accent").addEventListener("change", () => applyAccent($("#settings-accent").value));
   $("#settings-form").addEventListener("submit", saveSettings);
   $("#settings-assistant-save").addEventListener("click", saveAssistantSettings);
   $("#settings-backup-now").addEventListener("click", runStateBackup);

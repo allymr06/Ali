@@ -193,6 +193,25 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## A voice for replies, ink for reports, accents to taste (20 September 2026)
+
+- **Sesli oku.** Every assistant bubble grows a speaker button (shown
+  only while the voice service exists). The bridge's `speak_text` rides
+  the same cloud-then-local Turkish voices the phone uses, strips markup
+  the same way, bounds the length by the same setting, and returns
+  base64 audio for a plain `<audio>` element - an honest refusal keeps
+  the text and says why. One bubble speaks at a time; clicking again
+  stops it.
+- **Rapor mürekkebi.** The research report exports as Markdown: the page
+  composes exactly what the cards say (findings with citations, sources
+  with provenance, uncertainties in Turkish) and the new `save_markdown`
+  bridge owns the boundaries - an existing folder from the picker, a
+  flattened safe basename, a size cap, and never overwriting.
+- **Vurgu renkleri.** Ayarlar's appearance card offers the shell's one
+  intelligence colour in five moods (buz, zümrüt, kehribar, gül, leylak),
+  bound in `tokens.css` before the rooms so the academy and research
+  keep their own identities; the choice lives in `localStorage`.
+
 ## Two races the gate itself surfaced (20 September 2026)
 
 Running the full suite repeatedly under load turned two ~10% flakes into

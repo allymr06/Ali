@@ -418,6 +418,7 @@ const State = {
   diagnosticEvents: [],     // live ledger tail
   requestDurations: [],     // real per-request seconds from request.completed
   lastStatus: null,         // last system_status() answer
+  lastResearchReport: null, // the report on screen, for the .md export
   examCountdown: null,      // nearest exam from the daily brief, as the topbar chip shows it
   /* Motion is the interface's language, so it defaults ON regardless of
      the OS-wide animation toggle; the in-app switch persists an explicit

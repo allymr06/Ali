@@ -240,6 +240,49 @@ async function submitResearch(event) {
   if (result.ok === false) renderResearch(false, null, result.error || "Araştırma başlatılamadı.");
 }
 
+/* The report as a Markdown page: exactly what the cards say, in order,
+   with the same provenance line and nothing added. */
+function researchReportMarkdown(report, catalogue) {
+  const lines = [`# Araştırma raporu: ${report.question || report.query || ""}`, ""];
+  const sources = Array.isArray(report.sources) ? report.sources : [];
+  const when = report.cached_at || report.created_at || "";
+  lines.push(`*${sources.length} kaynak · ${report.cache_hit ? "önbellekten" : "canlı"}${when ? " · " + when : ""}${report.stale ? " · güncel olmayabilir" : ""}*`, "");
+  if (report.claims && report.claims.length) {
+    lines.push("## Bulgular", "");
+    report.claims.forEach((claim) => lines.push(`- ${claim.text} _[${(claim.citations || []).join(", ")}]_`));
+    lines.push("");
+  }
+  if (sources.length) {
+    lines.push("## Kaynaklar", "");
+    sources.forEach((source) => {
+      const label = ((catalogue || []).find((item) => item.id === source.source) || {}).label || source.source || "";
+      lines.push(`### ${source.id} · ${source.title}`, "", `- ${source.url}`,
+        `- ${label}${source.freshness ? " · " + (RESEARCH_FRESHNESS_TR[source.freshness] || source.freshness) : ""}${source.published_at ? " · " + String(source.published_at).slice(0, 10) : ""}`);
+      if (source.excerpt) lines.push("", `> ${source.excerpt}`);
+      lines.push("");
+    });
+  }
+  const uncertainties = Array.isArray(report.uncertainties) ? report.uncertainties.map(researchUncertaintyTr).filter(Boolean) : [];
+  if (uncertainties.length) {
+    lines.push("## Belirsizlikler", "");
+    uncertainties.forEach((item) => lines.push(`- ${item}`));
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+async function exportResearchReport() {
+  const report = State.lastResearchReport;
+  if (!report) { toast("Dışa aktarılacak rapor yok; önce bir araştırma çalıştır.", true); return; }
+  const picked = await call("pick_folder");
+  if (picked.ok === false) { toast(picked.error || "Klasör seçilemedi.", true); return; }
+  if (!picked.path) return;
+  const result = await call("save_markdown", picked.path, `arastirma-${report.question || "rapor"}`,
+    researchReportMarkdown(report, Research.catalogue));
+  if (result.ok === false) { toast(result.error || "Rapor kaydedilemedi.", true); return; }
+  toast(`Rapor kaydedildi: ${result.file}`, "ok");
+}
+
 function renderResearch(ok, report, error) {
   const panel = $("#research-result");
   panel.hidden = false;
@@ -247,6 +290,7 @@ function renderResearch(ok, report, error) {
   $("#research-submit").disabled = false;
   if (State.busy) setBusy(false, READY);
   if (!ok) { panel.innerHTML = `<p class="res-error">${esc(error || "Araştırma başarısız.")}</p>`; Presence.error("araştırma başarısız"); return; }
+  State.lastResearchReport = report;
   const sources = Array.isArray(report.sources) ? report.sources : [];
   const kinds = [...new Set(sources.map((source) => (RESEARCH_KINDS[source.kind] || RESEARCH_KINDS.web)[1]))];
   const when = report.cached_at ? new Date(report.cached_at) : (report.created_at ? new Date(report.created_at) : null);
@@ -260,7 +304,7 @@ function renderResearch(ok, report, error) {
   const uncertainties = Array.isArray(report.uncertainties) ? report.uncertainties.map(researchUncertaintyTr).filter(Boolean) : [];
   panel.innerHTML = `
     <div class="res-report-head">
-      <span class="kicker">Rapor</span>
+      <span class="kicker">Rapor</span><button type="button" id="res-export" class="btn btn-ghost small res-export" title="Raporu Markdown olarak kaydet">Dışa aktar (.md)</button>
       <h2>${esc(report.question || report.query || "")}</h2>
       <p class="res-report-meta">${esc(provenance)}</p>
     </div>
@@ -271,6 +315,8 @@ function renderResearch(ok, report, error) {
     const opened = await call("open_external", node.dataset.openUrl);
     if (opened.ok === false) toast(opened.error || "Bağlantı açılamadı.", true);
   }));
+  const exporter = $("#res-export", panel);
+  if (exporter) exporter.addEventListener("click", exportResearchReport);
   if (Motion.allowed()) Motion.stagger($$(".res-card", panel), { step: 45, y: 10 });
 }
 

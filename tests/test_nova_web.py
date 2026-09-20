@@ -2436,3 +2436,47 @@ def test_the_brief_carries_the_almanac_and_stays_silent_without_a_city() -> None
     panels = JS_SOURCES["js/panels.js"]
     assert 'almanac_city: $("#settings-city").value.trim(),' in panels
     assert '$("#settings-city").value = s.almanac_city || "";' in panels
+
+
+def test_batch_three_surfaces_are_wired_and_accents_stay_out_of_the_rooms() -> None:
+    # Read-aloud: only when the voice service exists, stripped by the bridge.
+    conversation = JS_SOURCES["js/conversation.js"]
+    assert "State.snapshot?.voice_available" in conversation and 'call("speak_text", text)' in conversation
+    assert "const Readaloud = {" in conversation and "bindReadaloud();" in JS_SOURCES["js/main.js"]
+    # Research export: the page composes, the bridge bounds and writes.
+    research = JS_SOURCES["js/research.js"]
+    assert "function researchReportMarkdown(" in research
+    assert 'call("save_markdown", picked.path' in research and 'id="res-export"' in research
+    assert "State.lastResearchReport = report;" in research
+    # Accents: tokens only, declared before the rooms so they never leak in.
+    tokens = (WEB / "css/tokens.css").read_text(encoding="utf-8")
+    for name in ("zumrut", "kehribar", "gul", "leylak"):
+        assert f'body[data-accent="{name}"]' in tokens, name
+        assert f'body.light[data-accent="{name}"]' in tokens, name
+    assert tokens.index('body[data-accent="zumrut"]') < tokens.index("body.academy, body.academy.light {")
+    assert 'id="settings-accent"' in HTML
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "function applyAccent(" in shell_js and 'store("nova.accent", accent)' in shell_js
+    assert 'applyAccent(store("nova.accent") || "")' in JS_SOURCES["js/main.js"]
+
+
+def test_the_research_report_markdown_says_only_what_the_report_says() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/research.js"], "const RESEARCH_UNCERTAINTY_TR = [", "\nconst RESEARCH_FRESHNESS_TR"))
+    context.eval(section(JS_SOURCES["js/research.js"], "const RESEARCH_FRESHNESS_TR = {", "\nfunction researchPreset"))
+    context.eval(section(JS_SOURCES["js/research.js"], "function researchReportMarkdown(", "\nasync function exportResearchReport"))
+    report = {
+        "question": "omuz anatomisi", "cache_hit": False, "created_at": "2026-09-20T18:00:00+00:00",
+        "claims": [{"text": "Bir bulgu.", "citations": ["S1"]}],
+        "sources": [{"id": "S1", "title": "Kaynak", "url": "https://example.org/a", "source": "web",
+                     "freshness": "current", "excerpt": "Alıntı.", "published_at": "2026-09-01T00:00:00+00:00"}],
+        "uncertainties": ["Source Hacker News was unavailable (HTTP 503)."],
+    }
+    markdown = context.eval("researchReportMarkdown(" + json.dumps(report) + ", " + json.dumps([{"id": "web", "label": "Web"}]) + ")")
+    assert markdown.splitlines()[0] == "# Araştırma raporu: omuz anatomisi"
+    assert "- Bir bulgu. _[S1]_" in markdown
+    assert "### S1 · Kaynak" in markdown and "- https://example.org/a" in markdown
+    assert "Web · güncel · 2026-09-01" in markdown and "> Alıntı." in markdown
+    assert "- Hacker News kaynağına ulaşılamadı (HTTP 503)." in markdown
+    assert "1 kaynak · canlı · 2026-09-20T18:00:00+00:00" in markdown

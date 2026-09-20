@@ -256,3 +256,7 @@ body.phone .res-form input[type="text"] { flex-basis: 100%; font-size: 16px; }
 body.phone .res-cards { grid-template-columns: 1fr; }
 body.phone .ri-title { font-size: 2.2rem; }
 body.phone .ri-skip { padding-bottom: calc(1.6rem + env(safe-area-inset-bottom)); }
+
+.res-export { margin-left: auto; }
+.res-report-head { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.8rem; }
+.res-report-head h2, .res-report-head .res-report-meta { flex-basis: 100%; }

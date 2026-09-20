@@ -199,6 +199,14 @@ const DemoBridge = {
     return { ok: true, items: [] };
   },
 
+  async speak_text() {
+    return { ok: false, error: "Demo modunda ses üretilmez." };
+  },
+
+  async save_markdown() {
+    return { ok: false, error: "Demo modunda dosya yazılmaz." };
+  },
+
   async research_sources() {
     return { ok: true, sources: [
       { id: "web", label: "Web", kind: "web", description: "Genel web araması (DuckDuckGo)." },

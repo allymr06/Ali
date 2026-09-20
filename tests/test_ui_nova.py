@@ -3343,3 +3343,44 @@ def test_the_daily_brief_reports_the_almanac_and_survives_its_absence(booted) ->
 
     booted.app.almanac = None
     assert "almanac" not in booted.bridge.daily_brief()
+
+
+def test_speak_text_uses_the_real_voices_and_refuses_honestly(booted) -> None:
+    """The page's read-aloud rides the same synthesizers as the phone."""
+    import base64
+    from types import SimpleNamespace
+
+    booted.app.voice = None
+    refused = booted.bridge.speak_text("Merhaba")
+    assert refused == {"ok": False, "error": "Sesli iletişim bu bilgisayarda ayarlanmamış."}
+
+    class FakeSynthesizer:
+        def __init__(self) -> None:
+            self.texts = []
+
+        async def synthesize(self, text):
+            self.texts.append(text)
+            return SimpleNamespace(encoding=SimpleNamespace(value="pcm16"), data=b"\x00\x01" * 32)
+
+    synthesizer = FakeSynthesizer()
+    booted.app.voice = SimpleNamespace(synthesizer=synthesizer)
+    spoken = booted.bridge.speak_text("**Kalın** `kod` başlık")
+    assert spoken["ok"] is True and spoken["mime"] == "audio/wav" and spoken["source"] == "cloud"
+    assert base64.b64decode(spoken["audio"])[:4] == b"RIFF", "a playable WAV, not raw PCM"
+    assert synthesizer.texts == ["Kalın kod başlık"], "markup is stripped before speech"
+    assert booted.bridge.speak_text("   ") == {"ok": False, "error": "Seslendirilecek metin boş."}
+
+
+def test_save_markdown_bounds_names_sizes_and_never_overwrites(booted, tmp_path) -> None:
+    saved = booted.bridge.save_markdown(str(tmp_path), 'arastirma: "tus" <2026>', "# Rapor\n")
+    assert saved["ok"] is True and saved["file"] == "arastirma-tus-2026.md"
+    assert (tmp_path / saved["file"]).read_text(encoding="utf-8") == "# Rapor\n"
+
+    second = booted.bridge.save_markdown(str(tmp_path), 'arastirma: "tus" <2026>', "başka")
+    assert second["file"] == "arastirma-tus-2026-2.md", "an existing file is never overwritten"
+
+    assert booted.bridge.save_markdown(str(tmp_path / "yok"), "x", "y")["ok"] is False
+    assert booted.bridge.save_markdown(str(tmp_path), "x", "  ")["ok"] is False
+    assert booted.bridge.save_markdown(str(tmp_path), "x", "a" * 512_001)["ok"] is False
+    unnamed = booted.bridge.save_markdown(str(tmp_path), "!!!", "içerik")
+    assert unnamed["file"] == "jarvis-notu.md"

@@ -1,0 +1,9 @@
+ÖRNEKLER
+
+Henüz histoloji örneği yok. Kütüphane'de bir ders sayfasını aç, şekli çerçeve içine al ve adını kaydet; adı sen onaylayınca örnek puanlı sınava girebilir.
+
+ÖRNEK SAYISI
+SÜRE (SN)
+ÇALIŞMA OTURUMU
+SÜRELİ PRATİK
+Bir örnek seç — Sol listeden bir örnek açınca kırpılmış görüntü, dayanağı ve özellikleri burada görünür.

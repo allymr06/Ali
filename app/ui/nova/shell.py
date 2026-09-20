@@ -99,6 +99,10 @@ WEB_ASSETS: tuple[str, ...] = (
 )
 WEB_RELATIVE_PATH = PurePath("app", "ui", "nova", "web")
 SOURCE_WEB_ROOT = Path(__file__).resolve().parent / "web"
+# Markup stripped before speech, the same set the phone strips
+# (app/mobile/server.py): the voice reads prose, not asterisks.
+_MARKDOWN_NOISE = _re.compile(r"[*_`#>]+")
+
 WINDOW_TITLE = "JARVIS"
 READY_STATUS = "LOCAL CORE READY"
 WORKING_STATUS = "PROCESSING"
@@ -1555,6 +1559,84 @@ class NovaBridge:
         target.write_text(newline.join(lines) + newline, encoding="utf-8")
         self._record_ui_event("conversation.exported", "A conversation was exported.")
         return {"ok": True, "path": str(target), "file": target.name, "messages": len(messages)}
+
+    def speak_text(self, text: Any) -> dict[str, Any]:
+        """One reply as audio, through the same voices the phone uses.
+
+        Cloud first, the local Turkish voice as the fallback, and an
+        honest refusal when neither can speak - the page then keeps the
+        text and says why. The audio returns as base64 WAV/MP3 for a
+        plain <audio> element; nothing is written to disk.
+        """
+        import base64
+
+        from app.voice.models import AudioEncoding, pcm16_to_wav
+
+        voice = getattr(self.controller.application, "voice", None)
+        synthesizer = getattr(voice, "synthesizer", None) if voice is not None else None
+        if synthesizer is None:
+            return {"ok": False, "error": "Sesli iletişim bu bilgisayarda ayarlanmamış."}
+        settings = getattr(self.controller.application, "settings", None)
+        limit = int(getattr(settings, "voice_max_tts_characters", 4000) or 4000)
+        timeout = float(getattr(settings, "voice_operation_timeout_seconds", 60.0) or 60.0)
+        spoken = " ".join(_MARKDOWN_NOISE.sub("", str(text or "")).split())
+        if not spoken:
+            return {"ok": False, "error": "Seslendirilecek metin boş."}
+        if len(spoken) > limit:
+            spoken = spoken[:limit].rsplit(" ", 1)[0]
+
+        def run(operation: Any) -> Any:
+            future = self.controller.submit_background(operation, lambda done: None)
+            return future.result(timeout=timeout)
+
+        try:
+            speech = run(synthesizer.synthesize(spoken))
+            encoding = getattr(speech.encoding, "value", str(speech.encoding))
+            if encoding == AudioEncoding.PCM16.value:
+                body, mime = pcm16_to_wav(bytes(speech.data), 24_000), "audio/wav"
+            else:
+                body, mime = bytes(speech.data), {"mp3": "audio/mpeg", "wav": "audio/wav"}.get(encoding, "application/octet-stream")
+            return {"ok": True, "mime": mime, "source": "cloud", "audio": base64.b64encode(body).decode("ascii")}
+        except Exception:
+            pass
+        try:
+            from app.voice.audio import synthesize_local_turkish
+
+            local = run(synthesize_local_turkish(spoken))
+        except Exception:
+            local = None
+        if local:
+            return {"ok": True, "mime": "audio/wav", "source": "local", "audio": base64.b64encode(bytes(local)).decode("ascii")}
+        return {"ok": False, "error": "Ses üretilemedi; yanıt metin olarak duruyor."}
+
+    def save_markdown(self, directory: Any, filename: Any, content: Any) -> dict[str, Any]:
+        """One Markdown file the page composed, into a folder the user picked.
+
+        The page owns the words (a research report, a summary); this side
+        owns the boundaries: the folder must exist and be one the picker
+        returned, the name is flattened to a safe .md basename, the size
+        is bounded, and an existing file is never overwritten.
+        """
+        target_dir = Path(str(directory or ""))
+        if not target_dir.is_dir():
+            return {"ok": False, "error": "Klasör bulunamadı; önce bir klasör seç."}
+        body = str(content or "")
+        if not body.strip():
+            return {"ok": False, "error": "Kaydedilecek içerik boş."}
+        if len(body) > 512_000:
+            return {"ok": False, "error": "İçerik bir Markdown dosyası için fazla büyük."}
+        stem = _re.sub(r"[^\w\sçğıöşüÇĞİÖŞÜ-]", "", str(filename or "")).strip()
+        stem = _re.sub(r"\s+", "-", stem)[:80] or "jarvis-notu"
+        target = target_dir / f"{stem}.md"
+        counter = 2
+        while target.exists():
+            target = target_dir / f"{stem}-{counter}.md"
+            counter += 1
+        try:
+            target.write_text(body, encoding="utf-8")
+        except OSError as exc:
+            return {"ok": False, "error": f"Dosya yazılamadı ({type(exc).__name__})."}
+        return {"ok": True, "path": str(target), "file": target.name}
 
     def daily_brief(self) -> dict[str, Any]:
         """The day at a glance, read from the services that hold it.

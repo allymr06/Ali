@@ -1,0 +1,370 @@
+TIP AKADEMİSİ
+Çalışma merkezi
+
+Birinci sınıf tıp müfredatı, kendi ders materyalin ve hocanın soru tarzı tek yerde.
+
+BİYOKİMYA
+BİYOKİMYA › KARBONHİDRAT METABOLİZMASI
+ÖĞRET
+STANDART
+DERS MATERYALİ + JARVIS BİLGİSİ
+PANEL
+PLAN
+1
+KONULAR
+KÜTÜPHANE
+243
+NOTLAR
+SINAV
+1
+SORU BANKASI
+716
+ANLAMA
+HİSTOLOJİ
+HOCA TARZI
+İLERLEME
+ANATOMİ LAB
+SINAV KUR
+Biyokimya · Biyokimya › Karbonhidrat metabolizması
+SORU SAYISI
+ŞIK
+ZORLUK
+1 · Kolay
+2 · Kolay-orta
+3 · Orta
+4 · Orta-zor
+5 · Zor
+HOCA TARZI
+— hoca tarzı yok —
+Burcu Akkurt (10 soru)
+Cumhur Bilgi (34 soru)
+Dilek Yonar (25 soru)
+Doç. Dr. Gamze Özbek Güven (1 soru)
+Dr. Can Pelin (0 soru)
+Dr. Hasan Ozan (0 soru)
+Dr. Hazal Demir (0 soru)
+Dr. Noyan Can Akdur (0 soru)
+Dr. Saide Muratoğlu (10 soru)
+Dr. Çiğdem Özer (14 soru)
+Dr. Öğr. Üyesi Burcu Baba (59 soru)
+Dr. Öğr. Üyesi Hakkı Yeşilyurt (35 soru)
+Dr. Öğr. Üyesi Müge Öçal Demirtaş (42 soru)
+Dr. Öğr. Üyesi Pınar Şahin (16 soru)
+Dr. Öğr. Üyesi Çağla Zübeyde Köprü (15 soru)
+Dr. Öğr. Üyesi Ülker Çuhacı (16 soru)
+Dr. Şeyma Aliye Kara (1 soru)
+Gizem İlter Aktaş (15 soru)
+Görkem Cengiz (1 soru)
+Gülsen Güneş (16 soru)
+Kadirhan Sunguroğlu (28 soru)
+Pelin Telkoparan Akıllılar (24 soru)
+Prof. Dr. Ayla Kürkçüoğlu (1 soru)
+Prof. Dr. Ayşe Gülnihal Canseven Kurşun (18 soru)
+Prof. Dr. Rabet Gözil (21 soru)
+Prof. Dr. Recep Akdur (10 soru)
+Prof. Dr. Sami Aydoğan (26 soru)
+Prof. Dr. Şükrü Oğuz Özdamar (2 soru)
+Uzm. Dr. Yavuzalp Solak (0 soru)
+Çiğdem Çiçek (8 soru)
+Özgül Kısa (32 soru)
+Öğr. Gör. Bilal Özdemir (0 soru)
+Öğr. Gör. Cansu Öztürk (0 soru)
+Şerife Cankurtaran Sayar (31 soru)
+BİLGİ ÖNCELİĞİ
+Yalnız ders materyali
+Önce ders materyali
+Dengeli
+Önce standart tıp bilgisi
+BELGE
+— belgesiz —
+Tıbbi Biyoloji Tüm Komiteler Çıkmış _240609_003157 (1)
+Mikrobiyoloji Tüm Komiteler Çıkmış_240605_142523 (1)
+Histoloji ve Embriyoloji Tüm Komiteler Çıkmış _240602_234204 (1)
+Halk Sağlığı Tüm Komiteler Çıkmış_240610_155355 (1)
+Fizyoloji Tüm Komiteler Çıkmış_240610_193404 (1)
+Biyokimya Tüm Komiteler Çıkmış _240610_000217 (1)
+Biyofizik Tüm Komiteler Çıkmış_240616_111854 (1)
+Anatomi Tüm Komiteler Çıkmış _240610_231122 (1)
+Küresel İklim Krizi ve Sağlık [1CF6665-]
+Halk Sağlığı [1AtzaEEf]
+Biyokimya 3 (AMİNO ASİTLERİN YAPILARI, SINIFLANDIRILMASI VE KİMYASAL REAKSİYONLARI)
+Histoloji ve Embriyoloji 9 - PLASENTA ve FETAL ZARLAR
+Histoloji ve Embriyoloji 8 - Embriyonik ve fetal dönem
+Histoloji ve Embriyoloji 7 - Trilaminar germ diski (gelişimin 3. Haftası)
+Histoloji ve embriyoloji 6 - Bilaminar Germ Diski ( Gelişimin 2. Haftası)
+Histoloji ve embriyoloji 5 - Döllenme, Blastosist Oluşumu ve İmplantasyon (Gelişimin 1. Haftası)
+Histoloji ve embriyoloji 4 - OVARYAN ve UTERİNAL DÖNGÜ
+Histoloji ve embriyoloji 3 - Genel Embriyolojiye Giriş ve Gametogenez
+Histoloji ve Embriyoloji 10 - ÇOĞUL GEBELİKLER VE GELİŞİMSEL ANOMALİLER
+Histoloji 2 - Sinir doku
+Histoloji 1 - Kas dokusu
+TIP 1050 EMG
+TIP 1050 DÜZ KAS DENEYİ
+TIP 1050 EMG
+TIP 1050 Çizgili Kas Deneyi
+Düz Kas Deneyi
+Fizyoloji 5 - Düz kas fizyolojisi
+Fizyoloji 4 - Çizgili kas fizyolojisi
+Fizyoloji 3 - Çizgili kas fizyolojisi
+Fizyoloji 2 - Sinaptik iletinin özelllikleri ve nörotransmitterler
+Fizyoloji 1 - Periferik sinir sistemi Fizyolojisi
+Biyokimya 1 - Kas Dokusu Biyokimyası
+Biyofizik 2 - ELEKTROMİYOGRAFİNİN (EMG) TEMEL İLKELERİ
+Biyofizik 1 - KASIN MEKANİK ÖZELLİKLERİ VE KASTA ISI ÜRETİMİ
+Üst ekstremite
+sırt
+Mimik kasları
+Lumbosacral plexus
+göğüs meme axilla
+Büst
+Brachial plexus
+Alt ekstremite
+Anatomi 9 - Omuz Kasları
+Anatomi 8 - Yüzeyel ve derin ense ve sırt kasları
+Anatomi 7 - Boyun üçgeni
+Anatomi 6 - Boyun kökü
+Anatomi 5 - Boyun yüzeyel yapıları hyoid altı ve üstü kaslar
+Anatomi 4 - Yüzün mimik kasları ve çiğneme
+Anatomi 3 - Yüzün mimik kasları ve çiğneme kasları
+Anatomi 26 - Alt ekstremite damarları
+Anatomi 25 - Ayak kasları
+Anatomi 24 - Uyluk arka bölge kasları
+Anatomi 23 - Bacak arka bölge
+Anatomi 22 - Uyluk ön ve iç bölgesi
+Anatomi 21 - Bacak arka bölge
+Anatomi 20 - Bacak ön dış bölgesi
+Anatomi 2 - Kaslar hakkında genel bilgi
+Anatomi 19 - Gluteal bölge derin kasları
+Anatomi 18 - Plexus Lumbosacralis
+Anatomi 17 - Kas klinik anatomi
+Anatomi 16 - Üst extremite damarları
+Anatomi 15 - Palma Manus ve Dorsum Manus
+Anatomi 14 - Ön kolun arka yüzü
+Anatomi 13 - Ön kolun ön yüzü
+Anatomi 12 - Plexus Brachialis
+Anatomi 11 - Pektoral bölge ve meme anatomisi
+Anatomi 10 - Fossa axillaris
+Anatomi 1 - Medulla spinalis ve spinal sinirler hakkında genel bilgi
+Biyokimya 2 - Kemik Dokusu Biyokimyası
+Biyokimya 1 - Bağ dokusu biyokimyası
+Histoloji 8 - Kemik Dokusu
+Histoloji 7 - Kıkırdak Doku
+Histoloji 6 - Kan Dokusu
+Histoloji 5 - Bağ Doku
+Histoloji 4 - Bez Epiteli
+Histoloji 3 - Epitel Doku
+Histoloji 2 - Doku Hazırlama ve Histokimya
+Histoloji 1 - Histoloji ve Embriyolojiye Giriş-Mikroskop Tipleri
+Biyofizik 4 - Ultrases
+Biyofizik 2 - Radyolojik Uygulamalar
+Biyofizik 3 - LAZER _ TEMEL ÇALIŞMA PRENSİBİ, ÇEŞİTLERİ, TIPTA KULLANIMI VE ETKİLERİ
+Biyofizik 1 - Elektromanyetik Spektrum, Radyasyon Türleri ve Kaynakları
+6 - Alt Ekstremite
+5 - Üst Ekstremite
+4 - Kafanın ve yüzün çeşitli yönlerden görünümü
+2 - Neurocranium
+3 - Viscerocranium
+1 - Vertebra
+Anatomi 9 - Kafa bütünü
+Anatomi 8 - Viscerocranium
+Anatomi 7 - Neurocranium os sohenoidale, os ethmoidale, os frontale
+Anatomi 6 - Neurocranium os occipitale, os parietale, os temporale
+Anatomi 5 - Columna Vertebralis Thorax Kemikler
+Anatomi 4 - Col. Vertebralis-Thorax Eklemleri
+Anatomi 3 - Eklemler Hakkında Genel Bilgiler
+Anatomi 2 - Kemikler Hakkında Genel Bilgi
+Anatomi 16 - Klinik Anatomi
+Anatomi 15 - Radyolojik Anatomi
+Anatomi 14 - Alt ekstremite eklemleri
+Anatomi 13 - Alt Ekstremite Kemikleri
+Anatomi 11 - Üst ekstremite kemikleri
+Anatomi 12 - Pelvis Kemeri
+Anatomi 10 - Üst ekstremite kemikleri
+Anatomi 1 - Terminoloji
+6 - Parazitlerin morf- Dönem 1 Tıp Uygulama
+5 - Antimikrobiyal Duyarlılık Testleri- Tıp Uygulama
+3 - Tıp Mik. Lab Kurallar ve Cihazlar
+4 - Mantar morfoloji Tıp Uygulama
+1 - Bakterilerin Üretilmesi ve Ekim Yöntemleri
+2 - Besiyerleri- Tıp Uygulama
+Mikrobiyoloji Ülker Çuhacı 4 - Antiviraller
+Mikrobiyoloji Ülker Çuhacı 3 - Antibiyotiklerin etki ve direnç mekanizmaları
+Mikrobiyoloji Ülker Çuhacı 2 - Mantarların Yapısı ve Sınıflandırılması
+Mikrobiyoloji Ülker Çuhacı 1 - Bakterilerin morfolojisi ve boyanması
+Mikrobiyoloji Görkem Cengiz 1 - Parazitoloji TR
+Mikrobiyoloji 8 - Virusların genel özellikleri, yapısı ve sınıflandırılması
+Mikrobiyoloji 7 - Dezenfeksiyon, antisepsi ve sterilizasyon
+Mikrobiyoloji 6 - Bakterilerin beslenmesi ve üretilmesi
+Mikrobiyoloji 5 - Bakteri metabolizması
+Mikrobiyoloji 4 - Riketsiya, Klamidya ve Mikoplazmalarda Yapı ve Çoğalma Özellikleri
+Mikrobiyoloji 3 - Bakterilerin genetik özellikleri
+Mikrobiyoloji 2 - Bakteri Hücresi Genel Yapısı
+Mikrobiyoloji 1 - Mikrobiyolojinin Tarihçesi ve Mikroorganizmaların Sınıflandırılmaları
+Biyoloji 9 -Hücre Döngüsü ve Kontrolü
+Biyoloji 8 - Hücre Sinyal İletimi
+Biyoloji 7 - Hücre-Hücre ve Hücre-Matriks etkileşimleri
+Biyoloji 6 - Hücre iskelet sistemi ve hücre hareketi
+Biyoloji 5 - Hücre membranında veziküler taşıma mekanizmaları
+Biyoloji 4 - Hücre membranında taşıma mekanizmaları
+Biyoloji 3 - Hücre Membranının Moleküler Yapısı ve Organizasyonu
+Biyoloji 2 - Hücre Organellerinin Yapıları ve Fonksiyonları
+Biyoloji 13 - Kanserin Moleküler Biyolojisi
+Biyoloji 12 - Kök Hücre Biyolojisi
+Biyoloji 11 - Hücre Ölüm Mekanizmaları
+Biyoloji 10 - Hücre Bölünmesi_ Mitoz ve Mayoz
+Biyoloji 1 - Prokaryot ve Ökaryot Hücre
+Biyokimya 1 - Hücre içi ve dışı sıvılar, özellikleri, elektrolitler
+Halk Sağlığı Şeyma Kara 3 - TÜTÜN KONTROLÜ
+Halk Sağlığı Şeyma Kara 2 - İNCİNEBİLİR GRUPLAR
+Halk Sağlığı Şeyma Kara 1 - ÇOCUK VE SAĞLIK
+Halk Sağlığı Yavuzalp Solak 1 - Sağlık Çalışanlarının Sağlığı
+Fizyoloji 8 - Hücrede Sinyal İletimi
+Fizyoloji 7 - Aksiyon Potansiyelleri
+Fizyoloji 6 - Membran Potansiyelleri
+Fizyoloji 5 - Hücre membranında madde iletimi
+Fizyoloji 4 - Hücre ve İşlevsel Yapısı
+Fizyoloji 3 - Homeostazis
+Fizyoloji 2 - Vücut sıvıları
+Fizyoloji 1 - Fizyolojiye Giriş
+Biyofizik 4 - HÜCRE BİYOFİZİĞİ
+Biyofizik 2 - Biyolojik potansiyel farkın nedeni_ Asimetri
+Biyofizik 3 - Hücre membranının elektriksel aktivitesi_ Nernst, GoldmanHodgkin, Katz ve Hudgkin Huxley Modellemesi
+Biyofizik 1 - Hücre Biyofiziği
+Biyoloji 9 (Translasyon)
+Biyoloji 8 (Transkripsiyon)
+Biyoloji 7 (Nükleik Asitler_ RNA Yapısı ve Çeşitleri)
+Biyoloji 6 (Mutasyonlar ve DNA Onarım Mekanizmaları)
+Biyoloji 5 (DNA'nın Kromatin Yapısı ve Paketlenmesi)
+Biyoloji 4 (DNA Replikasyonu)
+Biyoloji 3 (Kalıtım Molekülü Olarak DNA)
+Biyoloji 2 (Nükleik Asitler_ DNA ve Yapısı)
+Biyoloji 11 (Moleküler Biyolojik Yöntemler)
+Biyoloji 10 (Gen İfadesinin Kontrolü ve Epigenetik)
+Biyoloji 1 (Hayatın Orijini)
+Biyokimya 9 (Karbohidratlar-2)
+Biyokimya 8 (Karbohidratlar-1)
+Biyokimya 7 (enzim aktivitesinin regülasyonu)
+Biyokimya 6 (Enzim Kinetiği)
+Biyokimya 5 (Enzimler)
+Biyokimya 4 (PEPTİTLER VE OLİGOPEPTİTLER, PROTEİNLERİN YAPILARI, ÖZELLİKLERİ, SINIFLANDIRILMASI)
+Biyokimya 2 (Nükleotidler ve Nükleik Asitler, Yapıları ve Fonksiyonları)
+Biyokimya 14 (Vitaminler, sınıflandırılması ve özellikleri)
+Biyokimya 13 (Steroid Yapılı Moleküller)
+Biyokimya 12 (Lipoproteinlerin Yapısal Özellikleri ve Sınıflandırılmaları)
+Biyokimya 11 (Lipidler-2)
+Biyokimya 10 (Lipidler)
+Biyokimya 1 (Hücre Organellerinin Biyokimyasal Önemi)
+Küresel İklim Krizi ve Sağlık
+Halk Sağlığı 5(Küresel İklim Krizi ve Sağlık)
+Halk Sağlığı 4 (Ev Kazaları)
+Halk Sağlığı 3 (Su ve Sağlık)
+Halk Sağlığı 2 (Çevre ve Sağlık)
+Halk Sağlığı 1 (Hastalık Göstergeleri)
+Ev Kazaları
+Osmanlı’da Tıp
+Damariçi Kateterler ve İnfüzyon Sistemleri ile İlgili İnfeksiyon Kontrolü
+Damariçi Kateterler ve İnfüzyon Sistemleri ile İlgili İnfeksiyon Kontrolü
+Damariçi Kateterler ve İnfüzyon Sistemleri ile İlgili İnfeksiyon Kontrolü
+Avrupa’da OrtaÇağ ve
+Hİpokrat ve eskİ yunan medenİyetİnde tip
+NBC ORTAMINDA EPİDEMİYOLOJİK ANALİZLER VE VERiLERİN DEĞERLENDİRİLMESİ
+TIP VE HEKİMLİK KAVRAMLARI
+Damariçi Kateterler ve İnfüzyon Sistemleri ile İlgili İnfeksiyon Kontrolü
+NBC ORTAMINDA EPİDEMİYOLOJİK ANALİZLER VE VERiLERİN DEĞERLENDİRİLMESİ
+ENERJİ VE BİYOENERJETİKLER
+Laboratuvarda Ölçüm Yöntemlerİ, Spektrofotometre
+TAMPON ÇÖZELTİ HAZIRLAMA
+SU ve pH KAVRAMI
+BİYOKİMYADA TEMEL
+Aromatik, Alisiklik ve Heterosiklik
+Alifatik Yapılı Organik Bileşikler
+BİYOKİMYADA TEMEL KAVRAMLAR
+Sağlığın Geliştirilmesi
+Halk Sağlığı
+Sağlık ve hastalık
+Halk Sağlığı Yaklaşımı
+SUYUN BİYOFİZİKSEL ÖZELLİKLERİ
+SULU ÇÖZELTİLERDE İYONLARIN
+MOLEKÜL İÇİ
+ELEKTROFOREZ
+BİYOLOJİK SİSTEMLERE
+BİYOLOJİK SİNYALLERİN ÖLÇÜMÜ
+ELEKTRİKSEL NİCELİKLER
+2025-2026 DI BİYOFİZİK -mekanik.pptx
+TERMODİNAMİĞİN TEMEL YASALARI -2
+TERMODİNAMİĞİN TEMEL YASALARI - 1
+2025-2026 DI BİYOFİZİK - açılış dersi.pptx
+KDT Literatür Tarama- Bulma- İndeksler- İmpakt Faktör
+KDT Kanıta Dayalı Tıp Nedir_ Tarihçesi- Önemi
+Biyoistatistik -7 Kuramsal dağılımlar
+Biyoistatistik -4 Örnekleme
+Biyoistatistik - 8 Araştırma planlama
+Biyoistatistik - 6 Medikal araştırma tasarımları
+Biyoistatistik - 5 Epidemiyoloji
+Biyoistatistik - 3 Hipotez testlerine giriş
+Biyoistatistik - 2 Biyoistatistik ve sağlık alanında kullanımı
+Biyoistatistik - 1 Biyoistatistiğin tanımı
+Bilimsel makalelerde araştırma tipleri
+Tıpta İnsan Bilimleri- 4 Histokimyanın Gelişimi
+Tıpta İnsan Bilimleri- 3 Rönesans Anatomistleri
+Tıpta İnsan Bilimleri- 2 Tıp Eğitimde Resimli 40 Öykü
+Tıpta İnsan Bilimleri- 1 Yükseköğretimde Etik İlkeler
+Tutum ve Ön Yargıların Davranış Üzerindeki Etkisi
+Stresle Başa Çıkma
+İletişim Becerileri - İletişim ve İşlevleri, Etkilerine Göre İletişim
+Hasta ve Hasta Yakınlarına Kötü Haberin İletilmesi
+Eleştirel Düşünme ve Sanat- 7 Bilim ve Şarlatanlık- 2
+Eleştirel Düşünme ve Sanat- 6 Bilim ve Şarlatanlık- 1
+Eleştirel Düşünme ve Sanat- 3 Düşünme ve Akıl Yürütme Ayşe Gülnihal Canseven Kurşun
+Eleştirel Düşünme ve Sanat- 1 Eleştirel Düşünme, Sanat ve Üniversite
+Eleştirel Düşünme ve Sanat - Bilim Devrimi
+Eleştirel Düşünme ve Sanat - Bilim Devrimi Retorik ve Safsatalar -1
+Eleştirel Düşünme ve Sanat - Bilim Devrimi Retorik ve Safsatalar -2
+İLK SAYFA
+SON SAYFA
+Cevaplar en sonda
+Her sorudan sonra açıklama
+Zayıf konulara ağırlık
+Yalnız yanlışlarım
+Görselli sorular
+Süreli (dk)
+BANKADAN DERLE
+SINAV HAZIRLA
+Karbonhidrat metabolizması · 3 soru
+READY
+3 soru · zorluk 3/5 · az önce
+Karbonhidrat metabolizması · 10 soru
+%0
+8 soru · zorluk 3/5 · 5 gün önce
+Soru bankasından seçildi.
+Karbonhidrat metabolizması · 3 soru
+1 / 3
+0 YANITLANDI
+SINAVI BİTİR
+1
+2
+3
+BİYOKİMYA
+ZORLUK 3/5
+ÜRETİLMİŞ
+BİYOKİMYA › KARBONHİDRAT METABOLİZMASI
+İŞARETLE
+Karbonhidrat metabolizmasında pentoz fosfat yolağının temel fizyolojik amaçlarından biri aşağıdakilerden hangisidir?
+Ne kadar eminsin?
+EMİNİM
+KARARSIZIM
+TAHMİN ETTİM
+A
+NADPH ve riboz-5-fosfat üretmek
+B
+Laktik asidi pirüvata çevirmek
+C
+Glikozu doğrudan karbondioksite ve suya oksitlemek
+D
+Yüksek miktarda ATP sentezlemek
+E
+Glikojeni glukoz-1-fosfata yıkmak
+← ÖNCEKİ
+SONRAKİ →
+JARVIS'E SOR
+SORUDA HATA OLABİLİR

@@ -212,6 +212,27 @@ class WindowsIntegrationService:
         )
 
     @staticmethod
+    def read_cpu_times() -> tuple[int, int, int]:
+        """(idle, kernel, user) 100 ns counters from GetSystemTimes.
+
+        Raw and monotonic: a CPU percentage is honest only as the ratio
+        of two samples' deltas, so this returns the counters and leaves
+        the arithmetic to whoever holds the previous pair. Note kernel
+        time includes idle time, as Windows defines it.
+        """
+        if os.name != "nt":
+            raise OSError("CPU times require Windows.")
+        idle = ctypes.c_ulonglong()
+        kernel = ctypes.c_ulonglong()
+        user = ctypes.c_ulonglong()
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        if not kernel32.GetSystemTimes(
+            ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)
+        ):
+            raise OSError(ctypes.get_last_error(), "GetSystemTimes failed.")
+        return idle.value, kernel.value, user.value
+
+    @staticmethod
     def system_info() -> dict[str, object]:
         if os.name != "nt":
             raise OSError("Windows system information requires Windows.")
@@ -353,3 +374,22 @@ class WindowsIntegrationService:
             launch_windows_application,
             source="platform:windows",
         )
+
+
+def cpu_percent_between(
+    previous: tuple[int, int, int], current: tuple[int, int, int]
+) -> float | None:
+    """Busy share of the CPU between two GetSystemTimes samples.
+
+    Kernel time includes idle time, so busy = (kernel - idle) + user.
+    Two equal samples (or a counter that went backwards after resume)
+    answer None rather than a made-up figure.
+    """
+    idle = current[0] - previous[0]
+    kernel = current[1] - previous[1]
+    user = current[2] - previous[2]
+    total = kernel + user
+    if total <= 0 or idle < 0:
+        return None
+    busy = max(0, total - idle)
+    return round(min(100.0, 100.0 * busy / total), 1)

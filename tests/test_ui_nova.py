@@ -3384,3 +3384,38 @@ def test_save_markdown_bounds_names_sizes_and_never_overwrites(booted, tmp_path)
     assert booted.bridge.save_markdown(str(tmp_path), "x", "a" * 512_001)["ok"] is False
     unnamed = booted.bridge.save_markdown(str(tmp_path), "!!!", "içerik")
     assert unnamed["file"] == "jarvis-notu.md"
+
+
+def test_the_system_pulse_measures_between_two_beats(booted, monkeypatch) -> None:
+    """CPU is a delta of two samples; the first beat honestly shows nothing."""
+    from app.platform.windows import service as windows_service
+
+    samples = [(1000, 3000, 1000), (1600, 3800, 1200)]
+    monkeypatch.setattr(
+        windows_service.WindowsIntegrationService, "read_cpu_times",
+        staticmethod(lambda: samples.pop(0)),
+    )
+    monkeypatch.setattr(
+        windows_service.WindowsIntegrationService, "system_info",
+        staticmethod(lambda: {
+            "memory_total_bytes": 16 * 1024 ** 3, "memory_available_bytes": 4 * 1024 ** 3,
+            "memory_total_gib": 16.0, "disk_free_gib": 100.0, "disk_total_gib": 476.0,
+        }),
+    )
+
+    first = booted.bridge.system_pulse()
+    assert first["ok"] is True and first["cpu_percent"] is None, "no previous beat, no figure"
+    assert first["memory_percent"] == 75.0 and first["memory_used_gib"] == 12.0
+
+    second = booted.bridge.system_pulse()
+    # kernel includes idle: total = 800 + 200, busy = 1000 - 600 idle = 400.
+    assert second["cpu_percent"] == 40.0
+
+
+def test_cpu_percent_between_refuses_nonsense() -> None:
+    from app.platform.windows.service import cpu_percent_between
+
+    assert cpu_percent_between((0, 0, 0), (0, 0, 0)) is None, "no time passed"
+    assert cpu_percent_between((10, 10, 10), (5, 20, 20)) is None, "a counter went backwards"
+    assert cpu_percent_between((0, 100, 0), (100, 200, 0)) == 0.0, "fully idle"
+    assert cpu_percent_between((0, 100, 0), (0, 200, 100)) == 100.0, "fully busy"

@@ -193,6 +193,37 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## A backup must never overwrite a backup (20 September 2026)
+
+The third defect the flake hunt surfaced, and the worst of the three:
+Windows serves `datetime.now` in ~16 ms steps (2000 tight calls produced
+two distinct values on this machine), so two quick academy backups could
+share a stamp to the microsecond - and the second silently replaced the
+first. "The rotation keeps two" was then one copy wearing two names in
+the report. A same-instant sibling now takes a counter, lettered so the
+name order stays the creation order (`b2` sorts after the plain name's
+`.` where `-2` would sort before it), and a regression test freezes the
+clock, takes three backups in one instant, and demands three files with
+the rotation removing the true oldest.
+
+## The month's rhythm and the system's pulse (20 September 2026)
+
+- **Aylık ritim.** The progress screen shows the last twenty-eight days
+  as a calendar heatmap, from the same weekly_report records the summary
+  prints; intensity is minutes in honest steps, tooltips carry exact
+  figures, empty days are empty cells, and the report itself now
+  stretches to 28 days (capped at 31, where the record limits still
+  hold).
+- **Sistem nabzı.** The Tanılama header carries live CPU, RAM and disk
+  figures, measured with GetSystemTimes and GlobalMemoryStatusEx - no
+  psutil, no estimates. The CPU figure is the busy share between two
+  beats, so the first beat honestly shows a dash; the pulse ticks every
+  five seconds and only while the screen is visible.
+- **Odak sesi.** A palette toggle loops four seconds of synthesized
+  brown noise through a low-pass filter - a steady rain-like study bed
+  that names itself synthetic, never autostarts, and stops on Escape.
+- The palette also rolls a die and flips a coin, each labelled random.
+
 ## A voice for replies, ink for reports, accents to taste (20 September 2026)
 
 - **Sesli oku.** Every assistant bubble grows a speaker button (shown

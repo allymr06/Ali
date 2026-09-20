@@ -333,3 +333,7 @@ body.paused .core-frame canvas { opacity: 0.55; transition: opacity var(--motion
 
 .research-history { margin: 0.6rem 0 0; align-items: center; }
 .research-history:empty { display: none; }
+
+/* ── the system pulse in the diagnostics header ───────────────────── */
+.diag-pulse { display: inline-flex; gap: 0.7rem; font-family: var(--font-mono); font-size: 0.66rem; color: var(--ink-3); }
+.diag-pulse:empty { display: none; }

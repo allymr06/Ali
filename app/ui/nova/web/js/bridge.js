@@ -199,6 +199,11 @@ const DemoBridge = {
     return { ok: true, items: [] };
   },
 
+  async system_pulse() {
+    return { ok: true, cpu_percent: 12.5, memory_percent: 41.2, memory_used_gib: 6.6,
+             memory_total_gib: 16, disk_free_gib: 208.4, disk_total_gib: 476 };
+  },
+
   async speak_text() {
     return { ok: false, error: "Demo modunda ses üretilmez." };
   },

@@ -123,7 +123,7 @@ function showScreen(id, { focus = true } = {}) {
   }
   if (id === "chat") { scrollChat({ force: true, instant: true }); if (focus) $("#chat-input").focus(); }
   if (id === "home" && focus) $("#quick-input").focus();
-  if (id === "diagnostics") Diagnostics.refresh({ quiet: true });
+  if (id === "diagnostics") { Diagnostics.refresh({ quiet: true }); Pulse.start(); } else Pulse.stop();
   if (id === "memory") Memory.load();
   if (id === "integrations") Trust.refresh();
   if (id === "tasks") { renderTasks(State.snapshot?.tasks || []); Routines.load(); Reminders.load(); }
@@ -443,6 +443,7 @@ const Palette = {
     list.push({ group: "eylem", icon: "spark", label: "Yazı tura at", keywords: "yazı tura para rastgele coin", run: () => toast(`${Math.random() < 0.5 ? "Yazı" : "Tura"} 🪙 (rastgele)`, "ok") });
     list.push({ group: "eylem", icon: "refresh", label: "Sistem sağlığını denetle", keywords: "tanılama health", run: () => { showScreen("diagnostics"); Diagnostics.refresh(); } });
     list.push({ group: "eylem", icon: "alarm", label: Focus.timer || Focus.endsAt ? "Odak sayacını durdur" : "25 dk odak sayacı", keywords: "odak pomodoro sayaç focus", run: () => Focus.toggle() });
+    list.push({ group: "eylem", icon: "voice", label: FocusNoise.playing ? "Odak sesini kapat" : "Odak sesi (sentetik gürültü)", keywords: "gürültü ses odak yağmur noise", run: () => FocusNoise.toggle() });
     list.push({ group: "eylem", icon: "alarm", label: "Hatırlatıcı kur", keywords: "hatırlat alarm kur reminder", run: () => { showScreen("tasks"); setTimeout(() => $("#reminder-text")?.focus(), 350); } });
     list.push({ group: "eylem", icon: "send", label: "Konuşmayı dışa aktar (.md)", keywords: "export kaydet markdown konuşma", run: () => { showScreen("chat"); $("#chat-export")?.click(); } });
     list.push({ group: "eylem", icon: "archive", label: "Durum yedeği al", keywords: "yedek backup güvenlik kopya", run: () => runStateBackup() });
@@ -741,6 +742,7 @@ function bindKeyboard() {
     }
     if (event.ctrlKey && event.shiftKey && key === "b") { event.preventDefault(); setRailCollapsed(!State.railCollapsed); }
     if (event.key === "Escape" && !activeApproval && !confirmOpen) {
+      if (FocusNoise.playing) { FocusNoise.stop(); return; }
       if (VoiceStage.active) toggleVoice();
       else if (State.compact) setCompact(false);
       else showScreen("home");
@@ -891,3 +893,51 @@ function bindShell() {
   startClock();
   bindKeyboard();
 }
+
+/* ── focus noise ──────────────────────────────────────────────────────
+   Four seconds of brown noise, synthesized once and looped through a
+   low-pass filter: a steady rain-like bed for studying. Honest about
+   what it is - the palette entry says synthetic - and it never starts
+   by itself, never persists, and stops the moment it is toggled or the
+   voice stage opens. */
+const FocusNoise = {
+  playing: false,
+  source: null,
+  gain: null,
+
+  toggle() {
+    if (this.playing) { this.stop(); toast("Odak sesi kapandı.", "ok"); return; }
+    const context = RoomAudio.ensure();
+    if (!context) { toast("Ses aygıtı yok.", true); return; }
+    const seconds = 4;
+    const buffer = context.createBuffer(1, context.sampleRate * seconds, context.sampleRate);
+    const channel = buffer.getChannelData(0);
+    let last = 0;
+    for (let index = 0; index < channel.length; index += 1) {
+      const white = Math.random() * 2 - 1;
+      last = (last + 0.02 * white) / 1.02;   // brown noise: integrated white
+      channel[index] = last * 3.5;
+    }
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    const filter = context.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 500;
+    const gain = context.createGain();
+    gain.gain.value = 0.12;
+    source.connect(filter).connect(gain).connect(context.destination);
+    source.start();
+    this.source = source;
+    this.gain = gain;
+    this.playing = true;
+    toast("Odak sesi açık: sentezlenmiş kahverengi gürültü.", "ok");
+  },
+
+  stop() {
+    if (this.source) { try { this.source.stop(); } catch (_error) { /* already stopped */ } }
+    this.source = null;
+    this.gain = null;
+    this.playing = false;
+  },
+};

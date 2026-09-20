@@ -2498,3 +2498,23 @@ def test_the_months_rhythm_draws_exactly_what_the_records_say() -> None:
     # The page asks the same weekly_report action, just for 28 days.
     assert 'this.request("weekly_report", { days: 28 })' in JS_SOURCES["js/medical.js"]
     assert 'id="med-month"' in HTML
+
+
+def test_the_pulse_and_the_focus_noise_are_wired_honestly() -> None:
+    panels = JS_SOURCES["js/panels.js"]
+    assert "const Pulse = {" in panels and 'call("system_pulse")' in panels
+    assert 'State.screen !== "diagnostics"' in panels, "the pulse beats only on the diagnostics screen"
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "Pulse.start(); } else Pulse.stop();" in shell_js
+    assert 'id="diag-pulse"' in HTML
+    # The first beat shows a dash for CPU: null is a dash, never a zero.
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function esc(", "\nfunction store("))
+    context.eval(section(panels, "const Pulse = {", "\n/* ── diagnostics"))
+    markup = context.eval('Pulse.markup({ ok: true, cpu_percent: null, memory_percent: 41.2, memory_used_gib: 6.6, memory_total_gib: 16, disk_free_gib: 208.4 })')
+    assert "CPU —" in markup and "%41,2" in markup and "208,4 GB boş" in markup
+    assert context.eval("Pulse.markup({ ok: false })") == ""
+    # The focus noise says it is synthetic and stops before the voice stage.
+    assert "const FocusNoise = {" in shell_js and "sentezlenmiş kahverengi gürültü" in shell_js
+    assert "FocusNoise.playing) { FocusNoise.stop(); return; }" in shell_js

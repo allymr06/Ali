@@ -748,6 +748,9 @@ class NovaBridge:
         # Only the newest snapshot is worth sending; joining them printed
         # "BuBu birBu bir deneme" while JARVIS was typing.
         self._stream_latest: str = ""
+        # The previous GetSystemTimes sample; the pulse's CPU figure
+        # is the delta between two beats.
+        self._pulse_times: tuple[int, int, int] | None = None
         self._stream_last_flush = 0.0
         self._command_future: Future[Any] | None = None
         # A turn claimed by submit_command but not yet handed to the runner;
@@ -2984,6 +2987,38 @@ class NovaBridge:
     # ------------------------------------------------------------------
     def refresh(self) -> dict[str, Any]:
         return {"snapshot": _jsonable(self.controller.snapshot())}
+
+    def system_pulse(self) -> dict[str, Any]:
+        """CPU, memory and disk right now, measured, never estimated.
+
+        The CPU figure is the busy share between this call and the
+        previous one, so the very first reading honestly answers None
+        and the page shows a dash until the second beat.
+        """
+        try:
+            from app.platform.windows.service import (
+                WindowsIntegrationService,
+                cpu_percent_between,
+            )
+
+            times = WindowsIntegrationService.read_cpu_times()
+            info = WindowsIntegrationService.system_info()
+        except OSError as exc:
+            return {"ok": False, "error": f"Sistem ölçülemedi ({type(exc).__name__})."}
+        previous = self._pulse_times
+        self._pulse_times = times
+        cpu = cpu_percent_between(previous, times) if previous is not None else None
+        total = int(info.get("memory_total_bytes") or 0)
+        available = int(info.get("memory_available_bytes") or 0)
+        return {
+            "ok": True,
+            "cpu_percent": cpu,
+            "memory_percent": round(100.0 * (total - available) / total, 1) if total else None,
+            "memory_used_gib": round((total - available) / 1024 ** 3, 1) if total else None,
+            "memory_total_gib": info.get("memory_total_gib"),
+            "disk_free_gib": info.get("disk_free_gib"),
+            "disk_total_gib": info.get("disk_total_gib"),
+        }
 
     def system_status(self) -> dict[str, Any]:
         """Live health checks, bounded metrics, and process figures.

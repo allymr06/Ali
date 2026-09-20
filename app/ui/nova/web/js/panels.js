@@ -480,6 +480,40 @@ function renderVisionResult(ok, text, error) {
 /* The research screen's own functions live in research.js: the room, the
    source chips, the report. bindPanels still binds the form's submit. */
 
+/* ── the system pulse: alive only while Tanılama is on screen ─────── */
+const Pulse = {
+  timer: 0,
+
+  markup(pulse) {
+    if (!pulse || pulse.ok === false) return "";
+    const cpu = pulse.cpu_percent === null || pulse.cpu_percent === undefined ? "—" : `%${String(pulse.cpu_percent).replace(".", ",")}`;
+    const memory = pulse.memory_percent === null || pulse.memory_percent === undefined ? "—"
+      : `%${String(pulse.memory_percent).replace(".", ",")} (${String(pulse.memory_used_gib).replace(".", ",")}/${String(pulse.memory_total_gib).replace(".", ",")} GB)`;
+    const disk = pulse.disk_free_gib === null || pulse.disk_free_gib === undefined ? "—" : `${String(pulse.disk_free_gib).replace(".", ",")} GB boş`;
+    return `<span>CPU ${esc(cpu)}</span><span>RAM ${esc(memory)}</span><span>Disk ${esc(disk)}</span>`;
+  },
+
+  async beat() {
+    if (State.screen !== "diagnostics" || document.hidden || !bridgeReady()) return;
+    const pulse = await call("system_pulse");
+    const host = $("#diag-pulse");
+    if (host) host.innerHTML = this.markup(pulse);
+  },
+
+  start() {
+    this.stop();
+    this.beat();
+    // The first beat has no previous sample, so the CPU shows a dash;
+    // the second, five seconds later, is the first honest figure.
+    this.timer = setInterval(() => this.beat(), 5000);
+  },
+
+  stop() {
+    clearInterval(this.timer);
+    this.timer = 0;
+  },
+};
+
 /* ── diagnostics ──────────────────────────────────────────────────── */
 
 const MAX_EVENT_ROWS = 300;

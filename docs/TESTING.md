@@ -1225,3 +1225,20 @@ speaker button gated on `voice_available`, the export button and
 `State.lastResearchReport`, accent blocks in `tokens.css` declared
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
+
+## Rhythm, pulse and noise (20 September 2026)
+
+`tests/test_medical_scoring.py` gained the frozen-clock backup test:
+three backups inside one `datetime.now` tick yield three files, the
+sibling names sort as the creation order, and rotation removes the true
+oldest - pinning the collision that used to overwrite a kept copy.
+
+
+`tests/test_nova_web.py` pins the heatmap builder against a fixture
+(levels, tooltips, empty input) and the pulse's page half: beats only on
+the diagnostics screen, a dash - never a zero - for the first CPU
+reading, silence on failure, and the focus noise declaring itself
+synthetic and yielding to Escape. `tests/test_ui_nova.py` drives
+`system_pulse` over monkeypatched counters (first beat None, second the
+exact busy share) and `cpu_percent_between` over its refusals; the
+academy tests pin `weekly_report(days=28)` and the 31-day cap.

@@ -193,6 +193,43 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The academy as a room of its own (20 September 2026)
+
+Ali asked for a Medical Academy interface that is not another Nova screen:
+bright and cheerful where the shell is dark and technical, heavier type
+that reads at a glance, an opening of two or three seconds with sound when
+the academy is entered, and independence from JARVIS's own chrome.
+
+- **A room, not a tab.** Entering the academy sets `body.academy`; the
+  rail, the top bar and the ambient field step aside and the academy fills
+  the window with its own chrome: a side column with the thirteen sections
+  grouped under Çalış, Ölç, Anla and Lab, a `JARVIS` way back, a serif
+  masthead greeting by the clock, and a heartbeat line for a rule. `Esc`
+  leaves as before. On the phone the column becomes a strip.
+- **Its own palette, in one place.** `css/tokens.css` re-binds every token
+  under `body.academy` - white ground, deep slate ink, teal accent, serif
+  display and kicker faces, coral heartbeat, a warm sun-glow - so the
+  existing components re-dress themselves; `css/academy.css` adds layout
+  and weight (body 500, labels and sections 600, headings 700). Body and
+  secondary ink clear WCAG AAA on the ground and tertiary ink clears AA,
+  and a test pins the ratios. The academy looks the same whichever theme
+  the shell is in; native fields switch to the light colour scheme.
+- **The opening.** A coral ECG trace draws across the window, a heart
+  pulses on each R wave, and the masthead rises before the veil lifts,
+  2.65 seconds in all. Under the title: the nearest exam countdown exactly
+  as the topbar chip reports it, or nothing. Any click or key skips it,
+  the in-app "Hareketi azalt" switch removes it entirely, and the
+  workspace loads underneath meanwhile.
+- **Sound, synthesised.** Web Audio makes the monitor blip on each R wave,
+  a low lub-dub timed from the drawn trace itself, and a quiet chord as
+  the masthead arrives. No audio file ships. A switch in the side column
+  remembers "Ses açık / Ses kapalı" per browser, and a skipped opening
+  goes quiet at once.
+
+Tests in `tests/test_nova_web.py` pin the wiring, the daylight palette and
+its contrast, the heavier type, the honest countdown line and greeting,
+the silent-when-muted and no-motion paths, and the grouped section order.
+
 ## End-to-end audit and its repairs (20 September 2026)
 
 A multi-agent audit of the whole application, plus a live pass over the

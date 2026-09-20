@@ -70,6 +70,7 @@ function examChipText(countdown) {
 }
 
 function renderExamChip(countdown) {
+  State.examCountdown = countdown || null;   // the academy's opening reads the same figure
   const chip = $("#exam-chip");
   if (!chip) return;
   const built = examChipText(countdown);

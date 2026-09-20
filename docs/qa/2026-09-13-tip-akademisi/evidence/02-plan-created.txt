@@ -1,0 +1,263 @@
+TIP AKADEMİSİ
+Çalışma merkezi
+
+Birinci sınıf tıp müfredatı, kendi ders materyalin ve hocanın soru tarzı tek yerde.
+
+BİYOKİMYA
+BİYOKİMYA › KARBONHİDRAT METABOLİZMASI
+ÖĞRET
+STANDART
+DERS MATERYALİ + JARVIS BİLGİSİ
+PANEL
+PLAN
+1
+KONULAR
+KÜTÜPHANE
+243
+NOTLAR
+SINAV
+1
+SORU BANKASI
+716
+ANLAMA
+HİSTOLOJİ
+HOCA TARZI
+İLERLEME
+ANATOMİ LAB
+SINAV PLANLARI
+1 plan
+QA Akademi 13 Eylül
+7 gün
+20 Eylül Pazar ·
+sığmıyor
+SINAV ADI
+SINAV TARİHİ
+DERSLER (BOŞ BIRAKILIRSA BELGELERDEN ÖNERİLİR)
+Anatomi
+Histoloji
+Mikrobiyoloji
+Biyokimya
+Biyofizik
+Fizyoloji
+Biyoloji
+GÜNLÜK SÜRE (DK)
+Sabah hatırlat
+Saat
+
+Süreler tahmindir ve tamamladığın etkinliklerin gerçek süresiyle güncellenir; plan günlük süreyi hiç aşmaz.
+
+PLAN OLUŞTUR
+QA AKADEMİ 13 EYLÜL
+20 Eylül Pazar · 7 gün kaldı
+KAPSAM SIĞMIYOR
+580 DK İŞ · 360 DK BOŞ
+17 PLANLI ETKİNLİK
+
+Kapsam kalan süreye sığmıyor: tahmini 580 dk iş var, sınava kadar 360 dk boş. Plan en öncelikli işleri sığdırdı; 13 etkinlik açıkta kaldı.
+
+Günlük süre (dk): Pzt 45 · Sal 45 · Çar 45 · Per 45 · Cum 45 · Cmt 45 · Paz 45
+
+YENİDEN PLANLA
+GÜNLÜK SÜREYİ DEĞİŞTİR
+BUGÜNÜ BOŞ BIRAK
+ELLE ETKİNLİK EKLE
+PLANI SİL
+BUGÜN
+13 Eylül Pazar
+QA Akademi 13 Eylül
+20 Eylül Pazar · 7 gün kaldı
+0 dk bitti · 40 dk planlı · 45 dk ayrılmış
+
+Kapsam kalan süreye sığmıyor: tahmini 580 dk iş var, sınava kadar 360 dk boş. Plan en öncelikli işleri sığdırdı; 13 etkinlik açıkta kaldı.
+
+PLANLANDI
+TEKRAR SORUSU
+≈ 10 dk (tahmini)
+Omuz kuşağı: scapula ve clavicula
+Konunun bir kavramı tekrar kuyruğunda.
+BAŞLA
+BİTTİ
+ATLA
+PLANLANDI
+TEKRAR SORUSU
+≈ 10 dk (tahmini)
+Kol: humerus ve kol kasları
+Konunun bir kavramı tekrar kuyruğunda.
+BAŞLA
+BİTTİ
+ATLA
+PLANLANDI
+MATERYALİ OKU
+≈ 20 dk (tahmini)
+Düzlemler ve eksenler
+Sınav kapsamında ama hiç açılmadı.
+BAŞLA
+BİTTİ
+ATLA
+KAPSAM
+30 konu
+TEKRAR ZAMANI GELDİ · 2
+KAPSAMDA, ÇALIŞILMADI · 28
+KAPSAMDA, ÇALIŞILMADI
+Düzlemler ve eksenler
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Hareket terimleri
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Kemik terimleri
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Kaslar ve fasyalar
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Baş ve boyun kasları
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Baş ve boyun damarları (karotis sistemi)
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Kraniyal sinirler (12 çift)
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Kemik yapısı ve sınıflaması
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Kemikleşme
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Eklem tipleri
+ölçülmedi
+TEKRAR ZAMANI GELDİ
+Omuz kuşağı: scapula ve clavicula
+0/1
+KAPSAMDA, ÇALIŞILMADI
+Omuz eklemi ve rotator manşet
+ölçülmedi
+TEKRAR ZAMANI GELDİ
+Kol: humerus ve kol kasları
+0/1
+KAPSAMDA, ÇALIŞILMADI
+Dirsek eklemi
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Ön kol: radius, ulna ve ön kol kasları
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+El bileği ve el
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Üst ekstremite sinir ve damarları
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Pelvis kuşağı: os coxae
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Kalça eklemi ve gluteal bölge
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Uyluk: femur ve uyluk kasları
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Diz eklemi
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Bacak: tibia, fibula ve bacak kasları
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Ayak bileği ve ayak
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Alt ekstremite sinir ve damarları
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Columna vertebralis
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Göğüs kafesi
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Sırt kasları
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Karın ön duvarı
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Nörokranyum: kubbe, kafa tabanı, fossalar ve delikler
+ölçülmedi
+KAPSAMDA, ÇALIŞILMADI
+Viscerocranium: yüz iskeleti
+ölçülmedi
+AÇIKTA KALANLAR
+Pelvis kuşağı: os coxae
+≈ 20 dk
+Sınav kapsamında ama hiç açılmadı.
+Kalça eklemi ve gluteal bölge
+≈ 20 dk
+Sınav kapsamında ama hiç açılmadı.
+Uyluk: femur ve uyluk kasları
+≈ 20 dk
+Sınav kapsamında ama hiç açılmadı.
+Diz eklemi
+≈ 20 dk
+Sınav kapsamında ama hiç açılmadı.
+Bacak: tibia, fibula ve bacak kasları
+≈ 20 dk
+Sınav kapsamında ama hiç açılmadı.
+Ayak bileği ve ayak
+≈ 20 dk
+Sınav kapsamında ama hiç açılmadı.
+Alt ekstremite sinir ve damarları
+≈ 20 dk
+Sınav kapsamında ama hiç açılmadı.
+Columna vertebralis
+≈ 20 dk
+Sınav kapsamında ama hiç açılmadı.
+Göğüs kafesi
+≈ 20 dk
+Sınav kapsamında ama hiç açılmadı.
+Sırt kasları
+≈ 20 dk
+Sınav kapsamında ama hiç açılmadı.
+Karın ön duvarı
+≈ 20 dk
+Sınav kapsamında ama hiç açılmadı.
+Nörokranyum: kubbe, kafa tabanı, fossalar ve delikler
+≈ 20 dk
+Sınav kapsamında ama hiç açılmadı.
+Viscerocranium: yüz iskeleti
+≈ 20 dk
+Sınav kapsamında ama hiç açılmadı.
+BU HAFTA
+13 Eylül Pazar
+40 dk / 45 dk
+TEKRAR SORUSU Omuz kuşağı: scapula ve clavicula ≈ 10 dk
+TEKRAR SORUSU Kol: humerus ve kol kasları ≈ 10 dk
+MATERYALİ OKU Düzlemler ve eksenler ≈ 20 dk
+14 Eylül Pazartesi
+40 dk / 45 dk
+MATERYALİ OKU Hareket terimleri ≈ 20 dk
+MATERYALİ OKU Kemik terimleri ≈ 20 dk
+15 Eylül Salı
+40 dk / 45 dk
+MATERYALİ OKU Kaslar ve fasyalar ≈ 20 dk
+MATERYALİ OKU Baş ve boyun kasları ≈ 20 dk
+16 Eylül Çarşamba
+40 dk / 45 dk
+MATERYALİ OKU Baş ve boyun damarları (karotis sistemi) ≈ 20 dk
+MATERYALİ OKU Kraniyal sinirler (12 çift) ≈ 20 dk
+17 Eylül Perşembe
+40 dk / 45 dk
+MATERYALİ OKU Kemik yapısı ve sınıflaması ≈ 20 dk
+MATERYALİ OKU Kemikleşme ≈ 20 dk
+18 Eylül Cuma
+40 dk / 45 dk
+MATERYALİ OKU Eklem tipleri ≈ 20 dk
+MATERYALİ OKU Omuz eklemi ve rotator manşet ≈ 20 dk
+19 Eylül Cumartesi
+40 dk / 45 dk
+MATERYALİ OKU Dirsek eklemi ≈ 20 dk
+MATERYALİ OKU Ön kol: radius, ulna ve ön kol kasları ≈ 20 dk
+PLAN GEÇMİŞİ
+2026-09-13 17:08 · Yeniden planlandı: Plan oluşturuldu.
+2026-09-13 17:08 · Plan oluşturuldu.

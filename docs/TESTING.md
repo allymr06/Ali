@@ -1131,3 +1131,22 @@ answering 401 unpaired, 200 paired, 403 without the page header, 403 for
 denied bridge methods, 404 for unknown ones, and returning real cloud
 speech. Thread and handle counts after that exercise matched an idle
 instance.
+
+## The academy room (20 September 2026)
+
+`tests/test_nova_web.py` gained six checks for the Medical Academy's own
+interface: the room is declared and wired (`showScreen` enters and leaves
+it, `bindAcademy` runs at boot, the opening and the topbar chip read one
+countdown field); the palette lives in `tokens.css` under `body.academy`,
+is bright, and its inks clear WCAG AAA (body, secondary) and AA (tertiary)
+against the ground; the type is set heavier; `academyIntroLine` and
+`academyGreeting` say only what the core reported and what the clock says;
+the opening is skipped without motion and opens no audio context when
+muted; the sections are grouped in the order they are listed.
+
+Manual live acceptance: open `nova-demo` (`?demo=1`), press `Alt+3`: the
+veil shows the trace, the heart and the title within three seconds and
+lifts on its own; a click or `Esc` during it skips; `Esc` afterwards
+returns to Komuta Merkezi with the rail back; the side column groups the
+thirteen sections; "Ses kapalı" silences the next opening; at 375 px with
+`body.phone` the column becomes a strip and nothing overflows.

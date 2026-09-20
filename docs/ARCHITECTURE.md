@@ -462,6 +462,20 @@ calm and pauses when hidden; canvases scale with `devicePixelRatio`. Window
 geometry changes for the compact mode are marshalled onto the WinForms UI
 thread because pywebview applies them on the calling thread.
 
+The Medical Academy (`Alt+3`) is a room of its own inside that page rather
+than a thirteenth screen in the same dress. `showScreen("medical")` sets
+`body.academy`, under which `css/tokens.css` re-binds every token the
+components read (a white ground, deep slate ink set heavier, a teal accent,
+serif display faces, a coral heartbeat) and `css/academy.css` hides the
+rail, the top bar and the ambient field, lays the academy out as a side
+column of grouped sections beside a serif masthead, and draws the opening.
+`js/academy.js` plays that opening on entry - a heartbeat trace, the monitor
+answering it, the masthead settling - with sounds synthesised on the spot by
+Web Audio (no audio file ships; a switch in the side column remembers the
+student's choice in `localStorage`), skips it on any click or key, and never
+plays it while the in-app motion switch is off. The line under the title is
+the nearest exam countdown exactly as the topbar chip shows it, or nothing.
+
 Nova's honesty rules: the page waits for the real bridge and shows an explicit
 failure screen if it never arrives; the demo bridge is reachable only with
 `?demo=1` in a plain browser and is labelled everywhere; approvals are

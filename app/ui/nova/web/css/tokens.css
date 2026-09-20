@@ -139,3 +139,59 @@ body.light {
   --shadow-2:      0 18px 48px rgba(30, 50, 65, 0.18);
   --inset-light:   inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
+
+/* ── Tıp Akademisi: a palette of its own ──────────────────────────────
+   The academy is a room inside the window, and a bright one: where the
+   shell is night, the academy is daylight. Under body.academy every token
+   the components read is re-bound - a soft white ground, deep slate ink
+   set heavier, fresh teal for the accent, serif faces for the display and
+   the kickers, and a coral heartbeat with a warm sun-glow that belong to
+   the academy alone. Only the values change; the components keep reading
+   the same names. Declared after the light theme so it wins in both of
+   the shell's themes: the academy looks the same whichever the shell is in. */
+:root {
+  --acad-pulse:      #ff6b5e;
+  --acad-pulse-rgb:  255, 107, 94;
+  --acad-sun:        #ffb547;
+  --acad-sun-rgb:    255, 181, 71;
+}
+
+body.academy, body.academy.light {
+  --bg:            #f3f7f6;
+  --bg-2:          #f9fbfa;
+  --bg-3:          #ffffff;
+  --surface-1:     rgba(255, 255, 255, 0.74);
+  --surface-2:     rgba(255, 255, 255, 0.88);
+  --surface-3:     rgba(255, 255, 255, 0.97);
+  --surface-solid: #ffffff;
+  --line-1:        rgba(20, 52, 60, 0.09);
+  --line-2:        rgba(20, 52, 60, 0.17);
+  --line-3:        rgba(20, 52, 60, 0.32);
+  --ink-1:         #14303a;
+  --ink-2:         #33515b;
+  --ink-3:         #536d78;
+  --ink-4:         #8da3ab;
+  --accent:        #0f9d8a;
+  --accent-2:      #0b8271;
+  --accent-3:      #7fd8ca;
+  --accent-rgb:    15, 157, 138;
+  --ok:            #22a06b;
+  --ok-rgb:        34, 160, 107;
+  --warn:          #d98a1c;
+  --warn-rgb:      217, 138, 28;
+  --bad:           #d64545;
+  --bad-rgb:       214, 69, 69;
+  --violet:        #6f5bd0;
+  --violet-rgb:    111, 91, 208;
+  --on-accent:     #ffffff;
+  --glow-1:        0 0 12px rgba(15, 157, 138, 0.22);
+  --glow-2:        0 0 28px rgba(15, 157, 138, 0.18);
+  --shadow-1:      0 8px 24px rgba(20, 52, 60, 0.08);
+  --shadow-2:      0 20px 50px rgba(20, 52, 60, 0.12);
+  --inset-light:   inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --radius-1:      8px;
+  --radius-2:      14px;
+  --radius-3:      22px;
+  --font-display:  "Cambria", "Georgia", "Palatino Linotype", "Book Antiqua", serif;
+  --font-system:   "Cambria", "Georgia", "Palatino Linotype", serif;
+}

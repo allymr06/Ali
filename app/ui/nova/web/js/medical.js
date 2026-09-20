@@ -11,6 +11,8 @@
    ════════════════════════════════════════════════════════════════════ */
 "use strict";
 
+/* The sections in the order the side column lists them: what you study,
+   what measures you, what explains you, and the two labs. */
 const MED_TABS = [
   ["dashboard", "Panel", "home"],
   ["plan", "Plan", "alarm"],
@@ -19,13 +21,15 @@ const MED_TABS = [
   ["notes", "Notlar", "chat"],
   ["exam", "Sınav", "tasks"],
   ["bank", "Soru bankası", "tools"],
-  ["understanding", "Anlama", "spark"],
-  ["histology", "Histoloji", "vision"],
   ["cards", "Kartlar", "memory"],
+  ["understanding", "Anlama", "spark"],
   ["professor", "Hoca tarzı", "integrations"],
   ["progress", "İlerleme", "diagnostics"],
+  ["histology", "Histoloji", "vision"],
   ["anatomy", "Anatomi Lab", "vision"],
 ];
+/* The heading each group opens under, keyed by the section that starts it. */
+const MED_TAB_GROUPS = { dashboard: "Çalış", exam: "Ölç", understanding: "Anla", histology: "Lab" };
 
 const MED_ORIGIN_TR = {
   generated: "Üretilmiş",
@@ -154,6 +158,7 @@ const Medical = {
     if (!host) return;
     host.innerHTML = "";
     MED_TABS.forEach(([id, label, iconName]) => {
+      if (MED_TAB_GROUPS[id]) host.appendChild(el("span", "med-tab-group", MED_TAB_GROUPS[id]));
       const btn = el("button", "med-tab");
       btn.type = "button";
       btn.dataset.view = id;

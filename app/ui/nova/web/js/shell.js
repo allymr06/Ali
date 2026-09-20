@@ -45,6 +45,8 @@ const ICONS = {
   bell: '<path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 1.5H5z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   medical: '<path d="M12 3.2 5 6v5.4c0 4.4 2.9 7.5 7 9.4 4.1-1.9 7-5 7-9.4V6z"/><path d="M12 8.6v5.6M9.2 11.4h5.6"/>',
   alarm: '<circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.5 1.5M4.5 6.5 7 4M19.5 6.5 17 4"/>',
+  sound: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.8a7.6 7.6 0 0 1 0 10.4"/>',
+  mute: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
 };
 function icon(name) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
@@ -102,6 +104,9 @@ function showScreen(id, { focus = true } = {}) {
 
   const next = $(`.screen[data-screen="${id}"]`);
   $$(".screen").forEach((s) => s.classList.toggle("active", s === next));
+  // The academy is a room of its own: entering it takes the rail and the
+  // top bar away and plays its opening; leaving it gives the window back.
+  if (id === "medical") Academy.enter(); else Academy.leave();
   if (Motion.allowed()) {
     next.animate(
       [{ opacity: 0, transform: "translateY(10px) scale(0.995)" },

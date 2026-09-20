@@ -2048,3 +2048,116 @@ def test_the_demo_bridge_raises_the_same_busy_bracket_as_python() -> None:
     assert demo.index("busy: true") < demo.index("busy: false")
     python = inspect.getsource(shell.NovaBridge.submit_command)
     assert '"status": WORKING_STATUS' in python and '"spoken": spoken is True' in python
+
+
+# ---------------------------------------------------------------------------
+# Tıp Akademisi: a bright room of its own, with an opening
+# ---------------------------------------------------------------------------
+
+
+def test_the_academy_room_is_declared_and_wired() -> None:
+    assert "css/academy.css" in shell.WEB_ASSETS and "js/academy.js" in shell.WEB_ASSETS
+    for element_id in ("academy-intro", "academy-ecg-path", "academy-heart", "academy-intro-line",
+                       "med-back", "med-sound", "med-greeting", "med-tabs"):
+        assert f'id="{element_id}"' in HTML, element_id
+    assert '<aside class="med-side"' in HTML and '<div class="med-main">' in HTML
+    assert "Geçmek için tıkla" in HTML
+    # Entering the screen is what opens the room; leaving any other way closes it.
+    show = section(JS_SOURCES["js/shell.js"], "function showScreen(", "function setStatus(")
+    assert 'if (id === "medical") Academy.enter(); else Academy.leave();' in show
+    assert "bindAcademy();" in JS_SOURCES["js/main.js"]
+    # The opening never reports a figure the topbar chip would not: both read one field.
+    assert "State.examCountdown = countdown || null;" in JS_SOURCES["js/panels.js"]
+    assert "academyIntroLine(State.examCountdown)" in JS_SOURCES["js/academy.js"]
+
+
+def test_the_academy_palette_is_daylight_and_lives_in_tokens() -> None:
+    tokens = (WEB / "css/tokens.css").read_text(encoding="utf-8")
+    block = section(tokens, "body.academy, body.academy.light {", "\n}")
+    academy_css = (WEB / "css/academy.css").read_text(encoding="utf-8")
+
+    def luminance(hex_colour: str) -> float:
+        """WCAG relative luminance, so the pin below is the contrast ratio."""
+        value = hex_colour.lstrip("#")
+        channels = []
+        for i in (0, 2, 4):
+            c = int(value[i:i + 2], 16) / 255
+            channels.append(c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4)
+        r, g, b = channels
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    def contrast(a: str, b: str) -> float:
+        light, dark = sorted((luminance(a), luminance(b)), reverse=True)
+        return (light + 0.05) / (dark + 0.05)
+
+    colour = lambda name: re.search(name + r":\s+(#[0-9a-f]{6});", block).group(1)
+    assert luminance(colour("--bg")) > 0.85, "the academy ground is bright"
+    # Body ink and the secondary ink both clear WCAG AAA on the ground; the
+    # tertiary ink, used for asides, still clears AA.
+    assert contrast(colour("--bg"), colour("--ink-1")) >= 7
+    assert contrast(colour("--bg"), colour("--ink-2")) >= 7
+    assert contrast(colour("--bg"), colour("--ink-3")) >= 4.5
+    assert contrast(colour("--surface-solid"), colour("--accent-2")) >= 4.5, "accent text reads on a card"
+    assert "--font-display:" in block and "serif" in block
+    # The academy re-binds the shell's tokens only in tokens.css; its own file adds layout.
+    for token in ("--accent:", "--bg:", "--ink-1:", "--font-display:"):
+        assert token not in academy_css, token
+    assert "--acad-pulse:" in tokens and "--acad-sun-rgb:" in tokens
+
+
+def test_the_academy_sets_its_type_heavier() -> None:
+    academy_css = (WEB / "css/academy.css").read_text(encoding="utf-8")
+    assert re.search(r"\.med-tab \{[^}]*font-weight: 600", academy_css)
+    assert re.search(r"\.med-head-main h1 \{[^}]*font-weight: 700", academy_css)
+    assert re.search(r'\.screen\[data-screen="medical"\] \{ font-weight: 500; \}', academy_css)
+    assert "color-scheme: light" in academy_css, "native fields follow the academy's daylight"
+
+
+def test_the_opening_speaks_only_of_what_the_core_reported() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/academy.js"], "function academyIntroLine(", "\n/* Where along the trace"))
+    line = lambda payload: context.eval("academyIntroLine(" + json.dumps(payload) + ")")
+    assert line({"name": "Komite 2", "days_left": 9}) == "Komite 2 · 9 gün kaldı"
+    assert line({"name": "Komite 2", "days_left": 0}) == "Komite 2 · bugün"
+    assert line({"name": "Komite 2", "days_left": -1}) == ""
+    assert line({"name": "", "days_left": 3}) == ""
+    assert line(None) == "" and line({"days_left": "yakında"}) == ""
+    greeting = lambda hour: context.eval("academyGreeting({ getHours() { return " + str(hour) + "; } })")
+    assert greeting(4) == "İyi geceler" and greeting(9) == "Günaydın"
+    assert greeting(14) == "İyi günler" and greeting(21) == "İyi akşamlar"
+
+
+def test_the_opening_is_skipped_without_motion_and_silent_when_muted() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval("var preferences = {}; function store(key, value) { if (value === undefined) return preferences[key] === undefined ? null : preferences[key]; preferences[key] = value; return value; }")
+    context.eval("var State = { compact: false }; var Motion = { allowed() { return !State.reducedMotion; } };")
+    context.eval("var window = {}; var touched = 0;")
+    context.eval(section(JS_SOURCES["js/academy.js"], "const AcademySound = {", "\n/* ── the room"))
+    context.eval(section(JS_SOURCES["js/academy.js"], "const Academy = {", "\n  enter() {") + "\n};")
+    # Sound is on by default and off when the student said so; a muted academy never opens an audio context.
+    assert context.eval("AcademySound.enabled()") is True
+    context.eval('store("nova.academy.sound", "off")')
+    assert context.eval("AcademySound.enabled()") is False
+    assert context.eval("AcademySound.ensure()") is None
+    # Motion off means no opening at all.
+    assert context.eval("Academy.shouldPlayIntro()") is True
+    context.eval("State.reducedMotion = true")
+    assert context.eval("Academy.shouldPlayIntro()") is False
+    context.eval("State.reducedMotion = false; State.compact = true")
+    assert context.eval("Academy.shouldPlayIntro()") is False
+
+
+def test_the_academy_sections_are_grouped_in_the_order_listed() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/medical.js"], "const MED_TABS = [", "\nconst MED_ORIGIN_TR"))
+    ids = json.loads(context.eval("JSON.stringify(MED_TABS.map(([id]) => id))"))
+    groups = json.loads(context.eval("JSON.stringify(MED_TAB_GROUPS)"))
+    assert set(groups) <= set(ids), set(groups) - set(ids)
+    assert ids[0] == "dashboard" and groups["dashboard"] == "Çalış"
+    assert [ids.index(key) for key in ("dashboard", "exam", "understanding", "histology")] == sorted(
+        ids.index(key) for key in ("dashboard", "exam", "understanding", "histology")
+    ), "each heading opens the group that follows it"
+    assert 'host.appendChild(el("span", "med-tab-group", MED_TAB_GROUPS[id]))' in JS_SOURCES["js/medical.js"]

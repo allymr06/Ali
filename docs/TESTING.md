@@ -1192,3 +1192,24 @@ term card's read-only data path, and each key the F1 card names back to
 a real binding in the shell. `tests/test_medical_academy.py` pins the
 term of the day: same day same term, five consecutive days five terms,
 every term a real catalogue entry, and the key riding `dashboard()`.
+
+## The almanac (20 September 2026)
+
+`tests/test_almanac.py` drives both halves over a canned transport: the
+weather names the city, the sky and the range; the rates invert
+Frankfurter's TRY base to street form; each half fails alone with a
+Turkish reason; answers and failures are cached for half an hour with
+the city geocoded once; missing fields refuse instead of showing zero;
+an unknown weather code shows nothing. `tests/test_ui_nova.py` pins the
+brief carrying the snapshot and surviving a broken or absent almanac,
+and `tests/test_nova_web.py` pins the two brief rows, silence when no
+city is set, and the settings card round-tripping the city.
+
+## Two mobile races pinned (20 September 2026)
+
+`tests/test_mobile.py` gained a raw-socket test for the oversized
+recording: 413 with its Turkish message on the same connection that then
+serves a normal request, proving the drain ceiling clears the voice cap.
+The streaming lifecycle test that was flaky under load is deterministic
+now that `turn_started` is emitted before the hand-over; the ordering is
+by construction, not by scheduler luck.

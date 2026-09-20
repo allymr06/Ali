@@ -24,6 +24,7 @@ class APISettingsSnapshot:
     daily_brief_notification: bool = True
     daily_brief_time: str = "08:30"
     research_enabled: bool = True
+    almanac_city: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +119,7 @@ class APISettingsService:
             credential_required=credential_required,
             daily_brief_notification=profile.daily_brief_notification,
             daily_brief_time=profile.daily_brief_time,
+            almanac_city=profile.almanac_city,
             research_enabled=profile.research_enabled,
         )
 
@@ -127,6 +129,7 @@ class APISettingsService:
         daily_brief_notification: bool,
         daily_brief_time: str,
         research_enabled: bool,
+        almanac_city: str = "",
     ) -> None:
         """Persist the non-secret assistant preferences atomically."""
         profile = self.preferences.load()
@@ -138,6 +141,7 @@ class APISettingsService:
                 daily_brief_notification=daily_brief_notification,
                 daily_brief_time=daily_brief_time,
                 research_enabled=research_enabled,
+                almanac_city=almanac_city,
             )
         )
 
@@ -256,6 +260,11 @@ class APISettingsService:
                 base.research_enabled
                 if "JARVIS_RESEARCH_ENABLED" in os.environ
                 else profile.research_enabled
+            ),
+            almanac_city=(
+                base.almanac_city
+                if "JARVIS_ALMANAC_CITY" in os.environ
+                else profile.almanac_city
             ),
         )
 

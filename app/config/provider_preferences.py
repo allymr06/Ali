@@ -46,6 +46,9 @@ class ProviderPreferences:
     daily_brief_notification: bool = True
     daily_brief_time: str = "08:30"
     research_enabled: bool = True
+    # The one city the morning almanac reports the weather for; empty
+    # means the brief simply carries no weather line.
+    almanac_city: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "provider", validate_provider(self.provider))
@@ -57,6 +60,7 @@ class ProviderPreferences:
             self, "daily_brief_time", validate_brief_time(self.daily_brief_time)
         )
         object.__setattr__(self, "research_enabled", bool(self.research_enabled))
+        object.__setattr__(self, "almanac_city", str(self.almanac_city or "").strip()[:80])
         if self.version != 1:
             raise ValueError("Unsupported provider preference version.")
 
@@ -90,6 +94,7 @@ class ProviderPreferencesStore:
                 ),
                 daily_brief_time=str(payload.get("daily_brief_time", "08:30")),
                 research_enabled=bool(payload.get("research_enabled", True)),
+                almanac_city=str(payload.get("almanac_city", "")),
             )
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return ProviderPreferences()

@@ -413,3 +413,10 @@ def test_the_execution_time_budget_is_configurable(monkeypatch) -> None:
         )
     )
     assert application.engine.execution_limits.timeout_seconds == 1800.0, "the setting reaches the engine"
+
+
+def test_settings_reads_the_almanac_city(monkeypatch) -> None:
+    monkeypatch.setenv("JARVIS_ALMANAC_CITY", "  İstanbul  ")
+    assert Settings.from_environment().almanac_city == "İstanbul"
+    monkeypatch.delenv("JARVIS_ALMANAC_CITY")
+    assert Settings.from_environment().almanac_city == ""

@@ -287,6 +287,7 @@ local address rejection.
 | `JARVIS_RESEARCH_MAX_SOURCES` | `10` | Maximum sources in one report; range `1` through `10`. The page clamps its request to this. |
 | `JARVIS_RESEARCH_MAX_CONCURRENCY` | `3` | Maximum simultaneous source fetches; range `1` through `8`. |
 | `JARVIS_RESEARCH_USER_AGENT` | `JARVIS/0.1` | Non-secret HTTP user-agent for source-page fetches. The DuckDuckGo search request itself presents a browser string, because the endpoint serves an empty challenge page to non-browser agents. |
+| `JARVIS_ALMANAC_CITY` | unset | City for the morning brief's weather line (Open-Meteo, keyless); also editable from Ayarlar. Empty means no weather line. |
 | `JARVIS_RESEARCH_SOURCES` | all | Comma list of the places research may look beside the web: `web`, `youtube`, `github`, `wikipedia`, `pubmed`, `arxiv`, `stackoverflow`, `hackernews`, `site`. All keyless and read-only; the web is always included; an unknown id refuses to start. |
 
 ## Plugins

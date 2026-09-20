@@ -81,10 +81,14 @@ PHONE_DENIED_MESSAGE = "Bu işlem telefondan yapılamaz; bilgisayardaki JARVIS't
 # Phone voice: the phone records, the PC's own speech providers listen and
 # speak. 16 kHz mono PCM16 for 30 s is under a megabyte; two is plenty.
 MAX_VOICE_UPLOAD_BYTES = 2 * 1024 * 1024
-# The largest body this server ever accepts, and so the most it is
-# willing to swallow from a request it refuses before reusing the
-# connection it arrived on.
-MAX_DRAIN_BYTES = MAX_VOICE_UPLOAD_BYTES
+# The most this server will swallow from a request it refused before
+# reusing the connection. Twice the voice cap, deliberately: a recording
+# just over that cap is refused by header arithmetic before a byte is
+# read, and if the drain ceiling sat at the cap itself the remainder
+# could not be swallowed - the socket would close while the phone was
+# still sending, which surfaced as a connection abort instead of the
+# 413 the server had already written. Anything larger still closes.
+MAX_DRAIN_BYTES = 2 * MAX_VOICE_UPLOAD_BYTES
 VOICE_SAMPLE_RATES = range(8_000, 48_001)
 VOICE_MIME_BY_ENCODING = {
     "wav": "audio/wav", "mp3": "audio/mpeg", "opus": "audio/ogg", "aac": "audio/aac", "flac": "audio/flac",
@@ -557,6 +561,13 @@ class MobileServer:
             self.emit(session_id, "turn_done", record.to_dict())
 
         context = Context(conversation_id=UUID(record.conversation_id))
+        # The start is announced before the work is handed over: an engine
+        # that answers instantly runs done() on the runner thread at once,
+        # and announcing afterwards let turn_done overtake turn_started on
+        # the live channel. Accepting the message IS the start; if the
+        # hand-over is then refused, the same record closes the lifecycle
+        # as failed, so the channel never carries a start without an end.
+        self.emit(session_id, "turn_started", record.to_dict())
         try:
             self.controller.submit_background(
                 self.controller.submit_command(
@@ -568,8 +579,11 @@ class MobileServer:
             with self._lock:
                 self._running.pop(session_id, None)
                 self._turns.get(session_id, {}).pop(client_id, None)
+            record.status = "failed"
+            record.error = f"İstek gönderilemedi ({exc})."
+            record.finished_at = time.time()
+            self.emit(session_id, "turn_done", record.to_dict())
             raise ValueError(f"İstek gönderilemedi ({exc}).") from exc
-        self.emit(session_id, "turn_started", record.to_dict())
         return record, False
 
     def _resolve_conversation(self, session: DeviceSession, conversation_id: str | None) -> str:

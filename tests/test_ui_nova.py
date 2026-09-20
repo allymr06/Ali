@@ -283,6 +283,7 @@ def test_boot_returns_live_state_without_secrets(booted) -> None:
         "daily_brief_notification": True,
         "daily_brief_time": "08:30",
         "research_enabled": True,
+        "almanac_city": "",
     }
     assert SECRET not in json.dumps(boot)
     assert SECRET not in json.dumps(booted.bridge.refresh())
@@ -324,6 +325,7 @@ def test_settings_snapshot_carries_only_non_secret_fields(booted) -> None:
         "daily_brief_notification",
         "daily_brief_time",
         "research_enabled",
+        "almanac_city",
     }
     assert settings["credential_configured"] is True
 
@@ -3311,3 +3313,33 @@ def test_a_turn_opening_during_shutdown_does_not_outlive_the_window(
     assert captured and captured[0].cancelled(), "a turn survived the shutdown"
     assert booted.bridge._command_future is None
     assert answers == [{"ok": False, "error": "JARVIS kapanıyor."}]
+
+
+def test_the_daily_brief_reports_the_almanac_and_survives_its_absence(booted) -> None:
+    """The brief carries what the almanac answered, and one broken half never hides the day."""
+
+    class FakeAlmanac:
+        def snapshot(self):
+            return {
+                "weather": {"available": True, "city": "İstanbul", "temperature": 21,
+                            "feels_like": 20, "label": "açık", "high": 24, "low": 18},
+                "rates": {"available": False, "reason": "Kur servisi yanıt vermedi (HTTP 503)."},
+            }
+
+    booted.app.almanac = FakeAlmanac()
+    brief = booted.bridge.daily_brief()
+    assert brief["almanac"]["weather"]["city"] == "İstanbul"
+    assert brief["almanac"]["rates"]["available"] is False
+
+    class BrokenAlmanac:
+        def snapshot(self):
+            raise RuntimeError("down")
+
+    booted.app.almanac = BrokenAlmanac()
+    brief = booted.bridge.daily_brief()
+    assert brief["ok"] is True, "a broken almanac never takes the brief down"
+    assert brief["almanac"]["weather"]["available"] is False
+    assert "Almanak okunamadı (RuntimeError)." == brief["almanac"]["weather"]["reason"]
+
+    booted.app.almanac = None
+    assert "almanac" not in booted.bridge.daily_brief()

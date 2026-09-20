@@ -46,6 +46,20 @@ function homeBriefMarkup(brief) {
   (brief.routines || []).forEach((routine) => rows.push(`<button type="button" class="hb-row" data-brief-go="automation"><span class="hb-icon">🔁</span><span class="hb-text">${esc(routine.name)}</span><span class="hb-side">${esc(routine.next_run_local || routine.schedule || "")}</span></button>`));
   if (brief.tasks_open) rows.push(`<button type="button" class="hb-row" data-brief-go="tasks"><span class="hb-icon">▶</span><span class="hb-text">${brief.tasks_open} açık görev</span></button>`);
   if (brief.notifications_unread) rows.push(`<button type="button" class="hb-row" data-brief-notify><span class="hb-icon">🔔</span><span class="hb-text">${brief.notifications_unread} okunmamış bildirim</span></button>`);
+  const almanac = brief.almanac || {};
+  const weather = almanac.weather || {};
+  const liraFmt = (value) => String(value).replace(".", ",");
+  if (weather.available) {
+    const range = weather.high !== null && weather.high !== undefined && weather.low !== null && weather.low !== undefined
+      ? `↑${weather.high}° ↓${weather.low}°` : "";
+    rows.push(`<div class="hb-row muted"><span class="hb-icon">🌤</span><span class="hb-text">${esc(weather.city)} ${weather.temperature}°${weather.label ? " · " + esc(weather.label) : ""}</span><span class="hb-side">${esc(range)}</span></div>`);
+  } else if (weather.reason && weather.reason !== "Şehir ayarlanmadı.") {
+    rows.push(`<div class="hb-row muted"><span class="hb-icon">🌤</span><span class="hb-text">${esc(weather.reason)}</span></div>`);
+  }
+  const rates = almanac.rates || {};
+  if (rates.available) {
+    rows.push(`<div class="hb-row muted"><span class="hb-icon">💱</span><span class="hb-text">1 $ = ${liraFmt(rates.usd_try)} ₺ · 1 € = ${liraFmt(rates.eur_try)} ₺</span><span class="hb-side">${esc(rates.date || "")}</span></div>`);
+  }
   const medical = brief.medical || {};
   if (medical.available) {
     if (medical.countdown) rows.push(`<button type="button" class="hb-row ${medical.countdown.days_left <= 7 ? "warn" : ""}" data-brief-medical="plan"><span class="hb-icon">🎓</span><span class="hb-text">${esc(medical.countdown.name)}</span><span class="hb-side">${medical.countdown.days_left} gün</span></button>`);
@@ -638,6 +652,7 @@ function renderSettings() {
     $("#settings-brief").checked = s.daily_brief_notification !== false;
     $("#settings-brief-time").value = s.daily_brief_time || "08:30";
     $("#settings-research").checked = s.research_enabled !== false;
+    $("#settings-city").value = s.almanac_city || "";
   }
   $("#settings-motion").checked = State.reducedMotion;
   $("#settings-ambient").checked = State.ambient;
@@ -881,6 +896,7 @@ async function saveAssistantSettings() {
     daily_brief_notification: $("#settings-brief").checked,
     daily_brief_time: $("#settings-brief-time").value.trim(),
     research_enabled: $("#settings-research").checked,
+    almanac_city: $("#settings-city").value.trim(),
   });
   status.textContent = result.message || result.error || "";
   status.className = `settings-status ${result.ok ? "ok" : "err"}`;

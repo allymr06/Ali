@@ -2408,3 +2408,31 @@ def test_batch_one_surfaces_are_declared_and_wired() -> None:
     assert "this.state.term_of_day" in medical_js
     assert "Lab.pendingSelect = termButton.dataset.term" in medical_js
     assert "const pending = this.pendingSelect;" in medical_js
+
+
+def test_the_brief_carries_the_almanac_and_stays_silent_without_a_city() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function esc(", "\nfunction store("))
+    context.eval("function emptyState() { return '<empty>'; }")
+    context.eval(section(JS_SOURCES["js/panels.js"], "function homeBriefMarkup", "\nlet briefFetchedAt"))
+    markup = lambda brief: context.eval("homeBriefMarkup(" + json.dumps(brief) + ")")
+    full = markup({"ok": True, "date": "20 Eylül", "almanac": {
+        "weather": {"available": True, "city": "İstanbul", "temperature": 21, "label": "parçalı bulutlu", "high": 24, "low": 18},
+        "rates": {"available": True, "usd_try": 41.2, "eur_try": 44.8, "date": "2026-09-19"},
+    }})
+    assert "İstanbul 21° · parçalı bulutlu" in full and "↑24° ↓18°" in full
+    assert "1 $ = 41,2 ₺ · 1 € = 44,8 ₺" in full
+    # No city configured: no weather row and no nagging.
+    silent = markup({"ok": True, "almanac": {"weather": {"available": False, "reason": "Şehir ayarlanmadı."},
+                                             "rates": {"available": False, "reason": "Kur servisi yanıt vermedi (HTTP 503)."}}})
+    assert "Şehir ayarlanmadı" not in silent and "Kur servisi" not in silent
+    # A real failure is shown as the reason it is.
+    failed = markup({"ok": True, "almanac": {"weather": {"available": False, "reason": "Hava servisi yanıt vermedi (HTTP 503)."},
+                                             "rates": {"available": False, "reason": "x"}}})
+    assert "Hava servisi yanıt vermedi (HTTP 503)." in failed
+    # The settings card round-trips the city.
+    assert 'id="settings-city"' in HTML
+    panels = JS_SOURCES["js/panels.js"]
+    assert 'almanac_city: $("#settings-city").value.trim(),' in panels
+    assert '$("#settings-city").value = s.almanac_city || "";' in panels

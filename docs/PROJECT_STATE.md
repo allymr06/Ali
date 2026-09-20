@@ -193,6 +193,42 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Two races the gate itself surfaced (20 September 2026)
+
+Running the full suite repeatedly under load turned two ~10% flakes into
+diagnoses, and both were real:
+
+- **An oversized recording aborted the connection.** A voice upload just
+  over the 2 MB cap is refused by header arithmetic before a byte is
+  read, but the drain ceiling sat exactly at the cap, so the remainder
+  could not be swallowed and the socket closed while the phone was still
+  sending - the client saw a connection abort instead of the 413 the
+  server had already written. The ceiling is now twice the cap, and a
+  raw-socket test pins the whole story: the 413 arrives, the remainder
+  is drained, and the same connection serves the next request.
+- **turn_done could overtake turn_started.** The live channel announced
+  a turn after handing it to the runner, so an engine that answers
+  instantly could finish - and emit turn_done from the runner thread -
+  before the accepting thread announced the start. Accepting the message
+  is the start: the announcement now precedes the hand-over, and a
+  refused hand-over closes the same lifecycle as failed, so the channel
+  never carries a start without an end or an end without a start.
+
+## The morning almanac (20 September 2026)
+
+The daily brief now opens with the sky and the lira. `app/integrations/almanac.py`
+asks Open-Meteo for the one city named in Ayarlar (geocoded once, in
+Turkish) and Frankfurter's ECB reference rates for what a dollar and a
+euro cost, both keyless, both through the research module's URL policy
+and pinned transport, both cached for half an hour - failures included,
+so a dead service is not knocked on every glance at the home screen.
+Each half reports independently and honestly: no city means no weather
+line and no nagging, a service that does not answer is named with its
+HTTP status, missing fields refuse instead of showing zero, and an
+unknown WMO code shows nothing. The city travels the same profile path
+as the other assistant preferences (`settings.json`, environment
+variable keeps precedence) and is edited on the Ayarlar assistant card.
+
 ## A drawer of small instruments (20 September 2026)
 
 Ali asked for features, necessary and unnecessary alike, until he says

@@ -304,6 +304,9 @@ class Settings:
     # catalogue ids (app/research/sources.py). The web is always in; the
     # bootstrap refuses an id the catalogue does not know.
     research_sources: str = "web,youtube,github,wikipedia,pubmed,arxiv,stackoverflow,hackernews,site"
+    # The morning almanac: weather for one named city and TRY reference
+    # rates on the daily brief, over keyless public services.
+    almanac_city: str = ""
 
     # Manifest-based plugins: off by default, discovered only below the
     # trusted plugins directory, and each plugin stays disabled until the
@@ -904,6 +907,7 @@ class Settings:
             research_user_agent=os.getenv(
                 "JARVIS_RESEARCH_USER_AGENT", "JARVIS/0.1"
             ),
+            almanac_city=os.getenv("JARVIS_ALMANAC_CITY", "").strip(),
             research_sources=(
                 os.getenv(
                     "JARVIS_RESEARCH_SOURCES",

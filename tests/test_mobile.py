@@ -1202,3 +1202,43 @@ def test_a_task_action_reports_in_turkish_what_actually_happened(mobile) -> None
     service.resume = service._make(ToolExecutionStatus.FAILED, "failed", "Task resume reached failed.", False)
     status, payload = client.request("POST", f"/api/tasks/{identifier}/resume", {})
     assert status == 409 and payload["error"] == "Görev sürdürülemedi ve başarısız oldu."
+
+
+def test_an_oversized_recording_gets_its_413_and_the_connection_survives(mobile) -> None:
+    """The refusal is written, the remainder swallowed, the socket reused.
+
+    The drain ceiling sits above the voice cap for exactly this case: a
+    recording just over the cap used to close the socket while the phone
+    was still sending, which reached the page as a connection abort
+    instead of the 413 the server had already written.
+    """
+    import socket as socket_module
+
+    client = paired(mobile)
+    mobile.app.voice = SimpleNamespace(recognizer=FakeRecognizer(), synthesizer=FakeSynthesizer())
+    oversized = wav_bytes(seconds=70)
+
+    with socket_module.create_connection(("127.0.0.1", mobile.port), timeout=15) as sock:
+        head = (
+            "POST /api/voice/transcribe HTTP/1.1\r\n"
+            "Host: 127.0.0.1\r\n"
+            f"Cookie: {client.cookie}\r\n"
+            f"{CLIENT_HEADER}: pwa\r\n"
+            "Content-Type: audio/wav\r\n"
+            f"Content-Length: {len(oversized)}\r\n\r\n"
+        ).encode("ascii")
+        sock.sendall(head + oversized)
+        first = b""
+        while b"}" not in first:
+            chunk = sock.recv(65536)
+            assert chunk, "the refusal arrived instead of a closed socket"
+            first += chunk
+        assert b"413" in first.split(b"\r\n", 1)[0]
+        assert "en çok 2 MB".encode("utf-8") in first
+
+        sock.sendall(
+            ("GET /api/state HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+             f"Cookie: {client.cookie}\r\n\r\n").encode("ascii")
+        )
+        second = sock.recv(65536)
+        assert second.split(b"\r\n", 1)[0] == b"HTTP/1.1 200 OK", "the drained connection serves the next request"

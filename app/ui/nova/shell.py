@@ -1612,6 +1612,16 @@ class NovaBridge:
             except Exception:
                 medical["available"] = False
         brief["medical"] = medical
+        almanac = getattr(application, "almanac", None)
+        if almanac is not None:
+            try:
+                brief["almanac"] = _jsonable(almanac.snapshot())
+            except Exception as exc:
+                reason = f"Almanak okunamadı ({type(exc).__name__})."
+                brief["almanac"] = {
+                    "weather": {"available": False, "reason": reason},
+                    "rates": {"available": False, "reason": reason},
+                }
         return brief
 
     def medical_pick_file(self, kind: str = "document") -> dict[str, Any]:
@@ -3590,6 +3600,7 @@ class NovaBridge:
                 daily_brief_notification=bool(data.get("daily_brief_notification")),
                 daily_brief_time=str(data.get("daily_brief_time") or ""),
                 research_enabled=bool(data.get("research_enabled")),
+                almanac_city=str(data.get("almanac_city") or ""),
             )
         except ValueError:
             return {"ok": False, "error": "Saat biçimi SS:DD olmalı (örn. 08:30)."}

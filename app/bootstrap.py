@@ -32,6 +32,7 @@ from app.providers.gateway import ProviderGateway
 from app.providers.models import ModelProfile, TaskType
 from app.providers.registry import ProviderRegistry
 from app.providers.router import ModelRouter
+from app.integrations.almanac import AlmanacService
 from app.research import (
     DuckDuckGoSearchProvider,
     GeminiGroundedSearch,
@@ -81,6 +82,7 @@ class JARVISApplication:
     medical: object | None = None
     vision: VisionService | None = None
     research: ResearchService | None = None
+    almanac: AlmanacService | None = None
     reminders: object | None = None
     routines: object | None = None
     screen_watcher: object | None = None
@@ -630,6 +632,15 @@ def create_application(
         )
         research.register_tools(tool_executor)
 
+    # The almanac is independent of research: keyless, read-only, and
+    # only ever asked when the brief is drawn. No city still answers for
+    # the rates half.
+    almanac = AlmanacService(
+        city=active_settings.almanac_city,
+        timeout_seconds=active_settings.research_timeout_seconds,
+        user_agent=active_settings.research_user_agent,
+    )
+
     from app.config.paths import default_state_path
     from app.reminders import ReminderService
 
@@ -842,6 +853,7 @@ def create_application(
         voice=voice,
         vision=vision,
         research=research,
+        almanac=almanac,
         reminders=reminders,
         routines=routines,
         screen_watcher=screen_watcher,

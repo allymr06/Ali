@@ -52,8 +52,11 @@ body.academy .screen[data-screen="medical"] { padding: 0; overflow: hidden; z-in
 }
 
 .med-brand {
-  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.7rem 0.4rem;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 0.7rem 0.3rem;
 }
+.med-back { grid-column: 1; }
+#med-theme { grid-column: 3; }
+#med-sound { grid-column: 4; }
 .med-back {
   display: inline-flex; align-items: center; gap: 0.35rem;
   padding: 0.34rem 0.75rem 0.34rem 0.55rem;
@@ -64,7 +67,7 @@ body.academy .screen[data-screen="medical"] { padding: 0; overflow: hidden; z-in
 }
 .med-back svg { width: 0.9rem; height: 0.9rem; }
 .med-back:hover { color: var(--accent-2); border-color: var(--accent-3); background: rgba(var(--accent-rgb), 0.08); }
-.med-brand-mark { grid-column: 1 / -1; display: flex; align-items: center; gap: 0.65rem; padding-top: 0.2rem; }
+.med-brand-mark { grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; gap: 0.65rem; padding-top: 0.2rem; }
 .med-brand-mark svg { width: 2.15rem; height: 2.15rem; color: var(--acad-pulse); flex: none; }
 .med-brand-name { font-family: var(--font-display); font-size: 1.2rem; font-weight: 700; line-height: 1.1; color: var(--ink-1); letter-spacing: 0.005em; }
 .med-brand-name small { display: block; margin-top: 0.22rem; font-family: var(--font-ui); font-size: 0.6rem; font-weight: 700; letter-spacing: 0.3em; text-transform: uppercase; color: var(--accent-2); }
@@ -112,7 +115,7 @@ body.academy .screen[data-screen="medical"] { padding: 0; overflow: hidden; z-in
 }
 .med-side-btn svg { width: 1rem; height: 1rem; }
 .med-side-btn:hover { color: var(--accent-2); background: rgba(var(--accent-rgb), 0.09); }
-.med-side-btn[aria-pressed="false"] { opacity: 0.6; }
+#med-sound[aria-pressed="false"] { opacity: 0.6; }
 
 /* main column */
 .med-main {
@@ -193,6 +196,10 @@ body.academy .med-session-form select, body.academy .med-session-form input,
 body.academy .lab-scene-picker select, body.academy .med-form select[multiple] {
   color-scheme: light; font-weight: 500; background: var(--surface-3); color: var(--ink-1);
 }
+body.academy.academy-dark .med-toolbar select, body.academy.academy-dark .med-form select, body.academy.academy-dark .med-form input,
+body.academy.academy-dark .med-field input, body.academy.academy-dark .med-field select, body.academy.academy-dark .med-field textarea,
+body.academy.academy-dark .med-session-form select, body.academy.academy-dark .med-session-form input,
+body.academy.academy-dark .lab-scene-picker select, body.academy.academy-dark .med-form select[multiple] { color-scheme: dark; }
 
 /* ── the opening ─────────────────────────────────────────────────── */
 
@@ -206,6 +213,13 @@ body.academy .lab-scene-picker select, body.academy .med-form select[multiple] {
   color: var(--ink-1); cursor: pointer; user-select: none;
 }
 .academy-intro[hidden] { display: none; }
+/* At night the glows are embers, not sunlight. */
+body.academy-dark .academy-intro {
+  background:
+    radial-gradient(45% 35% at 72% 74%, rgba(var(--acad-sun-rgb), 0.08), transparent 70%),
+    radial-gradient(50% 40% at 22% 30%, rgba(var(--accent-rgb), 0.10), transparent 70%),
+    radial-gradient(70% 55% at 50% 40%, var(--bg-3), var(--bg) 78%);
+}
 .ai-stage { display: grid; gap: 1.1rem; justify-items: center; width: min(46rem, 88vw); }
 .ai-ecg { width: 100%; height: auto; overflow: visible; }
 .ai-ecg path {
@@ -232,11 +246,12 @@ body.academy .lab-scene-picker select, body.academy .med-form select[multiple] {
 @media (max-width: 900px) {
   .med-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .med-side { flex-direction: column; gap: 0.55rem; padding: 0.7rem 0.8rem 0.45rem; border-right: none; border-bottom: 1px solid var(--line-1); }
-  .med-brand { grid-template-columns: auto minmax(0, 1fr) auto; }
-  .med-brand-mark { grid-column: auto; padding-top: 0; min-width: 0; }
+  .med-brand { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+  .med-brand-mark { grid-column: 2; grid-row: 1; padding-top: 0; min-width: 0; }
   .med-brand-mark svg { width: 1.5rem; height: 1.5rem; }
   .med-brand-name { font-size: 1rem; }
   .med-brand-name small { display: none; }
+  .med-side-btn span { display: none; }
   .med-tabs { flex-direction: row; flex: none; overflow-x: auto; overflow-y: hidden; gap: 0.25rem; padding: 0.1rem 0 0.3rem; scrollbar-width: none; }
   .med-tabs::-webkit-scrollbar { display: none; }
   .med-tab-group { display: none; }
@@ -250,8 +265,8 @@ body.academy .lab-scene-picker select, body.academy .med-form select[multiple] {
 }
 body.phone .med-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
 body.phone .med-side { flex-direction: column; gap: 0.55rem; padding: 0.7rem 0.8rem 0.45rem; border-right: none; border-bottom: 1px solid var(--line-1); }
-body.phone .med-brand { grid-template-columns: auto minmax(0, 1fr) auto; }
-body.phone .med-brand-mark { grid-column: auto; padding-top: 0; min-width: 0; }
+body.phone .med-brand { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+body.phone .med-brand-mark { grid-column: 2; grid-row: 1; padding-top: 0; min-width: 0; }
 body.phone .med-brand-mark svg { width: 1.5rem; height: 1.5rem; }
 body.phone .med-brand-name { font-size: 1rem; }
 body.phone .med-brand-name small { display: none; }

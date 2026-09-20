@@ -195,3 +195,41 @@ body.academy, body.academy.light {
   --font-display:  "Cambria", "Georgia", "Palatino Linotype", "Book Antiqua", serif;
   --font-system:   "Cambria", "Georgia", "Palatino Linotype", serif;
 }
+
+/* Night on request: the same identity with the lights down. The academy's
+   own switch sets body.academy-dark; declared last so it outranks whichever
+   theme the shell is in, exactly as the daylight block does. */
+body.academy.academy-dark {
+  --bg:            #071518;
+  --bg-2:          #0a1c20;
+  --bg-3:          #0e242a;
+  --surface-1:     rgba(18, 48, 54, 0.55);
+  --surface-2:     rgba(22, 56, 62, 0.74);
+  --surface-3:     rgba(26, 64, 70, 0.90);
+  --surface-solid: #10292f;
+  --line-1:        rgba(170, 220, 205, 0.10);
+  --line-2:        rgba(170, 220, 205, 0.20);
+  --line-3:        rgba(170, 220, 205, 0.36);
+  --ink-1:         #f1f4f2;
+  --ink-2:         #c5cfcc;
+  --ink-3:         #98aaa6;
+  --ink-4:         #5f7470;
+  --accent:        #4fd1bd;
+  --accent-2:      #3cc2ad;
+  --accent-3:      #1b7a6c;
+  --accent-rgb:    79, 209, 189;
+  --ok:            #7fd6b4;
+  --ok-rgb:        127, 214, 180;
+  --warn:          #f2b46a;
+  --warn-rgb:      242, 180, 106;
+  --bad:           #ff8a80;
+  --bad-rgb:       255, 138, 128;
+  --violet:        #c7a7dc;
+  --violet-rgb:    199, 167, 220;
+  --on-accent:     #05201c;
+  --glow-1:        0 0 12px rgba(79, 209, 189, 0.22);
+  --glow-2:        0 0 28px rgba(79, 209, 189, 0.18);
+  --shadow-1:      0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-2:      0 20px 56px rgba(0, 0, 0, 0.50);
+  --inset-light:   inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}

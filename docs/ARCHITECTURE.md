@@ -475,6 +475,8 @@ Web Audio (no audio file ships; a switch in the side column remembers the
 student's choice in `localStorage`), skips it on any click or key, and never
 plays it while the in-app motion switch is off. The line under the title is
 the nearest exam countdown exactly as the topbar chip shows it, or nothing.
+A switch in the side column turns the academy dark (`body.academy-dark`,
+the same identity with the lights down) and remembers the choice.
 
 Nova's honesty rules: the page waits for the real bridge and shows an explicit
 failure screen if it never arrives; the demo bridge is reachable only with

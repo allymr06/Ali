@@ -2065,7 +2065,7 @@ def test_the_academy_room_is_declared_and_wired() -> None:
     # Entering the screen is what opens the room; leaving any other way closes it.
     show = section(JS_SOURCES["js/shell.js"], "function showScreen(", "function setStatus(")
     assert 'if (id === "medical") Academy.enter(); else Academy.leave();' in show
-    assert "bindAcademy();" in JS_SOURCES["js/main.js"]
+    assert JS_SOURCES["js/main.js"].count("bindAcademy();") == 1, "bound once: a second binding makes every toggle undo itself"
     # The opening never reports a figure the topbar chip would not: both read one field.
     assert "State.examCountdown = countdown || null;" in JS_SOURCES["js/panels.js"]
     assert "academyIntroLine(State.examCountdown)" in JS_SOURCES["js/academy.js"]
@@ -2161,3 +2161,54 @@ def test_the_academy_sections_are_grouped_in_the_order_listed() -> None:
         ids.index(key) for key in ("dashboard", "exam", "understanding", "histology")
     ), "each heading opens the group that follows it"
     assert 'host.appendChild(el("span", "med-tab-group", MED_TAB_GROUPS[id]))' in JS_SOURCES["js/medical.js"]
+
+
+def _wcag_luminance(hex_colour: str) -> float:
+    value = hex_colour.lstrip("#")
+    channels = []
+    for i in (0, 2, 4):
+        c = int(value[i:i + 2], 16) / 255
+        channels.append(c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4)
+    r, g, b = channels
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _wcag_contrast(a: str, b: str) -> float:
+    light, dark = sorted((_wcag_luminance(a), _wcag_luminance(b)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
+
+
+def test_the_academy_turns_dark_on_request_and_keeps_its_contrast() -> None:
+    tokens = (WEB / "css/tokens.css").read_text(encoding="utf-8")
+    # The academy's own switch outranks the shell's theme: its block comes last.
+    assert tokens.index("body.academy.academy-dark {") > tokens.index("body.academy, body.academy.light {")
+    night = section(tokens, "body.academy.academy-dark {", "\n}")
+    colour = lambda name: re.search(name + r":\s+(#[0-9a-f]{6});", night).group(1)
+    assert _wcag_luminance(colour("--bg")) < 0.05, "night is dark"
+    assert _wcag_contrast(colour("--bg"), colour("--ink-1")) >= 7
+    assert _wcag_contrast(colour("--bg"), colour("--ink-2")) >= 7
+    assert _wcag_contrast(colour("--bg"), colour("--ink-3")) >= 4.5
+    assert _wcag_contrast(colour("--surface-solid"), colour("--accent-2")) >= 4.5
+    # The switch lives in the side column, remembers itself, and leaves with the room.
+    assert 'id="med-theme"' in HTML
+    academy_js = JS_SOURCES["js/academy.js"]
+    assert 'store("nova.academy.theme")' in academy_js
+    assert 'classList.toggle("academy-dark", this.dark())' in academy_js
+    assert 'document.body.classList.remove("academy", "academy-dark")' in academy_js
+    academy_css = (WEB / "css/academy.css").read_text(encoding="utf-8")
+    assert re.search(r"body\.academy\.academy-dark [^{]*\{ color-scheme: dark; \}", academy_css)
+    assert "sun:" in JS_SOURCES["js/shell.js"] and "moon:" in JS_SOURCES["js/shell.js"]
+
+
+def test_the_academy_theme_defaults_to_daylight() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval("var preferences = {}; function store(key, value) { if (value === undefined) return preferences[key] === undefined ? null : preferences[key]; preferences[key] = value; return value; }")
+    context.eval("var document = { body: { classes: {}, classList: { toggle(name, on) { this.classes[name] = !!on; } } } }; document.body.classList.classes = document.body.classes;")
+    context.eval(section(JS_SOURCES["js/academy.js"], "const AcademyTheme = {", "\n/* ── the room"))
+    assert context.eval("AcademyTheme.dark()") is False
+    context.eval("AcademyTheme.set(true); AcademyTheme.apply()")
+    assert context.eval("AcademyTheme.dark()") is True
+    assert context.eval("document.body.classes['academy-dark']") is True
+    context.eval("AcademyTheme.set(false); AcademyTheme.apply()")
+    assert context.eval("document.body.classes['academy-dark']") is False

@@ -16,7 +16,6 @@ async function main() {
   bindPanels();
   bindMedical();
   bindAcademy();
-  bindAcademy();
   Engine.staticFrame = State.reducedMotion;
   Engine.init();
 

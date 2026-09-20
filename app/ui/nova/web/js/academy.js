@@ -127,6 +127,16 @@ const AcademySound = {
   },
 };
 
+/* ── theme: daylight by default, night on request ─────────────────── */
+
+const AcademyTheme = {
+  dark() { return store("nova.academy.theme") === "dark"; },
+  set(dark) { store("nova.academy.theme", dark ? "dark" : "light"); },
+  /* The class means something only while body.academy is on; it is put on
+     at entry so the opening already wears the right dress. */
+  apply() { document.body.classList.toggle("academy-dark", this.dark()); },
+};
+
 /* ── the room ─────────────────────────────────────────────────────── */
 
 const Academy = {
@@ -139,10 +149,12 @@ const Academy = {
 
   enter() {
     document.body.classList.add("academy");
+    AcademyTheme.apply();
     this.active = true;
     const greeting = $("#med-greeting");
     if (greeting) greeting.textContent = academyGreeting(new Date());
     this.syncSoundButton();
+    this.syncThemeButton();
     if (this.shouldPlayIntro()) this.playIntro();
   },
 
@@ -150,7 +162,7 @@ const Academy = {
     if (!this.active && !document.body.classList.contains("academy")) return;
     this.active = false;
     this.abortIntro();
-    document.body.classList.remove("academy");
+    document.body.classList.remove("academy", "academy-dark");
   },
 
   playIntro() {
@@ -247,6 +259,21 @@ const Academy = {
     Motion.stagger($$(".med-side > *, .med-head, .med-body .med-view:not([hidden]) > *"), { step: 55, y: 14 });
   },
 
+  toggleTheme() {
+    AcademyTheme.set(!AcademyTheme.dark());
+    AcademyTheme.apply();
+    this.syncThemeButton();
+  },
+
+  syncThemeButton() {
+    const button = $("#med-theme");
+    if (!button) return;
+    const dark = AcademyTheme.dark();
+    button.setAttribute("aria-pressed", dark ? "true" : "false");
+    button.title = dark ? "Koyu tema açık · aydınlığa dönmek için tıkla" : "Aydınlık tema açık · koyuya geçmek için tıkla";
+    button.innerHTML = `${icon(dark ? "moon" : "sun")}<span>${dark ? "Koyu" : "Aydınlık"}</span>`;
+  },
+
   toggleSound() {
     const next = !AcademySound.enabled();
     AcademySound.setEnabled(next);
@@ -281,7 +308,10 @@ function bindAcademy() {
   }, true);
   const back = $("#med-back");
   if (back) back.addEventListener("click", () => showScreen("home"));
+  const theme = $("#med-theme");
+  if (theme) theme.addEventListener("click", () => Academy.toggleTheme());
   const sound = $("#med-sound");
   if (sound) sound.addEventListener("click", () => Academy.toggleSound());
+  Academy.syncThemeButton();
   Academy.syncSoundButton();
 }

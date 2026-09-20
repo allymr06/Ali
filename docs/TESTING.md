@@ -1142,7 +1142,10 @@ is bright, and its inks clear WCAG AAA (body, secondary) and AA (tertiary)
 against the ground; the type is set heavier; `academyIntroLine` and
 `academyGreeting` say only what the core reported and what the clock says;
 the opening is skipped without motion and opens no audio context when
-muted; the sections are grouped in the order they are listed.
+muted; the sections are grouped in the order they are listed. Two more
+pin the night theme: its block comes after the daylight one, its inks keep
+the same contrast floors, the switch lives in the side column and leaves
+with the room, and the preference defaults to daylight.
 
 Manual live acceptance: open `nova-demo` (`?demo=1`), press `Alt+3`: the
 veil shows the trace, the heart and the title within three seconds and

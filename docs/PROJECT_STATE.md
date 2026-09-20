@@ -225,6 +225,11 @@ the academy is entered, and independence from JARVIS's own chrome.
   the masthead arrives. No audio file ships. A switch in the side column
   remembers "Ses açık / Ses kapalı" per browser, and a skipped opening
   goes quiet at once.
+- **Night on request.** A second switch beside it turns the academy dark -
+  the same identity with the lights down, declared last in `tokens.css` so
+  it outranks the shell's theme - and remembers the choice per browser.
+  Daylight stays the default; the dark block keeps the same contrast
+  floors, and a test pins them too.
 
 Tests in `tests/test_nova_web.py` pin the wiring, the daylight palette and
 its contrast, the heavier type, the honest countdown line and greeting,

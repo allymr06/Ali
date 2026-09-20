@@ -25,8 +25,18 @@ _CONTROL_DATA_GRID = 50028
 _CONTROL_DATA_ITEM = 50029
 _CONTROL_DOCUMENT = 50030
 _INVOKE_PATTERN = 10000
+_VALUE_PATTERN = 10002
+_RANGE_VALUE_PATTERN = 10003
 _TEXT_PATTERN = 10014
+_TOGGLE_PATTERN = 10015
+_CONTROL_CHECKBOX = 50002
+_CONTROL_HYPERLINK = 50005
+_CONTROL_MENU_ITEM = 50011
+_CONTROL_SLIDER = 50015
+_CONTROL_TEXT = 50020
 _SW_SHOWNOACTIVATE = 4
+# The transport bar of a media app lives in the window's bottom strip.
+_BOTTOM_STRIP_HEIGHT = 120
 
 # An outgoing WhatsApp bubble carries a "HH:MM <status>" button; incoming
 # bubbles carry the time as plain text. This is how direction is read.
@@ -760,6 +770,240 @@ class UiaClient:
                         break
                 result.append((text, outgoing))
         return result
+
+
+    # ------------------------------------------------------------------
+    # Handle-based controls (Spotify's Chromium window)
+    #
+    # Spotify has no stable window title, so callers hold an HWND. The
+    # window publishes its tree only after it has been fronted once, so
+    # the play path fronts it; reads afterwards do not need focus.
+    # ------------------------------------------------------------------
+
+    def _bounds_of(self, element) -> tuple[int, int, int, int] | None:
+        rect = element.CurrentBoundingRectangle
+        if rect.right <= rect.left or rect.bottom <= rect.top:
+            return None
+        return (rect.left, rect.top, rect.right, rect.bottom)
+
+    def _in_region(self, rect, window_rect, region: str) -> bool:
+        if region == "bottom":
+            return rect[1] > window_rect[3] - _BOTTOM_STRIP_HEIGHT
+        if region == "sidebar":
+            return rect[0] < window_rect[0] + 200 and rect[1] < window_rect[3]
+        return True
+
+    def _bar_element(self, handle: int):
+        """The transport bar as an element: the widest short ancestor of
+        the Play/Pause button in the bottom strip. Page content scrolled
+        to the bottom sits in the same pixels but not in this subtree."""
+        uia = self._uia()
+        window = uia.ElementFromHandle(handle)
+        window_rect = self._bounds_of(window)
+        if window_rect is None:
+            return None
+        walker = uia.ControlViewWalker
+        buttons = window.FindAll(
+            _TREE_SCOPE_DESCENDANTS,
+            uia.CreatePropertyCondition(_CONTROL_TYPE_PROPERTY, _CONTROL_BUTTON),
+        )
+        width = window_rect[2] - window_rect[0]
+        for index in range(buttons.Length):
+            with _suppress(Exception):
+                element = buttons.GetElement(index)
+                name = " ".join((element.CurrentName or "").split()).casefold()
+                if name not in ("play", "pause"):
+                    continue
+                rect = self._bounds_of(element)
+                if rect is None or not self._in_region(rect, window_rect, "bottom"):
+                    continue
+                node = element
+                for _ in range(12):
+                    parent = walker.GetParentElement(node)
+                    if not parent:
+                        break
+                    parent_rect = self._bounds_of(parent)
+                    if parent_rect is None:
+                        break
+                    if (parent_rect[2] - parent_rect[0]) >= width * 0.9:
+                        return parent if (parent_rect[3] - parent_rect[1]) <= 200 else node
+                    node = parent
+                return node
+        return None
+
+    def _controls_in_handle(self, handle: int, control_types, *, region: str = "any"):
+        """(name, rect, element) for every visible control of the types.
+
+        ``region="bar"`` searches only the transport bar element; the
+        other regions filter by position inside the whole window.
+        """
+        uia = self._uia()
+        window = uia.ElementFromHandle(handle)
+        window_rect = self._bounds_of(window)
+        if window_rect is None:
+            return []
+        scope = window
+        if region == "bar":
+            scope = self._bar_element(handle)
+            if scope is None:
+                return []
+            region = "any"
+        found = []
+        for control_type in control_types:
+            elements = scope.FindAll(
+                _TREE_SCOPE_DESCENDANTS,
+                uia.CreatePropertyCondition(_CONTROL_TYPE_PROPERTY, control_type),
+            )
+            for index in range(elements.Length):
+                with _suppress(Exception):
+                    element = elements.GetElement(index)
+                    rect = self._bounds_of(element)
+                    if rect is None or not self._in_region(rect, window_rect, region):
+                        continue
+                    name = " ".join((element.CurrentName or "").split())
+                    if name:
+                        found.append((name, rect, element))
+        return found
+
+    def control_names_in_handle(self, handle: int, *, region: str = "any") -> list[str]:
+        """Names of the visible buttons and checkboxes, in document order."""
+        return [
+            name for name, _rect, _element in self._controls_in_handle(
+                handle, (_CONTROL_BUTTON, _CONTROL_CHECKBOX), region=region
+            )
+        ]
+
+    def invoke_named_in_handle(self, handle: int, matcher, *, region: str = "any") -> str | None:
+        """Press the first button/checkbox whose name satisfies the matcher."""
+        for name, rect, element in self._controls_in_handle(
+            handle, (_CONTROL_BUTTON, _CONTROL_CHECKBOX), region=region
+        ):
+            if not matcher(name):
+                continue
+            pattern = element.GetCurrentPattern(_INVOKE_PATTERN)
+            if pattern:
+                pattern.QueryInterface(self._module.IUIAutomationInvokePattern).Invoke()
+            else:
+                self._click_screen_point((rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2)
+            return name
+        return None
+
+    def toggle_state_in_handle(self, handle: int, name_contains: str, *, region: str = "any") -> int | None:
+        """Current TogglePattern state (0 off, 1 on, 2 indeterminate) or None."""
+        needle = name_contains.casefold()
+        for name, _rect, element in self._controls_in_handle(
+            handle, (_CONTROL_CHECKBOX, _CONTROL_BUTTON), region=region
+        ):
+            if needle not in name.casefold():
+                continue
+            pattern = element.GetCurrentPattern(_TOGGLE_PATTERN)
+            if not pattern:
+                return None
+            return int(pattern.QueryInterface(self._module.IUIAutomationTogglePattern).CurrentToggleState)
+        return None
+
+    def toggle_in_handle(self, handle: int, name_contains: str, *, region: str = "any") -> int | None:
+        """Toggle the control once and return its new state."""
+        needle = name_contains.casefold()
+        for name, _rect, element in self._controls_in_handle(
+            handle, (_CONTROL_CHECKBOX, _CONTROL_BUTTON), region=region
+        ):
+            if needle not in name.casefold():
+                continue
+            pattern = element.GetCurrentPattern(_TOGGLE_PATTERN)
+            if not pattern:
+                return None
+            toggle = pattern.QueryInterface(self._module.IUIAutomationTogglePattern)
+            toggle.Toggle()
+            time.sleep(0.3)
+            return int(toggle.CurrentToggleState)
+        return None
+
+    def slider_in_handle(self, handle: int, name_contains: str) -> tuple[float, float, float] | None:
+        """(value, minimum, maximum) of the named slider, or None."""
+        needle = name_contains.casefold()
+        for name, _rect, element in self._controls_in_handle(handle, (_CONTROL_SLIDER,)):
+            if needle not in name.casefold():
+                continue
+            pattern = element.GetCurrentPattern(_RANGE_VALUE_PATTERN)
+            if not pattern:
+                return None
+            value = pattern.QueryInterface(self._module.IUIAutomationRangeValuePattern)
+            return (float(value.CurrentValue), float(value.CurrentMinimum), float(value.CurrentMaximum))
+        return None
+
+    def set_slider_in_handle(self, handle: int, name_contains: str, value: float) -> float | None:
+        """Set the named slider and return what it reads back, or None."""
+        needle = name_contains.casefold()
+        for name, _rect, element in self._controls_in_handle(handle, (_CONTROL_SLIDER,)):
+            if needle not in name.casefold():
+                continue
+            pattern = element.GetCurrentPattern(_RANGE_VALUE_PATTERN)
+            if not pattern:
+                return None
+            range_value = pattern.QueryInterface(self._module.IUIAutomationRangeValuePattern)
+            low, high = float(range_value.CurrentMinimum), float(range_value.CurrentMaximum)
+            range_value.SetValue(max(low, min(high, float(value))))
+            time.sleep(0.3)
+            return float(range_value.CurrentValue)
+        return None
+
+    def double_click_named_in_handle(self, handle: int, matcher, *, region: str = "any") -> str | None:
+        """Double-click the first matching button - how a row is played."""
+        for name, rect, _element in self._controls_in_handle(handle, (_CONTROL_BUTTON,), region=region):
+            if not matcher(name):
+                continue
+            x, y = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
+            user32 = ctypes.WinDLL("user32")
+            user32.SetCursorPos(x, y)
+            for _ in range(2):
+                user32.mouse_event(0x0002, 0, 0, 0, 0)
+                user32.mouse_event(0x0004, 0, 0, 0, 0)
+                time.sleep(0.08)
+            return name
+        return None
+
+    def texts_in_handle(self, handle: int, *, region: str = "any") -> list[str]:
+        """Visible text and link names, in document order."""
+        return [
+            name for name, _rect, _element in self._controls_in_handle(
+                handle, (_CONTROL_TEXT, _CONTROL_HYPERLINK), region=region
+            )
+        ]
+
+    def invoke_menu_item_in_handle(self, handle: int, name: str) -> bool:
+        """Press the named item of the menu currently open in the window."""
+        uia = self._uia()
+        window = uia.ElementFromHandle(handle)
+        item = window.FindFirst(
+            _TREE_SCOPE_DESCENDANTS,
+            uia.CreateAndCondition(
+                uia.CreatePropertyCondition(_CONTROL_TYPE_PROPERTY, _CONTROL_MENU_ITEM),
+                uia.CreatePropertyCondition(_NAME_PROPERTY, name),
+            ),
+        )
+        if not item:
+            return False
+        pattern = item.GetCurrentPattern(_INVOKE_PATTERN)
+        if pattern:
+            pattern.QueryInterface(self._module.IUIAutomationInvokePattern).Invoke()
+            return True
+        rect = self._bounds_of(item)
+        if rect is None:
+            return False
+        self._click_screen_point((rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2)
+        return True
+
+    def window_name_in_handle(self, handle: int) -> str:
+        """The window's accessible name (Spotify: 'Artist - Track' while playing)."""
+        with _suppress(Exception):
+            return " ".join((self._uia().ElementFromHandle(handle).CurrentName or "").split())
+        return ""
+
+    def press_escape(self) -> None:
+        user32 = ctypes.WinDLL("user32")
+        user32.keybd_event(0x1B, 0, 0, 0)
+        user32.keybd_event(0x1B, 0, 2, 0)
 
 
 class _suppress:

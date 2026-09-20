@@ -193,6 +193,32 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Spotify, the way a person uses it (21 September 2026)
+
+Beyond media keys and the search-and-press play path, JARVIS now uses
+the desktop app's own controls the way a hand does, through UI
+Automation and without an account link (`app/integrations/spotify_desktop.py`
+plus handle-based helpers in `uia.py`): the volume and progress sliders
+(`spotify_set_volume`, `spotify_seek`, both read back before claiming
+success), the shuffle button whose name announces its state
+(`spotify_shuffle`, pressed until the window agrees), the repeat
+checkbox's three toggle states (`spotify_repeat`), the heart on the
+current track (`spotify_like_track`, honest when the button already
+says "Add to playlist"), the sidebar rows (`spotify_library`) and a
+double-click on one of them verified by the window title
+(`spotify_play_library`), a result's "More options → Add to queue"
+checked through the queue panel (`spotify_queue_track`), a sleep timer
+that fades the last half minute and pauses (`spotify_sleep_timer`), and
+a now-playing that reads the transport bar's own words when the title
+is silent because playback is paused. The search play path now presses
+the row a person would: an exact title first, then the artist card,
+then the top result. While JARVIS speaks in a voice session the music
+ducks to 30 % and comes back afterwards (`SpotifyDucker`, chained into
+the voice state callback; a failing ducker can never break the turn).
+The application keeps its `spotify` reference for that. Everything was
+mapped on the live window with five probes (button names are English
+in this installation; the shuffle name updates a beat late).
+
 ## WhatsApp, the way a person uses it (21 September 2026)
 
 The delegation agent had gone blind without anyone noticing: WhatsApp

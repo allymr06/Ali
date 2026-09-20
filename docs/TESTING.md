@@ -1226,6 +1226,21 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## Spotify's hands (21 September 2026)
+
+`tests/test_spotify_desktop.py` pins the pure helpers with the names the
+window showed (library rows, shuffle states, seek arithmetic and clamps,
+the play row a person would press, the transport bar), the ducker's
+duck/restore sequence on a worker thread (no stacking, silence and a
+missing window left alone) and the sleep timer's fade-then-pause with an
+injected sleep. `tests/test_integrations.py` drives every new tool
+through `FakeSpotifyUia` - sliders read back, shuffle pressed until the
+name agrees and PARTIAL when it never does, repeat toggled to the
+wanted state, like honest about an already-saved track, library rows
+listed and double-clicked with the title as proof, queue verified in
+the panel, now-playing from the bar when paused - and the shell's
+voice-state chain keeps pushing phases when the ducker raises.
+
 ## WhatsApp manners and the vision that finally ran (21 September 2026)
 
 `tests/test_whatsapp_human.py` pins the pure layer: nods and emoji are

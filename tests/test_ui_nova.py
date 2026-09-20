@@ -2925,6 +2925,28 @@ def test_the_morning_brief_clock_and_line_are_exact_and_honest() -> None:
     assert shell.brief_notification_body({"almanac": dead}) == "Bugün için bekleyen bir şey görünmüyor."
 
 
+def test_voice_phases_reach_the_page_and_duck_the_music_without_risking_the_turn() -> None:
+    pushed: list[str] = []
+
+    class Ducker:
+        def __init__(self) -> None:
+            self.states: list[str] = []
+
+        def on_voice_state(self, state) -> None:
+            self.states.append(str(state))
+            if state == "speaking":
+                raise RuntimeError("spotify gone")
+
+    ducker = Ducker()
+    callback = shell.compose_voice_state_callback(pushed.append, ducker)
+    callback("listening")
+    callback("speaking")
+    assert pushed == ["listening", "speaking"], "the page hears every phase even when the ducker fails"
+    assert ducker.states == ["listening", "speaking"]
+    shell.compose_voice_state_callback(pushed.append, None)("idle")
+    assert pushed[-1] == "idle"
+
+
 def test_the_bridge_hands_the_palette_one_dictionary_entry(booted) -> None:
     class _StubDictionary:
         def __init__(self) -> None:

@@ -303,6 +303,21 @@ def daily_brief_due(now: datetime, target: str, stamp: str | None) -> bool:
     return (now.hour, now.minute) >= (hour, minute)
 
 
+def compose_voice_state_callback(push: Callable[[Any], None], ducker: Any | None) -> Callable[[Any], None]:
+    """The page hears every voice phase; the music ducks on SPEAKING and
+    comes back after. A failing ducker must never break the voice turn."""
+
+    def callback(state: Any) -> None:
+        push(state)
+        if ducker is not None:
+            try:
+                ducker.on_voice_state(state)
+            except Exception:
+                pass
+
+    return callback
+
+
 def brief_notification_body(brief: Mapping[str, Any]) -> str:
     """The day's summary as one honest notification line.
 
@@ -2668,6 +2683,10 @@ class NovaBridge:
             # talk over the session and hear itself.
             return {"ok": False, "error": "Sesli anlatım açıkken sesli oturum başlatılamaz; önce anlatımı bitir."}
 
+        # A person turns the music down to talk: the voice phases also
+        # drive a Spotify ducker when the desktop app is around.
+        ducker = self._spotify_ducker()
+
         def deliver(message: Any) -> None:
             self._push("voice_message", message)
 
@@ -2683,6 +2702,8 @@ class NovaBridge:
                     current.level_callback = None
                 except Exception:
                     pass
+            if ducker is not None:
+                ducker.restore()
             if future.cancelled():
                 return
             error: str | None = None
@@ -2703,9 +2724,12 @@ class NovaBridge:
             # into the core visualization, and the microphone level while
             # it listens.
             if hasattr(voice, "state_callback"):
-                voice.state_callback = lambda state: self._push(
-                    "voice_phase",
-                    {"phase": getattr(state, "value", str(state))},
+                voice.state_callback = compose_voice_state_callback(
+                    lambda state: self._push(
+                        "voice_phase",
+                        {"phase": getattr(state, "value", str(state))},
+                    ),
+                    ducker,
                 )
             if hasattr(voice, "level_callback"):
                 try:
@@ -3547,6 +3571,14 @@ class NovaBridge:
 
     def _reminders(self) -> Any | None:
         return getattr(self.controller.application, "reminders", None)
+
+    def _spotify_ducker(self) -> Any | None:
+        spotify = getattr(self.controller.application, "spotify", None)
+        if spotify is None:
+            return None
+        from app.integrations.spotify_desktop import SpotifyDucker
+
+        return SpotifyDucker(spotify)
 
     def list_reminders(self) -> dict[str, Any]:
         """Active reminders straight from the service, waiting ones first."""

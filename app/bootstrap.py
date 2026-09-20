@@ -85,6 +85,7 @@ class JARVISApplication:
     research: ResearchService | None = None
     almanac: AlmanacService | None = None
     dictionary: DictionaryService | None = None
+    spotify: object | None = None
     reminders: object | None = None
     routines: object | None = None
     screen_watcher: object | None = None
@@ -670,6 +671,7 @@ def create_application(
     )
     routines.register_tools(tool_executor)
 
+    spotify = None
     if windows is not None:
         from app.integrations import (
             SpotifyIntegration,
@@ -680,12 +682,13 @@ def create_application(
         )
         from app.security.credentials import WindowsCredentialStore
 
-        SpotifyIntegration(
+        spotify = SpotifyIntegration(
             client_id=active_settings.spotify_client_id,
             credential_store=WindowsCredentialStore(
                 "JARVIS/Spotify OAuth"
             ),
-        ).register_tools(tool_executor)
+        )
+        spotify.register_tools(tool_executor)
         whatsapp = WhatsAppIntegration(
             contacts_path=(
                 active_settings.whatsapp_contacts_path
@@ -864,6 +867,7 @@ def create_application(
         research=research,
         almanac=almanac,
         dictionary=dictionary,
+        spotify=spotify,
         reminders=reminders,
         routines=routines,
         screen_watcher=screen_watcher,

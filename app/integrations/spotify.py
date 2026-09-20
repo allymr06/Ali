@@ -4,8 +4,13 @@ Two capability tiers:
 
 LOCAL (works with the desktop app, no account setup):
     now-playing observation, play/pause/next/previous via global media
-    keys, and opening searches. Every mutation is verified against the
-    Spotify window title, which carries "Artist - Track" while playing.
+    keys, opening searches, and the desktop app's own controls through
+    UI Automation the way a person uses them - volume and seek sliders,
+    shuffle and repeat, the heart on the current track, a double-click on
+    a library row, "Add to queue" from a result's menu, a sleep timer that
+    fades out, and the transport bar's own words about what is playing.
+    Every mutation is verified against the window (title or control
+    state) and reports PARTIAL when it cannot be.
 
 WEB API (needs a user-supplied client ID once, then a stored refresh
 token): exact track playback, playlist creation, and listening
@@ -33,6 +38,19 @@ from app.integrations.runtime import (
     MediaKeySender,
     PowerShellRunner,
     UriLauncher,
+)
+from app.integrations.spotify_desktop import (
+    REPEAT_STATES,
+    SHUFFLE_STATES,
+    SleepTimer,
+    choose_play_button,
+    more_options_button,
+    now_playing_from_bar,
+    parse_library_row,
+    parse_seek,
+    play_title_of,
+    related_to_query,
+    shuffle_mode_of,
 )
 
 _TITLE_SCRIPT = (
@@ -76,6 +94,7 @@ class SpotifyIntegration:
         self._ui_retry_seconds = ui_retry_seconds
         self._access_token: str | None = None
         self._access_expires_at = 0.0
+        self._sleep_timer: SleepTimer | None = None
 
     # ------------------------------------------------------------------
     # Local tier
@@ -111,11 +130,25 @@ class SpotifyIntegration:
                 data=state,
                 verified=True,
             )
-        message = (
-            f"Çalıyor: {state['artist']} — {state['track']}"
-            if state["playing"]
-            else "Spotify açık ama şu an bir şey çalmıyor."
-        )
+        # The title falls silent when paused; the transport bar still
+        # names the track a person sees there.
+        bar = await asyncio.to_thread(self._bar_sync)
+        if bar:
+            # The title is the authority on playback; the bar only fills
+            # in what the title does not say (artists, position, liked).
+            for key, value in bar.items():
+                if value in (None, []) or key == "playing" or state.get(key):
+                    continue
+                state[key] = value
+        if state["playing"]:
+            message = f"Çalıyor: {state['artist']} — {state['track']}"
+        elif bar and bar.get("track"):
+            artists = ", ".join(bar.get("artists") or [])
+            message = f"Duraklatılmış: {artists + ' — ' if artists else ''}{bar['track']}"
+        else:
+            message = "Spotify açık ama şu an bir şey çalmıyor."
+        if bar and bar.get("position") and bar.get("duration"):
+            message += f" ({bar['position']} / {bar['duration']})"
         return ToolResult(
             ToolExecutionStatus.SUCCESS,
             "spotify_now_playing",
@@ -258,12 +291,27 @@ class SpotifyIntegration:
             if not handle:
                 return None, "spotify_not_running"
         client.bring_handle_to_foreground(handle)
+        try:
+            before = set(client.control_names_in_handle(handle))
+        except Exception:
+            before = set()
         self._uri.open("spotify:search:" + urllib.parse.quote(query))
         time.sleep(self._ui_settle_seconds)
         for _ in range(6):
             try:
-                pressed = client.invoke_first_button_in_handle(
-                    handle, self._is_play_button
+                # An exact title first, then the artist card, then the top
+                # result - the row a person would press for those words.
+                # A row of the page that was open before the search
+                # rendered is never pressed: it must relate to the query
+                # or the page must have changed.
+                names = client.control_names_in_handle(handle)
+                chosen = choose_play_button(names, query)
+                if chosen and not related_to_query(play_title_of(chosen), query) and set(names) == before:
+                    chosen = None
+                pressed = (
+                    client.invoke_named_in_handle(handle, lambda name: name == chosen)
+                    if chosen
+                    else None
                 )
             except Exception:
                 pressed = None
@@ -271,6 +319,344 @@ class SpotifyIntegration:
                 return pressed, ""
             time.sleep(self._ui_retry_seconds)
         return None, "play_button_not_found"
+
+    # ------------------------------------------------------------------
+    # Desktop UI tier: the app's own controls, as a hand uses them
+    # ------------------------------------------------------------------
+
+    def _ui_client(self):
+        if self._uia_client_factory is not None:
+            return self._uia_client_factory()
+        from app.integrations.uia import UiaClient
+
+        return UiaClient()
+
+    def _handle_sync(self, client, *, launch: bool = False) -> int:
+        handle = client.window_handle_for_process("spotify.exe")
+        if handle or not launch:
+            return handle
+        if not self._uri.open("spotify:"):
+            return 0
+        for _ in range(16):
+            time.sleep(max(0.05, self._ui_retry_seconds / 2))
+            handle = client.window_handle_for_process("spotify.exe")
+            if handle:
+                client.bring_handle_to_foreground(handle)
+                time.sleep(self._ui_settle_seconds)
+                break
+        return handle
+
+    def volume_sync(self) -> float | None:
+        """The volume slider's value (0..1), or None without a window."""
+        client = self._ui_client()
+        handle = self._handle_sync(client)
+        if not handle:
+            return None
+        slider = client.slider_in_handle(handle, "volume")
+        return None if slider is None else slider[0]
+
+    def set_volume_sync(self, value: float) -> float | None:
+        client = self._ui_client()
+        handle = self._handle_sync(client)
+        if not handle:
+            return None
+        return client.set_slider_in_handle(handle, "volume", value)
+
+    def playing_sync(self) -> bool:
+        client = self._ui_client()
+        handle = self._handle_sync(client)
+        return bool(handle) and " - " in client.window_name_in_handle(handle)
+
+    def _bar_sync(self) -> dict[str, Any] | None:
+        client = self._ui_client()
+        handle = self._handle_sync(client)
+        if not handle:
+            return None
+        texts = client.texts_in_handle(handle, region="bar")
+        controls = client.control_names_in_handle(handle, region="bar")
+        return now_playing_from_bar(texts, controls)
+
+    def _blocked(self, tool: str) -> ToolResult:
+        return ToolResult(
+            ToolExecutionStatus.BLOCKED,
+            tool,
+            message="Spotify çalışmıyor. Önce uygulamayı aç.",
+            verified=True,
+        )
+
+    async def pause_if_playing(self) -> bool:
+        """Press the bar's Pause when something plays; True once verified silent."""
+        if not self.parse_title(await self.window_title())["playing"]:
+            return True
+        client = self._ui_client()
+        handle = await asyncio.to_thread(self._handle_sync, client)
+        if not handle:
+            return False
+        pressed = await asyncio.to_thread(
+            client.invoke_named_in_handle, handle, lambda name: name.casefold() == "pause", region="bar"
+        )
+        if not pressed:
+            return False
+        for _ in range(8):
+            await asyncio.sleep(0.5)
+            if not self.parse_title(await self.window_title())["playing"]:
+                return True
+        return False
+
+    async def set_volume(self, percent: float) -> ToolResult:
+        try:
+            wanted = max(0.0, min(100.0, float(percent)))
+        except (TypeError, ValueError):
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_set_volume", message="Ses yüzdesi 0-100 arası bir sayı olmalı.", error="invalid_percent")
+        client = self._ui_client()
+        handle = await asyncio.to_thread(self._handle_sync, client)
+        if not handle:
+            return self._blocked("spotify_set_volume")
+        read_back = await asyncio.to_thread(client.set_slider_in_handle, handle, "volume", wanted / 100.0)
+        if read_back is None:
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_set_volume", message="Ses kaydırıcısı bulunamadı.", error="slider_not_found")
+        verified = abs(read_back * 100.0 - wanted) <= 2.0
+        return ToolResult(
+            ToolExecutionStatus.SUCCESS if verified else ToolExecutionStatus.PARTIAL,
+            "spotify_set_volume",
+            message=f"Spotify sesi %{round(read_back * 100)}.",
+            data={"percent": round(read_back * 100, 1)},
+            verified=verified,
+        )
+
+    async def seek(self, position: str) -> ToolResult:
+        client = self._ui_client()
+        handle = await asyncio.to_thread(self._handle_sync, client)
+        if not handle:
+            return self._blocked("spotify_seek")
+        slider = await asyncio.to_thread(client.slider_in_handle, handle, "progress")
+        if slider is None:
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_seek", message="İlerleme kaydırıcısı bulunamadı.", error="slider_not_found")
+        current, _low, high = slider
+        target = parse_seek(position, current, high)
+        if target is None:
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_seek", message="Konum '+30', '-15', '1:30' ya da saniye olmalı.", error="invalid_position")
+        read_back = await asyncio.to_thread(client.set_slider_in_handle, handle, "progress", target)
+        if read_back is None:
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_seek", message="Sarılamadı.", error="slider_not_found")
+        verified = abs(read_back - target) <= 2000
+        seconds = int(read_back // 1000)
+        return ToolResult(
+            ToolExecutionStatus.SUCCESS if verified else ToolExecutionStatus.PARTIAL,
+            "spotify_seek",
+            message=f"Parça {seconds // 60}:{seconds % 60:02d} konumunda.",
+            data={"position_ms": read_back, "duration_ms": high},
+            verified=verified,
+        )
+
+    async def shuffle(self, mode: str = "on") -> ToolResult:
+        wanted = str(mode or "on").strip().casefold()
+        wanted = {"aç": "on", "acik": "on", "açık": "on", "kapa": "off", "kapalı": "off", "kapali": "off", "akıllı": "smart", "akilli": "smart"}.get(wanted, wanted)
+        if wanted not in SHUFFLE_STATES:
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_shuffle", message="Mod 'on', 'off' ya da 'smart' olmalı.", error="invalid_mode")
+        client = self._ui_client()
+        handle = await asyncio.to_thread(self._handle_sync, client)
+        if not handle:
+            return self._blocked("spotify_shuffle")
+
+        def current_button() -> str | None:
+            for name in client.control_names_in_handle(handle, region="bar"):
+                if "shuffle" in name.casefold():
+                    return name
+            return None
+
+        presses = 0
+        for _ in range(4):
+            button = await asyncio.to_thread(current_button)
+            if shuffle_mode_of(button) == wanted:
+                labels = {"on": "açık", "off": "kapalı", "smart": "akıllı karıştırma"}
+                return ToolResult(ToolExecutionStatus.SUCCESS, "spotify_shuffle", message=f"Karıştırma {labels[wanted]}.", data={"mode": wanted, "presses": presses}, verified=True)
+            if button is None or presses >= 3:
+                break
+            await asyncio.to_thread(client.invoke_named_in_handle, handle, lambda name: name == button, region="bar")
+            presses += 1
+            await asyncio.sleep(max(0.05, self._ui_retry_seconds * 1.5))
+        return ToolResult(ToolExecutionStatus.PARTIAL, "spotify_shuffle", message="Karıştᄱrma düğmesi istenen duruma getirilemedi.", data={"mode": wanted, "presses": presses}, error="shuffle_unverified")
+
+    async def repeat(self, mode: str = "list") -> ToolResult:
+        wanted = str(mode or "list").strip().casefold()
+        wanted = {"kapalı": "off", "kapali": "off", "liste": "list", "context": "list", "parça": "track", "parca": "track", "one": "track", "tek": "track"}.get(wanted, wanted)
+        if wanted not in REPEAT_STATES:
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_repeat", message="Mod 'off', 'list' ya da 'track' olmalı.", error="invalid_mode")
+        client = self._ui_client()
+        handle = await asyncio.to_thread(self._handle_sync, client)
+        if not handle:
+            return self._blocked("spotify_repeat")
+        target = REPEAT_STATES[wanted]
+        state = await asyncio.to_thread(client.toggle_state_in_handle, handle, "repeat", region="bar")
+        toggles = 0
+        while state is not None and state != target and toggles < 3:
+            state = await asyncio.to_thread(client.toggle_in_handle, handle, "repeat", region="bar")
+            toggles += 1
+        if state is None:
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_repeat", message="Yineleme düğmesi bulunamadı.", error="toggle_not_found")
+        verified = state == target
+        labels = {"off": "kapalı", "list": "liste yineleme", "track": "tek parça yineleme"}
+        return ToolResult(
+            ToolExecutionStatus.SUCCESS if verified else ToolExecutionStatus.PARTIAL,
+            "spotify_repeat",
+            message=f"Yineleme: {labels[wanted]}." if verified else "Yineleme istenen duruma getirilemedi.",
+            data={"mode": wanted, "state": state, "toggles": toggles},
+            verified=verified,
+        )
+
+    async def like_current(self) -> ToolResult:
+        client = self._ui_client()
+        handle = await asyncio.to_thread(self._handle_sync, client)
+        if not handle:
+            return self._blocked("spotify_like_track")
+        names = [name.casefold() for name in await asyncio.to_thread(client.control_names_in_handle, handle, region="bar")]
+        if "add to liked songs" not in names:
+            if "add to playlist" in names:
+                return ToolResult(ToolExecutionStatus.SUCCESS, "spotify_like_track", message="Bu parça zaten kütüphanende görünüyor (düğme 'Add to playlist').", data={"already_saved": True}, verified=True)
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_like_track", message="Çalan parçanın beğenme düğmesi bulunamadı.", error="like_button_not_found")
+        await asyncio.to_thread(client.invoke_named_in_handle, handle, lambda name: name.casefold() == "add to liked songs", region="bar")
+        await asyncio.sleep(max(0.05, self._ui_retry_seconds))
+        after = [name.casefold() for name in await asyncio.to_thread(client.control_names_in_handle, handle, region="bar")]
+        verified = "add to liked songs" not in after
+        return ToolResult(
+            ToolExecutionStatus.SUCCESS if verified else ToolExecutionStatus.PARTIAL,
+            "spotify_like_track",
+            message="Çalan parça Beğenilen Şarkılar'a eklendi." if verified else "Beğenme düğmesine basıldı ama değişiklik doğrulanamadı.",
+            data={"already_saved": False},
+            verified=verified,
+        )
+
+    async def library(self) -> ToolResult:
+        client = self._ui_client()
+        handle = await asyncio.to_thread(self._handle_sync, client)
+        if not handle:
+            return self._blocked("spotify_library")
+        names = await asyncio.to_thread(client.control_names_in_handle, handle, region="sidebar")
+        rows = [row for row in (parse_library_row(name) for name in names) if row]
+        return ToolResult(
+            ToolExecutionStatus.SUCCESS,
+            "spotify_library",
+            message=f"Kütüphanede {len(rows)} öge görünüyor." if rows else "Kütüphane satırları okunamadı.",
+            data={"items": rows},
+            verified=bool(rows),
+        )
+
+    async def play_library(self, name: str) -> ToolResult:
+        wanted = " ".join(str(name or "").split()).casefold()
+        if not wanted:
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_play_library", message="Liste ya da sanatçı adı boş olamaz.", error="empty_name")
+        client = self._ui_client()
+        handle = await asyncio.to_thread(self._handle_sync, client, launch=True)
+        if not handle:
+            return self._blocked("spotify_play_library")
+        before = await self.window_title()
+
+        def matcher(row_name: str) -> bool:
+            parsed = parse_library_row(row_name)
+            return bool(parsed) and (parsed["name"].casefold() == wanted or parsed["name"].casefold().startswith(wanted))
+
+        pressed = await asyncio.to_thread(client.double_click_named_in_handle, handle, matcher, region="sidebar")
+        if not pressed:
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_play_library", message=f"'{name}' kütüphanede görünmüyor.", error="row_not_found")
+        verified = False
+        title = before
+        for _ in range(16):
+            await asyncio.sleep(0.5)
+            title = await self.window_title()
+            if title != before and self.parse_title(title)["playing"]:
+                verified = True
+                break
+        label = parse_library_row(pressed)["name"] if parse_library_row(pressed) else pressed
+        return ToolResult(
+            ToolExecutionStatus.SUCCESS if verified else ToolExecutionStatus.PARTIAL,
+            "spotify_play_library",
+            message=f"Çalınıyor: {label} ({title})" if verified else f"'{label}' satırına çift tıklandı ama çalma doğrulanamadı.",
+            data={"item": label, "title": title},
+            verified=verified,
+        )
+
+    async def queue_track(self, query: str) -> ToolResult:
+        wanted = " ".join(str(query or "").split())
+        if not wanted:
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_queue_track", message="Arama metni boş olamaz.", error="empty_query")
+        client = self._ui_client()
+        handle = await asyncio.to_thread(self._handle_sync, client, launch=True)
+        if not handle:
+            return self._blocked("spotify_queue_track")
+        # The tree is published for a fronted window; the search must
+        # render before any row of it is trusted.
+        await asyncio.to_thread(client.bring_handle_to_foreground, handle)
+        before = set(await asyncio.to_thread(client.control_names_in_handle, handle))
+        self._uri.open("spotify:search:" + urllib.parse.quote(wanted))
+        chosen = None
+        names: list[str] = []
+        for _ in range(8):
+            await asyncio.sleep(max(0.1, self._ui_settle_seconds / 2))
+            names = await asyncio.to_thread(client.control_names_in_handle, handle)
+            candidate = choose_play_button(names, wanted)
+            if candidate and (related_to_query(play_title_of(candidate), wanted) or set(names) != before):
+                chosen = candidate
+                break
+        if not chosen:
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_queue_track", message=f"'{wanted}' için sonuç bulunamadı.", error="track_not_found")
+        title = play_title_of(chosen)
+        more = more_options_button(names, title)
+        opened = (
+            await asyncio.to_thread(client.invoke_named_in_handle, handle, lambda name: name == more)
+            if more
+            else None
+        )
+        if not opened:
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_queue_track", message=f"'{title}' için menü açılamadı.", error="menu_not_found")
+        await asyncio.sleep(max(0.05, self._ui_retry_seconds))
+        added = await asyncio.to_thread(client.invoke_menu_item_in_handle, handle, "Add to queue")
+        if not added:
+            await asyncio.to_thread(client.press_escape)
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_queue_track", message="Menüde 'Add to queue' bulunamadı.", error="menu_item_not_found")
+        # Verify through the queue panel, then close it again.
+        await asyncio.sleep(max(0.05, self._ui_retry_seconds))
+        verified = False
+        if await asyncio.to_thread(client.invoke_named_in_handle, handle, lambda name: name.casefold() == "queue", region="bar"):
+            await asyncio.sleep(max(0.05, self._ui_retry_seconds))
+            texts = await asyncio.to_thread(client.texts_in_handle, handle)
+            verified = any(title.casefold() == text.casefold() for text in texts)
+            await asyncio.to_thread(client.invoke_named_in_handle, handle, lambda name: name.casefold() == "queue", region="bar")
+        return ToolResult(
+            ToolExecutionStatus.SUCCESS if verified else ToolExecutionStatus.PARTIAL,
+            "spotify_queue_track",
+            message=f"'{title}' kuyruğa eklendi." if verified else f"'{title}' için kuyruğa ekle tıklandı ama kuyrukta doğrulanamadı.",
+            data={"track": title},
+            verified=verified,
+        )
+
+    async def sleep_timer(self, minutes: float) -> ToolResult:
+        try:
+            wanted = float(minutes)
+        except (TypeError, ValueError):
+            wanted = 0.0
+        if not 1 <= wanted <= 180:
+            return ToolResult(ToolExecutionStatus.FAILED, "spotify_sleep_timer", message="Süre 1-180 dakika arası olmalı.", error="invalid_minutes")
+        if self._sleep_timer is None:
+            self._sleep_timer = SleepTimer(self)
+        self._sleep_timer.start(wanted)
+        return ToolResult(
+            ToolExecutionStatus.SUCCESS,
+            "spotify_sleep_timer",
+            message=f"Uyku zamanlayıcısı kuruldu: {wanted:g} dakika sonra ses yavaşça kısılıp müzik duraklatılacak.",
+            data={"minutes": wanted},
+            verified=True,
+        )
+
+    async def cancel_sleep_timer(self) -> ToolResult:
+        cancelled = bool(self._sleep_timer and self._sleep_timer.cancel())
+        return ToolResult(
+            ToolExecutionStatus.SUCCESS,
+            "spotify_cancel_sleep_timer",
+            message="Uyku zamanlayıcısı iptal edildi." if cancelled else "Kurulu bir uyku zamanlayıcısı yoktu.",
+            data={"cancelled": cancelled},
+            verified=True,
+        )
 
     async def _play_locally(self, query: str) -> ToolResult:
         before = await self.window_title()
@@ -773,6 +1159,36 @@ class SpotifyIntegration:
         ) -> ToolResult:
             return await self.listening_stats(period)
 
+        async def set_volume(percent: float) -> ToolResult:
+            return await self.set_volume(percent)
+
+        async def seek(position: str) -> ToolResult:
+            return await self.seek(position)
+
+        async def shuffle(mode: str = "on") -> ToolResult:
+            return await self.shuffle(mode)
+
+        async def repeat(mode: str = "list") -> ToolResult:
+            return await self.repeat(mode)
+
+        async def like_track() -> ToolResult:
+            return await self.like_current()
+
+        async def library() -> ToolResult:
+            return await self.library()
+
+        async def play_library(name: str) -> ToolResult:
+            return await self.play_library(name)
+
+        async def queue_track(query: str) -> ToolResult:
+            return await self.queue_track(query)
+
+        async def sleep_timer(minutes: float) -> ToolResult:
+            return await self.sleep_timer(minutes)
+
+        async def cancel_sleep_timer() -> ToolResult:
+            return await self.cancel_sleep_timer()
+
         executor.register(
             define(
                 "spotify_now_playing",
@@ -861,3 +1277,20 @@ class SpotifyIntegration:
             listening_stats,
             source="integration:spotify",
         )
+        for name, description, handler, risk, timeout in (
+            ("spotify_set_volume", "Spotify'ın kendi sesini yüzde olarak ayarla (0-100).", set_volume, RiskLevel.LOW, 20.0),
+            ("spotify_seek", "Çalan parçada sar: '+30', '-15', '1:30' ya da saniye.", seek, RiskLevel.LOW, 20.0),
+            ("spotify_shuffle", "Karıştırmayı ayarla: on, off ya da smart.", shuffle, RiskLevel.LOW, 30.0),
+            ("spotify_repeat", "Yinelemeyi ayarla: off, list ya da track.", repeat, RiskLevel.LOW, 30.0),
+            ("spotify_like_track", "Çalan parçayı Beğenilen Şarkılar'a ekle.", like_track, RiskLevel.MEDIUM, 20.0),
+            ("spotify_library", "Kenar çubuğundaki çalma listelerini ve sanatçıları listele.", library, RiskLevel.READ_ONLY, 20.0),
+            ("spotify_play_library", "Kütüphanedeki bir çalma listesini ya da sanatçıyı adıyla çal (satıra çift tıklar).", play_library, RiskLevel.LOW, 45.0),
+            ("spotify_queue_track", "Bir parçayı arayıp sıradakilere ekle.", queue_track, RiskLevel.LOW, 45.0),
+            ("spotify_sleep_timer", "Uyku zamanlayıcısı: N dakika sonra sesi yavaşça kısıp duraklat.", sleep_timer, RiskLevel.LOW, 10.0),
+            ("spotify_cancel_sleep_timer", "Uyku zamanlayıcısını iptal et.", cancel_sleep_timer, RiskLevel.LOW, 10.0),
+        ):
+            executor.register(
+                define(name, description, risk=risk, timeout=timeout),
+                handler,
+                source="integration:spotify",
+            )

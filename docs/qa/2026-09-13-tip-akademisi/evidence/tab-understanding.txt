@@ -1,9 +1,0 @@
-BULGULAR
-AÇIK BULGU YOK
-ANLAMA KONTROLÜ
-Açık bulgu yok — Sınavlarda ve anlama kontrollerinde gerekçen kaynağa göre okunur; tutarlı bir yanlış anlama görülürse burada bulgu açılır.
-ZORLANILAN KAVRAMLAR
-Zorlanılan kavram işaretlenmedi
-SON KAYITLAR
-Kayıt yok — Cevapların güven ve gerekçeyle birlikte burada birikir.
-Bir bulgu seç — Sol listeden bir bulgu açınca kanıtı, kaynağı ve onarım adımları burada görünür.

@@ -438,6 +438,9 @@ const Palette = {
     }
     list.push({ group: "eylem", icon: "chevron", label: State.railCollapsed ? "Gezinmeyi genişlet" : "Gezinmeyi daralt", keywords: "menü rail", run: () => setRailCollapsed(!State.railCollapsed) });
     list.push({ group: "eylem", icon: "palette", label: "Klavye kısayolları", keywords: "kisayol tuş klavye yardım f1", run: () => setShortcutsOpen(true) });
+    // Two honest toys: the result is random and says so, nothing more.
+    list.push({ group: "eylem", icon: "spark", label: "Zar at", keywords: "zar rastgele oyun dice", run: () => toast(`Zar: ${1 + Math.floor(Math.random() * 6)} 🎲 (rastgele)`, "ok") });
+    list.push({ group: "eylem", icon: "spark", label: "Yazı tura at", keywords: "yazı tura para rastgele coin", run: () => toast(`${Math.random() < 0.5 ? "Yazı" : "Tura"} 🪙 (rastgele)`, "ok") });
     list.push({ group: "eylem", icon: "refresh", label: "Sistem sağlığını denetle", keywords: "tanılama health", run: () => { showScreen("diagnostics"); Diagnostics.refresh(); } });
     list.push({ group: "eylem", icon: "alarm", label: Focus.timer || Focus.endsAt ? "Odak sayacını durdur" : "25 dk odak sayacı", keywords: "odak pomodoro sayaç focus", run: () => Focus.toggle() });
     list.push({ group: "eylem", icon: "alarm", label: "Hatırlatıcı kur", keywords: "hatırlat alarm kur reminder", run: () => { showScreen("tasks"); setTimeout(() => $("#reminder-text")?.focus(), 350); } });

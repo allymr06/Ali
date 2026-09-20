@@ -578,3 +578,22 @@ body.light .lab-label { background: rgba(255, 255, 255, 0.96); color: #182332; }
 .med-term-card:hover { background: rgba(var(--accent-rgb), 0.07); }
 .med-term-card .mt-latin { font-family: var(--font-display); font-size: 1.2rem; color: var(--ink-1); }
 .med-term-card .mt-turkish { color: var(--ink-2); font-size: var(--text-sm); }
+
+/* ── the month's rhythm ───────────────────────────────────────────── */
+.med-rhythm { display: flex; flex-direction: column; gap: 0.5rem; }
+.mr-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.3rem; }
+.mr-name { text-align: center; font-family: var(--font-system); font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-4); }
+.mr-cell { position: relative; aspect-ratio: 2.2 / 1; border-radius: var(--radius-1); background: rgba(var(--accent-rgb), 0.05); border: 1px solid var(--line-1); }
+.mr-cell i { position: absolute; right: 0.3rem; top: 0.15rem; font-style: normal; font-family: var(--font-mono); font-size: 0.58rem; color: var(--ink-4); }
+.mr-cell.l1 { background: rgba(var(--accent-rgb), 0.14); }
+.mr-cell.l2 { background: rgba(var(--accent-rgb), 0.28); }
+.mr-cell.l3 { background: rgba(var(--accent-rgb), 0.45); border-color: rgba(var(--accent-rgb), 0.4); }
+.mr-cell.l4 { background: rgba(var(--accent-rgb), 0.65); border-color: rgba(var(--accent-rgb), 0.55); }
+.mr-cell.l3 i, .mr-cell.l4 i { color: var(--on-accent); }
+.mr-legend { display: flex; justify-content: space-between; align-items: center; color: var(--ink-3); font-size: var(--text-xs); }
+.mr-scale { display: inline-flex; align-items: center; gap: 0.25rem; }
+.mr-scale i { width: 0.7rem; height: 0.7rem; border-radius: 3px; display: inline-block; }
+.mr-scale .l1 { background: rgba(var(--accent-rgb), 0.14); }
+.mr-scale .l2 { background: rgba(var(--accent-rgb), 0.28); }
+.mr-scale .l3 { background: rgba(var(--accent-rgb), 0.45); }
+.mr-scale .l4 { background: rgba(var(--accent-rgb), 0.65); }

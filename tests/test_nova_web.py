@@ -2480,3 +2480,21 @@ def test_the_research_report_markdown_says_only_what_the_report_says() -> None:
     assert "Web · güncel · 2026-09-01" in markdown and "> Alıntı." in markdown
     assert "- Hacker News kaynağına ulaşılamadı (HTTP 503)." in markdown
     assert "1 kaynak · canlı · 2026-09-20T18:00:00+00:00" in markdown
+
+
+def test_the_months_rhythm_draws_exactly_what_the_records_say() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function esc(", "\nfunction store("))
+    rhythm = JS_SOURCES["js/medical.js"]
+    context.eval(rhythm[rhythm.index("function monthRhythmLevel("):])
+    assert [context.eval(f"monthRhythmLevel({m})") for m in (0, 1, 14, 15, 29, 30, 59, 60, 240)] == [0, 1, 1, 2, 2, 3, 3, 4, 4]
+    days = [{"date": f"2026-09-{index:02d}", "minutes": index % 3 and index or 0, "answers": index, "cards": 0} for index in range(1, 29)]
+    markup = context.eval("monthRhythmMarkup(" + json.dumps(days) + ")")
+    assert markup.count("mr-cell") == 28 and 'data-day="2026-09-28"' in markup
+    assert "2026-09-05 · 5 dk · 5 soru · 0 kart" in markup
+    assert "aktif gün" in markup and "dk</span>" in markup
+    assert context.eval("monthRhythmMarkup([])") == ""
+    # The page asks the same weekly_report action, just for 28 days.
+    assert 'this.request("weekly_report", { days: 28 })' in JS_SOURCES["js/medical.js"]
+    assert 'id="med-month"' in HTML

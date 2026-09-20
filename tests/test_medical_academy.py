@@ -501,3 +501,12 @@ def test_the_term_of_day_is_deterministic_and_comes_from_the_catalogue(build) ->
     seen = {academy.term_of_day(date(2026, 9, 20) + _delta(days=offset))["structure_id"] for offset in range(5)}
     assert len(seen) == 5
     assert "term_of_day" in academy.dashboard()
+
+
+def test_the_weekly_report_stretches_to_a_month_and_caps_honestly(build) -> None:
+    academy = build()
+    month = academy.study.weekly_report(days=28)
+    assert len(month["days"]) == 28
+    assert month["days"][0]["date"] < month["days"][-1]["date"]
+    assert academy.study.weekly_report(days=99)["days"].__len__() == 31, "the cap holds"
+    assert len(academy.study.call("weekly_report", {"days": 28})["days"]) == 28

@@ -1829,12 +1829,24 @@ const Medical = {
   /* ── progress ──────────────────────────────────────────────────── */
 
   async loadProgress() {
-    const [result, week] = await Promise.all([this.request("progress"), this.request("weekly_report", {})]);
+    const [result, week, month] = await Promise.all([
+      this.request("progress"),
+      this.request("weekly_report", {}),
+      this.request("weekly_report", { days: 28 }),
+    ]);
     if (result.ok === false) { toast(result.error || "İlerleme okunamadı.", true); return; }
     this.progressData = result;
     this.weekData = week.ok === false ? null : week;
+    this.monthData = month.ok === false ? null : month;
     this.renderProgress();
     this.renderWeek();
+    this.renderMonth();
+  },
+
+  renderMonth() {
+    const host = $("#med-month");
+    if (!host) return;
+    host.innerHTML = this.monthData ? monthRhythmMarkup(this.monthData.days || []) : "";
   },
 
   bindWeekExport() {
@@ -3800,4 +3812,39 @@ function bindMedical() {
     Medical.quickAsk(`${Lab.structure.canonical} yapısını anlat`);
   });
   Lab.bind();
+}
+
+/* ── the month's rhythm ───────────────────────────────────────────────
+   Twenty-eight days as a calendar heatmap, straight from the same
+   weekly_report records the summary prints - study-log minutes, answers,
+   cards. Intensity is minutes in honest steps; the tooltip carries the
+   exact figures, and a day with nothing recorded is an empty cell, not
+   a gap. The newest day sits bottom-right, reading like a calendar. */
+function monthRhythmLevel(minutes) {
+  if (!minutes) return 0;
+  if (minutes < 15) return 1;
+  if (minutes < 30) return 2;
+  if (minutes < 60) return 3;
+  return 4;
+}
+
+function monthRhythmMarkup(days) {
+  if (!Array.isArray(days) || !days.length) return "";
+  const names = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
+  const cells = days.map((day) => {
+    const level = monthRhythmLevel(Number(day.minutes) || 0);
+    const date = new Date(String(day.date) + "T12:00:00");
+    const title = `${esc(day.date)} · ${Number(day.minutes) || 0} dk · ${Number(day.answers) || 0} soru · ${Number(day.cards) || 0} kart`;
+    return `<span class="mr-cell l${level}" title="${title}" data-day="${esc(String(day.date))}">` +
+      `<i>${date.getDate()}</i></span>`;
+  });
+  const header = days.slice(0, 7).map((day) => {
+    const date = new Date(String(day.date) + "T12:00:00");
+    return `<span class="mr-name">${names[date.getDay()]}</span>`;
+  }).join("");
+  const total = days.reduce((sum, day) => sum + (Number(day.minutes) || 0), 0);
+  const active = days.filter((day) => Number(day.minutes) || Number(day.answers) || Number(day.cards)).length;
+  return `<div class="med-rhythm"><div class="mr-grid">${header}${cells.join("")}</div>` +
+    `<div class="mr-legend"><span>${active} aktif gün · ${total} dk</span>` +
+    `<span class="mr-scale">az <i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> çok</span></div></div>`;
 }

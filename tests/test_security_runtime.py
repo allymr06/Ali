@@ -6,6 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import FrozenInstanceError
 from datetime import timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -22,7 +23,7 @@ from app.core.models import (
     ToolResult,
 )
 from app.core.time import utc_now
-from app.main import create_application
+from app.main import JARVISApplication, create_application
 from app.planning.models import PlanStep
 from app.security.approval import (
     ApprovalExecutionContext,
@@ -638,6 +639,356 @@ async def test_the_async_path_holds_the_slot_for_the_thread_too() -> None:
     assert ledger["peak"] == 1, "two writers were inside the tool at once"
     assert after_worker_finished.status is ToolExecutionStatus.TIMEOUT, (
         "the slot must come back when the work ends, or the tool is wedged"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_slot_outlives_a_work_item_cancelled_before_it_ever_ran() -> None:
+    """The slot follows the work item, and the work item may never start.
+
+    A busy worker pool leaves a submitted handler queued. The wait times
+    out, the queued item is cancelled, and the handler never runs - so
+    nothing inside the handler could ever hand the slot back. Binding the
+    slot to the work item instead covers both hazards with one rule: it
+    comes back when the item ends, and never while the handler is still
+    inside the tool.
+    """
+    executor = ToolExecutor()
+    ledger = {"live": 0, "peak": 0}
+    hold = threading.Event()
+    executor.register(
+        ToolDefinition(
+            name="queued_writer",
+            description="One writer",
+            timeout_seconds=0.05,
+            max_concurrency=1,
+        ),
+        _overlap_counting_handler(ledger, hold),
+    )
+    # Starve every pool a thread-bound handler could land in - the loop's
+    # default executor and the one the executor owns - so the submitted
+    # work item can only sit in a queue and never start.
+    occupied = threading.Event()
+    running = threading.Semaphore(0)
+
+    def squat() -> None:
+        running.release()
+        occupied.wait(10.0)
+
+    loop = asyncio.get_running_loop()
+    loop.set_default_executor(ThreadPoolExecutor(max_workers=1))
+    executor._worker_pool = ThreadPoolExecutor(max_workers=1)
+    # run_in_executor submits there and then, so both workers are busy
+    # before this coroutine ever yields.
+    squatters = [
+        loop.run_in_executor(None, squat),
+        asyncio.wrap_future(executor._worker_pool.submit(squat)),
+    ]
+
+    for _ in squatters:
+        assert running.acquire(timeout=5.0), "the pools never got busy"
+
+    try:
+        never_ran = await executor.execute("queued_writer")
+
+        assert never_ran.status is ToolExecutionStatus.TIMEOUT
+        assert ledger["peak"] == 0, "the queued handler never started"
+        assert not executor._active_execution_counts, (
+            "a slot that never reached the handler must still come back, "
+            "or one timeout removes the tool for the life of the process"
+        )
+        assert never_ran.side_effects_may_continue is False, (
+            "a work item cancelled before it ran left nothing behind"
+        )
+
+        occupied.set()
+        await asyncio.gather(*squatters)
+
+        abandoned = await executor.execute("queued_writer")
+        intruder = await executor.execute("queued_writer")
+
+        assert abandoned.status is ToolExecutionStatus.TIMEOUT
+        assert intruder.status is ToolExecutionStatus.BLOCKED, (
+            "this handler really is inside the tool, so it keeps its slot"
+        )
+        assert ledger["peak"] == 1, "two writers were inside the tool at once"
+    finally:
+        occupied.set()
+        hold.set()
+        executor.shutdown(wait=True)
+
+
+@pytest.mark.asyncio
+async def test_the_executor_owns_one_worker_pool_and_gives_its_threads_back(
+) -> None:
+    """Thread-bound handlers run on our pool, and it closes cleanly."""
+    executor = ToolExecutor()
+    workers: list[threading.Thread] = []
+
+    def note() -> str:
+        workers.append(threading.current_thread())
+        return "ok"
+
+    executor.register(
+        ToolDefinition(name="note", description="Note"),
+        note,
+    )
+
+    assert executor._worker_pool is None, "no thread exists until one is needed"
+
+    first = await executor.execute("note")
+    pool = executor._worker_pool
+    second = await executor.execute("note")
+
+    assert first.status is ToolExecutionStatus.SUCCESS
+    assert second.status is ToolExecutionStatus.SUCCESS
+    assert executor._worker_pool is pool, (
+        "a fresh pool per call would spend a thread on every tool call"
+    )
+    assert workers and threading.current_thread() not in workers, (
+        "a thread-bound handler must not run on the event loop's thread"
+    )
+
+    executor.shutdown(wait=True)
+
+    assert executor._worker_pool is None
+    assert not any(worker.is_alive() for worker in workers), (
+        "shutdown joins the workers rather than orphaning them"
+    )
+
+
+def _starve_the_worker_pool(
+    executor: ToolExecutor,
+) -> tuple[threading.Event, "asyncio.Future[None]"]:
+    """Fill the executor's own pool so the next submit can only queue.
+
+    The squatter deliberately runs on an unnamed pool, so a test that
+    counts surviving ``jarvis-tool`` threads never mistakes it for one.
+    """
+    occupied = threading.Event()
+    running = threading.Semaphore(0)
+
+    def squat() -> None:
+        running.release()
+        occupied.wait(10.0)
+
+    executor._worker_pool = ThreadPoolExecutor(max_workers=1)
+    squatter = asyncio.wrap_future(executor._worker_pool.submit(squat))
+
+    assert running.acquire(timeout=5.0), "the pool never got busy"
+
+    return occupied, squatter
+
+
+async def _threads_have_ended(
+    workers: list[threading.Thread],
+    *,
+    timeout: float = 5.0,
+) -> bool:
+    """Wait briefly for pool threads to notice their pool is gone."""
+    deadline = time.monotonic() + timeout
+
+    while (
+        any(worker.is_alive() for worker in workers)
+        and time.monotonic() < deadline
+    ):
+        await asyncio.sleep(0.01)
+
+    return not any(worker.is_alive() for worker in workers)
+
+
+@pytest.mark.asyncio
+async def test_a_shutdown_refuses_the_turn_instead_of_faking_a_cancellation(
+) -> None:
+    """Every caller is owed a ToolResult, teardown included.
+
+    ``pool.shutdown(cancel_futures=True)`` cancels a queued work item,
+    the cancellation rides ``asyncio.wrap_future`` back into the wait,
+    and reading the result there raises CancelledError - a
+    BaseException that no ``except Exception`` between the executor and
+    the turn would catch. The user would be told they cancelled an
+    action they never touched, and replace_application closes the old
+    runtime while its loop is still running, so this is reachable.
+    """
+    executor = ToolExecutor()
+    executor.register(
+        ToolDefinition(
+            name="queued_note",
+            description="Note",
+            timeout_seconds=5.0,
+        ),
+        lambda: "done",
+    )
+    occupied, squatter = _starve_the_worker_pool(executor)
+
+    try:
+        turn = asyncio.ensure_future(executor.execute("queued_note"))
+        # Enough turns of the loop for the work item to be submitted and
+        # the wait to be entered before the pool is pulled out from
+        # under it.
+        for _ in range(5):
+            await asyncio.sleep(0)
+
+        executor.shutdown()
+
+        refusal = await turn
+
+        assert refusal.status is ToolExecutionStatus.BLOCKED
+        assert refusal.error == "Tool executor is shutting down."
+        assert refusal.side_effects_may_continue is False, (
+            "a work item cancelled before it ran left nothing behind"
+        )
+        assert not executor._active_execution_counts, (
+            "the cancelled work item hands its slot back"
+        )
+    finally:
+        occupied.set()
+        await squatter
+        executor.shutdown(wait=True)
+
+
+@pytest.mark.asyncio
+async def test_an_approval_survives_a_timeout_that_never_ran_the_tool() -> None:
+    """A capability buys an action, and this action provably never ran.
+
+    A confirming tool whose work item sat in a full pool until the
+    timeout is the one interrupted case the executor can prove nothing
+    happened in. Keeping the one-time grant would charge the user for
+    an action nobody took, and the retry would then be refused as a
+    replay of it.
+    """
+    executor = ToolExecutor()
+    executor.register(
+        ToolDefinition(
+            name="queued_writer",
+            description="Writer",
+            risk_level=RiskLevel.MEDIUM,
+            timeout_seconds=0.05,
+        ),
+        lambda: "written",
+    )
+    occupied, squatter = _starve_the_worker_pool(executor)
+    approval = bound_approval("queued_writer")
+    grant = approval["approval_grant"]
+
+    try:
+        never_ran = await executor.execute("queued_writer", **approval)
+
+        assert never_ran.status is ToolExecutionStatus.TIMEOUT
+        assert never_ran.side_effects_may_continue is False
+        assert executor.approval_grant_is_spent(grant) is False, (
+            "an approval that bought nothing is still the user's to spend"
+        )
+
+        occupied.set()
+        await squatter
+
+        retried = await executor.execute("queued_writer", **approval)
+
+        assert retried.status is ToolExecutionStatus.SUCCESS, (
+            "the same grant must still buy the action it was given for"
+        )
+    finally:
+        occupied.set()
+        executor.shutdown(wait=True)
+
+
+@pytest.mark.asyncio
+async def test_shutdown_without_waiting_still_ends_the_worker_threads(
+) -> None:
+    """Both production call sites take the default, so pin the default.
+
+    ``wait=False`` returns before the threads are gone, so the promise
+    it can keep is narrower: the pool is really closed - not merely
+    dropped, which would leave a handler still inside it free to queue
+    more work - its idle workers are on their way out, and the next
+    execution builds a fresh one rather than inheriting a dead pool.
+    """
+    executor = ToolExecutor()
+    workers: list[threading.Thread] = []
+
+    def note() -> str:
+        workers.append(threading.current_thread())
+        return "ok"
+
+    executor.register(
+        ToolDefinition(name="note", description="Note"),
+        note,
+    )
+    first = await executor.execute("note")
+    pool = executor._worker_pool
+
+    assert first.status is ToolExecutionStatus.SUCCESS
+    assert workers and all(
+        worker.name.startswith("jarvis-tool") for worker in workers
+    ), "tool work must be identifiable in a thread dump"
+
+    executor.shutdown()
+
+    assert executor._worker_pool is None
+
+    with pytest.raises(RuntimeError):
+        pool.submit(note)
+
+    assert await _threads_have_ended(workers), (
+        "an idle worker must end with its pool, not outlive the runtime"
+    )
+
+    revived = await executor.execute("note")
+
+    assert revived.status is ToolExecutionStatus.SUCCESS, (
+        "a later execution builds a fresh pool"
+    )
+
+    executor.shutdown(wait=True)
+
+
+@pytest.mark.asyncio
+async def test_closing_the_application_gives_the_tool_threads_back() -> None:
+    """The runtime that owns the executor is the one that must end it.
+
+    ``JARVISApplication.close`` is the only production caller, and
+    replace_application runs it on every settings change. Drop the
+    wiring and each swap leaves another pool behind.
+    """
+    executor = ToolExecutor()
+    workers: list[threading.Thread] = []
+
+    def note() -> str:
+        workers.append(threading.current_thread())
+        return "ok"
+
+    executor.register(
+        ToolDefinition(name="note", description="Note"),
+        note,
+    )
+
+    assert (await executor.execute("note")).status is (
+        ToolExecutionStatus.SUCCESS
+    )
+    assert executor._worker_pool is not None
+
+    closed: list[str] = []
+    application = JARVISApplication.__new__(JARVISApplication)
+    application.plugins = None
+    application.medical = None
+    application.conversation_engine = SimpleNamespace(store=object())
+    application.task_manager = SimpleNamespace(
+        close=lambda: closed.append("tasks")
+    )
+    application.memory_manager = SimpleNamespace(
+        close=lambda: closed.append("memory")
+    )
+    application.tool_executor = executor
+
+    application.close()
+
+    assert closed == ["tasks", "memory"], "the durable stores still close"
+    assert executor._worker_pool is None, (
+        "nothing else in the runtime calls shutdown()"
+    )
+    assert await _threads_have_ended(workers), (
+        "a swapped-out runtime must not leave its worker threads running"
     )
 
 

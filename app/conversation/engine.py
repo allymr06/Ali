@@ -69,10 +69,14 @@ class ConversationEngine:
             return self.create(conversation_id)
 
     def archive(self, conversation_id: UUID) -> Conversation:
-        conversation = self.get(conversation_id)
-        conversation.status = ConversationStatus.ARCHIVED
-        conversation.updated_at = utc_now()
-        return self._store.save(conversation)
+        with self._lock:
+            # An archived conversation takes no further requests, so the turn
+            # that owns any held tool output can never finish and drop it.
+            self._forget_provider_overrides(conversation_id)
+            conversation = self.get(conversation_id)
+            conversation.status = ConversationStatus.ARCHIVED
+            conversation.updated_at = utc_now()
+            return self._store.save(conversation)
 
     def activate(self, conversation_id: UUID) -> Conversation:
         conversation = self.get(conversation_id)
@@ -84,7 +88,12 @@ class ConversationEngine:
         return self._store.list()
 
     def delete(self, conversation_id: UUID) -> Conversation:
-        return self._store.delete(conversation_id)
+        with self._lock:
+            # Deleting a conversation is the gesture that means forget it, and
+            # this process outlives the deletion, so the sensitive tool output
+            # kept in memory for its last turn goes with it.
+            self._forget_provider_overrides(conversation_id)
+            return self._store.delete(conversation_id)
 
     @staticmethod
     def _message_characters(message: dict[str, Any]) -> int:
@@ -113,7 +122,12 @@ class ConversationEngine:
             summary = summary[-limit:]
         return summary
 
-    def _context_messages(self, conversation: Conversation) -> list[dict[str, Any]]:
+    def _context_messages(
+        self,
+        conversation: Conversation,
+        overrides: dict[str, str] | None = None,
+        owning_request_id: UUID | None = None,
+    ) -> list[dict[str, Any]]:
         groups: list[list[ConversationTurn]] = []
         for turn in conversation.turns:
             if groups and groups[-1][0].request_id == turn.request_id:
@@ -170,7 +184,22 @@ class ConversationEngine:
                         "content": summary_prefix + conversation.summary,
                     }
                 )
-        messages.extend(turn.to_message() for turn in selected)
+        for turn in selected:
+            message = turn.to_message()
+            # A provider may reuse a tool call id across turns, so an override
+            # is only ever applied to the turn that produced it; matching on
+            # the id alone would rewrite an older turn's result with the
+            # current one and hand the model a falsified transcript.
+            if overrides and turn.request_id == owning_request_id:
+                tool_call_id = message.get("tool_call_id")
+                replacement = (
+                    overrides.get(tool_call_id)
+                    if isinstance(tool_call_id, str)
+                    else None
+                )
+                if replacement is not None:
+                    message["content"] = replacement
+            messages.append(message)
         return messages
 
     def _provider_overrides_for(
@@ -196,27 +225,11 @@ class ConversationEngine:
         context: Context,
         request_id: UUID | None = None,
     ) -> None:
-        messages = self._context_messages(conversation)
         overrides = self._provider_overrides_for(
             conversation.conversation_id,
             request_id,
         )
-        if overrides:
-            restored: list[dict[str, Any]] = []
-            for message in messages:
-                tool_call_id = message.get("tool_call_id")
-                replacement = (
-                    overrides.get(tool_call_id)
-                    if isinstance(tool_call_id, str)
-                    else None
-                )
-                if replacement is None:
-                    restored.append(message)
-                    continue
-                transient = dict(message)
-                transient["content"] = replacement
-                restored.append(transient)
-            messages = restored
+        messages = self._context_messages(conversation, overrides, request_id)
         context.values["messages"] = messages
         context.values["conversation_id"] = str(conversation.conversation_id)
         if request_id is not None:

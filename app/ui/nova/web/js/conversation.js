@@ -152,6 +152,21 @@ function finalizePendingBubble(message) {
   appendMessage($("#chat-list"), message, false);
 }
 
+/* The busy push opens a turn on every surface that did not start it, and
+   only the answer closes it again. A submission that produces no answer —
+   refused by the runner, cancelled on the way down — ends with busy:false
+   and nothing else, and an unclosed bubble is handed to the NEXT question
+   by ensurePendingBubble. sendCommand does this for the page that typed
+   the message; this is the same cleanup for the page that only watched. */
+function closeWatchedTurn() {
+  const turn = State.watchedTurn;
+  State.watchedTurn = null;
+  if (!turn) return;
+  State.pendingEl?.remove();
+  State.pendingEl = null;
+  if (Activity.current === turn) Activity.abortTurn("Yanıt gelmeden tur kapandı.");
+}
+
 function hideChatEmpty() { const empty = $("#chat-empty"); if (empty) empty.hidden = true; }
 
 function renderChatHistory() {

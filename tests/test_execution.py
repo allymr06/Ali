@@ -556,3 +556,70 @@ async def test_execution_event_bus_emits_retry_event():
         event.event_type is ExecutionEventType.STEP_RETRYING
         for event in bus.events
     )
+
+
+def test_the_executor_refusals_reach_the_user_in_turkish() -> None:
+    """The executor's own refusals land as strings both front ends map.
+
+    The concurrency limit used to be baked into the error, so an
+    exact-match display map could never hit it and the user read
+    English. The number now travels in `message` and the error itself is
+    a stable key. A shutdown refusal is the same shape and is the other
+    string the executor coins for a step card.
+    """
+    quickjs = pytest.importorskip("quickjs")
+
+    from app.mobile.server import WEB_ROOT
+    from app.ui.nova import shell
+
+    executor = ToolExecutor()
+    executor.register(
+        ToolDefinition(
+            name="one_at_a_time",
+            description="One at a time",
+            max_concurrency=1,
+        ),
+        lambda: "done",
+    )
+    definition = executor.get("one_at_a_time").definition
+
+    assert executor._try_acquire_execution_slot(definition) is True
+    blocked = executor.execute("one_at_a_time")
+    executor._release_execution_slot(definition)
+
+    assert blocked.status is ToolExecutionStatus.BLOCKED
+    assert blocked.error == "Maximum concurrent executions reached."
+    assert "1" in (blocked.message or ""), "the limit itself is still reported"
+    assert VerificationEngine().verify(blocked).reason == blocked.error, (
+        "this is the string that lands in step.metadata['tool_error']"
+    )
+
+    turkish = (
+        "Bu ara\u00e7 \u015fu anda me\u015fgul; ayn\u0131 anda "
+        "\u00e7al\u0131\u015fabilecek kopya say\u0131s\u0131 doldu."
+    )
+    # Slice each front end's map and its lookup out of the module and run
+    # them, so the assertion is about what the user reads rather than
+    # about a string being present somewhere in a file.
+    front_ends = (
+        (WEB_ROOT / "app.js", "\n  async function loadTasks"),
+        (shell.SOURCE_WEB_ROOT / "js" / "panels.js", "\nfunction renderTasks"),
+    )
+
+    for path, end in front_ends:
+        source = path.read_text(encoding="utf-8")
+        start = source.index("const TASK_ERROR_TR")
+        context = quickjs.Context()
+        context.eval(source[start : source.index(end, start)])
+
+        assert context.eval(f"taskErrorTr({blocked.error!r})") == turkish, (
+            f"{path.name} still shows the machine string"
+        )
+        assert context.eval('taskErrorTr("User confirmation required.")') == (
+            "Bu ad\u0131m i\u00e7in onay\u0131n gerekiyor."
+        ), "the entries that were already mapped still answer"
+        assert context.eval(
+            'taskErrorTr("Tool executor is shutting down.")'
+        ) == "JARVIS kapan\u0131yor; bu ad\u0131m hi\u00e7 ba\u015flamad\u0131.", (
+            f"{path.name} leaves a teardown refusal in English"
+        )

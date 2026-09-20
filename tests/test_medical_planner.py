@@ -20,9 +20,10 @@ from app.medical.concepts import default_concept_graph
 from app.medical.learning import LearningEngine
 from app.medical.model import MedicalModelClient
 from app.medical.models import ConceptMastery, DocumentStatus, ExamAttempt, MasteryLevel, Question, QuestionAttempt, QuestionOption, QuestionOrigin, StudyDocument
-from app.medical.planner import COVERAGE_LABELS_TR, DEFAULT_ESTIMATES, StudyPlanner
+from app.medical.planner import COVERAGE_LABELS_TR, DEFAULT_ESTIMATES, MIN_ACTIVITY_MINUTES, StudyPlanner
 from app.medical.prerequisites import PrerequisiteGraph
 from app.medical.retrieval import Retriever
+from app.medical.review import rule_decision
 from app.medical.store import MedicalStore
 from app.medical.understanding import UnderstandingEngine
 
@@ -51,7 +52,7 @@ def question(question_id: str, topic_id: str, concept: str, *, origin: str = Que
     return Question(question_id=question_id, subject="physiology", stem=f"{question_id} sorusu?", options=options, correct_key="B", topic_id=topic_id, concept_ids=[concept], explanation="Açıklama.", origin=origin)
 
 
-def build(path=None, clock: Clock | None = None):
+def build(path=None, clock: Clock | None = None, scoring=None):
     store = MedicalStore(path)
     curriculum = Curriculum()
     concepts = default_concept_graph()
@@ -65,7 +66,7 @@ def build(path=None, clock: Clock | None = None):
         reminders.append((text, at))
         return f"rem-{len(reminders)}"
 
-    planner = StudyPlanner(store, curriculum, concepts, learning, understanding, graph, clock=tick, remind=remind)
+    planner = StudyPlanner(store, curriculum, concepts, learning, understanding, graph, scoring=scoring or rule_decision, clock=tick, remind=remind)
     planner.reminders = reminders  # type: ignore[attr-defined]
     return planner, store, learning, understanding, tick
 
@@ -73,6 +74,13 @@ def build(path=None, clock: Clock | None = None):
 def physiology_plan(planner: StudyPlanner, *, days: int = 10, minutes: int = 45, **fields):
     exam = (planner.today() + timedelta(days=days)).isoformat()
     return planner.create("Komite 2", exam, subjects=["physiology"], daily_minutes=minutes, **fields)
+
+
+def _chain(planner: StudyPlanner, plan_id: str) -> list[dict]:
+    """Every session of the first activity the plan lays out, in order."""
+    activities = planner.activities(plan_id)
+    first = activities[0]
+    return [item for item in activities if (item["topic_id"], item["kind"]) == (first["topic_id"], first["kind"])]
 
 
 # ---------------------------------------------------------------------------
@@ -99,8 +107,11 @@ def test_a_forty_five_minute_budget_is_respected_on_every_day() -> None:
 
 def test_untested_topics_stay_visible_beside_a_strong_one_and_reading_never_counts_as_mastery() -> None:
     planner, store, learning, _understanding, clock = build()
+    # An exam the student sat: both halves of the topic's evidence — the
+    # answers and the mastery rows the finish writes from them — rest on
+    # the one scoring decision, so neither can carry the verdict alone.
     for identifier in ("a", "b", "c"):
-        store.save_question(question(identifier, EXCITABLE, "physiology.action_potential"))
+        store.save_question(question(identifier, EXCITABLE, "physiology.action_potential", origin=QuestionOrigin.IMPORTED_EXAM))
     for identifier in ("a", "b", "c"):
         learning.record(store.get_question(identifier), True, chosen_key="B")
     store.save_attempt(ExamAttempt("att", "e1", started_at=clock.now, finished_at=clock.now, answers={identifier: QuestionAttempt(identifier, "B", True) for identifier in ("a", "b", "c")}))
@@ -140,6 +151,151 @@ def test_coverage_counts_answers_that_measured_something_and_no_others() -> None
     assert by_topic[TRANSPORT]["attempts"] == 0 and by_topic[TRANSPORT]["flags"]["assessed"] is False
 
 
+def test_coverage_asks_the_scoring_decision_once_per_question_however_often_it_was_answered() -> None:
+    """In the academy that decision is the reviewer's, which re-reads every
+    document a question cites. Coverage runs on coverage(), summary(),
+    replan() and today_view(), and one page load runs two of those, so a
+    paper answered again and again must not be weighed again and again."""
+    asked: list[str] = []
+
+    def counting(item):
+        asked.append(item.question_id)
+        return rule_decision(item)
+
+    planner, store, _learning, _understanding, clock = build(scoring=counting)
+    store.save_question(question("m1", MUSCLE, "physiology.sliding_filament", origin=QuestionOrigin.IMPORTED_EXAM))
+    for index in range(40):
+        store.save_attempt(ExamAttempt(f"att{index}", "e1", started_at=clock.now, finished_at=clock.now, answers={"m1": QuestionAttempt("m1", "B", True)}))
+    record = physiology_plan(planner)
+    asked.clear()
+
+    by_topic = {row["topic_id"]: row for row in planner.coverage(record["plan_id"])["topics"]}
+
+    assert by_topic[MUSCLE]["attempts"] == 40
+    assert asked == ["m1"], "one decision per question, not one per answered row"
+
+
+# ---------------------------------------------------------------------------
+# work longer than a day
+# ---------------------------------------------------------------------------
+
+
+def test_a_reading_longer_than_a_day_is_split_and_every_session_states_its_own_minutes() -> None:
+    """A session carries the reason the work exists plus one sentence about
+    itself. Told what the session before it had left over as well, a reading
+    cut across three days would end up reciting all three figures."""
+    planner, _store, _learning, _understanding, _clock = build()
+    record = physiology_plan(planner, minutes=7)
+
+    sessions = _chain(planner, record["plan_id"])
+
+    base = "Sınav kapsamında ama hiç açılmadı."
+    assert [item["estimate_minutes"] for item in sessions] == [7, 7, 6]
+    assert sessions[0]["reason"] == base + f" Tahmini {DEFAULT_ESTIMATES['read']} dk: bir güne sığmaz, birkaç oturuma yayılır; bu oturum 7 dk."
+    assert sessions[1]["reason"] == base + " Önceki oturumun devamı: bu oturum 7 dk, 6 dk sonraya kalıyor."
+    assert sessions[2]["reason"] == base + " Önceki oturumun devamı: bu oturum 6 dk."
+
+
+def test_no_session_of_a_split_is_shorter_than_the_shortest_activity_there_is() -> None:
+    """``MIN_ACTIVITY_MINUTES`` is the shortest thing this module is willing
+    to call an activity, and a cut has two sides. Where no cut clears it on
+    both, the work is left whole and reported as uncovered instead."""
+    planner, _store, _learning, _understanding, _clock = build()
+    record = physiology_plan(planner, minutes=19)
+
+    sessions = _chain(planner, record["plan_id"])
+
+    assert [item["estimate_minutes"] for item in sessions] == [15, 5]
+    assert all(day["planned_minutes"] <= 19 for day in planner.summary(record["plan_id"])["days"])
+
+    # Twelve minutes of questions over five-minute days: two sittings would
+    # need six minutes each and three would need fifteen minutes of work.
+    tight, _store, _learning, _understanding, _clock = build()
+    exam = (tight.today() + timedelta(days=12)).isoformat()
+    cramped = tight.create("Komite 3", exam, topic_ids=[EXCITABLE], daily_minutes=MIN_ACTIVITY_MINUTES)
+    tight.log_study(topic_id=EXCITABLE, activity="read", minutes=20)
+    summary = tight.replan(cramped["plan_id"], reason="okundu")
+
+    assert not tight.activities(cramped["plan_id"]), "nothing is quietly shortened to fit"
+    assert [(item["kind"], item["estimate_minutes"]) for item in summary["uncovered"]] == [("assess", DEFAULT_ESTIMATES["assess"])]
+
+
+def test_a_budget_that_leaves_an_undividable_scrap_ahead_still_plans_every_minute() -> None:
+    """Cutting the work a day at a time takes the whole budget and asks again
+    tomorrow, which on a six-minute day leaves eight minutes no later cut can
+    divide: offered for ever, planned never, while the days ahead stay empty.
+    The chain is settled in one go instead, so the floor costs nothing."""
+    planner, _store, _learning, _understanding, _clock = build()
+    record = physiology_plan(planner, minutes=6)
+    plan_id = record["plan_id"]
+
+    sessions = _chain(planner, plan_id)
+
+    summary = planner.summary(plan_id)
+    left = [item for item in summary["uncovered"] if (item["topic_id"], item["kind"]) == (sessions[0]["topic_id"], sessions[0]["kind"])]
+    assert [item["estimate_minutes"] for item in sessions] == [5, 5, 5, 5]
+    assert sum(item["estimate_minutes"] for item in sessions) == DEFAULT_ESTIMATES["read"] and left == []
+    assert all(item["estimate_minutes"] >= MIN_ACTIVITY_MINUTES for item in sessions)
+
+
+def test_work_no_day_can_hold_is_named_as_such_and_not_blamed_on_the_deadline() -> None:
+    """Overload is one reason work stays uncovered and the floor is another.
+    Left unsaid, the plan lists work as open on the same screen as a scope it
+    says fits, and the student is given no idea which number to change."""
+    planner, _store, _learning, _understanding, _clock = build()
+    exam = (planner.today() + timedelta(days=12)).isoformat()
+    record = planner.create("Komite 4", exam, topic_ids=[EXCITABLE], daily_minutes=MIN_ACTIVITY_MINUTES)
+    planner.log_study(topic_id=EXCITABLE, activity="read", minutes=20)
+    planner.replan(record["plan_id"], reason="okundu")
+
+    summary = planner.summary(record["plan_id"])
+
+    assert summary["fit"] is True and summary["overload"] is None
+    assert len(summary["uncovered"]) == 1
+    assert f"en kısa oturum {MIN_ACTIVITY_MINUTES} dk" in summary["uncovered_note"]
+    # Work that only ran out of days keeps the overload wording to itself.
+    fine, _store, _learning, _understanding, _clock = build()
+    assert fine.summary(physiology_plan(fine, days=1, minutes=45)["plan_id"])["uncovered_note"] == ""
+
+
+def test_the_half_of_a_split_still_owed_survives_the_replan_that_follows_it() -> None:
+    """Coverage reads topics, not sessions, so the day after the first half is
+    done the topic simply reads as studied. A second session shown to the
+    student, done as asked and then deleted with its minutes neither planned
+    nor reported is worse than one that was never offered."""
+    planner, _store, _learning, _understanding, clock = build()
+    record = physiology_plan(planner, minutes=10)
+    plan_id = record["plan_id"]
+    sessions = _chain(planner, plan_id)
+    assert [item["estimate_minutes"] for item in sessions] == [10, 10] and sessions[0]["remaining_minutes"] == 10
+
+    planner.start(sessions[0]["activity_id"])
+    # A budget change on the same day must not bury the half still owed either.
+    planner.replan(plan_id, reason="bütçe değişti")
+    assert [item["estimate_minutes"] for item in _chain(planner, plan_id)] == [10, 10]
+    planner.complete(sessions[0]["activity_id"], minutes=10)
+    clock.advance(days=1)
+
+    planner.today_view(plan_id)
+
+    after = _chain(planner, plan_id)
+    owed = [item for item in after if item["status"] == "planned"]
+    assert [item["estimate_minutes"] for item in owed] == [10], "the second half is still planned"
+    assert "Önceki oturumun devamı" in owed[0]["reason"]
+    # The topic has been opened by now and the plan's own coverage says so, so
+    # the sentence beside the session cannot still call it untouched.
+    state = {row["topic_id"]: row["state"] for row in planner.coverage(plan_id)["topics"]}[owed[0]["topic_id"]]
+    assert state == "studied_unassessed" and owed[0]["state"] == state
+    assert owed[0]["reason"].startswith("Okundu ama hiç soru çözülmedi") and "hiç açılmadı" not in owed[0]["reason"]
+
+    planner.start(owed[0]["activity_id"])
+    planner.complete(owed[0]["activity_id"], minutes=10)
+    clock.advance(days=1)
+    planner.today_view(plan_id)
+
+    assert not [item for item in _chain(planner, plan_id) if item["status"] in ("planned", "started")], "the chain ends by itself"
+
+
 def test_a_misconception_and_a_due_review_come_first_with_the_prerequisite_named() -> None:
     planner, store, learning, understanding, clock = build()
     store.save_question(question("q1", EXCITABLE, "physiology.action_potential"))
@@ -157,6 +313,26 @@ def test_a_misconception_and_a_due_review_come_first_with_the_prerequisite_named
     assert (TRANSPORT, "review") in kinds
     prerequisite = next((item for day in summary["days"] for item in day["activities"] if item["kind"] == "prerequisite"), None)
     assert prerequisite is not None and prerequisite["concept_id"] in ("physiology.resting_membrane_potential",) and "ön koşuluna dayanabilir" in prerequisite["reason"]
+
+    # Half a reading left over is work already begun, which is worth something
+    # and worth less than a repair. Handed the day outright it would push the
+    # misconception to tomorrow, and the student is told none of it.
+    carried, store, _learning, understanding, clock = build()
+    plan_id = physiology_plan(carried, minutes=10)["plan_id"]
+    half = carried.activities(plan_id)[0]
+    carried.start(half["activity_id"])
+    carried.complete(half["activity_id"], minutes=10)
+    clock.advance(days=1)
+    for identifier in ("q3", "q4"):
+        store.save_question(question(identifier, EXCITABLE, "physiology.action_potential"))
+        understanding.record_event(store.get_question(identifier), correct=False, answer_key="A", confidence="sure")
+
+    today = carried.replan(plan_id)["days"][0]["activities"]
+
+    assert half["remaining_minutes"] == 10, "a half-session is in the pool"
+    assert today[0]["kind"] == "repair" and today[0]["topic_id"] == EXCITABLE
+    owed = [item for item in carried.activities(plan_id) if item["topic_id"] == half["topic_id"] and item["status"] == "planned"]
+    assert [item["estimate_minutes"] for item in owed] == [10], "and it is still planned, only not first"
 
 
 # ---------------------------------------------------------------------------

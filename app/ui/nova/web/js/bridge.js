@@ -163,6 +163,8 @@ const DemoBridge = {
     };
   },
   async submit_command(text) {
+    NOVA.push({ kind: "busy",
+                payload: { busy: true, status: "PROCESSING", text, spoken: false } });
     setTimeout(() => NOVA.push({ kind: "tool_activity", payload: { phase: "started",
       execution_id: "demo-x", tool: "get_windows_system_info", operation: null, at: Date.now() } }), 400);
     setTimeout(() => NOVA.push({ kind: "tool_activity", payload: { phase: "finished",
@@ -556,7 +558,10 @@ const PUSH = {
      same bridge and this page has no bubble for it. State.busy is the tell
      - the page that sent the message set it before the call, so only the
      watching one draws the question and the thinking mark here. A spoken
-     turn is left alone: its voice loop already wrote the line. */
+     turn is left alone: its voice loop already wrote the line. Nobody on
+     this surface typed anything, so the reader keeps their place and the
+     "yeni mesaj" pill does the telling; busy:false closes what this
+     opened, because no other push on this page ever will. */
   busy({ busy, status, text, spoken }) {
     if (busy && text && !spoken && !State.busy) {
       const message = { role: "user", text, at: Date.now() };
@@ -565,10 +570,11 @@ const PUSH = {
       hideChatEmpty();
       updateChat(() => {
         appendMessage($("#chat-list"), message, false);
-        Activity.beginTurn(text);
+        State.watchedTurn = Activity.beginTurn(text);
         showThinking();
-      }, { force: true });
+      });
     }
+    if (!busy) closeWatchedTurn();
     setBusy(!!busy, status);
     renderHomeSession();
   },

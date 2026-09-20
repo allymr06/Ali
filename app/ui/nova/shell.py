@@ -686,7 +686,13 @@ class NovaBridge:
         # Re-entrant on purpose: a background operation can finish before
         # its completion callback is registered, in which case
         # concurrent.futures runs the callback synchronously on the thread
-        # that is still holding this lock inside submit_command/start_voice.
+        # that is still holding this lock inside start_voice or the routine
+        # runner, and that callback pushes to the window. Both of them keep
+        # the lock across their submission, so a window round-trip under it
+        # is rare but real; submit_command is the one that hands its
+        # coroutine over with the lock released, because its bracket push
+        # blocks on WebView2 every single turn while done() waits on this
+        # same lock from the core's event-loop thread.
         self._lock = RLock()
         self._push_lock = Lock()
         # The window's UI thread, asked of the window itself (see
@@ -694,6 +700,8 @@ class NovaBridge:
         # instead of evaluated, or the thread would wait for the JavaScript
         # result it has to deliver.
         self._ui_thread_id: int | None = None
+        # False until the form itself marshalled the answer back.
+        self._ui_thread_confirmed = False
         # Pushes carry news, so no two of them are interchangeable; the
         # counter keeps the worker's dedupe from mistaking one for another.
         self._push_serial = itertools.count()
@@ -712,6 +720,9 @@ class NovaBridge:
         self._stream_latest: str = ""
         self._stream_last_flush = 0.0
         self._command_future: Future[Any] | None = None
+        # A turn claimed by submit_command but not yet handed to the runner;
+        # see :meth:`_command_active`.
+        self._command_opening = False
         self._voice_future: Future[Any] | None = None
         self._approvals: dict[str, Future[bool]] = {}
         # Other surfaces (the mobile companion) watch the same approval
@@ -757,21 +768,61 @@ class NovaBridge:
         callback and then drops, so the ident read here is usually a thread
         that is already gone by the time :meth:`_push` compares against it.
         The window is asked instead: an operation marshalled through the
-        native form runs on the message loop itself, and that is the thread
-        worth remembering. Without a native form — the tests, any backend
-        that is not WinForms — the calling thread is the only answer there
-        is, and it is the one the blocking ``closing`` event arrives on.
+        native form runs on the message loop itself, and that is the only
+        answer taken as final. Without a native form — the tests, any
+        backend that is not WinForms — the calling thread is the only
+        answer there is, and it is the one the blocking ``closing`` event
+        arrives on.
+
+        Every other answer stays provisional, because WinForms
+        ``Control.InvokeRequired`` is false on *every* thread while no
+        handle exists anywhere in the parent chain: a window event that
+        arrives before the handle would otherwise brand a throwaway thread
+        as the message loop for the rest of the session. Such an answer is
+        still taken — a guess beats no guard at all — but nothing is
+        marshalled for it, so the unconditional assignment above is the
+        whole defence: every later event overwrites the unconfirmed ident,
+        and deleting that overwrite brings the permanent wrong ident back.
+        The form is asked only by an event it answers ``InvokeRequired``
+        true for, which cannot happen before the handle exists; that one
+        marshalled answer settles the ident for good, and from then on only
+        a thread the form answers false for rewrites it, which once the
+        handle exists is the message loop itself.
+
+        ``Control.Invoke`` has no timeout, so the marshalled ask blocks for
+        as long as the message loop is stopped while the handle still
+        lives; a pywebview backend whose event thread is not a daemon can
+        pin the process there.
         """
         window = self._window
         native = getattr(window, "native", None)
         if native is None or not getattr(native, "InvokeRequired", False):
             self._ui_thread_id = threading.get_ident()
-        elif self._ui_thread_id is None:
-            try:
-                _run_on_ui_thread(window, self._note_ui_thread)
-            except Exception:
-                # The form is on its way out; the old ident is no worse.
-                pass
+            return
+        if self._ui_thread_confirmed:
+            return
+
+        def confirm() -> None:
+            # Reached on whatever thread the form marshalled to, so the form
+            # is asked once more there: an ask that was never marshalled at
+            # all would otherwise confirm the asking thread.
+            if getattr(native, "InvokeRequired", False):
+                raise RuntimeError("the window did not marshal the question")
+            self._ui_thread_id = threading.get_ident()
+            self._ui_thread_confirmed = True
+
+        try:
+            _run_on_ui_thread(window, confirm)
+        except Exception as exc:
+            # Nothing was learned, and the guard in _push is only as good as
+            # this ident: say so instead of leaving the application without
+            # one and no trace of why.
+            self._record_ui_event(
+                "window.ui_thread_unknown",
+                "The window did not say which thread its message loop runs on.",
+                error=type(exc).__name__,
+                ident=self._ui_thread_id,
+            )
 
     def _defer(self, key: str, job: Callable[[], None]) -> bool:
         """Run ``job`` off the UI thread; ``False`` if one is already queued.
@@ -1183,104 +1234,110 @@ class NovaBridge:
             blocked = (
                 self._closing
                 or self.controller.paused
-                or _active(self._command_future)
+                or self._command_active()
                 or _active(self._routine_future)
                 or self.controller.state.busy
             )
-            if blocked:
+            if not blocked:
+                stored_conversation = routine.get("conversation_id")
                 try:
-                    routines.defer(routine_id, ROUTINE_DEFER_SECONDS)
-                except Exception:
-                    pass
-                self._record_ui_event(
-                    "routine.deferred",
-                    "A due routine waits because the desktop is paused or busy.",
-                    routine_id=routine_id,
+                    context = (
+                        Context(conversation_id=UUID(str(stored_conversation)))
+                        if stored_conversation
+                        else Context()
+                    )
+                except ValueError:
+                    context = Context()
+                request = Request(
+                    prompt,
+                    source=RequestSource.SYSTEM,
+                    metadata={"routine_id": routine_id, "routine_name": name},
                 )
-                return
-            stored_conversation = routine.get("conversation_id")
-            try:
-                context = (
-                    Context(conversation_id=UUID(str(stored_conversation)))
-                    if stored_conversation
-                    else Context()
-                )
-            except ValueError:
-                context = Context()
-            request = Request(
-                prompt,
-                source=RequestSource.SYSTEM,
-                metadata={"routine_id": routine_id, "routine_name": name},
-            )
-            started = time.monotonic()
+                started = time.monotonic()
 
-            def done(future: Future[Any]) -> None:
-                with self._lock:
-                    if self._routine_future is future:
-                        self._routine_future = None
-                if future.cancelled():
-                    return
-                try:
-                    response = future.result()
-                except Exception as exc:
-                    outcome, text = "failed", (
-                        f"Rutin çalıştırılamadı ({type(exc).__name__})."
-                    )
-                    severity = "error"
-                else:
-                    outcome = str(
-                        _message_field(response, "metadata").get("outcome", "completed")
-                        if isinstance(_message_field(response, "metadata"), Mapping)
-                        else "completed"
-                    )
-                    text = str(_message_field(response, "text") or "").strip()
-                    severity = "info" if outcome == "completed" else "warning"
-                try:
-                    routines.record_run(
-                        routine_id,
+                def done(future: Future[Any]) -> None:
+                    with self._lock:
+                        if self._routine_future is future:
+                            self._routine_future = None
+                    if future.cancelled():
+                        return
+                    try:
+                        response = future.result()
+                    except Exception as exc:
+                        outcome, text = "failed", (
+                            f"Rutin çalıştırılamadı ({type(exc).__name__})."
+                        )
+                        severity = "error"
+                    else:
+                        metadata = _message_field(response, "metadata")
+                        outcome = str(
+                            metadata.get("outcome", "completed")
+                            if isinstance(metadata, Mapping)
+                            else "completed"
+                        )
+                        text = str(_message_field(response, "text") or "").strip()
+                        severity = "info" if outcome == "completed" else "warning"
+                    try:
+                        routines.record_run(
+                            routine_id,
+                            outcome=outcome,
+                            summary=text,
+                            conversation_id=str(context.conversation_id),
+                        )
+                    except Exception:
+                        pass
+                    self._record_ui_event(
+                        "routine.completed",
+                        "A routine finished.",
+                        routine_id=routine_id,
                         outcome=outcome,
-                        summary=text,
-                        conversation_id=str(context.conversation_id),
+                        seconds=round(time.monotonic() - started, 3),
                     )
-                except Exception:
-                    pass
-                self._record_ui_event(
-                    "routine.completed",
-                    "A routine finished.",
-                    routine_id=routine_id,
-                    outcome=outcome,
-                    seconds=round(time.monotonic() - started, 3),
-                )
-                self._publish(
-                    "task",
-                    f"Rutin · {name}",
-                    text or "Rutin tamamlandı.",
-                    severity=severity,
-                    target="chat",
-                    reference=routine_id,
-                    data={
-                        "routine_id": routine_id,
-                        "conversation_id": str(context.conversation_id),
-                        "outcome": outcome,
-                    },
-                    alert=True,
-                )
-                self._push_snapshot()
+                    self._publish(
+                        "task",
+                        f"Rutin · {name}",
+                        text or "Rutin tamamlandı.",
+                        severity=severity,
+                        target="chat",
+                        reference=routine_id,
+                        data={
+                            "routine_id": routine_id,
+                            "conversation_id": str(context.conversation_id),
+                            "outcome": outcome,
+                        },
+                        alert=True,
+                    )
+                    self._push_snapshot()
 
-            try:
-                self._routine_future = self.controller.submit_background(
-                    self.controller.application.engine.handle(
-                        request,
-                        context,
-                        approval_callback=self._request_approval,
-                    ),
-                    done,
-                )
-            except RuntimeError:
                 try:
-                    routines.defer(routine_id, ROUTINE_DEFER_SECONDS)
-                except Exception:
-                    pass
+                    self._routine_future = self.controller.submit_background(
+                        self.controller.application.engine.handle(
+                            request,
+                            context,
+                            approval_callback=self._request_approval,
+                        ),
+                        done,
+                    )
+                except RuntimeError:
+                    try:
+                        routines.defer(routine_id, ROUTINE_DEFER_SECONDS)
+                    except Exception:
+                        pass
+        if blocked:
+            # Reported with the lock released: the ledger calls its
+            # listeners on the recording thread, so this diagnostic travels
+            # straight into a blocking window round-trip, and the very turn
+            # the routine is waiting for finishes by taking this same lock.
+            try:
+                routines.defer(routine_id, ROUTINE_DEFER_SECONDS)
+            except Exception:
+                pass
+            self._record_ui_event(
+                "routine.deferred",
+                "A due routine waits because the desktop is paused or busy.",
+                routine_id=routine_id,
+            )
+            return
         self._record_ui_event(
             "routine.started", "A routine started.", routine_id=routine_id
         )
@@ -2239,6 +2296,15 @@ class NovaBridge:
     # ------------------------------------------------------------------
     # Chat
     # ------------------------------------------------------------------
+    def _command_active(self) -> bool:
+        """A chat turn is running, or is on its way to the runner.
+
+        Read under :attr:`_lock`. ``_command_opening`` covers the gap where
+        submit_command has claimed the turn but leaves the lock to raise the
+        busy bracket, which blocks until the browser answers.
+        """
+        return self._command_opening or _active(self._command_future)
+
     def submit_command(self, text: str, spoken: Any = False) -> dict[str, Any]:
         """One chat turn. ``spoken`` marks a transcript (the phone's voice
         loop): the record and the core see it as a voice request."""
@@ -2263,6 +2329,12 @@ class NovaBridge:
                     self._command_future = None
             self._flush_stream()
             if future.cancelled():
+                # No answer exists, so none is reported; the bracket still
+                # closes, because a surface that only watched the turn has
+                # no other way to learn that it ended. During shutdown the
+                # push is already a no-op — _ready is false before anything
+                # is cancelled — so this is the invariant, not a new frame.
+                self._push("busy", {"busy": False, "status": READY_STATUS})
                 return
             try:
                 message = future.result()
@@ -2281,17 +2353,22 @@ class NovaBridge:
             self._push("busy", {"busy": False, "status": READY_STATUS})
             self._push_snapshot()
 
-        # The busy check and the submission happen under one lock, so two
-        # rapid sends cannot both slip past the guard before the runner
-        # marks the controller busy.
+        # The turn is claimed under the lock, so two rapid sends cannot both
+        # slip past the guard before the runner marks the controller busy.
+        # The work below happens with the lock released: a push blocks until
+        # WebView2 answers and done() waits on this lock from the core's
+        # event-loop thread, so an immediate answer — the direct clock
+        # reply, a cached one — would park the core on a browser round-trip.
         with self._lock:
             if self._closing:
                 return {"ok": False, "error": "JARVIS kapanıyor."}
-            if _active(self._command_future) or self.controller.state.busy:
+            if self._command_active() or self.controller.state.busy:
                 return {
                     "ok": False,
                     "error": "JARVIS şu an başka bir istek işliyor.",
                 }
+            self._command_opening = True
+        try:
             # Every surface has to learn that a turn started, not only the
             # one that started it: a phone submit reaches this method through
             # the same bridge and otherwise leaves the desktop sitting at
@@ -2307,16 +2384,32 @@ class NovaBridge:
                     "spoken": spoken is True,
                 },
             )
-            try:
-                self._command_future = self.controller.submit_background(
-                    self.controller.submit_command(
-                        normalized, stream_callback=stream, source=source
-                    ),
-                    done,
-                )
-            except RuntimeError as exc:
-                self._push("busy", {"busy": False, "status": READY_STATUS})
-                return {"ok": False, "error": f"İstek gönderilemedi ({exc})."}
+            future = self.controller.submit_background(
+                self.controller.submit_command(
+                    normalized, stream_callback=stream, source=source
+                ),
+                done,
+            )
+            with self._lock:
+                # done() may have run already and found nothing to clear;
+                # the future it belongs to is recorded either way, before
+                # the claim is dropped.
+                self._command_future = future
+                if self._closing:
+                    # _shutdown ran while the bracket push was waiting on
+                    # the browser. It cancels what it finds and never looks
+                    # again, and this turn was not recorded yet, so it has
+                    # to cancel itself or outlive the window.
+                    future.cancel()
+                    return {"ok": False, "error": "JARVIS kapanıyor."}
+        except RuntimeError as exc:
+            # Still claimed: the closing half of the bracket cannot be
+            # overtaken by the next turn's opening half.
+            self._push("busy", {"busy": False, "status": READY_STATUS})
+            return {"ok": False, "error": f"İstek gönderilemedi ({exc})."}
+        finally:
+            with self._lock:
+                self._command_opening = False
         return {"ok": True}
 
     def _flush_stream(self) -> None:
@@ -2333,7 +2426,7 @@ class NovaBridge:
     def _conversation_switch_blocked(self) -> str | None:
         if self._closing:
             return "JARVIS kapanıyor."
-        if _active(self._command_future) or self.controller.state.busy:
+        if self._command_active() or self.controller.state.busy:
             return "Yanıt tamamlanmadan konuşma değiştirilemez."
         if _active(self._voice_future):
             return "Sesli oturum açıkken konuşma değiştirilemez."

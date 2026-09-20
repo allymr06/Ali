@@ -413,6 +413,7 @@ const State = {
   voiceLevel: 0,
   core: "offline",          // see Presence in presence.js
   pendingEl: null,          // streaming assistant message
+  watchedTurn: null,        // turn a busy push opened here, not this page
   approvals: [],            // session approval log
   diagnosticEvents: [],     // live ledger tail
   requestDurations: [],     // real per-request seconds from request.completed

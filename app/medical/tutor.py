@@ -569,7 +569,13 @@ class MedicalTutor:
         if attempt is not None:
             record_answer(attempt, question, key)
             self._store.save_attempt(attempt)
-        if result is not None:
+        # A chat quiz may hold study-only items — the bank picker fills a short
+        # paper with them when the student asked for them (``include_unscored``)
+        # — and they are answered and explained like the rest. They move no
+        # mastery: the one scoring decision says an answer to a question no
+        # source backs is work done, never evidence of knowing, and the planner
+        # reads those rows back as coverage.
+        if result is not None and self._generator.scoring(question).get("scored", False):
             self._learning.record(question, result, chosen_key=key)
         feedback = format_feedback_text(question, key)
         answered = dict(quiz.get("answered") or {})

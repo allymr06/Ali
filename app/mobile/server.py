@@ -130,6 +130,22 @@ def _dumps(payload: Any) -> bytes:
     return json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
 
 
+class ArchivedConversationError(ValueError):
+    """The thread is archived, so nothing may be written into it.
+
+    A ValueError, so every caller that already maps one to a Turkish
+    refusal keeps working - and its own type, so the conversation routes
+    can tell it apart from the other ValueError that lands there, a
+    malformed conversation id, which is a different kind of wrong.
+    """
+
+
+def _status_value(conversation: Any) -> str:
+    """A conversation's status as the wire spells it, enum or plain string."""
+    status = getattr(conversation, "status", None)
+    return str(getattr(status, "value", status))
+
+
 @dataclass
 class TurnRecord:
     """One message from a phone and what became of it.
@@ -206,6 +222,9 @@ class MobileServer:
         watchers = getattr(bridge, "_approval_watchers", None)
         if isinstance(watchers, list):
             watchers.append(self._on_approval)
+        statuses = getattr(controller, "conversation_status_watchers", None)
+        if isinstance(statuses, list):
+            statuses.append(self._on_conversation_status)
 
     # ------------------------------------------------------------ lifecycle
     def _compute_stamp(self) -> str:
@@ -262,6 +281,9 @@ class MobileServer:
         watchers = getattr(self.bridge, "_approval_watchers", None)
         if isinstance(watchers, list) and self._on_approval in watchers:
             watchers.remove(self._on_approval)
+        statuses = getattr(self.controller, "conversation_status_watchers", None)
+        if isinstance(statuses, list) and self._on_conversation_status in statuses:
+            statuses.remove(self._on_conversation_status)
 
     # -------------------------------------------------------------- channels
     def subscribe(self, session_id: str) -> queue.Queue[Any]:
@@ -290,6 +312,17 @@ class MobileServer:
                 item.put_nowait((kind, payload))
             except queue.Full:
                 pass
+
+    def _on_conversation_status(self, conversation_id: str, status: str) -> None:
+        """Say on the channel that the desktop closed or reopened a thread.
+
+        A phone sitting on that very thread reads a status only when it
+        (re)connects, so without this it keeps a live composer over a
+        conversation the PC will no longer take messages into, and hears
+        of it from the refusal of one already sent. Every paired phone is
+        told; the one whose screen holds another thread ignores it.
+        """
+        self.emit(None, "conversation_status", {"conversation_id": str(conversation_id), "status": str(status)})
 
     def broadcast_push(self, kind: str, payload: Any) -> None:
         """Mirror one desktop push (window.NOVA.push) to every phone."""
@@ -548,12 +581,12 @@ class MobileServer:
             except (KeyError, ValueError):
                 conversation = None
             if conversation is not None:
-                if getattr(conversation.status, "value", conversation.status) != "active":
+                if _status_value(conversation) != "active":
                     # The phone still shows this thread as the open one.
                     # Filing the message in a fresh conversation would
                     # leave the user writing where nobody is reading, so
                     # refuse exactly as tapping the archived thread does.
-                    raise ValueError(ARCHIVED_MESSAGE)
+                    raise ArchivedConversationError(ARCHIVED_MESSAGE)
                 if chosen != session.conversation_id:
                     self.store.set_conversation(session.session_id, str(chosen))
                 return str(chosen)
@@ -570,11 +603,19 @@ class MobileServer:
         return rows
 
     def messages(self, conversation_id: str) -> dict[str, Any]:
-        title, created, messages = self.controller.conversation_export(str(conversation_id))
+        # /api/state answers through here on every reconnection, so the
+        # whole answer comes out of one read of the conversation.
+        title, created, status, messages = self.controller.conversation_snapshot(str(conversation_id))
         return {
             "conversation_id": str(conversation_id),
             "title": title,
             "created": created,
+            # The phone locks its composer on anything but "active".
+            # This is the status the page reads when it (re)connects;
+            # _on_conversation_status puts every later change on the
+            # open channel, so an archived thread is refused before a
+            # message is typed rather than after it has been sent.
+            "status": status,
             "messages": [
                 {"role": message.role, "text": message.text, "metadata": dict(message.metadata)}
                 for message in messages
@@ -584,15 +625,20 @@ class MobileServer:
     def select_conversation(self, session: DeviceSession, conversation_id: str) -> dict[str, Any]:
         engine = self.controller.application.conversation_engine
         conversation = engine.get(UUID(str(conversation_id)))  # KeyError/ValueError bubble up
-        if getattr(conversation.status, "value", conversation.status) != "active":
-            raise ValueError(ARCHIVED_MESSAGE)
+        if _status_value(conversation) != "active":
+            raise ArchivedConversationError(ARCHIVED_MESSAGE)
         self.store.set_conversation(session.session_id, str(conversation_id))
         return self.messages(str(conversation_id))
 
     def new_conversation(self, session: DeviceSession) -> dict[str, Any]:
         created = self.controller.application.conversation_engine.create()
         self.store.set_conversation(session.session_id, str(created.conversation_id))
-        return {"conversation_id": str(created.conversation_id), "title": "Yeni konuşma", "messages": []}
+        return {
+            "conversation_id": str(created.conversation_id),
+            "title": "Yeni konuşma",
+            "status": _status_value(created),
+            "messages": [],
+        }
 
     # ----------------------------------------------------------------- tasks
     def tasks(self) -> list[dict[str, Any]]:
@@ -643,7 +689,11 @@ class MobileServer:
         if session.conversation_id:
             try:
                 summary = self.messages(session.conversation_id)
-                conversation = {"conversation_id": summary["conversation_id"], "title": summary["title"]}
+                conversation = {
+                    "conversation_id": summary["conversation_id"],
+                    "title": summary["title"],
+                    "status": summary["status"],
+                }
             except (KeyError, ValueError):
                 conversation = None
         return {
@@ -676,7 +726,12 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
         protocol_version = "HTTP/1.1"
         server_version = "JARVIS-Mobile"
         sys_version = ""
-        # Whether this request's body has left the socket - see _drain_body.
+        # A declared body that stops arriving would otherwise park this
+        # thread with no deadline at all; the socket ends the request
+        # instead. Long enough that a slow upload over Tailscale finishes.
+        timeout = 30
+        # Whether this request's body is some response's to swallow - see
+        # _claim_body.
         _body_consumed = False
 
         # ----------------------------------------------------------- utils
@@ -771,37 +826,65 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
             encoding = (self.headers.get("Transfer-Encoding") or "").strip().lower()
             return bool(encoding) and encoding != "identity"
 
-        def _drain_body(self) -> None:
-            """Swallow a request body no handler asked for.
+        def _claim_body(self) -> int:
+            """How many unread body bytes this response has to swallow.
 
-            Keep-alive is on, so whatever a POST declared and nobody read
-            stays in the socket and the next request on that connection
-            is parsed out of the leftovers. A refusal has to finish
-            reading what it refused. When the body is larger than this
-            server ever accepts, or its length is not stated at all,
-            there is no safe place to stop and the connection ends.
+            Header arithmetic only, and it has to be: whether the body can
+            be drained at all decides whether the connection survives, and
+            that goes out in the response headers, ahead of the draining
+            itself. Returns -1 when there is no safe place to stop - a
+            length beyond what this server ever accepts, a length that is
+            not a number, or an end marked in the stream rather than in a
+            header. Any method may declare a body, GET included, so every
+            answer that goes out through _send claims one whatever the
+            method was. The event stream is the one answer that does not:
+            it writes its own headers and ends the connection, so nothing
+            it leaves in the socket is ever parsed as a request.
             """
             if self._body_consumed:
-                return
+                return 0
             self._body_consumed = True
-            if self.command in {"GET", "HEAD"}:
-                return
             try:
                 remaining = int(self.headers.get("Content-Length") or 0)
             except ValueError:
-                remaining = -1
+                return -1
             if remaining < 0 or remaining > MAX_DRAIN_BYTES or self._chunked():
-                self.close_connection = True
-                return
+                return -1
+            return remaining
+
+        def _drain_body(self, remaining: int) -> None:
+            """Swallow a request body no handler asked for.
+
+            Keep-alive is on, so whatever a request declared and nobody
+            read stays in the socket and the next request on that
+            connection is parsed out of the leftovers - the phone's
+            following tap answers with someone else's garbage.
+            """
             while remaining > 0:
-                chunk = self.rfile.read(min(remaining, 65536))
+                try:
+                    chunk = self.rfile.read(min(remaining, 65536))
+                except OSError:
+                    chunk = b""  # the socket's own deadline, or a dead peer
                 if not chunk:
+                    # The rest never arrived. The answer is already out, so
+                    # the only thing left is to stop reusing this socket.
                     self.close_connection = True
                     return
                 remaining -= len(chunk)
 
         def _send(self, status: int, body: bytes, content_type: str, extra: dict[str, str] | None = None) -> None:
-            self._drain_body()
+            # The answer goes out before the body it answers is read. A
+            # refusal the request has already earned - no session, wrong
+            # origin, no such route - must not wait on bytes the caller may
+            # never send. When the rest of the body does arrive, draining
+            # it afterwards leaves the connection in step for the request
+            # that follows; when it does not, the answer is already out
+            # and dropping the socket is all that is left - too late to
+            # have said "Connection: close", so a request pipelined behind
+            # the stalled body is lost rather than answered.
+            pending = self._claim_body()
+            if pending < 0:
+                self.close_connection = True
             self.send_response(status)
             if self.close_connection:
                 self.send_header("Connection", "close")
@@ -814,6 +897,8 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(body)
+            if pending > 0:
+                self._drain_body(pending)
 
         def _json(self, status: int, payload: dict[str, Any], extra: dict[str, str] | None = None) -> None:
             headers = {"Cache-Control": "no-store"}
@@ -993,6 +1078,12 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
                         self._json(HTTPStatus.METHOD_NOT_ALLOWED, {"ok": False, "error": "Yöntem desteklenmiyor."})
                 except KeyError:
                     self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Konuşma bulunamadı."})
+                except ArchivedConversationError as exc:
+                    # The same refusal /api/chat gives, under the same code:
+                    # the thread exists and is readable, it just will not be
+                    # written into. A malformed id is the other ValueError
+                    # that lands here, and it stays a 400.
+                    self._json(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc)})
                 except ValueError as exc:
                     self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc) or "Konuşma kimliği geçersiz."})
                 return

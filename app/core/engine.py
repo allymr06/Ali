@@ -78,6 +78,26 @@ ACTION_MODEL_COOLDOWN_MAX_SECONDS = 3600.0
 REQUEST_AUGMENTATION_TIMEOUT_SECONDS = 2.0
 REQUEST_AUGMENTATION_BUDGET_FRACTION = 0.25
 
+# What the user is told when a call stops at the approval gate. The gate holds
+# the pending call only, so the machine counts as untouched just when nothing
+# else reached the executor this turn. Success is the wrong test: a tool that
+# ran and then failed is the case most likely to have left a half-finished
+# side effect behind, and the core has not verified otherwise.
+APPROVAL_REQUIRED_NOTHING_RAN = (
+    "Bu işlem açık onay gerektiriyor; hiçbir değişiklik yapılmadı."
+)
+APPROVAL_REQUIRED_AFTER_WORK = (
+    "Bu işlem açık onay gerektiriyor ve yapılmadı; daha önce çalıştırılan "
+    "işlemler tamamlanmış olabilir."
+)
+APPROVAL_DENIED_NOTHING_RAN = (
+    "İşlem iptal edildi; bilgisayarında değişiklik yapılmadı."
+)
+APPROVAL_DENIED_AFTER_WORK = (
+    "Reddedilen işlem yapılmadı; daha önce çalıştırılan işlemler tamamlanmış "
+    "olabilir."
+)
+
 
 _TURKISH_DAYS = (
     "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar",
@@ -1867,27 +1887,29 @@ class CoreEngine:
             and verified_tools == len(tool_results)
         )
         assurance = summarize_assurance(tool_results, outcome=outcome)
+        gated_tool_calls = sum(
+            1
+            for result in tool_results
+            if isinstance(result.data, dict)
+            and result.data.get("approval_status") in {"required", "denied"}
+        )
+        # Reaching the executor is what may touch the machine; whether the
+        # call then succeeded, failed or was blocked is not something the
+        # core can turn into a promise about the disk.
+        other_tools_ran = executed_tool_calls > gated_tool_calls
 
         if outcome == "approval_required":
-            # The gate stops the pending call, not the calls that already ran
-            # in this turn, so only promise an untouched machine when nothing
-            # actually succeeded.
-            response_text = (
-                "Bu işlem açık onay gerektiriyor ve yapılmadı; bu turda daha "
-                "önce çalışan işlemler tamamlanmış olabilir."
-                if successful_tools
-                else "Bu işlem açık onay gerektiriyor; hiçbir değişiklik "
-                "yapılmadı."
-            )
+            if other_tools_ran:
+                response_text = APPROVAL_REQUIRED_AFTER_WORK
+            else:
+                response_text = APPROVAL_REQUIRED_NOTHING_RAN
             provider_name = provider.name
             model_name = getattr(model_response, "model", None)
         elif outcome == "approval_denied":
-            response_text = (
-                "Reddedilen işlem yapılmadı; daha önce ayrı ayrı onayladığın "
-                "işlemler tamamlanmış olabilir."
-                if successful_tools
-                else "İşlem iptal edildi; bilgisayarında değişiklik yapılmadı."
-            )
+            if other_tools_ran:
+                response_text = APPROVAL_DENIED_AFTER_WORK
+            else:
+                response_text = APPROVAL_DENIED_NOTHING_RAN
             provider_name = provider.name
             model_name = getattr(model_response, "model", None)
         elif model_response is None:

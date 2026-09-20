@@ -137,9 +137,10 @@ listen.
 
 - **Sohbet**: text chat with streamed replies, switch or start
   conversations - the same records the desktop lists.
-- **Görevler**: existing tasks with status and steps; pause / resume /
-  cancel only when the task's state allows it; permission approvals for
-  the exact pending action (a reconnect never approves anything).
+- **Görevler**: existing tasks with status, steps and, when a step or a
+  task fails, the reason in Turkish; pause / resume / cancel only when
+  the task's state allows it; permission approvals for the exact
+  pending action (a reconnect never approves anything).
 - **Ayarlar**: connection details, this device's session, logout.
 
 Not in this release, by design: voice, wake words, push notifications,
@@ -154,6 +155,11 @@ camera, file uploads, the Medical Academy screens, a native APK.
   gönder**; it never resends on its own.
 - "JARVIS masaüstünde duraklatıldı" - the desktop pause applies to the
   phone too.
+- "Arşivde — masaüstünden çıkar" - the phone cannot write into an
+  archived conversation; the desktop is what reopens it, and the message
+  is never quietly filed in a different thread instead. Archiving on the
+  desktop locks the composer on a connected phone at once, not at its
+  next reconnection.
 
 ## Troubleshooting
 

@@ -502,6 +502,29 @@ def test_a_prepared_quiz_can_be_answered_in_chat_when_it_lands(build) -> None:
     assert "Soru 2" in augmentation.direct_response
 
 
+def test_a_question_the_model_wrote_from_no_source_is_graded_but_moves_no_mastery(build) -> None:
+    """The bank only offers a chat quiz items the scoring policy counts, so
+    a quiz it cannot fill is written by the model — and with no document in
+    scope those questions cite nothing. They are asked, graded and explained
+    like the rest; what they may not do is move mastery, because the planner
+    reads those rows back as proof the topic was measured."""
+    gateway = HeldGateway(generated(3))
+    academy = build(gateway)
+
+    async def turn():
+        await within_the_augmentation_budget(academy, "anatomiden beni sina", spoken=True)
+        gateway.release.set()
+        await settle(academy)
+
+    asyncio.run(turn())
+    asked = academy.store.get_question(academy.sessions.chat_quiz_state()["question_ids"][0])
+    augmentation = plan(academy, asked.correct_key)
+
+    assert not asked.references and academy.scoring_of(asked)["scored"] is False
+    assert augmentation.metadata["correct"] is True and "Soru 2" in augmentation.direct_response
+    assert academy.learning.summary()["attempts"] == 0
+
+
 def test_a_chat_exam_that_needs_the_model_does_not_wait_for_it_either(build) -> None:
     gateway = HeldGateway(generated(10))
     academy = build(gateway)

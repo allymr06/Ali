@@ -520,3 +520,83 @@ def test_sensitive_tool_content_is_dropped_once_the_turn_is_answered():
     assert not leaked()
     engine.prepare_request(Request("peki şimdi ne yapayım"), context)
     assert not leaked()
+
+
+def test_sensitive_override_stays_inside_the_turn_that_produced_it():
+    store = InMemoryConversationStore()
+    engine = ConversationEngine(store)
+    context = Context()
+    first = Request("saat kaç")
+    engine.prepare_request(first, context)
+    engine.add_assistant_tool_calls(
+        context,
+        request_id=first.request_id,
+        content=None,
+        tool_calls=[{"id": "call_1", "function": {"name": "clock"}}],
+    )
+    engine.add_tool_result(
+        context,
+        request_id=first.request_id,
+        tool_call_id="call_1",
+        content="14:05",
+    )
+    engine.complete_response(
+        first,
+        Response("Saat 14:05.", request_id=first.request_id),
+        context,
+    )
+
+    # A provider is free to hand out the same tool call id in a later turn.
+    second = Request("panoyu oku")
+    engine.prepare_request(second, context)
+    engine.add_assistant_tool_calls(
+        context,
+        request_id=second.request_id,
+        content=None,
+        tool_calls=[{"id": "call_1", "function": {"name": "clipboard"}}],
+    )
+    engine.add_tool_result(
+        context,
+        request_id=second.request_id,
+        tool_call_id="call_1",
+        content="Sensitive output was not retained.",
+        provider_content="çok gizli pano metni",
+    )
+
+    assert [
+        message["content"]
+        for message in context.values["messages"]
+        if message.get("tool_call_id") == "call_1"
+    ] == ["14:05", "çok gizli pano metni"]
+
+
+def _engine_holding_sensitive_output() -> tuple[ConversationEngine, Context]:
+    engine = ConversationEngine(InMemoryConversationStore())
+    context = Context()
+    request = Request("panoyu oku")
+    engine.prepare_request(request, context)
+    engine.add_assistant_tool_calls(
+        context,
+        request_id=request.request_id,
+        content=None,
+        tool_calls=[{"id": "gizli", "function": {"name": "clipboard"}}],
+    )
+    engine.add_tool_result(
+        context,
+        request_id=request.request_id,
+        tool_call_id="gizli",
+        content="Sensitive output was not retained.",
+        provider_content="çok gizli pano metni",
+    )
+    return engine, context
+
+
+@pytest.mark.parametrize("closing", ("delete", "archive"))
+def test_closing_a_conversation_forgets_held_sensitive_output(closing: str):
+    engine, context = _engine_holding_sensitive_output()
+
+    getattr(engine, closing)(context.conversation_id)
+
+    # The turn that owned this text can never finish now, so nothing else
+    # would ever drop it from a process that runs for days.
+    assert "çok gizli" not in repr(engine._provider_overrides)

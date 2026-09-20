@@ -275,7 +275,9 @@
         return;
       }
       if (result.turn && result.turn.conversation_id && (!State.conversation || State.conversation.conversation_id !== result.turn.conversation_id)) {
-        State.conversation = { conversation_id: result.turn.conversation_id, title: State.conversation ? State.conversation.title : "Yeni konuşma" };
+        // The turn only started because the PC found the thread active.
+        State.conversation = { conversation_id: result.turn.conversation_id, title: State.conversation ? State.conversation.title : "Yeni konuşma", status: "active" };
+        lockComposer();
       }
       applyTurn(result.turn);
     } catch (error) {
@@ -295,6 +297,7 @@
     const text = input.value.trim();
     if (!text || State.sending) return;
     if (State.paused) { toast("JARVIS masaüstünde duraklatıldı.", true); return; }
+    if (archivedThread()) { toast("Arşivdeki konuşmaya yazılamaz; masaüstünden arşivden çıkar.", true); return; }
     const running = Array.from(State.pending.values()).some((entry) => !entry.node.querySelector(".state.unknown, .state.failed"));
     if (running) { toast("Önceki yanıt tamamlanmadan yeni mesaj gönderilemez.", true); return; }
     input.value = "";
@@ -312,14 +315,30 @@
     input.style.height = Math.min(input.scrollHeight, Math.round(window.innerHeight * 0.4)) + "px";
   }
 
+  function archivedThread() {
+    const status = State.conversation && State.conversation.status;
+    return !!status && status !== "active";
+  }
+
+  function lockComposer() {
+    // The PC refuses a message into an archived thread, so say so before
+    // it is typed rather than turning the sent bubble into a refusal.
+    const archived = archivedThread();
+    const input = $("#composer-input");
+    input.disabled = archived;
+    input.placeholder = archived ? "Arşivde — masaüstünden çıkar" : "JARVIS'e yaz…";
+    $("#composer-send").disabled = archived;
+  }
+
   /* --------------------------------------------------- conversations */
   async function loadMessages(conversationId) {
     if (!conversationId) { State.messages = []; renderMessages(); return; }
     const result = await api("/api/conversations/" + conversationId + "/messages");
     if (result.ok === false) { toast(result.error || "Konuşma okunamadı.", true); return; }
-    State.conversation = { conversation_id: result.conversation_id, title: result.title };
+    State.conversation = { conversation_id: result.conversation_id, title: result.title, status: result.status };
     State.messages = result.messages || [];
     $("#conv-title").textContent = result.title || "Yeni konuşma";
+    lockComposer();
     renderMessages();
   }
 
@@ -339,10 +358,11 @@
       try {
         const selected = await api("/api/conversations/" + node.dataset.id + "/select", { method: "POST", body: {} });
         if (selected.ok === false) { toast(selected.error || "Konuşma açılamadı.", true); return; }
-        State.conversation = { conversation_id: selected.conversation_id, title: selected.title };
+        State.conversation = { conversation_id: selected.conversation_id, title: selected.title, status: selected.status };
         State.messages = selected.messages || [];
         State.pending.clear();
         $("#conv-title").textContent = selected.title || "Yeni konuşma";
+        lockComposer();
         renderMessages();
       } catch (error) { toast(error.error || "Bilgisayara ulaşılamıyor.", true); }
     }));
@@ -352,10 +372,11 @@
     try {
       const result = await api("/api/conversations", { method: "POST", body: {} });
       if (result.ok === false) { toast(result.error || "Konuşma açılamadı.", true); return; }
-      State.conversation = { conversation_id: result.conversation_id, title: result.title || "Yeni konuşma" };
+      State.conversation = { conversation_id: result.conversation_id, title: result.title || "Yeni konuşma", status: result.status };
       State.messages = [];
       State.pending.clear();
       $("#conv-title").textContent = "Yeni konuşma";
+      lockComposer();
       renderMessages();
       $("#composer-input").focus();
     } catch (error) { toast(error.error || "Bilgisayara ulaşılamıyor.", true); }
@@ -371,6 +392,8 @@
     "Tool result has no explicit postcondition verification.": "Aracın sonucu doğrulanamadı.",
     "Plan could not be persisted safely.": "Plan güvenle kaydedilemedi.",
     "User confirmation required.": "Bu adım için onayın gerekiyor.",
+    "Maximum concurrent executions reached.": "Bu araç şu anda meşgul; aynı anda çalışabilecek kopya sayısı doldu.",
+    "Tool executor is shutting down.": "JARVIS kapanıyor; bu adım hiç başlamadı.",
   };
   const taskErrorTr = (text) => {
     const value = String(text == null ? "" : text).trim();
@@ -386,11 +409,17 @@
     if (!rows.length) { host.innerHTML = '<div class="card"><p class="hint" style="margin:0">Kayıtlı görev yok. Sohbetten çok adımlı bir iş istediğinde adımları burada izlersin.</p></div>'; return; }
     host.innerHTML = rows.map((task) => {
       const status = String(task.status || "");
-      const steps = (task.steps || []).slice(0, 6).map((step) => "<li>" + esc(step.name || step.description || step) + (step.status ? " · " + esc(step.status) : "") + "</li>").join("");
+      const steps = (task.steps || []).slice(0, 6).map((step) => {
+        const failure = taskErrorTr(step.error);
+        return "<li>" + esc(step.name || step.description || step) + (step.status ? " · " + esc(step.status) : "") +
+          (failure ? '<span class="fail">' + esc(failure) + "</span>" : "") + "</li>";
+      }).join("");
+      const failure = taskErrorTr(task.error);
       const actions = task.actions || {};
       const buttons = ["pause", "resume", "cancel"].filter((action) => actions[action]).map((action) =>
         '<button type="button" class="btn small" data-task="' + esc(task.task_id) + '" data-action="' + action + '">' + ({ pause: "Duraklat", resume: "Sürdür", cancel: "İptal et" })[action] + "</button>").join("");
       return '<div class="task"><div class="head"><strong>' + esc(task.goal || task.title || task.description || task.task_id) + '</strong><span class="status ' + esc(status) + '">' + esc(status) + "</span></div>" +
+        (failure ? '<p class="fail">' + esc(failure) + "</p>" : "") +
         (steps ? '<ol class="steps">' + steps + "</ol>" : "") +
         (buttons ? '<div class="actions">' + buttons + "</div>" : '<div class="none">Bu görev için uygulanabilir işlem yok.</div>') + "</div>";
     }).join("");
@@ -499,6 +528,16 @@
     es.addEventListener("turn_done", (event) => finishPending(JSON.parse(event.data)));
     es.addEventListener("approval", (event) => { const item = JSON.parse(event.data); State.approvals.set(item.token, item); renderApprovals(); if (navigator.vibrate) navigator.vibrate(40); });
     es.addEventListener("approval_closed", (event) => { const item = JSON.parse(event.data); State.approvals.delete(item.token); renderApprovals(); });
+    es.addEventListener("conversation_status", (event) => {
+      // The desktop can archive the thread being read right now; the id
+      // does not change, only what may be done with it. Waiting for the
+      // next reconnection to learn that means the user writes into a
+      // closed thread and reads the refusal instead of the answer.
+      const data = JSON.parse(event.data);
+      if (!State.conversation || State.conversation.conversation_id !== data.conversation_id) return;
+      State.conversation.status = data.status;
+      lockComposer();
+    });
     es.addEventListener("session_ended", () => { closeEvents(); onUnauthorized("Bu cihazın oturumu bilgisayardan kapatıldı."); });
     es.onerror = () => {
       closeEvents();
@@ -558,7 +597,14 @@
       State.conversation = state.conversation;
       $("#conv-title").textContent = state.conversation ? state.conversation.title : "Yeni konuşma";
       loadMessages(serverConversation);
+    } else if (State.conversation && state.conversation && serverConversation === localConversation) {
+      // The desktop can archive the very thread the phone is sitting on:
+      // the id stays the same, only what may be done with it changes. A
+      // status describes the thread it was read from, so an id that moved
+      // on under a pending send carries nothing over to the one on screen.
+      State.conversation.status = state.conversation.status;
     }
+    lockComposer();
   }
 
   async function boot() {

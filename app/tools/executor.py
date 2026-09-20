@@ -5,7 +5,11 @@ import contextlib
 import inspect
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import (
+    Future,
+    ThreadPoolExecutor,
+    TimeoutError as FuturesTimeoutError,
+)
 from dataclasses import dataclass
 from datetime import datetime
 from threading import Lock, RLock
@@ -98,6 +102,8 @@ class ToolExecutor:
             )
         self._active_execution_counts: dict[str, int] = {}
         self._execution_count_lock = RLock()
+        self._worker_pool: ThreadPoolExecutor | None = None
+        self._worker_pool_lock = Lock()
         self._consumed_approval_ids: dict[UUID, datetime | None] = {}
         self._approval_lock = RLock()
         self._execution_listeners: list[ToolExecutionListener] = []
@@ -260,24 +266,42 @@ class ToolExecutor:
 
         return release
 
-    @staticmethod
-    def _releasing_handler(
-        handler: ToolCallable,
-        release_slot: Callable[..., None],
-    ) -> ToolCallable:
-        """Wrap a thread-bound handler so its slot frees when it returns.
+    def _thread_workers(self) -> ThreadPoolExecutor:
+        """Return the pool that runs thread-bound handlers off the loop.
 
-        Cancelling the task that awaits a thread does not reach into the
-        thread, so only the handler itself knows when its work is over.
+        Owning the pool buys two things the event loop's default
+        executor cannot give. Tool work stops queueing behind every
+        other asyncio.to_thread caller in the process, and the work
+        item's own future stays in reach - which is what lets a
+        concurrency slot be tied to the work instead of to the wait.
         """
+        with self._worker_pool_lock:
+            if self._worker_pool is None:
+                self._worker_pool = ThreadPoolExecutor(
+                    thread_name_prefix="jarvis-tool",
+                )
 
-        def run(*args: Any, **kwargs: Any) -> Any:
-            try:
-                return handler(*args, **kwargs)
-            finally:
-                release_slot()
+            return self._worker_pool
 
-        return run
+    def shutdown(self, *, wait: bool = False) -> None:
+        """Drop the worker pool this executor owns.
+
+        Idle threads exit and queued work items are cancelled, which
+        fires their completion callbacks and hands their slots back
+        rather than stranding them. A thread already inside a handler is
+        not reached by any of that: with ``wait=False`` - what both
+        production call sites pass - this returns while that handler is
+        still running, and ``wait=True`` blocks until it returns, which
+        for a wedged handler is never. Threads appear only once a
+        thread-bound handler actually runs, and a later execution builds
+        a fresh pool, so this is safe to call at any point in a
+        runtime's life.
+        """
+        with self._worker_pool_lock:
+            pool, self._worker_pool = self._worker_pool, None
+
+        if pool is not None:
+            pool.shutdown(wait=wait, cancel_futures=True)
 
     def _concurrency_blocked_result(
         self,
@@ -287,11 +311,19 @@ class ToolExecutor:
         return ToolResult(
             status=ToolExecutionStatus.BLOCKED,
             tool_name=definition.name,
-            message="Tool concurrency limit reached.",
-            error=(
-                "Maximum concurrent executions: "
+            # `error` is the stable key both front ends translate, so
+            # the limit lives in `message` rather than being baked into
+            # the map key. `message` is all but invisible: a refusal is
+            # not a success, so the verification reason folds down to
+            # `error`, and that is what reaches step.error and the task
+            # cards. The number survives for logs, telemetry and the
+            # Nova activity pill's tooltip - untranslated. What the user
+            # reads is the Turkish constant, not the limit.
+            message=(
+                "Tool concurrency limit reached: "
                 f"{definition.max_concurrency}."
             ),
+            error="Maximum concurrent executions reached.",
             started_at=started_at,
             finished_at=self._now(),
             verified=False,
@@ -891,7 +923,10 @@ class ToolExecutor:
             )
             # Once the work is in flight the slot follows the future, not
             # this function: the callback fires on success, on failure and
-            # on a cancellation that beat the start, and nowhere else.
+            # on a cancellation that beat the start, and nowhere else. A
+            # handler that never returns therefore keeps its slot for
+            # good; the NOTE on the async path records why that is the
+            # lesser evil and why no watchdog forces it back.
             future.add_done_callback(release_slot)
             deadline = time.monotonic() + definition.timeout_seconds
 
@@ -1088,6 +1123,7 @@ class ToolExecutor:
 
         release_slot = self._slot_releaser(definition)
         slot_travels_with_worker = False
+        worker_future: Future[Any] | None = None
 
         try:
             if cancel_event is not None and cancel_event.is_set():
@@ -1104,18 +1140,36 @@ class ToolExecutor:
 
             if thread_based:
                 # A cancelled coroutine really stops; a thread does not.
-                # The handler outlives our wait, so it carries the slot
-                # and gives it back when it is genuinely done.
-                operation_task = asyncio.create_task(
-                    asyncio.to_thread(
-                        self._releasing_handler(
-                            registered.handler,
-                            release_slot,
-                        ),
-                        *args,
-                        **execution_parameters,
-                    )
+                # The handler outlives our wait, so the slot follows the
+                # work item: the completion callback fires when the
+                # handler returns, when it raises, and when a cancel
+                # beat it to the start - and nowhere else. Watching the
+                # handler instead would strand the slot on that last
+                # case, because the handler never runs to see it.
+                #
+                # NOTE: a handler that never returns keeps its slot for
+                # the life of the process, which takes the tool out of
+                # the session. It also keeps its thread: pool threads
+                # are not daemons, so concurrent.futures' atexit hook
+                # joins them and the process hangs on the way out until
+                # the handler returns. shutdown() does not help - it
+                # cannot reach a thread that is already inside a call.
+                # The baseline wedged the same way through
+                # asyncio.to_thread's default executor, so this names
+                # the standing cost rather than adding to it. That cost
+                # is still the chosen trade - two writers inside a
+                # single-writer tool is worse than a tool the user
+                # cannot reach, and the refusal says so in Turkish. A
+                # watchdog that forces the slot back was considered and
+                # left to the owner: it cannot stop the thread, so it
+                # would admit exactly that second writer.
+                worker_future = self._thread_workers().submit(
+                    registered.handler,
+                    *args,
+                    **execution_parameters,
                 )
+                worker_future.add_done_callback(release_slot)
+                operation_task = asyncio.wrap_future(worker_future)
                 slot_travels_with_worker = True
             else:
                 operation_task = asyncio.create_task(
@@ -1142,6 +1196,9 @@ class ToolExecutor:
                     return_when=asyncio.FIRST_COMPLETED,
                 )
             except asyncio.CancelledError:
+                if worker_future is not None:
+                    worker_future.cancel()
+
                 operation_task.cancel()
 
                 with contextlib.suppress(asyncio.CancelledError):
@@ -1153,6 +1210,11 @@ class ToolExecutor:
                 raise
 
             if operation_task not in done:
+                # Only a pending work item can be cancelled, so a true
+                # here is proof the handler never started.
+                never_started = (
+                    worker_future is not None and worker_future.cancel()
+                )
                 operation_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await operation_task
@@ -1162,6 +1224,13 @@ class ToolExecutor:
                     and bool(cancel_task.result())
                 )
 
+                if never_started:
+                    # The action is provably un-taken, so the one-time
+                    # capability that would have bought it is still
+                    # unspent. Keeping it would make the retry look like
+                    # a replay of something that never happened.
+                    self._return_approval_grant(approval_grant)
+
                 return self._interrupted_result(
                     definition=definition,
                     started_at=started_at,
@@ -1170,7 +1239,33 @@ class ToolExecutor:
                         if was_cancelled
                         else ToolExecutionStatus.TIMEOUT
                     ),
-                    side_effects_may_continue=thread_based,
+                    side_effects_may_continue=(
+                        thread_based and not never_started
+                    ),
+                )
+
+            if worker_future is not None and worker_future.cancelled():
+                # Nothing above cancels a work item that finished the
+                # wait, so the only way in here is shutdown() cancelling
+                # a queued one - proof the handler never started.
+                # Reading .result() would raise CancelledError, and that
+                # is a BaseException: it would slip past every
+                # `except Exception` between here and the turn, and the
+                # user would be told they cancelled an action they never
+                # touched. Refuse in the executor's own words instead.
+                self._return_approval_grant(approval_grant)
+                return ToolResult(
+                    status=ToolExecutionStatus.BLOCKED,
+                    tool_name=definition.name,
+                    message=(
+                        "Tool executor is shutting down; the handler "
+                        "never started."
+                    ),
+                    error="Tool executor is shutting down.",
+                    started_at=started_at,
+                    finished_at=self._now(),
+                    verified=False,
+                    side_effects_may_continue=False,
                 )
 
             value = operation_task.result()

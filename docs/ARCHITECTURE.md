@@ -440,20 +440,27 @@ submitted to the controller's runner. Results flow back through
 serialization, so the page only ever renders data the core produced: snapshot,
 reply, stream, busy, voice_message, voice_phase, voice_state, voice_level,
 vision_result, research_result, approval, approval_closed, tool_activity,
-diagnostic_event, notification, navigate, and paused. The bridge subscribes, read-only, to
-the tool executor (every execution start and outcome), to the diagnostics
-ledger (every sealed event) and to the microphone level, and re-subscribes
-when a settings save replaces the runtime. Since the 5 September 2026
-redesign the page is a small design system — `web/css/` tokens, base, shell,
-components and screens; `web/js/` foundation (vocabulary, state, motion
-primitives), bridge (API and push channel), presence (the state machine and
-the `JarvisCore` visualization), shell (rail, drawer, palette, compact mode,
-boot), conversation, activity (execution timeline and the approval overlay),
-panels and main. All motion runs on the browser compositor at the monitor
-refresh rate, throttles when calm and pauses when hidden; canvases scale
-with `devicePixelRatio`. Window geometry changes for the compact mode are
-marshalled onto the WinForms UI thread because pywebview applies them on
-the calling thread.
+diagnostic_event, notification, navigate, and paused. `busy` is a bracket, not
+a flag: the opening push carries the question's `text` and whether it was
+`spoken`, because a turn typed on the phone reaches the same bridge and every
+other surface has to draw that question and its thinking mark itself. The
+closing push takes that turn back down — an answered one was already finalized
+by `reply`, and a turn that produced no answer (the runner refused it, it was
+cancelled) has nothing else on the watching page to close it, so the bridge
+sends the closing half even when there is no reply to report. The bridge
+subscribes, read-only, to the tool executor (every execution start and
+outcome), to the diagnostics ledger (every sealed event) and to the
+microphone level, and re-subscribes when a settings save replaces the
+runtime. Since the 5 September 2026 redesign the page is a small design
+system — `web/css/` tokens, base, shell, components and screens; `web/js/`
+foundation (vocabulary, state, motion primitives), bridge (API and push
+channel), presence (the state machine and the `JarvisCore` visualization),
+shell (rail, drawer, palette, compact mode, boot), conversation, activity
+(execution timeline and the approval overlay), panels and main. All motion
+runs on the browser compositor at the monitor refresh rate, throttles when
+calm and pauses when hidden; canvases scale with `devicePixelRatio`. Window
+geometry changes for the compact mode are marshalled onto the WinForms UI
+thread because pywebview applies them on the calling thread.
 
 Nova's honesty rules: the page waits for the real bridge and shows an explicit
 failure screen if it never arrives; the demo bridge is reachable only with

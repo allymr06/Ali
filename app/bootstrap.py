@@ -115,6 +115,7 @@ class JARVISApplication:
 
         self.task_manager.close()
         self.memory_manager.close()
+        self.tool_executor.shutdown()
 
 
 def create_application(

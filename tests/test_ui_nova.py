@@ -498,8 +498,15 @@ def test_a_submit_from_elsewhere_still_drives_the_window(booted) -> None:
     assert booted.bridge.submit_command("telefondan selam") == {"ok": True}
     wait_until(lambda: "busy" in booted.window.kinds())
     # Before any answer exists, the page already knows a turn is running
-    # and which question it belongs to.
-    assert booted.window.kinds()[-1] == "busy"
+    # and which question it belongs to. The bridge holds a live diagnostics
+    # subscription that can seal an event at any moment, so the ordering is
+    # asserted over the pushes this turn is made of: the opening busy is the
+    # last of them until an answer exists.
+    kinds = [
+        kind for kind in booted.window.kinds() if kind != "diagnostic_event"
+    ]
+    assert kinds[-1] == "busy"
+    assert not {"reply", "snapshot"} & set(kinds)
     assert booted.window.payloads("busy")[0] == {
         "busy": True,
         "status": "PROCESSING",
@@ -523,7 +530,11 @@ def test_the_phone_voice_loop_marks_its_turn_as_spoken(booted) -> None:
     assert booted.window.payloads("busy")[0]["spoken"] is True
 
 
-def test_a_refused_submission_leaves_no_turn_open(booted, monkeypatch) -> None:
+def test_a_refused_submission_closes_the_busy_bracket(booted, monkeypatch) -> None:
+    """Python's half of the contract: the turn it opened is closed again.
+    That the page then takes the bubble down is pinned on the page's own
+    side, by test_nova_web.py's watching-surface tests."""
+
     def refuse(_controller, operation, _callback):
         operation.close()  # the real runner would have consumed the coroutine
         raise RuntimeError("runner kapalı")
@@ -3035,3 +3046,268 @@ def test_the_streamed_bubble_shows_the_answer_not_a_concatenation(booted) -> Non
     # A flush with nothing new pushes nothing, and never repeats the last frame.
     booted.bridge._flush_stream()
     assert pushed == ["Bu bir deneme"]
+
+
+def test_a_cancelled_turn_still_closes_the_busy_bracket(booted, monkeypatch) -> None:
+    """A cancelled turn produces no answer, and every surface but the one
+    that typed the message learns a turn ended from this push alone: the
+    bracket is what it has, so returning early would strand it."""
+    captured: list[Future[Any]] = []
+
+    def capture(_controller, operation, callback):
+        operation.close()  # the real runner would have consumed the coroutine
+        future: Future[Any] = Future()
+        captured.append(future)
+        future.add_done_callback(callback)
+        return future
+
+    monkeypatch.setattr(DesktopController, "submit_background", capture)
+    assert booted.bridge.submit_command("selam") == {"ok": True}
+    assert captured[0].cancel()
+
+    assert [payload["busy"] for payload in booted.window.payloads("busy")] == [
+        True,
+        False,
+    ]
+    assert booted.window.payloads("reply") == [], "nothing was answered"
+
+
+def test_the_bridge_lock_is_not_held_while_the_window_is_pushed_to(booted) -> None:
+    """``done`` takes this lock on the core's event-loop thread, and a push
+    blocks until WebView2 answers. A turn that answers immediately - the
+    direct clock reply, a cached one - would park the whole core on a
+    browser round-trip if the opening push were raised under the lock."""
+    verdicts: list[bool] = []
+
+    def lock_is_held() -> bool:
+        # From another thread: the RLock would let its own owner straight in.
+        acquired = booted.bridge._lock.acquire(timeout=2.0)
+        if acquired:
+            booted.bridge._lock.release()
+        return not acquired
+
+    class ProbingWindow(FakeWindow):
+        def evaluate_js(self, script: str) -> None:
+            if '"busy": true' in script:
+                answer: list[bool] = []
+                prober = threading.Thread(
+                    target=lambda: answer.append(lock_is_held()),
+                    name="lock-probe",
+                )
+                prober.start()
+                prober.join(5.0)
+                verdicts.extend(answer)
+            super().evaluate_js(script)
+
+    window = ProbingWindow()
+    booted.bridge._attach(window)
+    assert booted.bridge.submit_command("saat kaç") == {"ok": True}
+    wait_until(lambda: verdicts != [])
+    assert verdicts == [False], "the bridge lock was held across a window round-trip"
+
+
+def test_a_provisional_ui_thread_ident_is_asked_again(booted, monkeypatch) -> None:
+    """WinForms answers ``InvokeRequired`` false from every thread while no
+    handle exists in the parent chain, so a pre-handle window event brands a
+    throwaway thread as the message loop. Nothing is marshalled for such an
+    answer, so nothing settles it either: the next event overwrites it, and
+    only a marshalled answer is final."""
+    ui_thread = threading.get_ident()
+    handle_created = threading.Event()
+    handoff: list[tuple] = []
+
+    class NativeForm:
+        @property
+        def InvokeRequired(self) -> bool:  # noqa: N802 - the .NET spelling
+            if not handle_created.is_set():
+                return False  # no handle anywhere: false on every thread
+            return threading.get_ident() != ui_thread
+
+    def marshal(_window, operation) -> None:
+        done = threading.Event()
+        handoff.append((operation, done))
+        assert done.wait(5.0), "the operation never reached the UI thread"
+
+    monkeypatch.setattr(shell, "_run_on_ui_thread", marshal)
+    window = FakeWindow()
+    window.native = NativeForm()
+    booted.bridge._attach(window)
+    booted.bridge._ui_thread_id = None
+    booted.bridge._ui_thread_confirmed = False
+
+    stray: list[int] = []
+
+    def early_window_event() -> None:
+        stray.append(threading.get_ident())
+        booted.bridge._note_ui_thread()
+
+    for index in range(2):
+        thread = threading.Thread(
+            target=early_window_event, name=f"pywebview-event-{index}"
+        )
+        thread.start()
+        thread.join(5.0)
+    assert handoff == [], "the form was asked while it still had no handle"
+    assert stray[0] != stray[1], "pywebview drops each event thread it starts"
+    # The unconditional overwrite is the whole defence against a pre-handle
+    # ident: take it away and the first throwaway thread stays on record.
+    assert booted.bridge._ui_thread_id == stray[1]  # the newest false negative
+    assert booted.bridge._ui_thread_confirmed is False
+
+    handle_created.set()
+    later = threading.Thread(target=booted.bridge._note_ui_thread)
+    later.start()
+    wait_until(lambda: bool(handoff))
+    operation, done = handoff.pop()
+    operation()  # this thread is the window's own; that is the whole point
+    done.set()
+    later.join(5.0)
+    assert booted.bridge._ui_thread_id == ui_thread, "a wrong ident became permanent"
+    assert booted.bridge._ui_thread_confirmed is True
+
+    booted.bridge._ui_thread_id = None
+
+
+def test_an_answer_the_window_never_marshalled_is_not_taken_as_final(
+    booted, monkeypatch
+) -> None:
+    """The ask is only worth what the marshalling is worth. A window that
+    runs it on the asking thread has answered about the wrong thread, so the
+    ident stays provisional and the failure is recorded."""
+
+    class NativeForm:
+        InvokeRequired = True  # from every thread, including this one
+
+    monkeypatch.setattr(
+        shell, "_run_on_ui_thread", lambda _window, operation: operation()
+    )
+    window = FakeWindow()
+    window.native = NativeForm()
+    booted.bridge._attach(window)
+    booted.bridge._ui_thread_id = None
+    booted.bridge._ui_thread_confirmed = False
+
+    booted.bridge._note_ui_thread()
+
+    assert booted.bridge._ui_thread_id is None
+    assert booted.bridge._ui_thread_confirmed is False
+    recorded = [
+        event
+        for event in booted.app.diagnostics.ledger.list(component="ui", limit=50)
+        if event.name == "window.ui_thread_unknown"
+    ]
+    assert recorded, "the application was left without a UI-thread guard in silence"
+
+
+def test_a_window_that_cannot_be_asked_says_so(booted, monkeypatch) -> None:
+    """The guard in ``_push`` is only as good as this ident; a failed ask
+    that leaves the application without one is recorded, not swallowed."""
+
+    class NativeForm:
+        InvokeRequired = True
+
+    def refuse(_window, _operation) -> None:
+        raise RuntimeError("the form is gone")
+
+    monkeypatch.setattr(shell, "_run_on_ui_thread", refuse)
+    window = FakeWindow()
+    window.native = NativeForm()
+    booted.bridge._attach(window)
+    booted.bridge._ui_thread_id = None
+    booted.bridge._ui_thread_confirmed = False
+
+    booted.bridge._note_ui_thread()
+
+    assert booted.bridge._ui_thread_id is None
+    recorded = [
+        event
+        for event in booted.app.diagnostics.ledger.list(component="ui", limit=50)
+        if event.name == "window.ui_thread_unknown"
+    ]
+    assert recorded and recorded[-1].attributes["error"] == "RuntimeError"
+
+
+def test_a_deferred_routine_is_reported_with_the_lock_released(booted) -> None:
+    """The ledger calls its listeners on the recording thread, so this
+    diagnostic ends inside a blocking window round-trip. The branch fires
+    exactly while a chat turn is running, and that turn's done() finishes by
+    taking this same lock from the core's event-loop thread."""
+    recorder = threading.get_ident()
+    pushed_from: list[int] = []
+    verdicts: list[bool] = []
+
+    def lock_is_held() -> bool:
+        # From another thread: the RLock would let its own owner straight in.
+        acquired = booted.bridge._lock.acquire(timeout=2.0)
+        if acquired:
+            booted.bridge._lock.release()
+        return not acquired
+
+    class ProbingWindow(FakeWindow):
+        def evaluate_js(self, script: str) -> None:
+            if "routine.deferred" in script:
+                pushed_from.append(threading.get_ident())
+                answer: list[bool] = []
+                prober = threading.Thread(
+                    target=lambda: answer.append(lock_is_held()),
+                    name="lock-probe",
+                )
+                prober.start()
+                prober.join(5.0)
+                verdicts.extend(answer)
+            super().evaluate_js(script)
+
+    booted.bridge._attach(ProbingWindow())
+    created = booted.app.routines.create("Sabah", "özetle", at="09:00")
+    routine = booted.app.routines.get(created.data["routine_id"])
+    booted.controller.state.busy = True  # a chat turn is running
+
+    booted.bridge._run_routine(routine)
+
+    wait_until(lambda: verdicts != [])
+    assert pushed_from == [recorder], "the diagnostic did not travel inline"
+    assert verdicts == [False], "the bridge lock was held across a window round-trip"
+
+
+def test_a_turn_opening_during_shutdown_does_not_outlive_the_window(
+    booted, monkeypatch
+) -> None:
+    """_shutdown cancels the turn it finds and never looks again. The opening
+    push waits on the browser with the lock released, so a turn can reach the
+    runner after that sweep; one that did would answer into a dead window."""
+    captured: list[Future[Any]] = []
+    pushing = threading.Event()
+    release = threading.Event()
+
+    def capture(_controller, operation, callback):
+        operation.close()  # the real runner would have consumed the coroutine
+        future: Future[Any] = Future()
+        captured.append(future)
+        future.add_done_callback(callback)
+        return future
+
+    monkeypatch.setattr(DesktopController, "submit_background", capture)
+
+    class SlowWindow(FakeWindow):
+        def evaluate_js(self, script: str) -> None:
+            if '"busy": true' in script:
+                pushing.set()
+                assert release.wait(5.0), "the test never let the push finish"
+            super().evaluate_js(script)
+
+    booted.bridge._attach(SlowWindow())
+    answers: list[dict] = []
+    sender = threading.Thread(
+        target=lambda: answers.append(booted.bridge.submit_command("selam")),
+        name="pywebview-js-api",
+    )
+    sender.start()
+    assert pushing.wait(5.0)
+
+    booted.bridge._shutdown()  # the lock is free: the sender is in the browser
+    release.set()
+    sender.join(5.0)
+
+    assert captured and captured[0].cancelled(), "a turn survived the shutdown"
+    assert booted.bridge._command_future is None
+    assert answers == [{"ok": False, "error": "JARVIS kapanıyor."}]

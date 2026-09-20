@@ -67,14 +67,16 @@ class StudyWorkflow:
         store, learning, concepts, curriculum, model = academy.store, academy.learning, academy.concepts, academy.curriculum, academy.model
         self.understanding = UnderstandingEngine(store, learning, concepts, curriculum, model, academy.retriever, generator=academy.generator, emit=academy._emit)
         self.prerequisites = PrerequisiteGraph(concepts, store)
-        self.diagnosis = PrerequisiteDiagnosis(self.prerequisites, store, learning, self.understanding, curriculum)
         self.reviewer = SourceSupportReviewer(store, model, gate=source_review)
         self.source_review = bool(source_review)
         if self.source_review:
             academy.generator._reviewer = self.reviewer
         # One scoring decision for the whole academy: the bank picker, the
-        # paper, the answer and the analysis all ask the reviewer.
+        # paper, the answer, the analysis, the planner and the prerequisite
+        # diagnosis all ask the reviewer, so the same question is never
+        # measured by one rule here and another one there.
         academy.generator.scoring = self.reviewer.decision
+        self.diagnosis = PrerequisiteDiagnosis(self.prerequisites, store, learning, self.understanding, curriculum, scoring=self.reviewer.decision)
         self.planner = StudyPlanner(store, curriculum, concepts, learning, self.understanding, self.prerequisites, scoring=self.reviewer.decision, remind=remind, emit=academy._emit)
         self.histology = HistologyBank(store, academy.pipeline, learning, self.understanding, concepts, model)
         # Flashcards: repetition from the student's own material, never measurement.

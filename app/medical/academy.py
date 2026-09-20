@@ -2557,6 +2557,15 @@ class MedicalAcademy:
         a save sent again because its reply was lost is answered from
         memory and moves nothing a second time. The memory is bounded and
         lives with the process — a retry belongs to the same sitting.
+
+        This one does not ask the scoring decision, and deliberately. The
+        ``Question`` below is a carrier for the concept, not a bank item: it
+        has no options, no key and no source, because the station was graded
+        against the curated structure data itself (``AnatomyLab.quiz``). The
+        scoring policy answers "can this question's answer key be trusted",
+        which a station with no key has already answered another way. Asked
+        anyway it would return ``no_answer_key`` and the lab would stop
+        recording anything at all.
         """
         key = str(submission_id or "").strip()[:80]
         with self._lock:

@@ -208,6 +208,8 @@ const TASK_ERROR_TR = {
   "Plan could not be persisted safely.": "Plan güvenle kaydedilemedi.",
   "User confirmation required.": "Bu adım için onayın gerekiyor.",
   "Verifier must be callable.": "Doğrulayıcı çağrılabilir değil.",
+  "Maximum concurrent executions reached.": "Bu araç şu anda meşgul; aynı anda çalışabilecek kopya sayısı doldu.",
+  "Tool executor is shutting down.": "JARVIS kapanıyor; bu adım hiç başlamadı.",
   "Cannot resume a plan containing a permanently failed step.": "Kalıcı olarak başarısız bir adım var; plan sürdürülemez.",
   "Execution snapshot is terminal and cannot be resumed.": "Görev sonlanmış; sürdürülemez.",
 };

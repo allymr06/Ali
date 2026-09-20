@@ -1912,3 +1912,139 @@ def test_the_phone_task_card_shows_the_goal_not_the_uuid() -> None:
 
     row = TaskControlService(TaskManager(), None)._serialize(TaskManager().create("PDF'leri dönüştür"))
     assert row["goal"] and "title" not in row, "the server contract is goal, and the client follows it"
+
+
+# ---------------------------------------------------------------------------
+# the busy bracket on a surface that did not start the turn
+# ---------------------------------------------------------------------------
+
+
+def lift_push_handler(name: str) -> str:
+    """One PUSH handler, exactly as bridge.js writes it."""
+    source = JS_SOURCES["js/bridge.js"]
+    start = source.index(f"  {name}({{")
+    return source[start : source.index("\n  },", start) + len("\n  },")]
+
+
+def lift_function(file: str, name: str) -> str:
+    source = JS_SOURCES[file]
+    start = source.index(f"function {name}(")
+    return source[start : source.index("\n}", start) + 2]
+
+
+# The smallest stubs that keep the handler's control flow honest: setBusy
+# writes State.busy as shell.js does, ensurePendingBubble hands back the one
+# open bubble as conversation.js does, and appendMessage/updateChat record
+# what the reader would have seen.
+WATCHED_TURN_STUBS = """
+var State = { busy: false, messages: [], pendingSources: null, pendingEl: null,
+              watchedTurn: null, status: "" };
+var chat = [];
+var forced = [];
+var removed = [];
+function hideChatEmpty() {}
+function $(_selector) { return {}; }
+function appendMessage(_host, message) { chat.push(message.text); return {}; }
+function updateChat(mutate, options) { forced.push(!!(options && options.force)); mutate(); }
+var Activity = {
+  current: null,
+  beginTurn(goal) { this.current = { goal: goal, status: "thinking", error: null }; return this.current; },
+  abortTurn(error) {
+    if (!this.current) return;
+    this.current.status = "failed";
+    this.current.error = error;
+    this.current = null;
+  },
+};
+function ensurePendingBubble() {
+  if (State.pendingEl) return State.pendingEl;
+  State.pendingEl = { id: chat.length, remove() { removed.push(this.id); } };
+  return State.pendingEl;
+}
+function showThinking() { ensurePendingBubble(); }
+function setBusy(busy, status) { State.busy = busy; if (status) State.status = status; }
+function renderHomeSession() {}
+"""
+
+
+def watching_surface():
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(WATCHED_TURN_STUBS)
+    context.eval(lift_function("js/conversation.js", "closeWatchedTurn"))
+    context.eval("var PUSH = {\n" + lift_push_handler("busy") + "\n};")
+    return context
+
+
+def test_the_watching_page_closes_the_turn_a_busy_push_opened() -> None:
+    """The phone typed and this page drew the question and the thinking mark.
+    Nothing else here ever closes that turn - sendCommand's cleanup belongs
+    to the page that sent the message - so a submission with no answer (the
+    runner refused it, the turn was cancelled) has to be closed by the
+    busy:false that ends the bracket, or the orphan bubble is handed to the
+    next question and the answer lands above it."""
+    context = watching_surface()
+    context.eval(
+        'PUSH.busy({ busy: true, status: "PROCESSING", text: "telefondan selam", spoken: false });'
+    )
+    assert json.loads(context.eval("JSON.stringify(chat)")) == ["telefondan selam"]
+    assert context.eval("State.pendingEl !== null")
+    assert context.eval("Activity.current !== null")
+
+    context.eval('PUSH.busy({ busy: false, status: "LOCAL CORE READY" });')
+    assert context.eval("State.pendingEl === null"), "the thinking bubble outlived the turn"
+    assert context.eval("Activity.current === null"), "the activity turn was left open"
+    assert context.eval("State.watchedTurn === null")
+    assert json.loads(context.eval("JSON.stringify(removed)")) == [1]
+    assert context.eval("State.busy") is False
+
+    # The next question gets a bubble of its own, not the orphan.
+    context.eval(
+        'PUSH.busy({ busy: true, status: "PROCESSING", text: "ikinci soru", spoken: false });'
+    )
+    assert json.loads(context.eval("JSON.stringify(chat)")) == ["telefondan selam", "ikinci soru"]
+    assert context.eval("State.pendingEl.id") == 2
+
+
+def test_the_closing_push_undoes_only_what_it_opened() -> None:
+    """busy:false ends every turn, answered or not. An answered bubble was
+    already finalized by PUSH.reply, and a background turn belongs to the
+    tool activity that raised it; neither is this push's to take down."""
+    context = watching_surface()
+    context.eval(
+        'PUSH.busy({ busy: true, status: "PROCESSING", text: "telefondan selam", spoken: false });'
+    )
+    # PUSH.reply -> finalizePendingBubble keeps the node and clears the slot;
+    # Activity.onReply finishes the turn. Then a tool event opens its own.
+    context.eval("State.pendingEl = null; Activity.current = null;")
+    context.eval("Activity.current = { goal: 'arka plan', status: 'thinking', error: null };")
+
+    context.eval('PUSH.busy({ busy: false, status: "LOCAL CORE READY" });')
+    assert json.loads(context.eval("JSON.stringify(removed)")) == [], "an answered bubble was removed"
+    assert context.eval("Activity.current !== null"), "a background turn was aborted"
+    assert context.eval("State.watchedTurn === null")
+
+
+def test_a_turn_from_another_device_does_not_yank_the_reader_down() -> None:
+    """conversation.js carries the rule: only a reader already at the bottom
+    is scrolled, and anyone reading older messages gets the pill instead.
+    sendCommand forces the scroll because the reader just typed; on the
+    watching surface nobody did."""
+    context = watching_surface()
+    context.eval(
+        'PUSH.busy({ busy: true, status: "PROCESSING", text: "telefondan selam", spoken: false });'
+    )
+    assert json.loads(context.eval("JSON.stringify(forced)")) == [False]
+    assert "force" not in lift_push_handler("busy")
+    sent = section(JS_SOURCES["js/conversation.js"], "async function sendCommand(", "\n}")
+    assert "{ force: true }" in sent, "the page that typed still scrolls itself down"
+
+
+def test_the_demo_bridge_raises_the_same_busy_bracket_as_python() -> None:
+    """?demo=1 exists to exercise this page, so a demo turn has to open the
+    bracket the real bridge opens and not only close it."""
+    demo = section(JS, "  async submit_command(text) {", "\n  },")
+    assert 'busy: true, status: "PROCESSING", text, spoken: false' in demo
+    assert demo.index("busy: true") < demo.index("busy: false")
+    python = inspect.getsource(shell.NovaBridge.submit_command)
+    assert '"status": WORKING_STATUS' in python and '"spoken": spoken is True' in python

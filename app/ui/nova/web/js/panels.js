@@ -1155,8 +1155,16 @@ const Routines = {
           <div class="routine-prompt">${esc(item.prompt)}</div>
           <div class="routine-meta"><span class="chip">${esc(item.schedule)}</span>sıradaki ${esc(item.next_run_local || "—")}${item.last_run_local ? ` · son ${esc(item.last_run_local)} (${esc(tr(item.last_outcome || ""))})` : ""} · ${item.run_count} çalışma</div>
         </div>
+        <button type="button" class="btn btn-ghost small" data-act="run" title="Programı bozmadan şimdi çalıştır">Çalıştır</button>
         <button type="button" class="btn btn-ghost small" data-act="delete">Sil</button>
       </div>`).join("");
+    $$("[data-act='run']", host).forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        const done = await call("run_routine_now", btn.closest(".routine-row").dataset.id);
+        btn.disabled = false;
+        toast(done.message || done.error, done.ok ? "ok" : true);
+      }));
     $$("[data-act='delete']", host).forEach((btn) =>
       btn.addEventListener("click", () => this.remove(btn.closest(".routine-row").dataset.id)));
   },

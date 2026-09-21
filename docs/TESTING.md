@@ -1226,6 +1226,13 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## Run now (21 September 2026)
+
+The bridge test runs a routine now against a fake engine and pins the
+untouched next_run_at, the run_now ledger event, the paused refusal in
+words and the absence of any silent defer; the web test pins the
+dialog-free, self-disabling button.
+
 ## The About card (21 September 2026)
 
 QuickJS renders aboutRows full, bare (four dashes, off styling) and

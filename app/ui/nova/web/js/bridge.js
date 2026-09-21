@@ -222,6 +222,10 @@ const DemoBridge = {
     return { ok: false, error: "Demo modunda klasör yok." };
   },
 
+  async run_routine_now() {
+    return { ok: false, error: "Demo modunda rutin çalışmaz." };
+  },
+
   async convert_currency(amount, source, target) {
     // Honest demo: no live rate exists here, so none is invented.
     return { ok: false, error: "Demo modunda canlı kur yok (" + String(source || "") + "→" + String(target || "") + ")." };

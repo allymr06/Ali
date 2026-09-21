@@ -2631,6 +2631,15 @@ def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
     assert "clearChatFind(); input.blur();" in conversation
 
 
+def test_the_routine_rows_offer_run_now() -> None:
+    panels = JS_SOURCES["js/panels.js"]
+    assert 'data-act="run"' in panels and "Çalıştır</button>" in panels
+    assert 'call("run_routine_now", btn.closest(".routine-row").dataset.id)' in panels
+    run_handler = panels.split("[data-act='run']\", host")[1].split("}));")[0]
+    assert "btn.disabled = true;" in run_handler, "no double starts while one runs"
+    assert "confirmDialog" not in run_handler, "running is not destructive: no dialog"
+
+
 def test_the_about_card_draws_dashes_for_what_is_unknown() -> None:
     quickjs = pytest.importorskip("quickjs")
     context = quickjs.Context()

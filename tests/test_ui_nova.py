@@ -2185,6 +2185,38 @@ def test_routine_failures_are_reported_not_hidden(booted) -> None:
     assert "gizli ayrıntı" not in json.dumps(booted.window.events())
 
 
+def test_run_now_uses_the_same_path_but_never_touches_the_schedule(booted) -> None:
+    class Engine:
+        async def handle(self, request, context, *, approval_callback=None, **_kwargs):
+            return Response("Koştum.", request_id=request.request_id,
+                            metadata={"outcome": "completed"})
+
+    booted.app.engine = Engine()
+    created = booted.app.routines.create("Prova", "provayı koştur", at="09:00")
+    routine_id = created.data["routine_id"]
+    scheduled = booted.app.routines.get(routine_id)["next_run_at"]
+
+    assert booted.bridge.run_routine_now("yok-boyle")["ok"] is False
+    started = booted.bridge.run_routine_now(routine_id)
+    assert started["ok"] is True and "Prova" in started["message"]
+    wait_until(lambda: booted.app.routines.get(routine_id)["run_count"] == 1)
+    assert booted.app.routines.get(routine_id)["next_run_at"] == scheduled, (
+        "running now leaves the schedule exactly where it was"
+    )
+    events = [e.name for e in booted.app.diagnostics.ledger.list(component="ui", limit=30)]
+    assert "routine.run_now" in events and "routine.started" in events
+
+    booted.controller.set_paused(True)
+    refused = booted.bridge.run_routine_now(routine_id)
+    assert refused["ok"] is False and "meşgul" in refused["error"]
+    assert booted.app.routines.get(routine_id)["next_run_at"] == scheduled, (
+        "a refused run-now does not pull the schedule closer"
+    )
+    booted.controller.set_paused(False)
+    events = [e.name for e in booted.app.diagnostics.ledger.list(component="ui", limit=30)]
+    assert "routine.deferred" not in events, "run now never queues silently"
+
+
 def test_paused_or_busy_desktop_defers_a_due_routine(booted) -> None:
     created = booted.app.routines.create("Sabah", "özetle", at="09:00")
     routine = booted.app.routines.get(created.data["routine_id"])

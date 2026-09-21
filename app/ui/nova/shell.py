@@ -1374,21 +1374,26 @@ class NovaBridge:
         if watch is not None:
             watch.stop()
 
-    def _run_routine(self, routine: Mapping[str, Any]) -> None:
+    def _run_routine(
+        self, routine: Mapping[str, Any], *, defer_when_blocked: bool = True
+    ) -> bool:
         """Run one due routine through the core like a typed command.
 
         The prompt goes through the same engine, permission engine and
         approval overlay; an approval nobody answers fails closed. The
         outcome lands in the notification centre (and reaches the OS when
         the window is unattended). A paused or busy desktop defers the
-        routine instead of dropping it.
+        routine instead of dropping it - unless ``defer_when_blocked`` is
+        False (the page's "run now"), which refuses without nudging the
+        schedule. Returns True when the routine reached the engine.
         """
         routines = getattr(self.controller.application, "routines", None)
         routine_id = str(routine.get("routine_id", ""))
         name = str(routine.get("name", "")).strip() or "Rutin"
         prompt = str(routine.get("prompt", "")).strip()
         if routines is None or not routine_id or not prompt:
-            return
+            return False
+        submitted = False
         with self._lock:
             blocked = (
                 self._closing
@@ -1477,29 +1482,59 @@ class NovaBridge:
                         ),
                         done,
                     )
+                    submitted = True
                 except RuntimeError:
-                    try:
-                        routines.defer(routine_id, ROUTINE_DEFER_SECONDS)
-                    except Exception:
-                        pass
+                    if defer_when_blocked:
+                        try:
+                            routines.defer(routine_id, ROUTINE_DEFER_SECONDS)
+                        except Exception:
+                            pass
         if blocked:
             # Reported with the lock released: the ledger calls its
             # listeners on the recording thread, so this diagnostic travels
             # straight into a blocking window round-trip, and the very turn
             # the routine is waiting for finishes by taking this same lock.
-            try:
-                routines.defer(routine_id, ROUTINE_DEFER_SECONDS)
-            except Exception:
-                pass
-            self._record_ui_event(
-                "routine.deferred",
-                "A due routine waits because the desktop is paused or busy.",
-                routine_id=routine_id,
-            )
-            return
+            if defer_when_blocked:
+                try:
+                    routines.defer(routine_id, ROUTINE_DEFER_SECONDS)
+                except Exception:
+                    pass
+                self._record_ui_event(
+                    "routine.deferred",
+                    "A due routine waits because the desktop is paused or busy.",
+                    routine_id=routine_id,
+                )
+            return False
+        if not submitted:
+            return False
         self._record_ui_event(
             "routine.started", "A routine started.", routine_id=routine_id
         )
+        return True
+
+    def run_routine_now(self, routine_id: Any) -> dict[str, Any]:
+        """Run one routine immediately on the page's own click.
+
+        The same engine, permission and notification path as a scheduled
+        run; the schedule itself is untouched, and a busy desktop refuses
+        in words instead of queueing silently."""
+        routines = getattr(self.controller.application, "routines", None)
+        if routines is None:
+            return {"ok": False, "error": "Rutin hizmeti kapalı."}
+        routine = routines.get(str(routine_id or "").strip())
+        if routine is None:
+            return {"ok": False, "error": "Bu kimlikte bir rutin yok."}
+        if not str(routine.get("prompt", "")).strip():
+            return {"ok": False, "error": "Rutinin komutu boş."}
+        if not self._run_routine(routine, defer_when_blocked=False):
+            return {"ok": False, "error": "Masaüstü şu an meşgul; rutin çalıştırılamadı."}
+        self._record_ui_event(
+            "routine.run_now",
+            "A routine was started from the page.",
+            routine_id=str(routine.get("routine_id", "")),
+        )
+        name = str(routine.get("name", "")).strip() or "Rutin"
+        return {"ok": True, "message": f"“{name}” çalışıyor; sonucu bildirimlere düşer."}
 
     def _routines_payload(self) -> dict[str, Any]:
         routines = getattr(self.controller.application, "routines", None)

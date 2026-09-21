@@ -193,6 +193,13 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## A routine can run right now (21 September 2026)
+
+Every routine row gained Çalıştır: the same engine, permission and
+notification path as a scheduled run, the schedule itself untouched.
+A paused or busy desktop refuses in words - run-now never queues
+silently, so the deferred-retry path stays a scheduled-run affair.
+
 ## The settings know their own build (21 September 2026)
 
 Ayarlar gained a Hakkında card: application, Python and WebView2

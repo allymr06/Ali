@@ -2349,6 +2349,13 @@ def test_the_palette_calculator_answers_and_stays_out_of_the_way() -> None:
     assert "eval(" not in JS_SOURCES["js/toolbox.js"]
 
 
+def test_a_held_notification_wears_its_moon_in_the_centre() -> None:
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "item.data && item.data.quiet_held" in shell_js
+    assert "Sessiz saatlerde geldi; Windows bildirimi gösterilmedi" in shell_js
+    assert ".notify-quiet" in CSS
+
+
 def test_archived_threads_hide_on_request_and_the_ledger_copies() -> None:
     conversation = JS_SOURCES["js/conversation.js"]
     assert '"nova.conv.hidearchive"' in conversation

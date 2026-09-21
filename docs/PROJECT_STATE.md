@@ -193,6 +193,14 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The held toast wears a moon (21 September 2026)
+
+When quiet hours hold a toast back, the notification centre's entry now
+carries a small moon with the plain words "Sessiz saatlerde geldi;
+Windows bildirimi gösterilmedi" - postponed, and seen to be postponed.
+The quiet decision moved up into `_publish` so the entry is marked at
+the moment it is held; `_notify_os` keeps only its own concerns.
+
 ## Archived threads step aside, the ledger copies (21 September 2026)
 
 The drawer can now fold its archive away: one quiet row at the bottom

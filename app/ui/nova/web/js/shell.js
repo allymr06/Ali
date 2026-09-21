@@ -279,7 +279,7 @@ const Notify = {
     host.innerHTML = items.map((item) => `
       <div class="notify-item ${item.read ? "" : "unread"} ${esc(item.severity)}" data-id="${esc(item.notification_id)}" role="button" tabindex="0">
         <span class="notify-icon" title="${esc(NOTIFICATION_KIND_TR[item.kind] || item.kind)}">${icon(NOTIFICATION_KIND_ICON[item.kind] || "spark")}</span>
-        <span><div class="notify-title">${esc(item.title)}</div><div class="notify-body">${esc(item.body)}</div></span>
+        <span><div class="notify-title">${esc(item.title)}${item.data && item.data.quiet_held ? '<span class="notify-quiet" title="Sessiz saatlerde geldi; Windows bildirimi gösterilmedi">🌙</span>' : ""}</div><div class="notify-body">${esc(item.body)}</div></span>
         <span class="notify-meta"><span class="notify-time" title="${esc(fmtTime(item.updated_at))}">${esc(fmtRelative(item.updated_at))}</span>${item.count > 1 ? `<span class="notify-count">×${item.count}</span>` : ""}<button type="button" class="icon-btn small notify-dismiss" data-act="dismiss" title="Kaldır">${icon("close")}</button></span>
       </div>`).join("");
     $$(".notify-item", host).forEach((row) => {

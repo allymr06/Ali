@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The moon on the held toast (21 September 2026)
+
+The quiet-hours bridge test now also reads the centre: the night entry
+carries `quiet_held`, the daytime one does not; the page test pins the
+moon's markup and its honest tooltip.
+
 ## The folded archive and the copied ledger (21 September 2026)
 
 `test_nova_web` extends the pure drawer split: with hideArchived the

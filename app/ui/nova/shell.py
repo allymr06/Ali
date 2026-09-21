@@ -1175,7 +1175,12 @@ class NovaBridge:
         alert: bool = False,
     ) -> None:
         """Record a notification; ``alert`` also reaches the OS when
-        nobody is looking at the window."""
+        nobody is looking at the window - unless quiet hours hold it,
+        in which case the entry itself carries the mark."""
+        held = alert and not self._attended and self._within_quiet_now()
+        payload = dict(data) if data else {}
+        if held:
+            payload["quiet_held"] = True
         try:
             entry = self._notifications.publish(
                 kind,
@@ -1184,12 +1189,12 @@ class NovaBridge:
                 severity=severity,
                 target=target,
                 reference=reference,
-                data=dict(data) if data else None,
+                data=payload or None,
                 dedupe_key=dedupe_key,
             )
         except ValueError:
             return
-        if alert and not self._attended:
+        if alert and not self._attended and not held:
             self._notify_os(entry.title, entry.body)
 
     def _notification_store(self) -> NotificationStore | None:
@@ -1216,6 +1221,17 @@ class NovaBridge:
             },
         )
 
+    def _within_quiet_now(self) -> bool:
+        """Whether the stored quiet window covers this moment; the
+        in-app centre still collects, only the toast waits."""
+        if self.api_settings is None:
+            return False
+        try:
+            spec = self.api_settings.preferences.load().quiet_hours
+        except Exception:
+            return False
+        return within_quiet_hours(_now(), spec)
+
     def _os_notifications_enabled(self) -> bool:
         settings = getattr(self.controller.application, "settings", None)
         return bool(getattr(settings, "notifications_os_enabled", True))
@@ -1231,15 +1247,6 @@ class NovaBridge:
         notifier = self._os_notifier
         if notifier is None or not self._os_notifications_enabled():
             return False
-        # Quiet hours hold the native toast only; the in-app centre has
-        # already collected the entry, so nothing is lost.
-        if self.api_settings is not None:
-            try:
-                spec = self.api_settings.preferences.load().quiet_hours
-            except Exception:
-                spec = ""
-            if within_quiet_hours(_now(), spec):
-                return False
         with self._os_lock:
             if self._os_in_flight >= OS_NOTIFICATION_MAX_IN_FLIGHT:
                 return False

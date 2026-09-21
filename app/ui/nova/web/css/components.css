@@ -580,6 +580,7 @@ details.disclosure > .disclosure-body { margin-top: 0.6rem; }
 .dict-credit { color: var(--ink-3); font-size: var(--text-xs); }
 .dict-wait, .dict-miss { color: var(--ink-2); font-size: var(--text-sm); padding: 0.4rem 0; }
 
+.notify-quiet { margin-left: 0.35rem; font-size: 0.7rem; opacity: 0.8; }
 .msg-copy { margin-left: 0.3rem; border: none; background: none; color: var(--ink-3); font-size: 0.72rem; cursor: pointer; opacity: 0; transition: opacity 0.15s ease; }
 .msg:hover .msg-copy { opacity: 0.8; }
 .msg-copy:hover { color: var(--accent); }

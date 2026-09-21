@@ -3006,11 +3006,15 @@ def test_quiet_hours_hold_the_toast_but_never_the_centre(booted, monkeypatch) ->
     booted.bridge._publish("task", "Gece işi", "bitti", alert=True)
     wait_until(lambda: len(booted.bridge.list_notifications(limit=50)["items"]) > len(before["items"]))
     assert sent == [], "the toast sleeps"
+    held = next(item for item in booted.bridge.list_notifications(limit=50)["items"] if item["title"] == "Gece işi")
+    assert held["data"] == {"quiet_held": True}, "the centre's entry wears the mark"
 
     monkeypatch.setattr(shell, "_now", lambda: noon)
     booted.bridge._publish("task", "Öğle işi", "bitti", alert=True)
     wait_until(lambda: sent != [])
     assert sent == [("Öğle işi", "bitti")]
+    daytime = next(item for item in booted.bridge.list_notifications(limit=50)["items"] if item["title"] == "Öğle işi")
+    assert not (daytime["data"] or {}).get("quiet_held"), "a delivered toast wears no moon"
 
     bad = booted.bridge.save_desktop_settings({
         "daily_brief_notification": True, "daily_brief_time": "08:30",

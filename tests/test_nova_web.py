@@ -2631,6 +2631,33 @@ def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
     assert "clearChatFind(); input.blur();" in conversation
 
 
+def test_the_ledger_sieve_matches_what_a_row_shows() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    match = lambda event, query: context.eval(
+        "eventMatches(" + json.dumps(event) + ", " + json.dumps(query) + ")")
+
+    event = {"level": "warning", "component": "ui", "name": "reminder.snoozed",
+             "message": "Hatırlatıcı ertelendi", "attributes": {"routine_id": "abc123"}}
+    assert match(event, "") is True and match(event, "   ") is True, "empty query keeps everything"
+    assert match(event, "SNOOZED") is True, "case folds"
+    assert match(event, "REMINDER.SNOOZED") is True, "an uppercase I still finds its dotted i"
+    assert match(event, "HATIRLATICI") is True, "and the Turkish fold still finds dotted friends"
+    assert match(event, "hatırlatıcı") is True
+    assert match(event, "abc123") is True, "attributes match too"
+    assert match(event, "warning") is True
+    assert match(event, "yok-boyle") is False
+    assert match({"message": None}, "x") is False, "a bare row never crashes"
+
+    panels = JS_SOURCES["js/panels.js"]
+    assert 'textFilter: "",' in panels
+    assert panels.count("eventMatches(") == 3, "render, fresh-row mark and copy all sieve"
+    assert "`${rows.length} / ${State.diagnosticEvents.length} olay`" in panels
+    assert '$("#diag-find").addEventListener("input"' in panels
+    assert 'id="diag-find"' in HTML
+
+
 def test_fenced_code_wears_its_language_but_only_clean_tokens() -> None:
     quickjs = pytest.importorskip("quickjs")
     context = quickjs.Context()

@@ -193,6 +193,14 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The ledger can be searched (21 September 2026)
+
+Tanılama's event ledger gained a text sieve beside the level select:
+a Turkish-folded substring over what a row shows (level, component,
+name, message, attributes - not the time, which is layout). The count
+becomes "X / Y olay" while any filter is on, the fresh-row highlight
+respects the sieve, and Kopyala copies exactly the visible slice.
+
 ## Fenced code wears its language (21 September 2026)
 
 A ``` opener's info word becomes a small corner badge beside the copy

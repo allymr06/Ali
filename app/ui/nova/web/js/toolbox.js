@@ -293,6 +293,28 @@ function paletteRecentAdd(raw, command) {
   return JSON.stringify([text, ...rest].slice(0, PALETTE_RECENT_LIMIT));
 }
 
+/* ── the ledger's text sieve (pure) ────────────────────────────
+   Case-insensitive (Turkish fold) substring over the fields a row
+   shows - level, component, name, message and attributes. Time is
+   layout, so it does not match. An empty query keeps everything. */
+
+function eventMatches(event, query) {
+  const needle = String(query || "").trim();
+  if (!needle) return true;
+  const attrs = Object.entries((event && event.attributes) || {}).map(([key, value]) => key + ":" + value).join(" ");
+  const hay = [event && event.level, event && event.component, event && event.name, event && event.message, attrs]
+    .map((part) => String(part || "")).join(" ");
+  // A deterministic fold instead of locale APIs (QuickJS has none): the
+  // whole Turkish I family - I, i, dotless ı, dotted İ and the
+  // combining-dot pair İ leaves behind - collapses to one letter, so
+  // PROVIDER finds provider and HATIRLATICI finds Hatırlatıcı.
+  const fold = (value) => value.toLowerCase()
+    .replace(/İ/g, "i")
+    .replace(/ı/g, "i")
+    .replace(/i̇/g, "i");
+  return fold(hay).includes(fold(needle));
+}
+
 /* ── the bell's kind counts (pure) ────────────────────────────────
    What kinds sit in the centre right now, most numerous first, ties
    by name. Entries without a kind are skipped, never invented. */

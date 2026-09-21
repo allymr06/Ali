@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The ledger sieve (21 September 2026)
+
+QuickJS pins eventMatches over every shown field, empty-query
+pass-through, case folding and bare rows; source pins hold the three
+sieve call sites (render, fresh mark, copy) and the X / Y count.
+
 ## The language badge (21 September 2026)
 
 Vectors: python and c++ badges, the bare fence with none, the hostile

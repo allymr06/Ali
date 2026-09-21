@@ -672,6 +672,7 @@ function renderDiagnosticsHead() {
 const Diagnostics = {
   loading: false,
   levelFilter: "",
+  textFilter: "",
 
   async refresh({ quiet = false } = {}) {
     if (this.loading) return;
@@ -804,17 +805,22 @@ const Diagnostics = {
     const host = $("#diag-events");
     if (!host) return;
     const filter = this.levelFilter;
-    const rows = State.diagnosticEvents.filter((e) => !filter || String(e.level) === filter);
+    const query = this.textFilter;
+    const rows = State.diagnosticEvents.filter((e) => (!filter || String(e.level) === filter) && eventMatches(e, query));
+    $("#diag-events-count").textContent = filter || query.trim()
+      ? `${rows.length} / ${State.diagnosticEvents.length} olay`
+      : `${State.diagnosticEvents.length} olay bellekte`;
     if (!rows.length) { host.innerHTML = '<div class="ctx-empty">Bu süzgeçle eşleşen olay yok.</div>'; return; }
     host.innerHTML = rows.slice(0, 120).map((e) => this.eventRow(e)).join("");
-    if (fresh && (!filter || String(fresh.level) === filter)) host.firstElementChild?.classList.add("new");
-    $("#diag-events-count").textContent = `${State.diagnosticEvents.length} olay bellekte`;
+    if (fresh && (!filter || String(fresh.level) === filter) && eventMatches(fresh, query)) host.firstElementChild?.classList.add("new");
   },
 
   /* The visible slice of the ledger, as plain lines for a bug report. */
   copyEvents() {
     const filter = this.levelFilter;
-    const rows = State.diagnosticEvents.filter((e) => !filter || String(e.level) === filter).slice(0, 120);
+    const rows = State.diagnosticEvents
+      .filter((e) => (!filter || String(e.level) === filter) && eventMatches(e, this.textFilter))
+      .slice(0, 120);
     if (!rows.length) { toast("Kopyalanacak olay yok.", true); return; }
     const lines = rows.map((e) => `${fmtTime(e.observed_at)} [${e.level || "info"}] ${e.component || ""} ${e.name || ""}: ${e.message || ""}`.trim());
     copyTextToClipboard(lines.join("\n"));
@@ -1275,6 +1281,7 @@ function bindPanels() {
   $("#diag-refresh").innerHTML = `${icon("refresh")}<span>Yenile</span>`;
   $("#diag-refresh").addEventListener("click", () => Diagnostics.refresh());
   $("#diag-level").addEventListener("change", (event) => { Diagnostics.levelFilter = event.target.value; Diagnostics.renderEvents(); });
+  $("#diag-find").addEventListener("input", (event) => { Diagnostics.textFilter = event.target.value; Diagnostics.renderEvents(); });
   $("#file-root-add").addEventListener("click", () => Files.add());
   $("#routines-refresh").innerHTML = icon("refresh");
   $("#routines-refresh").addEventListener("click", () => Routines.load());

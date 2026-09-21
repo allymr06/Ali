@@ -1226,6 +1226,11 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The request line (21 September 2026)
+
+`test_nova_web` pins the request line appearing only on a live card,
+the queue call's shape, and the in-flight disable.
+
 ## Tomorrow's row (21 September 2026)
 
 `test_almanac` pins the two-day arrays (tomorrow's rounded range, the

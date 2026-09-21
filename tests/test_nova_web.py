@@ -2656,8 +2656,15 @@ def test_the_home_remote_draws_what_the_tools_reported() -> None:
     hostile = draw({"ok": True, "data": {"running": True, "playing": True, "artist": "<img src=x>", "track": "x"}})
     assert "<img" not in hostile and "&lt;img" in hostile
 
+    queue_input = draw({"ok": True, "data": {"running": True, "playing": False}})
+    assert 'class="remote-queue"' in queue_input, "the request line ships with a live card"
+    assert "remote-queue" not in closed, "no Spotify, no request line"
+
     # Wiring: the card, its start/stop with the screen, the bridge call.
     assert 'id="home-remote"' in HTML
+    panels_js = JS_SOURCES["js/panels.js"]
+    assert '"spotify_queue_track", { query: wanted }' in panels_js
+    assert "queue.disabled = true;" in panels_js, "one request at a time"
     assert 'if (id === "home") Remote.start(); else Remote.stop();' in JS_SOURCES["js/shell.js"]
     assert 'call("run_remote_tool", "spotify_now_playing", {})' in JS_SOURCES["js/panels.js"]
     assert ".remote-btn" in CSS

@@ -93,6 +93,8 @@ body.paused .core-frame canvas { opacity: 0.55; transition: opacity var(--motion
 .remote-volume-row { display: flex; flex-direction: column; gap: 0.2rem; margin-top: 0.5rem; color: var(--ink-2); font-size: var(--text-xs); }
 .remote-volume { width: 100%; accent-color: var(--accent); }
 .remote-off { color: var(--ink-2); font-size: var(--text-sm); }
+.remote-queue { width: 100%; margin-top: 0.5rem; padding: 0.35rem 0.6rem; border: 1px solid var(--line-1); border-radius: var(--radius-1); background: var(--surface-1); color: var(--ink-1); font-size: var(--text-xs); }
+.remote-queue:focus { outline: none; border-color: var(--accent); }
 .remote-wa { display: flex; justify-content: space-between; gap: 0.5rem; align-items: center; margin-top: 0.5rem; color: var(--ink-2); font-size: var(--text-sm); }
 .recent-item {
   display: flex; align-items: center; gap: 0.6rem;

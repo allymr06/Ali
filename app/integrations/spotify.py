@@ -603,6 +603,16 @@ class SpotifyIntegration:
                 break
         if not chosen:
             return ToolResult(ToolExecutionStatus.FAILED, "spotify_queue_track", message=f"'{wanted}' için sonuç bulunamadı.", error="track_not_found")
+        # A context menu dies the moment the still-settling results
+        # re-render, so wait until two consecutive reads agree before
+        # opening it.
+        for _ in range(6):
+            await asyncio.sleep(max(0.2, self._ui_retry_seconds / 2))
+            settled = await asyncio.to_thread(client.control_names_in_handle, handle)
+            if settled == names:
+                break
+            names = settled
+        chosen = choose_play_button(names, wanted) or chosen
         title = play_title_of(chosen)
         more = more_options_button(names, title)
         opened = (
@@ -612,8 +622,12 @@ class SpotifyIntegration:
         )
         if not opened:
             return ToolResult(ToolExecutionStatus.FAILED, "spotify_queue_track", message=f"'{title}' için menü açılamadı.", error="menu_not_found")
-        await asyncio.sleep(max(0.05, self._ui_retry_seconds))
-        added = await asyncio.to_thread(client.invoke_menu_item_in_handle, handle, "Add to queue")
+        added = False
+        for _ in range(4):
+            await asyncio.sleep(max(0.2, self._ui_retry_seconds / 2))
+            added = await asyncio.to_thread(client.invoke_menu_item_in_handle, handle, "Add to queue")
+            if added:
+                break
         if not added:
             await asyncio.to_thread(client.press_escape)
             return ToolResult(ToolExecutionStatus.FAILED, "spotify_queue_track", message="Menüde 'Add to queue' bulunamadı.", error="menu_item_not_found")

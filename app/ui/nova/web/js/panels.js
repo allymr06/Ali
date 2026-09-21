@@ -154,6 +154,7 @@ function remoteMarkup(now, delegation) {
       parts.push(`<label class="remote-volume-row"><span>Ses %${esc(String(data.volume_percent))}</span>` +
         `<input type="range" class="remote-volume" min="0" max="100" step="5" value="${esc(String(data.volume_percent))}" aria-label="Spotify sesi"></label>`);
     }
+    parts.push('<input type="text" class="remote-queue" placeholder="Sıraya şarkı ekle… (Enter)" aria-label="Sıraya şarkı ekle" spellcheck="false">');
   }
   const wa = (delegation && delegation.data) || {};
   if (wa.active) {
@@ -195,13 +196,23 @@ const Remote = {
     }));
     const volume = $(".remote-volume", host);
     if (volume) volume.addEventListener("change", () => this.act("spotify_set_volume", { percent: Number(volume.value) }));
+    const queue = $(".remote-queue", host);
+    if (queue) queue.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      const wanted = queue.value.trim();
+      if (!wanted) return;
+      queue.disabled = true;
+      this.act("spotify_queue_track", { query: wanted }).finally(() => { queue.disabled = false; });
+    });
   },
 
   async act(tool, args) {
     if (!bridgeReady()) return;
     const result = await call("run_remote_tool", tool, args || {});
     toast(result.message || result.error || "Tamam.", result.ok === false);
-    this.refresh();
+    await this.refresh();
+    return result;
   },
 
   start() {

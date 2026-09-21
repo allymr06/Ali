@@ -193,6 +193,14 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The remote takes requests (21 September 2026)
+
+The Kumanda card gained a request line: type a song, press Enter, and
+it goes through the same allow-listed `spotify_queue_track` - searched,
+queued, verified in the queue panel, and reported in the tool's own
+words. The line ships only when Spotify is around, and disables itself
+while a request is in flight.
+
 ## Tomorrow in the brief (21 September 2026)
 
 The almanac's forecast call now asks for two days, and the brief shows

@@ -116,13 +116,25 @@ class UiaClient:
         return found[0] if found else 0
 
     def bring_handle_to_foreground(self, handle: int) -> bool:
+        """Front the window and report whether it actually is in front.
+
+        A background process is refused SetForegroundWindow unless it
+        just sent input; a synthetic Alt tap earns that right (the same
+        trick the WhatsApp driver needed). Chromium context menus close
+        on blur, so callers that open menus must have this succeed.
+        """
         if not handle:
             return False
         user32 = ctypes.WinDLL("user32")
         user32.ShowWindow(handle, 9)  # SW_RESTORE
-        user32.SetForegroundWindow(handle)
-        time.sleep(1.0)
-        return True
+        for _attempt in range(2):
+            user32.keybd_event(0x12, 0, 0, 0)  # Alt down: earn foreground rights
+            user32.keybd_event(0x12, 0, 2, 0)  # Alt up
+            user32.SetForegroundWindow(handle)
+            time.sleep(1.0)
+            if user32.GetForegroundWindow() == handle:
+                return True
+        return user32.GetForegroundWindow() == handle
 
     def invoke_first_button_in_handle(
         self, handle: int, matcher: Any
@@ -972,16 +984,22 @@ class UiaClient:
         ]
 
     def invoke_menu_item_in_handle(self, handle: int, name: str) -> bool:
-        """Press the named item of the menu currently open in the window."""
+        """Press the named item of the menu currently open in the window.
+
+        Chromium sometimes hosts the context menu in its own popup
+        window rather than under the app's HWND, so a miss under the
+        handle is retried from the desktop root - the menu is open right
+        now, so the named item exists exactly once.
+        """
         uia = self._uia()
-        window = uia.ElementFromHandle(handle)
-        item = window.FindFirst(
-            _TREE_SCOPE_DESCENDANTS,
-            uia.CreateAndCondition(
-                uia.CreatePropertyCondition(_CONTROL_TYPE_PROPERTY, _CONTROL_MENU_ITEM),
-                uia.CreatePropertyCondition(_NAME_PROPERTY, name),
-            ),
+        condition = uia.CreateAndCondition(
+            uia.CreatePropertyCondition(_CONTROL_TYPE_PROPERTY, _CONTROL_MENU_ITEM),
+            uia.CreatePropertyCondition(_NAME_PROPERTY, name),
         )
+        window = uia.ElementFromHandle(handle)
+        item = window.FindFirst(_TREE_SCOPE_DESCENDANTS, condition)
+        if not item:
+            item = uia.GetRootElement().FindFirst(_TREE_SCOPE_DESCENDANTS, condition)
         if not item:
             return False
         pattern = item.GetCurrentPattern(_INVOKE_PATTERN)

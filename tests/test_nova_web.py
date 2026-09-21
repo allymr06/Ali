@@ -2376,6 +2376,12 @@ def test_the_palette_calculator_answers_and_stays_out_of_the_way() -> None:
     assert json.loads(answer("120 mmhg kpa"))["value"] == pytest.approx(15.9987, abs=0.001)
     assert json.loads(answer("90 dk sa"))["display"] == "90 dk = 1,5 sa"
     assert json.loads(answer("5 mi km"))["value"] == pytest.approx(8.04672, abs=0.001)
+    assert json.loads(answer("5 MIL KM"))["value"] == pytest.approx(8.04672, abs=0.001), (
+        "an uppercase I in a unit folds to its dotted twin, never to dotless"
+    )
+    assert json.loads(answer("70 KG LB"))["display"] == "70 kg = 154,324 lb", (
+        "the display speaks the folded unit, not the shouted one"
+    )
     # The guard: ordinary queries, junk and undefined arithmetic stay out.
     for query in ("notlar", "3 elma", "hatırlatıcı kur 5", "1/0", "", "kg lb", "12*", "5 kg kg", "alert(1)"):
         assert json.loads(answer(query)) is None, query
@@ -2719,6 +2725,7 @@ def test_search_fold_collapses_the_turkish_i_family_one_to_one() -> None:
     for name in ("js/medical.js", "js/study.js"):
         assert "searchFold(" in JS_SOURCES[name], name
     assert "toLocaleLowerCase" not in JS_SOURCES["js/bridge.js"], "the demo searches like the page"
+    assert "toLocaleLowerCase" not in JS_SOURCES["js/toolbox.js"], "units and the sieve fold deterministically"
 
 
 def test_the_ledger_sieve_matches_what_a_row_shows() -> None:
@@ -2859,6 +2866,7 @@ def test_the_palette_converts_money_and_sets_reminders() -> None:
     assert money("3,5 euro") == {"amount": 3.5, "from": "EUR", "to": "TRY"}
     assert money("250 tl usd") == {"amount": 250, "from": "TRY", "to": "USD"}
     assert money("48,78 lira eur") == {"amount": 48.78, "from": "TRY", "to": "EUR"}
+    assert money("5 LİRA eur") == {"amount": 5, "from": "TRY", "to": "EUR"}, "dotted İ folds into the word"
     for query in ("100 tl", "100 usd usd", "70 kg lb", "12*3", "usd", "0 usd", "1000000001 usd", "yüz dolar", ""):
         assert money(query) is None, query
 

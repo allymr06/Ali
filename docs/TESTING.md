@@ -1226,6 +1226,11 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The folded units (21 September 2026)
+
+The calculator test gained "5 MIL KM" and "70 KG LB" vectors, and the
+fold sweep now also pins toolbox.js free of locale lowering.
+
 ## The renamed conversation (21 September 2026)
 
 The bridge test renames through every edge: unknown id, the 80-char

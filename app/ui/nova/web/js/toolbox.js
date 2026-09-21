@@ -29,8 +29,14 @@ function toolboxFormat(value) {
   return String(Number(value.toPrecision(6))).replace(".", ",");
 }
 
+/* The file-local twin of foundation's searchFold (QuickJS tests load
+   this file alone): the I family collapses one-to-one, then lower. */
+function toolboxFold(value) {
+  return String(value ?? "").replace(/[Iİ]/g, "i").replace(/ı/g, "i").toLowerCase();
+}
+
 function toolboxUnit(name) {
-  const key = String(name || "").trim().toLocaleLowerCase("tr");
+  const key = toolboxFold(String(name || "").trim());
   for (const [dimension, table] of TOOLBOX_DIMENSIONS) {
     if (key in table) return { dimension, key, factor: table[key] };
   }
@@ -173,8 +179,8 @@ function paletteMath(query) {
     const value = toolboxConvert(amount, conversion[2], conversion[3]);
     const formatted = value === null ? null : toolboxFormat(value);
     if (formatted !== null) {
-      const from = String(conversion[2]).toLocaleLowerCase("tr");
-      const to = String(conversion[3]).toLocaleLowerCase("tr");
+      const from = toolboxFold(conversion[2]);
+      const to = toolboxFold(conversion[3]);
       return { kind: "convert", value, display: `${conversion[1]} ${from} = ${formatted} ${to}` };
     }
     return null;
@@ -192,7 +198,7 @@ const DICT_PREFIXES = ["sözlük", "sozluk", "tdk"];
 
 function dictionaryQuery(query) {
   const text = String(query || "").trim();
-  const lowered = text.toLocaleLowerCase("tr");
+  const lowered = toolboxFold(text);
   for (const prefix of DICT_PREFIXES) {
     if (lowered === prefix) return null; // no word typed yet
     if (lowered.startsWith(prefix + " ")) {
@@ -231,7 +237,7 @@ const CURRENCY_WORDS = {
 };
 
 function paletteCurrency(query) {
-  const text = String(query || "").trim().toLocaleLowerCase("tr");
+  const text = toolboxFold(String(query || "").trim());
   let amountRaw, fromWord, toWord;
   let match = text.match(/^([$€₺])\s*([0-9]+(?:[.,][0-9]+)?)(?:\s+([a-z$€₺]+))?$/);
   if (match) { fromWord = match[1]; amountRaw = match[2]; toWord = match[3]; }
@@ -252,12 +258,12 @@ function paletteCurrency(query) {
 
 function paletteReminder(query) {
   const text = String(query || "").trim();
-  const lowered = text.toLocaleLowerCase("tr");
-  if (!lowered.startsWith("hatırlat ") && !lowered.startsWith("hatirlat ")) return null;
+  const lowered = toolboxFold(text);
+  if (!lowered.startsWith("hatirlat ")) return null; // the fold makes hatırlat and hatirlat one word
   const rest = text.slice(8).trim();
   let match = rest.match(/^([0-9]{1,3})\s*(dk|dakika|sa|saat)\s+(.+)$/i);
   if (match) {
-    const unit = match[2].toLocaleLowerCase("tr");
+    const unit = toolboxFold(match[2]);
     const minutes = Number(match[1]) * (unit.startsWith("sa") ? 60 : 1);
     if (minutes < 1 || minutes > 1440) return null;
     return { when: "+" + minutes, label: minutes + " dk sonra", text: match[3].trim() };
@@ -316,10 +322,7 @@ function eventMatches(event, query) {
   const attrs = Object.entries((event && event.attributes) || {}).map(([key, value]) => key + ":" + value).join(" ");
   const hay = [event && event.level, event && event.component, event && event.name, event && event.message, attrs]
     .map((part) => String(part || "")).join(" ");
-  // The ledger's own copy of foundation's searchFold (these tests run
-  // this file alone): pre-map the I family one-to-one, then lower.
-  const fold = (value) => value.replace(/[Iİ]/g, "i").replace(/ı/g, "i").toLowerCase();
-  return fold(hay).includes(fold(needle));
+  return toolboxFold(hay).includes(toolboxFold(needle));
 }
 
 /* ── the bell's kind counts (pure) ────────────────────────────────

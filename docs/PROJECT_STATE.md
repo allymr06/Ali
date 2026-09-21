@@ -193,6 +193,14 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The unit table folds its I too (21 September 2026)
+
+toolboxUnit carried the same latent locale trap the ledger sieve had:
+"5 MIL KM" lowered MIL to a dotless mıl and matched nothing. The
+file-local toolboxFold (searchFold's twin, kept local so QuickJS can
+load toolbox.js alone) now feeds both the unit lookup and the ledger
+sieve, and no toLocaleLowerCase is left in toolbox.js.
+
 ## Conversations carry their own names (21 September 2026)
 
 Every drawer row grew a pencil: promptDialog (confirmDialog's sibling

@@ -1762,6 +1762,50 @@ class NovaBridge:
                 }
         return brief
 
+    def convert_currency(self, amount: Any = 0, source: str = "", target: str = "") -> dict[str, Any]:
+        """One conversion between USD, EUR and TRY on the almanac's cached
+        ECB reference rates - the answer always names the rate's date.
+        """
+        almanac = getattr(self.controller.application, "almanac", None)
+        if almanac is None:
+            return {"ok": False, "error": "Almanak servisi hazır değil."}
+        try:
+            value = float(amount)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "Tutar sayı olmalı."}
+        if not 0 < value <= 1_000_000_000:
+            return {"ok": False, "error": "Tutar 0 ile 1 milyar arası olmalı."}
+        codes = {"USD", "EUR", "TRY"}
+        source_code = str(source or "").strip().upper()
+        target_code = str(target or "").strip().upper()
+        if source_code not in codes or target_code not in codes or source_code == target_code:
+            return {"ok": False, "error": "Yalnız USD, EUR ve TRY arası çevrilir."}
+        try:
+            rates = almanac.rates()
+        except Exception as exc:
+            return {"ok": False, "error": f"Kur okunamadı ({type(exc).__name__})."}
+        if not rates.get("available"):
+            return {"ok": False, "error": str(rates.get("reason") or "Kur servisi yanıt vermedi.")}
+        usd, eur = float(rates["usd_try"]), float(rates["eur_try"])
+        in_lira = {"USD": usd, "EUR": eur, "TRY": 1.0}
+        converted = value * in_lira[source_code] / in_lira[target_code]
+
+        def turkish(number: float, decimals: int = 2) -> str:
+            text = f"{number:,.{decimals}f}"
+            return text.replace(",", "§").replace(".", ",").replace("§", ".")
+
+        amount_text = turkish(value, 0 if value == int(value) else 2)
+        display = (
+            f"{amount_text} {source_code} = {turkish(converted)} {target_code}"
+            f" (ECB {rates.get('date', '?')} kuru)"
+        )
+        return {
+            "ok": True,
+            "value": round(converted, 2),
+            "display": display,
+            "rate_date": str(rates.get("date") or ""),
+        }
+
     def define_word(self, word: str = "") -> dict[str, Any]:
         """One TDK dictionary entry for the palette's lookup card.
 

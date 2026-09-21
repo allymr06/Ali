@@ -221,3 +221,53 @@ function dictionaryMarkup(entry) {
     `<ol class="dict-senses">${senses}</ol>${compounds}` +
     '<div class="dict-credit">Kaynak: TDK Güncel Türkçe Sözlük (sozluk.gov.tr) · canlı sorgu</div>';
 }
+
+/* ── the palette's money and reminder hand-offs (pure) ─────────── */
+
+const CURRENCY_WORDS = {
+  usd: "USD", dolar: "USD", "$": "USD",
+  eur: "EUR", euro: "EUR", "€": "EUR",
+  try: "TRY", tl: "TRY", lira: "TRY", "₺": "TRY",
+};
+
+function paletteCurrency(query) {
+  const text = String(query || "").trim().toLocaleLowerCase("tr");
+  let amountRaw, fromWord, toWord;
+  let match = text.match(/^([$€₺])\s*([0-9]+(?:[.,][0-9]+)?)(?:\s+([a-z$€₺]+))?$/);
+  if (match) { fromWord = match[1]; amountRaw = match[2]; toWord = match[3]; }
+  else {
+    match = text.match(/^([0-9]+(?:[.,][0-9]+)?)\s*([a-z$€₺]+)(?:\s+([a-z$€₺]+))?$/);
+    if (!match) return null;
+    amountRaw = match[1]; fromWord = match[2]; toWord = match[3];
+  }
+  const from = CURRENCY_WORDS[fromWord];
+  if (!from) return null;
+  // No target: lira is the answer people mean - and lira itself needs one.
+  const to = toWord ? CURRENCY_WORDS[toWord] : (from === "TRY" ? null : "TRY");
+  if (!to || to === from) return null;
+  const amount = Number(amountRaw.replace(",", "."));
+  if (!isFinite(amount) || amount <= 0 || amount > 1e9) return null;
+  return { amount, from, to };
+}
+
+function paletteReminder(query) {
+  const text = String(query || "").trim();
+  const lowered = text.toLocaleLowerCase("tr");
+  if (!lowered.startsWith("hatırlat ") && !lowered.startsWith("hatirlat ")) return null;
+  const rest = text.slice(8).trim();
+  let match = rest.match(/^([0-9]{1,3})\s*(dk|dakika|sa|saat)\s+(.+)$/i);
+  if (match) {
+    const unit = match[2].toLocaleLowerCase("tr");
+    const minutes = Number(match[1]) * (unit.startsWith("sa") ? 60 : 1);
+    if (minutes < 1 || minutes > 1440) return null;
+    return { when: "+" + minutes, label: minutes + " dk sonra", text: match[3].trim() };
+  }
+  match = rest.match(/^([0-2]?[0-9]):([0-5][0-9])\s+(.+)$/);
+  if (match) {
+    const hour = Number(match[1]);
+    if (hour > 23) return null;
+    const when = String(hour).padStart(2, "0") + ":" + match[2];
+    return { when, label: when, text: match[3].trim() };
+  }
+  return null;
+}

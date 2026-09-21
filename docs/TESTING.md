@@ -1226,6 +1226,19 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## Sun, lira, nudge (21 September 2026)
+
+`test_almanac` pins the sunrise/sunset fields on the same forecast call
+(and their absence staying None). `test_nova_web` walks the two new
+palette parsers - currency vectors incl. symbol forms, lira needing a
+target, the unit-converter and math guards staying out - and the
+reminder forms (+minutes, HH:MM, hour normalisation, the "hatırlatma"
+non-prefix), plus the sun row appearing only when the payload carries
+times. `test_ui_nova` drives `convert_currency` against a stubbed
+almanac: dated display in Turkish separators, TRY round-trip, EUR/USD
+cross rate, and every refusal (amount, codes, dead service, no
+almanac).
+
 ## The remote (21 September 2026)
 
 `test_ui_nova` runs `run_remote_tool` against a tool registered on the

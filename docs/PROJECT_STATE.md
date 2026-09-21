@@ -193,6 +193,21 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The sun, the lira and a nudge, all from the palette (21 September 2026)
+
+The almanac's daily answer now carries the day's frame - sunrise and
+sunset ride the same Open-Meteo call and the brief shows "Gün doğumu
+06:52 · batımı 19:24" only when the service actually said so. The
+palette gained three hand-offs, all pure parsers in `toolbox.js`:
+`100 usd` (also `$50`, `€10 tl`, `250 tl usd`) becomes a conversion on
+the almanac's cached ECB reference rates through the new
+`convert_currency` bridge - the answer always names the rate's date,
+lira alone asks for a target instead of guessing, and the demo bridge
+refuses rather than inventing a rate; `hatırlat 10 dk su iç` and
+`hatırlat 09:30 toplantı` become real reminders through the existing
+`create_reminder` path; `odak 45` starts the focus timer with that many
+minutes.
+
 ## The phone gets the whole house, and a remote in hand (21 September 2026)
 
 A paired phone loads the desktop Nova page itself (`/nova/`, shim

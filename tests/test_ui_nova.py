@@ -3000,6 +3000,41 @@ def test_voice_phases_reach_the_page_and_duck_the_music_without_risking_the_turn
     assert pushed[-1] == "idle"
 
 
+def test_the_bridge_converts_money_on_the_almanacs_dated_rates(booted) -> None:
+    class _StubAlmanac:
+        def __init__(self, payload) -> None:
+            self.payload = payload
+            self.asked = 0
+
+        def rates(self):
+            self.asked += 1
+            return self.payload
+
+    booted.controller.application.almanac = _StubAlmanac(
+        {"available": True, "usd_try": 41.2, "eur_try": 44.8, "date": "2026-09-19"}
+    )
+
+    lira = booted.bridge.convert_currency(100, "usd", "try")
+    assert lira["ok"] is True and lira["value"] == 4120.0
+    assert lira["display"] == "100 USD = 4.120,00 TRY (ECB 2026-09-19 kuru)"
+
+    back = booted.bridge.convert_currency(41.2, "TRY", "USD")
+    assert back["value"] == 1.0 and back["display"].startswith("41,20 TRY = 1,00 USD")
+
+    cross = booted.bridge.convert_currency(1, "EUR", "USD")
+    assert cross["value"] == round(44.8 / 41.2, 2)
+
+    assert booted.bridge.convert_currency(0, "usd", "try")["error"] == "Tutar 0 ile 1 milyar arası olmalı."
+    assert booted.bridge.convert_currency("yüz", "usd", "try")["error"] == "Tutar sayı olmalı."
+    assert booted.bridge.convert_currency(5, "usd", "usd")["error"] == "Yalnız USD, EUR ve TRY arası çevrilir."
+    assert booted.bridge.convert_currency(5, "gbp", "try")["error"] == "Yalnız USD, EUR ve TRY arası çevrilir."
+
+    booted.controller.application.almanac = _StubAlmanac({"available": False, "reason": "Kur servisi yanıt vermedi (HTTP 503)."})
+    assert booted.bridge.convert_currency(5, "usd", "try") == {"ok": False, "error": "Kur servisi yanıt vermedi (HTTP 503)."}
+    booted.controller.application.almanac = None
+    assert booted.bridge.convert_currency(5, "usd", "try") == {"ok": False, "error": "Almanak servisi hazır değil."}
+
+
 def test_the_bridge_hands_the_palette_one_dictionary_entry(booted) -> None:
     class _StubDictionary:
         def __init__(self) -> None:

@@ -212,6 +212,11 @@ const DemoBridge = {
     return { ok: false, error: "Demo modunda dosya yazılmaz." };
   },
 
+  async convert_currency(amount, source, target) {
+    // Honest demo: no live rate exists here, so none is invented.
+    return { ok: false, error: "Demo modunda canlı kur yok (" + String(source || "") + "→" + String(target || "") + ")." };
+  },
+
   async define_word(word) {
     // One canned entry so the card can be seen; the demo never asks TDK.
     return { ok: true, word: String(word || "kalp"),

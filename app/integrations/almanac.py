@@ -61,6 +61,28 @@ WEATHER_CODES_TR: dict[int, str] = {
 }
 
 
+def _clock(values: Any) -> str | None:
+    """The HH:MM tail of the first ISO stamp in a daily list, or None."""
+    if not isinstance(values, list) or not values:
+        return None
+    text = str(values[0] or "")
+    tail = text.split("T")[-1][:5]
+    if len(tail) == 5 and tail[2] == ":" and tail.replace(":", "").isdigit():
+        return tail
+    return None
+
+
+def _clock(values: Any) -> str | None:
+    """The HH:MM tail of the first ISO stamp in a daily list, or None."""
+    if not isinstance(values, list) or not values:
+        return None
+    text = str(values[0] or "")
+    tail = text.split("T")[-1][:5]
+    if len(tail) == 5 and tail[2] == ":" and tail.replace(":", "").isdigit():
+        return tail
+    return None
+
+
 def _number(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
@@ -158,7 +180,7 @@ class AlmanacService:
                 "latitude": f"{place['latitude']:.4f}",
                 "longitude": f"{place['longitude']:.4f}",
                 "current": "temperature_2m,apparent_temperature,weather_code",
-                "daily": "temperature_2m_max,temperature_2m_min",
+                "daily": "temperature_2m_max,temperature_2m_min,sunrise,sunset",
                 "timezone": "auto",
                 "forecast_days": "1",
             }
@@ -185,6 +207,9 @@ class AlmanacService:
             "label": WEATHER_CODES_TR.get(int(code), "") if isinstance(code, int) and not isinstance(code, bool) else "",
             "high": round(_number(highs[0])) if isinstance(highs, list) and highs and _number(highs[0]) is not None else None,
             "low": round(_number(lows[0])) if isinstance(lows, list) and lows and _number(lows[0]) is not None else None,
+            # The day's frame, from the same daily answer; absent stays None.
+            "sunrise": _clock(daily.get("sunrise") if isinstance(daily, Mapping) else None),
+            "sunset": _clock(daily.get("sunset") if isinstance(daily, Mapping) else None),
         }
 
     # --------------------------------------------------------------- rates

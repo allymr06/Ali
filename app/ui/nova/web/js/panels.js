@@ -53,6 +53,9 @@ function homeBriefMarkup(brief) {
     const range = weather.high !== null && weather.high !== undefined && weather.low !== null && weather.low !== undefined
       ? `↑${weather.high}° ↓${weather.low}°` : "";
     rows.push(`<div class="hb-row muted"><span class="hb-icon">🌤</span><span class="hb-text">${esc(weather.city)} ${weather.temperature}°${weather.label ? " · " + esc(weather.label) : ""}</span><span class="hb-side">${esc(range)}</span></div>`);
+    if (weather.sunrise && weather.sunset) {
+      rows.push(`<div class="hb-row muted"><span class="hb-icon">☀️</span><span class="hb-text">Gün doğumu ${esc(weather.sunrise)} · batımı ${esc(weather.sunset)}</span></div>`);
+    }
   } else if (weather.reason && weather.reason !== "Şehir ayarlanmadı.") {
     rows.push(`<div class="hb-row muted"><span class="hb-icon">🌤</span><span class="hb-text">${esc(weather.reason)}</span></div>`);
   }

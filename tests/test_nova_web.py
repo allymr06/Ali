@@ -2349,6 +2349,39 @@ def test_the_palette_calculator_answers_and_stays_out_of_the_way() -> None:
     assert "eval(" not in JS_SOURCES["js/toolbox.js"]
 
 
+def test_the_palette_converts_money_and_sets_reminders() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    money = lambda q: json.loads(context.eval("JSON.stringify(paletteCurrency(" + json.dumps(q) + "))"))
+    assert money("100 usd") == {"amount": 100, "from": "USD", "to": "TRY"}
+    assert money("100 usd eur") == {"amount": 100, "from": "USD", "to": "EUR"}
+    assert money("$50") == {"amount": 50, "from": "USD", "to": "TRY"}
+    assert money("€10 tl") == {"amount": 10, "from": "EUR", "to": "TRY"}
+    assert money("3,5 euro") == {"amount": 3.5, "from": "EUR", "to": "TRY"}
+    assert money("250 tl usd") == {"amount": 250, "from": "TRY", "to": "USD"}
+    assert money("48,78 lira eur") == {"amount": 48.78, "from": "TRY", "to": "EUR"}
+    for query in ("100 tl", "100 usd usd", "70 kg lb", "12*3", "usd", "0 usd", "1000000001 usd", "yüz dolar", ""):
+        assert money(query) is None, query
+
+    remind = lambda q: json.loads(context.eval("JSON.stringify(paletteReminder(" + json.dumps(q) + "))"))
+    assert remind("hatırlat 10 dk su iç") == {"when": "+10", "label": "10 dk sonra", "text": "su iç"}
+    assert remind("hatirlat 2 sa ilaç al") == {"when": "+120", "label": "120 dk sonra", "text": "ilaç al"}
+    assert remind("HATIRLAT 45 dakika mola") == {"when": "+45", "label": "45 dk sonra", "text": "mola"}
+    assert remind("hatırlat 09:30 komiteye çalış") == {"when": "09:30", "label": "09:30", "text": "komiteye çalış"}
+    assert remind("hatırlat 9:30 toplantı") == {"when": "09:30", "label": "09:30", "text": "toplantı"}
+    for query in ("hatırlat su iç", "hatırlatma ayarı", "hatırlat 25:00 x", "hatırlat 9:5 x", "hatırlat 0 dk x", "hatırlat 2000 dk x", "su iç"):
+        assert remind(query) is None, query
+
+    # Wiring: the rows, the bridge call, the focus shortcut.
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "const money = paletteCurrency(q);" in shell_js
+    assert 'call("convert_currency", money.amount, money.from, money.to)' in shell_js
+    assert "const remind = paletteReminder(q);" in shell_js
+    assert 'call("create_reminder", remind.text, remind.when)' in shell_js
+    assert "Focus.start(Number(focusMinutes[1]))" in shell_js
+
+
 def test_the_palette_hands_a_word_to_the_dictionary_and_the_card_escapes() -> None:
     quickjs = pytest.importorskip("quickjs")
     context = quickjs.Context()
@@ -2505,6 +2538,13 @@ def test_the_brief_carries_the_almanac_and_stays_silent_without_a_city() -> None
     }})
     assert "İstanbul 21° · parçalı bulutlu" in full and "↑24° ↓18°" in full
     assert "1 $ = 41,2 ₺ · 1 € = 44,8 ₺" in full
+    assert "Gün doğumu" not in full, "no sun times in the payload, no sun row invented"
+    sunny = markup({"ok": True, "date": "21 Eylül", "almanac": {
+        "weather": {"available": True, "city": "İstanbul", "temperature": 21, "label": "açık",
+                     "high": 24, "low": 18, "sunrise": "06:52", "sunset": "19:24"},
+        "rates": {"available": False, "reason": "x"},
+    }})
+    assert "Gün doğumu 06:52 · batımı 19:24" in sunny
     # No city configured: no weather row and no nagging.
     silent = markup({"ok": True, "almanac": {"weather": {"available": False, "reason": "Şehir ayarlanmadı."},
                                              "rates": {"available": False, "reason": "Kur servisi yanıt vermedi (HTTP 503)."}}})

@@ -461,6 +461,18 @@ const Palette = {
       if (math) scored.unshift({ group: "hesap", icon: "tools", label: math.display, keywords: "", run: () => toast(math.display, "ok") });
       const wordQuery = dictionaryQuery(q);
       if (wordQuery) scored.unshift({ group: "sözlük", icon: "book", label: `Sözlükte ara: “${wordQuery}” (TDK)`, keywords: "", run: () => Dict.lookup(wordQuery) });
+      const money = paletteCurrency(q);
+      if (money) scored.unshift({ group: "kur", icon: "tools", label: `Kura çevir: ${String(money.amount).replace(".", ",")} ${money.from} → ${money.to}`, keywords: "", run: async () => {
+        const result = await call("convert_currency", money.amount, money.from, money.to);
+        toast(result.display || result.error || "Çevrilemedi.", result.ok === false);
+      } });
+      const remind = paletteReminder(q);
+      if (remind) scored.unshift({ group: "hatırlat", icon: "alarm", label: `Hatırlatıcı kur: “${remind.text}” (${remind.label})`, keywords: "", run: async () => {
+        const result = await call("create_reminder", remind.text, remind.when);
+        toast(result.ok === false ? (result.error || "Hatırlatıcı kurulamadı.") : (result.message || `Hatırlatıcı kuruldu (${remind.label}).`), result.ok === false);
+      } });
+      const focusMinutes = q.match(/^odak\s+([0-9]{1,3})$/i);
+      if (focusMinutes) scored.unshift({ group: "odak", icon: "alarm", label: `${focusMinutes[1]} dk odak sayacı başlat`, keywords: "", run: () => Focus.start(Number(focusMinutes[1])) });
       scored.push({ group: "sor", icon: "spark", label: `JARVIS'e sor: “${q}”`, run: () => { showScreen("chat"); sendCommand(q); } });
       if (State.snapshot?.research_available) scored.push({ group: "araştır", icon: "research", label: `Araştır: “${q}”`, run: () => { showScreen("research"); $("#research-input").value = q; $("#research-form").requestSubmit(); } });
       if (State.snapshot?.vision_available) scored.push({ group: "görüş", icon: "vision", label: `Ekranı incele: “${q}”`, run: () => { showScreen("vision"); $("#vision-input").value = q; $("#vision-form").requestSubmit(); } });

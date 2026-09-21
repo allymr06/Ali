@@ -34,7 +34,12 @@ class CannedTransport:
 GEOCODE = {"results": [{"name": "İstanbul", "latitude": 41.01, "longitude": 28.95, "country_code": "TR"}]}
 FORECAST = {
     "current": {"temperature_2m": 21.4, "apparent_temperature": 19.8, "weather_code": 2},
-    "daily": {"temperature_2m_max": [24.3], "temperature_2m_min": [17.6]},
+    "daily": {
+        "temperature_2m_max": [24.3],
+        "temperature_2m_min": [17.6],
+        "sunrise": ["2026-09-21T06:52"],
+        "sunset": ["2026-09-21T19:24"],
+    },
 }
 RATES = {"base": "TRY", "date": "2026-09-19", "rates": {"USD": 0.024272, "EUR": 0.022321}}
 
@@ -55,8 +60,10 @@ def test_the_weather_names_the_city_the_sky_and_the_range() -> None:
     assert weather == {
         "available": True, "city": "İstanbul", "temperature": 21, "feels_like": 20,
         "label": "parçalı bulutlu", "high": 24, "low": 18,
+        "sunrise": "06:52", "sunset": "19:24",
     }
     assert "language=tr" in transport.urls[0]
+    assert "sunrise" in transport.urls[1] and "sunset" in transport.urls[1]
     assert "latitude=41.0100" in transport.urls[1] and "forecast_days=1" in transport.urls[1]
 
 

@@ -660,6 +660,25 @@ const Focus = {
       toast(`Odak durduruldu (${spent} dk geçmişti).`);
     }
     this.endsAt = 0;
+    if (finished) this.offerToLog(this.minutes);
+  },
+
+  /* A finished session may have been study - only Ali knows, so ask.
+     Short sits and a closed Academy are not worth a dialog. */
+  async offerToLog(minutes) {
+    if (!minutes || minutes < 5 || !State.medical?.available || typeof Medical === "undefined") return;
+    const wanted = await confirmDialog({
+      title: "Akademi günlüğüne yazılsın mı?",
+      body: `${minutes} dakikalık odak seansı bitti. Bu süre Tıp Akademisi çalışma günlüğüne (haftalık özete ve ay ritmine) işlensin mi?`,
+      confirmLabel: "İŞLE",
+    });
+    if (!wanted) return;
+    const result = await Medical.request("plan_log_study", { activity: "focus", minutes });
+    if (result && result.ok !== false && result.log) {
+      toast(`${minutes} dk çalışma günlüğüne işlendi.`, "ok");
+    } else {
+      toast((result && result.error) || "Günlüğe işlenemedi.", true);
+    }
   },
 
   tick() {

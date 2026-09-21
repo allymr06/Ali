@@ -1226,6 +1226,13 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The focus that asks (21 September 2026)
+
+`test_nova_web` pins the offer's guardrails: only a finished session
+offers (one call site, inside `stop(true)`), short sits and a closed
+Academy stay silent, the dialog's words, and the log call going through
+`plan_log_study` with activity "focus".
+
 ## Copy and the corner clock (21 September 2026)
 
 `test_nova_web` pins the copy control on full-size bubbles only, the

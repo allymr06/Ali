@@ -2349,6 +2349,18 @@ def test_the_palette_calculator_answers_and_stays_out_of_the_way() -> None:
     assert "eval(" not in JS_SOURCES["js/toolbox.js"]
 
 
+def test_a_finished_focus_offers_itself_to_the_academy_log() -> None:
+    shell_js = JS_SOURCES["js/shell.js"]
+    # Asked, never assumed - and only when it could be study at all.
+    assert "if (finished) this.offerToLog(this.minutes);" in shell_js
+    assert "if (!minutes || minutes < 5 || !State.medical?.available" in shell_js
+    assert "Akademi günlüğüne yazılsın mı?" in shell_js
+    assert 'Medical.request("plan_log_study", { activity: "focus", minutes })' in shell_js
+    assert "çalışma günlüğüne işlendi." in shell_js
+    # The stopped-early path never offers: only stop(true) does.
+    assert shell_js.count("this.offerToLog(") == 1
+
+
 def test_copy_hands_and_the_mini_clock_are_wired() -> None:
     conversation = JS_SOURCES["js/conversation.js"]
     # Every full-size bubble carries the copy control; slim ones do not.

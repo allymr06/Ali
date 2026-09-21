@@ -193,6 +193,16 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## A finished focus asks to be counted (21 September 2026)
+
+When a focus session runs its full course and the Academy is open,
+JARVIS asks one question: should these minutes enter the study log?
+Accepted, they flow through the planner's own `plan_log_study` (as
+activity "focus") and appear in the weekly summary and the month's
+rhythm like any studied minutes; declined or under five minutes or
+with the Academy closed, nothing is written. A session stopped early
+never asks - only a finished one could have been study.
+
 ## A copy at hand, a clock in the corner (21 September 2026)
 
 Every full-size chat bubble - the user's and JARVIS's alike - carries a

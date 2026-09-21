@@ -77,6 +77,9 @@ function renderMarkdownLite(raw) {
   const parts = [];
   let list = null; // "ul" | "ol" | null
   let fence = null; // collected lines of an open ``` block
+  const isRow = (line) => /^\s*\|.*\|\s*$/.test(line || "");
+  const isRule = (line) => isRow(line) && /^[\s|:\-]+$/.test(line || "") && (line || "").includes("-");
+  const cells = (line) => String(line).trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
   const closeList = () => { if (list) { parts.push(`</${list}>`); list = null; } };
   const closeFence = () => {
     if (fence === null) return;
@@ -84,7 +87,8 @@ function renderMarkdownLite(raw) {
       + fence.join("\n") + "</code></pre>");
     fence = null;
   };
-  for (const line of lines) {
+  for (let at = 0; at < lines.length; at += 1) {
+    const line = lines[at];
     // ``` opens and closes a literal block; inline markdown stays out
     // of it, and a stream cut mid-block still renders what arrived.
     if (/^\s*```/.test(line)) {
@@ -92,6 +96,27 @@ function renderMarkdownLite(raw) {
       continue;
     }
     if (fence !== null) { fence.push(line); continue; }
+    // A table is a header row, a rule, then body rows - anything less
+    // stays plain text, so a stray pipe never becomes a broken grid.
+    if (isRow(line) && !isRule(line) && isRule(lines[at + 1])) {
+      closeList();
+      const header = cells(line);
+      const body = [];
+      let cursor = at + 2;
+      while (cursor < lines.length && isRow(lines[cursor]) && !isRule(lines[cursor])) {
+        body.push(cells(lines[cursor]));
+        lines[cursor] = "\u0000consumed"; // this row is the table's now
+        cursor += 1;
+      }
+      parts.push('<table class="md-table"><thead><tr>'
+        + header.map((cell) => `<th>${inline(cell)}</th>`).join("")
+        + "</tr></thead><tbody>"
+        + body.map((row) => "<tr>" + header.map((cell, index) => `<td>${inline(row[index] || "")}</td>`).join("") + "</tr>").join("")
+        + "</tbody></table>");
+      lines[at + 1] = "\u0000consumed";
+      continue;
+    }
+    if (line === "\u0000consumed") continue;
     const bullet = /^\s*[-•] +(.*)$/.exec(line);
     const numbered = /^\s*\d+[.)] +(.*)$/.exec(line);
     const heading = /^\s*#{1,4} +(.*)$/.exec(line);

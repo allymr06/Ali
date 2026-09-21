@@ -193,6 +193,13 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Tables are tables (21 September 2026)
+
+The markdown renderer learned tables: a header row, a rule and body
+rows become a real `<table>`, cells keep their inline markdown, short
+rows pad to the header, and a stray pipe line without a rule stays the
+plain text it is. Hostile cells stay escaped like everything else.
+
 ## Code blocks are code (21 September 2026)
 
 The chat's markdown renderer learned fenced blocks: ``` opens a literal

@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## Tables (21 September 2026)
+
+The markdown test gained table vectors: the three-row shape, consumed
+rule, inline markdown inside cells, the no-rule stray pipe staying
+text, ragged-row padding, and the escaped hostile cell.
+
 ## Fenced code (21 September 2026)
 
 The markdown test gained fence vectors: literal content (no inline

@@ -1798,6 +1798,22 @@ def test_assistant_markdown_renders_the_safe_subset_and_nothing_else() -> None:
     assert listed.count("<li>") == 4 and "<ul>" in listed and "<ol>" in listed
     assert listed.index("</ul>") < listed.index("<ol>"), "the bullet list closes before the numbered one opens"
 
+    # Tables: header + rule + rows become a real table; cells keep inline
+    # markdown; a stray pipe line without a rule stays plain text.
+    table = run("| İlaç | Doz |" + NL + "|---|:---:|" + NL + "| **Aspirin** | 100 mg |" + NL + "| Parol | 500 mg |" + NL + "Bitti")
+    assert '<table class="md-table">' in table and table.count("<tr>") == 3
+    assert "<th>İlaç</th>" in table and "<td><strong>Aspirin</strong></td>" in table
+    assert "---" not in table, "the rule row is consumed, not printed"
+    assert "<div>Bitti</div>" in table
+    stray = run("a | b | c" + NL + "| tek satır |")
+    assert "<table" not in stray, "no rule, no table"
+    ragged = run("| A | B |" + NL + "|---|---|" + NL + "| yalnız |")
+    assert ragged.count("<td>") == 2 and "<td>yalnız</td>" in ragged and "<td></td>" in ragged, (
+        "a short row pads to the header, never crashes"
+    )
+    hostile_cell = run("| A |" + NL + "|---|" + NL + "| <script>x</script> |")
+    assert "<script" not in hostile_cell and "&lt;script&gt;" in hostile_cell
+
     # Fenced code: literal, inline markdown left alone, copy in the corner.
     fenced = run("Açıklama:" + NL + "```python" + NL + "x = a * b  # **not bold**" + NL + "print(x)" + NL + "```" + NL + "Bitti **tamam**")
     assert '<pre class="md-code">' in fenced and "data-code-copy" in fenced

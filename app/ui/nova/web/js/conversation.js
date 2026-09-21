@@ -76,8 +76,22 @@ function renderMarkdownLite(raw) {
   const lines = escaped.split(/\r?\n/);
   const parts = [];
   let list = null; // "ul" | "ol" | null
+  let fence = null; // collected lines of an open ``` block
   const closeList = () => { if (list) { parts.push(`</${list}>`); list = null; } };
+  const closeFence = () => {
+    if (fence === null) return;
+    parts.push('<pre class="md-code"><button type="button" class="code-copy" data-code-copy title="Kodu kopyala">⎘</button><code>'
+      + fence.join("\n") + "</code></pre>");
+    fence = null;
+  };
   for (const line of lines) {
+    // ``` opens and closes a literal block; inline markdown stays out
+    // of it, and a stream cut mid-block still renders what arrived.
+    if (/^\s*```/.test(line)) {
+      if (fence === null) { closeList(); fence = []; } else closeFence();
+      continue;
+    }
+    if (fence !== null) { fence.push(line); continue; }
     const bullet = /^\s*[-•] +(.*)$/.exec(line);
     const numbered = /^\s*\d+[.)] +(.*)$/.exec(line);
     const heading = /^\s*#{1,4} +(.*)$/.exec(line);
@@ -93,6 +107,7 @@ function renderMarkdownLite(raw) {
     parts.push(`<div>${inline(line)}</div>`);
   }
   closeList();
+  closeFence();
   return parts.join("");
 }
 
@@ -712,6 +727,11 @@ function bindReadaloud() {
     if (copy) {
       const body = copy.closest(".msg")?.querySelector(".msg-body");
       if (body) copyTextToClipboard(body.innerText);
+    }
+    const codeCopy = event.target.closest("[data-code-copy]");
+    if (codeCopy) {
+      const code = codeCopy.closest(".md-code")?.querySelector("code");
+      if (code) copyTextToClipboard(code.innerText);
     }
   });
 }

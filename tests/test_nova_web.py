@@ -1798,6 +1798,16 @@ def test_assistant_markdown_renders_the_safe_subset_and_nothing_else() -> None:
     assert listed.count("<li>") == 4 and "<ul>" in listed and "<ol>" in listed
     assert listed.index("</ul>") < listed.index("<ol>"), "the bullet list closes before the numbered one opens"
 
+    # Fenced code: literal, inline markdown left alone, copy in the corner.
+    fenced = run("Açıklama:" + NL + "```python" + NL + "x = a * b  # **not bold**" + NL + "print(x)" + NL + "```" + NL + "Bitti **tamam**")
+    assert '<pre class="md-code">' in fenced and "data-code-copy" in fenced
+    assert "x = a * b  # **not bold**" in fenced, "inline markdown never runs inside a fence"
+    assert fenced.count("<pre") == 1 and "<strong>tamam</strong>" in fenced
+    cut = run("```" + NL + "yarım kalan satır")
+    assert '<pre class="md-code">' in cut and "yarım kalan satır" in cut, "a stream cut mid-block still renders"
+    hostile_fence = run("```" + NL + "<script>alert(1)</script>" + NL + "```")
+    assert "<script" not in hostile_fence and "&lt;script&gt;" in hostile_fence
+
     # Injection: model or web text can never smuggle HTML through.
     hostile = run('<img src=x onerror=alert(1)> ve **<script>alert(2)</script>**')
     assert "<img" not in hostile and "<script" not in hostile

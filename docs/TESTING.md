@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## Fenced code (21 September 2026)
+
+The markdown test gained fence vectors: literal content (no inline
+emphasis inside), a single block per fence, the mid-stream cut, the
+escaped hostile fence, and the corner copy control.
+
 ## Cards that speak (21 September 2026)
 
 `test_nova_web` pins the card's voice-gated button, the on-screen-only

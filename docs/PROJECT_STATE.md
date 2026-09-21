@@ -193,6 +193,14 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Code blocks are code (21 September 2026)
+
+The chat's markdown renderer learned fenced blocks: ``` opens a literal
+`<pre>` where inline markdown never runs, a stream cut mid-block still
+renders what arrived, and hostile content stays escaped. Every block
+carries a copy control in its corner, through the page's one honest
+clipboard hand.
+
 ## Flashcards speak (21 September 2026)
 
 The SRS review card gained Seslendir: it reads exactly what is on

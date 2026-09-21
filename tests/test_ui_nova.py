@@ -3289,6 +3289,31 @@ def test_reminders_have_a_full_surface_on_the_bridge(booted) -> None:
     assert booted.bridge.snooze_reminder("yok-boyle")["ok"] is False
 
 
+def test_a_palette_note_lands_in_memory_once(booted, monkeypatch) -> None:
+    assert booted.bridge.remember_note("   ")["ok"] is False
+    assert booted.bridge.remember_note("x" * 501)["ok"] is False
+
+    first = booted.bridge.remember_note("Anatomi defteri camlı dolapta")
+    assert first["ok"] is True and first["memory_id"]
+    again = booted.bridge.remember_note("Anatomi defteri camlı dolapta")
+    assert again["ok"] is True and again["memory_id"] == first["memory_id"], (
+        "a duplicate returns the existing entry, never a copy"
+    )
+    mine = [m for m in booted.bridge.list_memories()["memories"]
+            if m["content"] == "Anatomi defteri camlı dolapta"]
+    assert len(mine) == 1 and mine[0]["source"] == "user"
+
+    manager = booted.app.memory_service.manager
+
+    def refuse(self, content, **kwargs):
+        raise RuntimeError("guard says no")
+
+    monkeypatch.setattr(type(manager), "remember", refuse)
+    blocked = booted.bridge.remember_note("gizli anahtar")
+    assert blocked["ok"] is False and "RuntimeError" in blocked["error"]
+    assert "guard says no" not in blocked["error"], "the guard's detail stays inside"
+
+
 def test_the_about_card_reports_measured_facts(booted, monkeypatch) -> None:
     import os
 

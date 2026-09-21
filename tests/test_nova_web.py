@@ -2641,6 +2641,24 @@ def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
     assert "clearChatFind(); input.blur();" in conversation
 
 
+def test_the_palette_note_query_is_pure_and_minimal() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    note = lambda q: context.eval("JSON.stringify(noteQuery(" + json.dumps(q) + ") || null)")
+
+    assert note("not: sınav 3 hafta sonra") == '"sınav 3 hafta sonra"'
+    assert note("NOT defter camlı dolapta") == '"defter camlı dolapta"'
+    assert note("not:") == "null" and note("not") == "null"
+    assert note("nota bak") == "null", "only the prefix, never a word that starts with it"
+    assert note("not: ab") == "null", "under three characters is a typo, not a note"
+
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "const note = noteQuery(q);" in shell_js
+    assert 'call("remember_note", note)' in shell_js
+    assert "Demo modunda hafızaya yazılmaz." in JS_SOURCES["js/bridge.js"]
+
+
 def test_search_fold_collapses_the_turkish_i_family_one_to_one() -> None:
     quickjs = pytest.importorskip("quickjs")
     context = quickjs.Context()

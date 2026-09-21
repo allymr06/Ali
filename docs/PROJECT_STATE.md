@@ -193,6 +193,14 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## A note from the palette (21 September 2026)
+
+"not: ..." in the palette offers to remember the rest: the bridge's
+remember_note runs the same sensitive-data guard the inference path
+uses, refuses empty and over-500 bodies in words, returns the existing
+entry for a duplicate instead of a copy, and the guard's own detail
+never leaks into the error. The demo bridge refuses honestly.
+
 ## One fold to search them all (21 September 2026)
 
 Every user-facing search on the page - chat find, conversation search

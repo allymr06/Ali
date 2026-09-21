@@ -293,6 +293,18 @@ function paletteRecentAdd(raw, command) {
   return JSON.stringify([text, ...rest].slice(0, PALETTE_RECENT_LIMIT));
 }
 
+/* ── the palette's quick note (pure) ───────────────────────────
+   "not: ..." or "not ..." offers to remember the rest. Only the exact
+   prefix (never a word that merely starts with not) and at least three
+   characters of body, so a typo does not become a memory offer. */
+
+function noteQuery(query) {
+  const match = /^not[:\s]+(.+)$/i.exec(String(query || "").trim());
+  if (!match) return null;
+  const text = match[1].trim();
+  return text.length >= 3 ? text : null;
+}
+
 /* ── the ledger's text sieve (pure) ────────────────────────────
    Case-insensitive (Turkish fold) substring over the fields a row
    shows - level, component, name, message and attributes. Time is

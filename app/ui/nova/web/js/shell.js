@@ -506,6 +506,11 @@ const Palette = {
       if (math) scored.unshift({ group: "hesap", icon: "tools", label: math.display, keywords: "", run: () => toast(math.display, "ok") });
       const wordQuery = dictionaryQuery(q);
       if (wordQuery) scored.unshift({ group: "sözlük", icon: "book", label: `Sözlükte ara: “${wordQuery}” (TDK)`, keywords: "", run: () => Dict.lookup(wordQuery) });
+      const note = noteQuery(q);
+      if (note) scored.unshift({ group: "hafıza", icon: "spark", label: `Hafızaya not: “${note}”`, keywords: "", run: async () => {
+        const done = await call("remember_note", note);
+        toast(done.message || done.error, done.ok ? "ok" : true);
+      } });
       const money = paletteCurrency(q);
       if (money) scored.unshift({ group: "kur", icon: "tools", label: `Kura çevir: ${String(money.amount).replace(".", ",")} ${money.from} → ${money.to}`, keywords: "", run: async () => {
         const result = await call("convert_currency", money.amount, money.from, money.to);

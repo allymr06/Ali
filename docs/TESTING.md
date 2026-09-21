@@ -1226,6 +1226,13 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The palette note (21 September 2026)
+
+QuickJS pins noteQuery (both prefixes, the not-a-prefix word, the
+too-short body); the bridge test pins the single entry a duplicate
+maps to, the user source, the bounds, and that a guard refusal names
+the type without leaking its message.
+
 ## The search fold (21 September 2026)
 
 QuickJS pins searchFold's collapse in both directions, its one-to-one

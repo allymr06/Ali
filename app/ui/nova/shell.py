@@ -3411,6 +3411,29 @@ class NovaBridge:
     # ------------------------------------------------------------------
     # Memory
     # ------------------------------------------------------------------
+    def remember_note(self, content: Any) -> dict[str, Any]:
+        """A quick user note into memory, through the same sensitive-data
+        guard the inference path uses; a duplicate returns the existing
+        entry instead of a copy."""
+        body = str(content or "").strip()
+        if not body:
+            return {"ok": False, "error": "Not boş olamaz."}
+        if len(body) > 500:
+            return {"ok": False, "error": "Not 500 karakteri aşamaz."}
+        service = self.controller.application.memory_service
+        try:
+            entry = service.manager.remember(body, source_reference="palette")
+        except Exception as exc:
+            return {"ok": False, "error": f"Not kaydedilemedi ({type(exc).__name__})."}
+        self._record_ui_event(
+            "memory.note_added", "A note went into memory from the palette."
+        )
+        return {
+            "ok": True,
+            "message": "Hafızaya yazıldı.",
+            "memory_id": str(entry.memory_id),
+        }
+
     def list_memories(self, limit: Any = 200) -> dict[str, Any]:
         try:
             bounded = max(1, min(int(limit), MAX_MEMORY_LIST))

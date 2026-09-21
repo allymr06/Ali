@@ -273,6 +273,24 @@ function renderChatHistory() {
 function renderChatTitle() {
   const active = State.conversations.find((item) => item.active);
   $("#chat-title").textContent = active ? active.title : (State.messages.length ? "Konuşma" : "Yeni konuşma");
+  // The pencil exists only when there is a stored thread to rename.
+  const pencil = $("#chat-rename");
+  if (pencil) pencil.hidden = !active;
+}
+
+async function renameActiveConversation() {
+  const active = State.conversations.find((item) => item.active);
+  if (!active) return;
+  const name = await promptDialog({
+    title: "Konuşmayı yeniden adlandır",
+    body: "Boş bırakırsan başlık otomatiğe döner (ilk mesajın).",
+    value: active.title, placeholder: "Yeni başlık",
+  });
+  if (name === null) return;
+  const result = await call("rename_conversation", active.conversation_id, name);
+  if (result.ok === false) { toast(result.error || "Adlandırılamadı.", true); return; }
+  toast(result.message, "ok");
+  refreshConversations();
 }
 
 /* Auto-scroll only when the reader is already at (or near) the bottom.
@@ -728,6 +746,7 @@ function bindConversation() {
   });
   $("#conv-new").addEventListener("click", newConversation);
   $("#chat-new").addEventListener("click", newConversation);
+  $("#chat-rename").addEventListener("click", renameActiveConversation);
   bindConvSearch();
   const chatExport = $("#chat-export");
   if (chatExport) chatExport.addEventListener("click", async () => {

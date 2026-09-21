@@ -1226,6 +1226,11 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The header pencil (21 September 2026)
+
+Pins: the header button, its active-thread-only visibility, and the
+shared rename path (no second dialog, no second bridge call).
+
 ## The brief's +10 (21 September 2026)
 
 The markup test pins the badge riding only id-bearing rows (escaped),

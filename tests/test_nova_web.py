@@ -2677,6 +2677,10 @@ def test_the_drawer_offers_rename_through_one_prompt_dialog() -> None:
     )
 
     conversation = JS_SOURCES["js/conversation.js"]
+    assert 'id="chat-rename"' in HTML
+    assert "pencil.hidden = !active;" in conversation, "no stored thread, no pencil"
+    assert '$("#chat-rename").addEventListener("click", renameActiveConversation);' in conversation
+    assert 'call("rename_conversation", active.conversation_id, name)' in conversation
     assert 'data-ren="${esc(item.conversation_id)}"' in conversation
     assert 'call("rename_conversation", item.conversation_id, name)' in conversation
     assert "if (name === null) return;" in conversation, "cancelling changes nothing"

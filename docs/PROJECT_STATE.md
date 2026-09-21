@@ -193,6 +193,13 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The chat header renames too (21 September 2026)
+
+The pencil moved up front: a small ✎ beside the chat title opens the
+same promptDialog-and-rename_conversation path the drawer uses, for
+the thread that is open right now. It exists only when a stored
+thread is active - a brand-new empty chat has nothing to rename.
+
 ## The brief snoozes in place (21 September 2026)
 
 Reminder rows on the home brief carry a small +10 that appears on

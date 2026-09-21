@@ -2641,6 +2641,18 @@ def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
     assert "clearChatFind(); input.blur();" in conversation
 
 
+def test_the_memory_screen_takes_a_note_by_hand() -> None:
+    for element_id in ("memory-note-form", "memory-note-input"):
+        assert f'id="{element_id}"' in HTML, element_id
+    assert 'maxlength="500"' in HTML, "the field admits the bridge's own bound"
+    panels = JS_SOURCES["js/panels.js"]
+    handler = panels.split('$("#memory-note-form").addEventListener("submit"')[1].split("});")[0]
+    assert 'call("remember_note", body)' in handler, "the same guarded bridge path as the palette"
+    assert "Memory.load()" in handler and 'input.value = ""' in handler
+    assert "if (!body) return;" in handler, "an empty note never leaves the page"
+    assert ".memory-note input" in CSS
+
+
 def test_the_palette_note_query_is_pure_and_minimal() -> None:
     quickjs = pytest.importorskip("quickjs")
     context = quickjs.Context()

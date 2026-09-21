@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The hand-written note (21 September 2026)
+
+Pins: the form and its 500-character field in the page, the handler
+riding remember_note (not a second path), the empty-body early
+return, and the reload-and-clear on success.
+
 ## The palette note (21 September 2026)
 
 QuickJS pins noteQuery (both prefixes, the not-a-prefix word, the

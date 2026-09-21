@@ -1272,6 +1272,15 @@ function bindPanels() {
     $$("#settings-nav .tab").forEach((t) => t.classList.toggle("active", t === tab));
     $(`#settings-${tab.dataset.target}`)?.scrollIntoView({ behavior: State.reducedMotion ? "auto" : "smooth", block: "start" });
   }));
+  $("#memory-note-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = $("#memory-note-input");
+    const body = input.value.trim();
+    if (!body) return;
+    const done = await call("remember_note", body);
+    toast(done.message || done.error, done.ok ? "ok" : true);
+    if (done.ok) { input.value = ""; $("#memory-search").value = ""; Memory.load(); }
+  });
   $("#memory-search").addEventListener("input", (event) => {
     clearTimeout(Memory._debounce);
     Memory._debounce = setTimeout(() => Memory.search(event.target.value), 220);

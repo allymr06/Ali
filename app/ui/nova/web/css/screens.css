@@ -189,6 +189,9 @@ body.paused .core-frame canvas { opacity: 0.55; transition: opacity var(--motion
 
 .memory-toolbar { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); flex-wrap: wrap; }
 .memory-toolbar .search { flex: 1; min-width: 16rem; max-width: 30rem; }
+.memory-note { display: flex; gap: 0.5rem; margin: 0 0 0.9rem; }
+.memory-note input { flex: 1; min-width: 0; padding: 0.5rem 0.75rem; border: 1px solid var(--line-1); border-radius: var(--radius-1); background: var(--surface-1); color: var(--ink-1); font-size: var(--text-sm); }
+.memory-note input:focus { outline: none; border-color: var(--accent); }
 .memory-groups { display: flex; flex-direction: column; gap: var(--space-5); padding-bottom: var(--space-4); }
 .memory-group .ctx-title { margin-bottom: 0.7rem; }
 .memory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); gap: var(--space-3); }

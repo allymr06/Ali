@@ -193,6 +193,13 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Notes by hand on the Memory screen (21 September 2026)
+
+The Memory screen grew a small form above the groups: type a note,
+press Not ekle, and it runs through the very same remember_note
+bridge the palette uses - guard, bounds, duplicate-returns-existing
+and all. Success clears the field and search and reloads the list.
+
 ## A note from the palette (21 September 2026)
 
 "not: ..." in the palette offers to remember the rest: the bridge's

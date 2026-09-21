@@ -1787,6 +1787,7 @@ const Medical = {
         title: "Sınav sorularını yapıştır",
         body: "Numaralı sorular ve A) B) C) biçimli şıklar bekleniyor. Cevap anahtarı metinde varsa okunur; yoksa asla tahmin edilmez.",
         placeholder: "1. Scapula'nın spina scapulae'si…\nA) …\nB) …",
+        multiline: true, confirmLabel: "İÇE AKTAR",
       });
       if (!text) return;
       const result = await this.request("import_questions", { profile_id: profile.profile_id, subject: profile.subject || "", text });
@@ -2215,34 +2216,6 @@ function renderMarkdown(text) {
   });
   closeList(); closeTable();
   return out.join("");
-}
-
-/* A small text prompt built on the existing confirmation dialog styling. */
-function promptDialog({ title, body, placeholder = "" }) {
-  return new Promise((resolve) => {
-    const veil = $("#confirm");
-    const ok = $("#confirm-ok"), cancel = $("#confirm-cancel");
-    const textNode = $("#confirm-text");
-    $("#confirm-title").textContent = title;
-    textNode.innerHTML = `${esc(body)}<textarea id="confirm-input" class="mem-edit" rows="8" placeholder="${esc(placeholder)}"></textarea>`;
-    ok.textContent = "İÇE AKTAR";
-    cancel.textContent = "VAZGEÇ";
-    ok.className = "btn btn-primary";
-    const finish = (value) => {
-      ok.onclick = null; cancel.onclick = null;
-      window.removeEventListener("keydown", onKey, true);
-      veil.hidden = true;
-      textNode.textContent = "";
-      resolve(value);
-    };
-    const onKey = (event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); finish(null); } };
-    ok.onclick = () => finish(($("#confirm-input").value || "").trim() || null);
-    cancel.onclick = () => finish(null);
-    window.addEventListener("keydown", onKey, true);
-    veil.hidden = false;
-    Motion.rise(veil.querySelector(".modal"), { y: 14, scale: 0.97, duration: Motion.panel });
-    $("#confirm-input").focus();
-  });
 }
 
 /* ════════════════════════════════════════════════════════════════════

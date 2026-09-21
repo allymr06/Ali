@@ -193,6 +193,15 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Conversations carry their own names (21 September 2026)
+
+Every drawer row grew a pencil: promptDialog (confirmDialog's sibling
+with one text field - trimmed value on confirm or Enter, null on
+cancel or Escape) feeds rename_conversation, which stores the name in
+the conversation's metadata. The derived title (first user message)
+stays the fallback: an empty name returns to it, archived threads
+rename too, search speaks the new name, and 80 characters is the cap.
+
 ## Notes by hand on the Memory screen (21 September 2026)
 
 The Memory screen grew a small form above the groups: type a note,

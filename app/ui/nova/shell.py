@@ -2830,6 +2830,32 @@ class NovaBridge:
             ),
         }
 
+    def rename_conversation(self, conversation_id: Any, title: Any) -> dict[str, Any]:
+        """Name a conversation by hand; an empty name returns it to the
+        derived title (the first thing the user said). Archived threads
+        rename too - metadata is not a turn."""
+        wanted = " ".join(str(title or "").split())
+        if len(wanted) > 80:
+            return {"ok": False, "error": "Başlık 80 karakteri aşamaz."}
+        engine = self.controller.application.conversation_engine
+        try:
+            conversation = engine.get(UUID(str(conversation_id)))
+        except (ValueError, KeyError):
+            return {"ok": False, "error": "Böyle bir konuşma yok."}
+        if wanted:
+            conversation.metadata["title"] = wanted
+        else:
+            conversation.metadata.pop("title", None)
+        engine.store.save(conversation)
+        self._record_ui_event(
+            "conversation.renamed", "A conversation was renamed from the drawer."
+        )
+        return {
+            "ok": True,
+            "message": "Başlık güncellendi." if wanted else "Başlık otomatiğe döndü.",
+            "title": self.controller.conversation_title(conversation),
+        }
+
     def search_conversations(self, query: Any) -> dict[str, Any]:
         """Find stored conversations by what was said in them."""
         normalized = " ".join(str(query or "").split())

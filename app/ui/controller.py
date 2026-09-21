@@ -143,7 +143,11 @@ class DesktopController:
 
     @staticmethod
     def conversation_title(conversation: Any, limit: int = 80) -> str:
-        """The first thing the user said, or a neutral placeholder."""
+        """The user's own name for it when one is stored, else the first
+        thing they said, else a neutral placeholder."""
+        custom = str((conversation.metadata or {}).get("title") or "").strip()
+        if custom:
+            return custom if len(custom) <= limit else custom[: limit - 1] + "…"
         for turn in conversation.turns:
             if (
                 turn.role is MessageRole.USER

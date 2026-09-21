@@ -3340,6 +3340,43 @@ def test_the_about_card_reports_measured_facts(booted, monkeypatch) -> None:
         assert booted.bridge.open_state_folder()["ok"] is False
 
 
+def test_a_conversation_can_carry_a_name_of_its_own(booted) -> None:
+    engine = booted.app.conversation_engine
+    stored = engine.create()
+    stored.turns.append(ConversationTurn(stored.conversation_id, MessageRole.USER, "Kalp anatomisi sorusu"))
+    engine.store.save(stored)
+    cid = str(stored.conversation_id)
+
+    listed = lambda: next(
+        row for row in booted.bridge.list_conversations()["conversations"]
+        if row["conversation_id"] == cid
+    )
+    assert listed()["title"] == "Kalp anatomisi sorusu"
+
+    assert booted.bridge.rename_conversation("yok-boyle", "X")["ok"] is False
+    assert booted.bridge.rename_conversation(cid, "y" * 81)["ok"] is False
+
+    renamed = booted.bridge.rename_conversation(cid, "  Komite   provası  ")
+    assert renamed["ok"] is True and renamed["title"] == "Komite provası"
+    assert listed()["title"] == "Komite provası", "the drawer speaks the new name"
+    searched = booted.bridge.search_conversations("Komite")
+    assert any(row["conversation_id"] == cid for row in searched["results"]), (
+        "search finds the hand-given name"
+    )
+
+    booted.bridge.archive_conversation(cid)
+    assert booted.bridge.rename_conversation(cid, "Arşivde ad")["ok"] is True, (
+        "metadata is not a turn: archived threads rename too"
+    )
+
+    cleared = booted.bridge.rename_conversation(cid, "   ")
+    assert cleared["ok"] is True and cleared["title"] == "Kalp anatomisi sorusu", (
+        "an empty name returns to the derived title"
+    )
+    events = [e.name for e in booted.app.diagnostics.ledger.list(component="ui", limit=40)]
+    assert "conversation.renamed" in events
+
+
 def test_an_archived_conversation_can_come_back(booted) -> None:
     engine = booted.app.conversation_engine
     stored = engine.create()

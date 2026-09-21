@@ -360,6 +360,7 @@ function renderConversations() {
     <button type="button" class="conv-item ${item.active ? "active" : ""}" data-id="${esc(item.conversation_id)}" title="${esc(item.title)}">
       <span class="conv-title">${esc(item.title)}</span>
       <span class="conv-meta"><span>${item.turn_count} mesaj${item.status === "archived" ? " · arşiv" : ""}</span><span>${esc(fmtRelative(item.updated_at))}</span></span>
+      <span class="conv-ren" data-ren="${esc(item.conversation_id)}" title="Yeniden adlandır">✎</span>
       <span class="conv-pin ${pins.has(item.conversation_id) ? "on" : ""}" data-pin="${esc(item.conversation_id)}" title="${pins.has(item.conversation_id) ? "Sabitlemeyi kaldır" : "Sabitle (bu cihazda)"}">📌</span>
     </button>`;
   let group = null;
@@ -396,6 +397,21 @@ function renderConversations() {
     else current.add(node.dataset.pin);
     store("nova.conv.pins", [...current].join(","));
     renderConversations();
+  }));
+  $$(".conv-ren", host).forEach((node) => node.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    const item = items.find((entry) => entry.conversation_id === node.dataset.ren);
+    if (!item) return;
+    const name = await promptDialog({
+      title: "Konuşmayı yeniden adlandır",
+      body: "Boş bırakırsan başlık otomatiğe döner (ilk mesajın).",
+      value: item.title, placeholder: "Yeni başlık",
+    });
+    if (name === null) return;
+    const result = await call("rename_conversation", item.conversation_id, name);
+    if (result.ok === false) { toast(result.error || "Adlandırılamadı.", true); return; }
+    toast(result.message, "ok");
+    refreshConversations();
   }));
   $$(".conv-item", host).forEach((node) => {
     node.addEventListener("click", () => openConversation(node.dataset.id));

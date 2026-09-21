@@ -540,3 +540,51 @@ function confirmDialog({ title, body, confirmLabel = "ONAYLA",
     cancel.focus();   // the safe choice is the default focus
   });
 }
+
+/* confirmDialog's sibling with one text field: resolves the trimmed
+   value on confirm or Enter, null on cancel or Escape - so a caller
+   can tell "clear it" (empty string) from "leave it" (null). */
+function promptDialog({ title, body = "", value = "", placeholder = "",
+                        confirmLabel = "KAYDET", cancelLabel = "VAZGEÇ",
+                        maxLength = 80, multiline = false, rows = 8 }) {
+  return new Promise((resolve) => {
+    const veil = $("#confirm");
+    const ok = $("#confirm-ok"), cancel = $("#confirm-cancel");
+    const field = multiline ? $("#confirm-area") : $("#confirm-input");
+    const previous = document.activeElement;
+    $("#confirm-title").textContent = title;
+    $("#confirm-text").textContent = body;
+    ok.textContent = confirmLabel;
+    cancel.textContent = cancelLabel;
+    ok.className = "btn btn-primary";
+    field.value = value;
+    field.placeholder = placeholder;
+    if (multiline) field.rows = rows;
+    else field.maxLength = maxLength;
+    field.hidden = false;
+    const finish = (result) => {
+      ok.onclick = null; cancel.onclick = null; field.onkeydown = null;
+      window.removeEventListener("keydown", onKey, true);
+      field.hidden = true; field.value = "";
+      veil.hidden = true;
+      confirmOpen = false;
+      if (previous && typeof previous.focus === "function" && document.contains(previous)) previous.focus();
+      resolve(result);
+    };
+    const onKey = (event) => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); finish(null); }
+    };
+    field.onkeydown = (event) => {
+      // A one-line field confirms on Enter; a textarea keeps it for newlines.
+      if (!multiline && event.key === "Enter") { event.preventDefault(); finish(field.value.trim()); }
+    };
+    ok.onclick = () => finish(field.value.trim());
+    cancel.onclick = () => finish(null);
+    window.addEventListener("keydown", onKey, true);
+    confirmOpen = true;
+    veil.hidden = false;
+    Motion.rise(veil.querySelector(".modal"), { y: 14, scale: 0.97, duration: Motion.panel });
+    field.focus();
+    field.select();
+  });
+}

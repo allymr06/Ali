@@ -2641,6 +2641,34 @@ def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
     assert "clearChatFind(); input.blur();" in conversation
 
 
+def test_the_drawer_offers_rename_through_one_prompt_dialog() -> None:
+    foundation = JS_SOURCES["js/foundation.js"]
+    assert JS.count("function promptDialog(") == 1, (
+        "one dialog for the whole page - a second declaration in a later "
+        "script silently shadows this one (medical.js did exactly that)"
+    )
+    assert "function promptDialog(" in foundation
+    prompt_body = foundation.split("function promptDialog(")[1]
+    assert 'if (!multiline && event.key === "Enter") { event.preventDefault(); finish(field.value.trim()); }' in prompt_body
+    assert "finish(null)" in prompt_body, "cancel and Escape resolve null, never an empty string"
+    assert 'field.hidden = true; field.value = "";' in prompt_body, "the shared modal leaves no field behind"
+    assert 'id="confirm-input"' in HTML and 'id="confirm-area"' in HTML
+    assert '!multiline && event.key === "Enter"' in prompt_body, (
+        "Enter confirms one-line fields only; a textarea keeps it for newlines"
+    )
+    assert 'multiline: true, confirmLabel: "İÇE AKTAR"' in JS_SOURCES["js/medical.js"], (
+        "the exam-paste prompt rides the shared dialog"
+    )
+
+    conversation = JS_SOURCES["js/conversation.js"]
+    assert 'data-ren="${esc(item.conversation_id)}"' in conversation
+    assert 'call("rename_conversation", item.conversation_id, name)' in conversation
+    assert "if (name === null) return;" in conversation, "cancelling changes nothing"
+    assert "Boş bırakırsan başlık otomatiğe döner" in conversation
+    assert ".conv-ren" in CSS
+    assert "Demo modunda yeniden adlandırma yok." in JS_SOURCES["js/bridge.js"]
+
+
 def test_the_memory_screen_takes_a_note_by_hand() -> None:
     for element_id in ("memory-note-form", "memory-note-input"):
         assert f'id="{element_id}"' in HTML, element_id

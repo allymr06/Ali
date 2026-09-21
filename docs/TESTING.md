@@ -1226,6 +1226,14 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The renamed conversation (21 September 2026)
+
+The bridge test renames through every edge: unknown id, the 80-char
+cap, whitespace collapsing, the drawer and search speaking the new
+name, archived threads renaming, the empty name returning to the
+derived title, and the ledger event. Web pins hold promptDialog's
+null-vs-empty contract and the shared modal's field cleanup.
+
 ## The hand-written note (21 September 2026)
 
 Pins: the form and its 500-character field in the page, the handler

@@ -2349,6 +2349,22 @@ def test_the_palette_calculator_answers_and_stays_out_of_the_way() -> None:
     assert "eval(" not in JS_SOURCES["js/toolbox.js"]
 
 
+def test_archived_threads_hide_on_request_and_the_ledger_copies() -> None:
+    conversation = JS_SOURCES["js/conversation.js"]
+    assert '"nova.conv.hidearchive"' in conversation
+    assert "arşivli konuşma gizli · göster" in conversation
+    assert "Arşivlileri gizle" in conversation
+    assert 'item.status !== "archived" || item.active' in conversation
+
+    panels = JS_SOURCES["js/panels.js"]
+    assert "copyEvents() {" in panels
+    assert 'toast("Kopyalanacak olay yok.", true);' in panels
+    assert "copyTextToClipboard(lines.join(" in panels
+    assert "fmtTime(e.observed_at)" in panels and "e.component" in panels, "the copy speaks the ledger's own fields"
+    assert 'id="diag-copy"' in HTML
+    assert 'Diagnostics.copyEvents());' in panels
+
+
 def test_the_palette_remembers_five_commands_and_forgets_on_request() -> None:
     quickjs = pytest.importorskip("quickjs")
     context = quickjs.Context()
@@ -2462,7 +2478,18 @@ def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
     split = order(items, "three,ghost")
     assert [item["conversation_id"] for item in split["pinned"]] == ["three"], "unknown pins pin nothing"
     assert [item["conversation_id"] for item in split["rest"]] == ["one", "two"]
-    assert order([], "x") == {"pinned": [], "rest": []}
+    assert order([], "x") == {"pinned": [], "rest": [], "hiddenCount": 0}
+
+    hide = lambda payload: json.loads(context.eval(
+        "JSON.stringify(convOrder(" + json.dumps(payload) + ", convPinsParse(''), { hideArchived: true }))"))
+    mixed = [
+        {"conversation_id": "a", "status": "active"},
+        {"conversation_id": "b", "status": "archived"},
+        {"conversation_id": "c", "status": "archived", "active": True},
+    ]
+    hidden = hide(mixed)
+    assert [item["conversation_id"] for item in hidden["rest"]] == ["a", "c"], "the open thread never hides"
+    assert hidden["hiddenCount"] == 1
 
     find = lambda texts, query: json.loads(context.eval(
         "JSON.stringify(chatFindFilter(" + json.dumps(texts) + ", " + json.dumps(query) + "))"))

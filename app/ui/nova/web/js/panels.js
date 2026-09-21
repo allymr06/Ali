@@ -779,6 +779,15 @@ const Diagnostics = {
     if (fresh && (!filter || String(fresh.level) === filter)) host.firstElementChild?.classList.add("new");
     $("#diag-events-count").textContent = `${State.diagnosticEvents.length} olay bellekte`;
   },
+
+  /* The visible slice of the ledger, as plain lines for a bug report. */
+  copyEvents() {
+    const filter = this.levelFilter;
+    const rows = State.diagnosticEvents.filter((e) => !filter || String(e.level) === filter).slice(0, 120);
+    if (!rows.length) { toast("Kopyalanacak olay yok.", true); return; }
+    const lines = rows.map((e) => `${fmtTime(e.observed_at)} [${e.level || "info"}] ${e.component || ""} ${e.name || ""}: ${e.message || ""}`.trim());
+    copyTextToClipboard(lines.join("\n"));
+  },
 };
 
 /* ── settings ─────────────────────────────────────────────────────── */
@@ -1167,6 +1176,7 @@ function bindPanels() {
   $("#research-form").addEventListener("submit", submitResearch);
   $("#settings-accent").addEventListener("change", () => applyAccent($("#settings-accent").value));
   $("#settings-form").addEventListener("submit", saveSettings);
+  $("#diag-copy")?.addEventListener("click", () => Diagnostics.copyEvents());
   $("#settings-assistant-save").addEventListener("click", saveAssistantSettings);
   $("#settings-backup-now").addEventListener("click", runStateBackup);
   Reminders.bind();

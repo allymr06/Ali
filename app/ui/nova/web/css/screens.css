@@ -129,6 +129,8 @@ body.paused .core-frame canvas { opacity: 0.55; transition: opacity var(--motion
 .conv-pin { position: absolute; top: 0.35rem; right: 0.45rem; font-size: 0.62rem; opacity: 0; cursor: pointer; filter: grayscale(1); transition: opacity 0.15s ease; }
 .conv-item:hover .conv-pin { opacity: 0.55; }
 .conv-pin.on { opacity: 0.9; filter: none; }
+.conv-archtoggle { margin: 0.5rem 0.2rem 0.2rem; padding: 0.3rem 0.5rem; border: none; background: none; color: var(--ink-3); font-size: var(--text-xs); text-align: left; cursor: pointer; }
+.conv-archtoggle:hover { color: var(--accent); }
 .conv-item:hover .conv-pin.on, .conv-pin.on { opacity: 0.9; }
 .conv-item .conv-meta { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.6rem; color: var(--ink-4); }
 .chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }

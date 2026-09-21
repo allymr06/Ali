@@ -104,11 +104,17 @@ function convPinsParse(rawValue) {
   return new Set(String(rawValue || "").split(",").map((piece) => piece.trim()).filter(Boolean));
 }
 
-function convOrder(items, pins) {
-  const list = Array.isArray(items) ? items : [];
+function convOrder(items, pins, { hideArchived = false } = {}) {
+  const source = Array.isArray(items) ? items : [];
+  // The active thread stays visible even when archived threads hide:
+  // the list must never lose the conversation that is open right now.
+  const list = hideArchived
+    ? source.filter((item) => item.status !== "archived" || item.active)
+    : source;
   return {
     pinned: list.filter((item) => pins.has(item.conversation_id)),
     rest: list.filter((item) => !pins.has(item.conversation_id)),
+    hiddenCount: source.length - list.length,
   };
 }
 
@@ -298,7 +304,8 @@ function renderConversations() {
     return;
   }
   const pins = convPinsParse(store("nova.conv.pins"));
-  const ordered = convOrder(items, pins);
+  const hideArchived = store("nova.conv.hidearchive") === "1";
+  const ordered = convOrder(items, pins, { hideArchived });
   const row = (item) => `
     <button type="button" class="conv-item ${item.active ? "active" : ""}" data-id="${esc(item.conversation_id)}" title="${esc(item.title)}">
       <span class="conv-title">${esc(item.title)}</span>
@@ -316,7 +323,22 @@ function renderConversations() {
     if (label !== group) { parts.push(`<div class="conv-group">${label}</div>`); group = label; }
     parts.push(row(item));
   });
+  if (ordered.hiddenCount) {
+    parts.push(`<button type="button" class="conv-archtoggle" data-arch-show>${ordered.hiddenCount} arşivli konuşma gizli · göster</button>`);
+  } else if (hideArchived) {
+    parts.push('<button type="button" class="conv-archtoggle" data-arch-show>Arşivliler gizleniyor · göster</button>');
+  } else if (items.some((item) => item.status === "archived")) {
+    parts.push('<button type="button" class="conv-archtoggle" data-arch-hide>Arşivlileri gizle</button>');
+  }
   host.innerHTML = parts.join("");
+  $$("[data-arch-show]", host).forEach((node) => node.addEventListener("click", () => {
+    store("nova.conv.hidearchive", "0");
+    renderConversations();
+  }));
+  $$("[data-arch-hide]", host).forEach((node) => node.addEventListener("click", () => {
+    store("nova.conv.hidearchive", "1");
+    renderConversations();
+  }));
   $$(".conv-pin", host).forEach((node) => node.addEventListener("click", (event) => {
     event.stopPropagation();
     const current = convPinsParse(store("nova.conv.pins"));

@@ -193,6 +193,16 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Archived threads step aside, the ledger copies (21 September 2026)
+
+The drawer can now fold its archive away: one quiet row at the bottom
+hides archived threads (and says how many are hidden so nothing
+disappears silently), another brings them back - and the thread that
+is open right now never hides, archived or not. The choice lives in
+this device's localStorage. The event ledger gained a Kopyala button:
+the visible, filtered slice as plain timestamped lines through the
+same honest clipboard hand - made for pasting into a bug report.
+
 ## The palette's short memory (21 September 2026)
 
 An empty palette now lists the last five commands actually sent to

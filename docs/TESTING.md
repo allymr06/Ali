@@ -1226,6 +1226,13 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The folded archive and the copied ledger (21 September 2026)
+
+`test_nova_web` extends the pure drawer split: with hideArchived the
+open thread survives, others fold, and the hidden count is exact; the
+wiring pins both toggle rows, the storage key, the ledger's copy
+button and its empty-list refusal.
+
 ## The palette's short memory (21 September 2026)
 
 `test_nova_web` runs the pure recent-list in QuickJS: five entries

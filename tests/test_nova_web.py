@@ -1711,6 +1711,16 @@ def test_home_brief_markup_shows_what_exists_and_invents_nothing() -> None:
     assert 'class="hb-row warn"' in full, "a committee 3 days away is marked urgent"
     assert 'data-brief-go="tasks"' in full and 'data-brief-medical="cards"' in full
 
+    # A reminder that brings its id also brings +10; one without stays plain.
+    with_id = run({"ok": True, "date": "x",
+                   "reminders": [{"text": "Su iç", "due_local": "09.00", "reminder_id": "r<1>"}],
+                   "reminders_available": True, "routines": [], "routines_available": False,
+                   "tasks_open": 0, "notifications_unread": 0, "medical": {"available": False}})
+    assert 'data-brief-snooze="r&lt;1&gt;"' in with_id and ">+10</span>" in with_id, (
+        "the id rides escaped, the badge draws"
+    )
+    assert "data-brief-snooze" not in full, "no id, no badge - the fixture rows stay plain"
+
     # Nothing anywhere: an honest empty state, no invented rows.
     empty = run({"ok": True, "date": "", "reminders": [], "reminders_available": False, "routines": [],
                  "routines_available": False, "tasks_open": 0, "notifications_unread": 0, "medical": {"available": False}})
@@ -2673,6 +2683,16 @@ def test_the_drawer_offers_rename_through_one_prompt_dialog() -> None:
     assert "Boş bırakırsan başlık otomatiğe döner" in conversation
     assert ".conv-ren" in CSS
     assert "Demo modunda yeniden adlandırma yok." in JS_SOURCES["js/bridge.js"]
+
+
+def test_the_brief_snooze_stays_put_and_reloads() -> None:
+    panels = JS_SOURCES["js/panels.js"]
+    handler = panels.split('[data-brief-snooze]", host')[1].split("}));")[0]
+    assert "event.stopPropagation();" in handler, "+10 must not also jump to Tasks"
+    assert 'call("snooze_reminder", node.dataset.briefSnooze, 10)' in handler
+    assert "renderHomeBrief(true)" in handler
+    assert "confirmDialog" not in handler, "a snooze is reversible: no dialog"
+    assert "#home-brief .hb-snz" in CSS
 
 
 def test_the_memory_screen_takes_a_note_by_hand() -> None:

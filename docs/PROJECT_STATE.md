@@ -193,6 +193,14 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The brief snoozes in place (21 September 2026)
+
+Reminder rows on the home brief carry a small +10 that appears on
+hover: one press runs the same snooze_reminder path as the Tasks
+screen, stops the row's own jump to Tasks, answers through the toast
+and reloads the brief. A reminder without an id (older payloads)
+simply draws no badge.
+
 ## The unit table folds its I too (21 September 2026)
 
 toolboxUnit carried the same latent locale trap the ledger sieve had:

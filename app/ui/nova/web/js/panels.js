@@ -39,7 +39,7 @@ function homeBriefMarkup(brief) {
   if (!brief || brief.ok === false) return emptyState("Özet okunamadı", "Çekirdek köprüsü yanıt vermedi.");
   const rows = [];
   if ((brief.reminders || []).length) {
-    rows.push(...brief.reminders.map((item) => `<button type="button" class="hb-row" data-brief-go="tasks"><span class="hb-icon">⏰</span><span class="hb-text">${esc(item.text)}</span><span class="hb-side">${esc(item.due_local || "")}</span></button>`));
+    rows.push(...brief.reminders.map((item) => `<button type="button" class="hb-row" data-brief-go="tasks"><span class="hb-icon">⏰</span><span class="hb-text">${esc(item.text)}</span><span class="hb-side">${esc(item.due_local || "")}${item.reminder_id ? `<span class="hb-snz" data-brief-snooze="${esc(item.reminder_id)}" title="10 dakika sonraya ertele">+10</span>` : ""}</span></button>`));
   } else if (brief.reminders_available) {
     rows.push(`<div class="hb-row muted"><span class="hb-icon">⏰</span><span class="hb-text">Bugün için hatırlatıcı yok</span></div>`);
   }
@@ -113,6 +113,12 @@ async function renderHomeBrief(force) {
   $$("[data-brief-go]", host).forEach((node) => node.addEventListener("click", () => showScreen(node.dataset.briefGo)));
   $$("[data-brief-notify]", host).forEach((node) => node.addEventListener("click", () => Notify.set(true)));
   $$("[data-brief-medical]", host).forEach((node) => node.addEventListener("click", () => { showScreen("medical"); if (typeof Medical !== "undefined") Medical.show(node.dataset.briefMedical); }));
+  $$("[data-brief-snooze]", host).forEach((node) => node.addEventListener("click", async (event) => {
+    event.stopPropagation(); // the row underneath jumps to Tasks; +10 stays put
+    const done = await call("snooze_reminder", node.dataset.briefSnooze, 10);
+    toast(done.message || done.error, done.ok ? "ok" : true);
+    renderHomeBrief(true);
+  }));
 }
 
 function renderGreeting() {

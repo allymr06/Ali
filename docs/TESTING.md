@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The brief's +10 (21 September 2026)
+
+The markup test pins the badge riding only id-bearing rows (escaped),
+and the handler pins hold stopPropagation, the shared snooze call,
+the brief reload and the absence of any dialog.
+
 ## The folded units (21 September 2026)
 
 The calculator test gained "5 MIL KM" and "70 KG LB" vectors, and the

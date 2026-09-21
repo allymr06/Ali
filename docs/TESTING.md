@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The bell's re-arm (21 September 2026)
+
+Source pins: the ⏰ only on reminder kinds, the honest "new
+reminder" title, the create_reminder("+10") call, the non-reminder
+refusal, and the rearm branch running before the row's activate.
+
 ## The composer's history walk (21 September 2026)
 
 QuickJS drives `historyStep` over both edges, the draft's seat at -1,

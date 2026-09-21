@@ -193,6 +193,13 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## A fired reminder offers another round (21 September 2026)
+
+Reminder entries in the bell carry ⏰: one press creates a NEW
+reminder with the same text ten minutes out - the button's title says
+exactly that, the entry stays as the durable record, and the toast
+carries the service's own answer either way.
+
 ## The composer remembers what you sent (21 September 2026)
 
 Ctrl+ArrowUp/Down in the chat box walks the palette's short memory of

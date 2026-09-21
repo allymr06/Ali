@@ -2474,6 +2474,19 @@ def test_the_palette_remembers_five_commands_and_forgets_on_request() -> None:
     assert 'paletteRecentAdd(store("nova.palette.recent"), text)' in JS_SOURCES["js/conversation.js"]
 
 
+def test_a_fired_reminder_notification_offers_to_rearm_itself() -> None:
+    shell = JS_SOURCES["js/shell.js"]
+    assert 'item.kind === "reminder" ? `<button type="button" class="icon-btn small notify-rearm"' in shell, (
+        "only reminder entries carry the ⏰"
+    )
+    assert "10 dakika sonraya yeni hatırlatıcı kur" in shell, "the title admits it arms a NEW reminder"
+    assert 'call("create_reminder", item.body, "+10")' in shell
+    assert 'item.kind !== "reminder") return;' in shell, "rearm refuses other kinds"
+    rearm_branch = shell.index("data-act='rearm'")
+    dismiss_branch = shell.index("data-act='dismiss'")
+    assert rearm_branch < dismiss_branch, "rearm is checked before the row activates"
+
+
 def test_the_composer_walks_its_sent_history_with_ctrl_arrows() -> None:
     quickjs = pytest.importorskip("quickjs")
     context = quickjs.Context()

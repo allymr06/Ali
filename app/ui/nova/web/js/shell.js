@@ -280,11 +280,12 @@ const Notify = {
       <div class="notify-item ${item.read ? "" : "unread"} ${esc(item.severity)}" data-id="${esc(item.notification_id)}" role="button" tabindex="0">
         <span class="notify-icon" title="${esc(NOTIFICATION_KIND_TR[item.kind] || item.kind)}">${icon(NOTIFICATION_KIND_ICON[item.kind] || "spark")}</span>
         <span><div class="notify-title">${esc(item.title)}${item.data && item.data.quiet_held ? '<span class="notify-quiet" title="Sessiz saatlerde geldi; Windows bildirimi gösterilmedi">🌙</span>' : ""}</div><div class="notify-body">${esc(item.body)}</div></span>
-        <span class="notify-meta"><span class="notify-time" title="${esc(fmtTime(item.updated_at))}">${esc(fmtRelative(item.updated_at))}</span>${item.count > 1 ? `<span class="notify-count">×${item.count}</span>` : ""}<button type="button" class="icon-btn small notify-dismiss" data-act="dismiss" title="Kaldır">${icon("close")}</button></span>
+        <span class="notify-meta"><span class="notify-time" title="${esc(fmtTime(item.updated_at))}">${esc(fmtRelative(item.updated_at))}</span>${item.count > 1 ? `<span class="notify-count">×${item.count}</span>` : ""}${item.kind === "reminder" ? `<button type="button" class="icon-btn small notify-rearm" data-act="rearm" title="Aynı metinle 10 dakika sonraya yeni hatırlatıcı kur">⏰</button>` : ""}<button type="button" class="icon-btn small notify-dismiss" data-act="dismiss" title="Kaldır">${icon("close")}</button></span>
       </div>`).join("");
     $$(".notify-item", host).forEach((row) => {
       const id = row.dataset.id;
       row.addEventListener("click", (event) => {
+        if (event.target.closest("[data-act='rearm']")) { event.stopPropagation(); this.rearm(id); return; }
         if (event.target.closest("[data-act='dismiss']")) { event.stopPropagation(); this.dismiss(id); return; }
         this.activate(id);
       });
@@ -293,6 +294,16 @@ const Notify = {
         else if (event.key === "Delete") { event.preventDefault(); this.dismiss(id); }
       });
     });
+  },
+
+  /* A delivered reminder is spent; the bell's ⏰ arms a NEW one with
+     the same text, ten minutes out - the button's title says exactly
+     that, and the entry itself stays as the durable record. */
+  async rearm(id) {
+    const item = State.notifications.find((n) => n.notification_id === id);
+    if (!item || item.kind !== "reminder") return;
+    const done = await call("create_reminder", item.body, "+10");
+    toast(done.ok ? (done.message || "Hatırlatıcı 10 dakika sonraya kuruldu.") : (done.error || "Kurulamadı."), done.ok ? "ok" : true);
   },
 
   async activate(id) {

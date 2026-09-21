@@ -182,7 +182,7 @@ class AlmanacService:
                 "current": "temperature_2m,apparent_temperature,weather_code",
                 "daily": "temperature_2m_max,temperature_2m_min,sunrise,sunset",
                 "timezone": "auto",
-                "forecast_days": "1",
+                "forecast_days": "2",
             }
             payload = self._json(f"{FORECAST_ENDPOINT}?{urlencode(params)}")
         except (FetchError, ContentRejectedError, UnsafeURLError, OSError, TimeoutError, json.JSONDecodeError) as exc:
@@ -210,6 +210,10 @@ class AlmanacService:
             # The day's frame, from the same daily answer; absent stays None.
             "sunrise": _clock(daily.get("sunrise") if isinstance(daily, Mapping) else None),
             "sunset": _clock(daily.get("sunset") if isinstance(daily, Mapping) else None),
+            # Tomorrow's frame from the same daily arrays; a service that
+            # answered only today leaves these None rather than guessing.
+            "tomorrow_high": round(_number(highs[1])) if isinstance(highs, list) and len(highs) > 1 and _number(highs[1]) is not None else None,
+            "tomorrow_low": round(_number(lows[1])) if isinstance(lows, list) and len(lows) > 1 and _number(lows[1]) is not None else None,
         }
 
     # --------------------------------------------------------------- rates

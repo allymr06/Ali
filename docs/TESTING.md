@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## Tomorrow's row (21 September 2026)
+
+`test_almanac` pins the two-day arrays (tomorrow's rounded range, the
+`forecast_days=2` parameter); `test_nova_web` pins the brief's Yarın
+row appearing only when the payload carries both figures.
+
 ## The term that speaks (21 September 2026)
 
 `test_nova_web` pins the term card's voice-gated button, the in-gesture

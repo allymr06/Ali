@@ -53,6 +53,10 @@ function homeBriefMarkup(brief) {
     const range = weather.high !== null && weather.high !== undefined && weather.low !== null && weather.low !== undefined
       ? `↑${weather.high}° ↓${weather.low}°` : "";
     rows.push(`<div class="hb-row muted"><span class="hb-icon">🌤</span><span class="hb-text">${esc(weather.city)} ${weather.temperature}°${weather.label ? " · " + esc(weather.label) : ""}</span><span class="hb-side">${esc(range)}</span></div>`);
+    if (weather.tomorrow_high !== null && weather.tomorrow_high !== undefined
+        && weather.tomorrow_low !== null && weather.tomorrow_low !== undefined) {
+      rows.push(`<div class="hb-row muted"><span class="hb-icon">📅</span><span class="hb-text">Yarın</span><span class="hb-side">↑${esc(String(weather.tomorrow_high))}° ↓${esc(String(weather.tomorrow_low))}°</span></div>`);
+    }
     if (weather.sunrise && weather.sunset) {
       rows.push(`<div class="hb-row muted"><span class="hb-icon">☀️</span><span class="hb-text">Gün doğumu ${esc(weather.sunrise)} · batımı ${esc(weather.sunset)}</span></div>`);
     }

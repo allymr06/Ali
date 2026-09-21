@@ -193,6 +193,12 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Tomorrow in the brief (21 September 2026)
+
+The almanac's forecast call now asks for two days, and the brief shows
+"Yarın ↑18° ↓12°" when the service answered for tomorrow - a
+one-day answer leaves the row out rather than guessing.
+
 ## The term of the day speaks (21 September 2026)
 
 The Academy's term-of-the-day card gained Seslendir: the Latin name and

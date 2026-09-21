@@ -2751,6 +2751,13 @@ def test_the_brief_carries_the_almanac_and_stays_silent_without_a_city() -> None
         "rates": {"available": False, "reason": "x"},
     }})
     assert "Gün doğumu 06:52 · batımı 19:24" in sunny
+    assert "Yarın" not in sunny, "no tomorrow in the payload, no tomorrow row"
+    tomorrow = markup({"ok": True, "date": "21 Eylül", "almanac": {
+        "weather": {"available": True, "city": "İstanbul", "temperature": 21, "label": "açık",
+                     "high": 24, "low": 18, "tomorrow_high": 18, "tomorrow_low": 12},
+        "rates": {"available": False, "reason": "x"},
+    }})
+    assert "Yarın" in tomorrow and "↑18° ↓12°" in tomorrow
     # No city configured: no weather row and no nagging.
     silent = markup({"ok": True, "almanac": {"weather": {"available": False, "reason": "Şehir ayarlanmadı."},
                                              "rates": {"available": False, "reason": "Kur servisi yanıt vermedi (HTTP 503)."}}})

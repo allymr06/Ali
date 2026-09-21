@@ -293,6 +293,21 @@ function paletteRecentAdd(raw, command) {
   return JSON.stringify([text, ...rest].slice(0, PALETTE_RECENT_LIMIT));
 }
 
+/* ── the bell's kind counts (pure) ────────────────────────────────
+   What kinds sit in the centre right now, most numerous first, ties
+   by name. Entries without a kind are skipped, never invented. */
+
+function notifKinds(items) {
+  const counts = new Map();
+  for (const item of (items || [])) {
+    const kind = String((item && item.kind) || "");
+    if (!kind) continue;
+    counts.set(kind, (counts.get(kind) || 0) + 1);
+  }
+  return [...counts.entries()].map(([kind, count]) => ({ kind, count }))
+    .sort((a, b) => b.count - a.count || (a.kind < b.kind ? -1 : 1));
+}
+
 /* ── the composer's history walk (pure) ─────────────────────────────────
    Index -1 is the live draft; "back" climbs toward the oldest sent
    command, "forward" returns toward the draft. Null means the edge:

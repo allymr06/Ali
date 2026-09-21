@@ -274,9 +274,29 @@ const Notify = {
     $("#notify-clear").disabled = items.length === 0;
     if (!items.length) {
       host.innerHTML = '<div class="notify-empty">Bildirim yok. Hatırlatıcılar, sen bakmazken gelen yanıtlar ve onay istekleri, tanılama uyarıları burada birikir.</div>';
+      $("#notify-filter").innerHTML = "";
+      this.filter = null;
       return;
     }
-    host.innerHTML = items.map((item) => `
+    // Kind chips are a view, never a mutation: read-all and clear still
+    // reach everything. One kind alone earns no chip row.
+    const kinds = notifKinds(items);
+    if (this.filter && !kinds.some((k) => k.kind === this.filter)) this.filter = null;
+    const filterHost = $("#notify-filter");
+    if (kinds.length < 2) {
+      filterHost.innerHTML = "";
+      this.filter = null;
+    } else {
+      const chip = (label, kind, count, active) => `<button type="button" class="chip ${active ? "on" : ""}" data-kind="${esc(kind)}">${esc(label)} ${count}</button>`;
+      filterHost.innerHTML = chip("Tümü", "", items.length, !this.filter)
+        + kinds.map((k) => chip(NOTIFICATION_KIND_TR[k.kind] || k.kind, k.kind, k.count, this.filter === k.kind)).join("");
+      $$("#notify-filter .chip").forEach((button) => button.addEventListener("click", () => {
+        this.filter = button.dataset.kind || null;
+        this.render();
+      }));
+    }
+    const visible = this.filter ? items.filter((item) => item.kind === this.filter) : items;
+    host.innerHTML = visible.map((item) => `
       <div class="notify-item ${item.read ? "" : "unread"} ${esc(item.severity)}" data-id="${esc(item.notification_id)}" role="button" tabindex="0">
         <span class="notify-icon" title="${esc(NOTIFICATION_KIND_TR[item.kind] || item.kind)}">${icon(NOTIFICATION_KIND_ICON[item.kind] || "spark")}</span>
         <span><div class="notify-title">${esc(item.title)}${item.data && item.data.quiet_held ? '<span class="notify-quiet" title="Sessiz saatlerde geldi; Windows bildirimi gösterilmedi">🌙</span>' : ""}</div><div class="notify-body">${esc(item.body)}</div></span>

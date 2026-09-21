@@ -2631,6 +2631,38 @@ def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
     assert "clearChatFind(); input.blur();" in conversation
 
 
+def test_the_bell_counts_its_kinds_without_inventing_any() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    kinds = lambda items: json.loads(context.eval(
+        "JSON.stringify(notifKinds(" + json.dumps(items) + "))"))
+
+    assert kinds([]) == []
+    mixed = kinds([
+        {"kind": "reminder"}, {"kind": "task"}, {"kind": "reminder"},
+        {"kind": "approval"}, {"kind": "task"}, {"kind": "reminder"},
+        {"kind": ""}, {"notitle": True},
+    ])
+    assert mixed == [
+        {"kind": "reminder", "count": 3},
+        {"kind": "task", "count": 2},
+        {"kind": "approval", "count": 1},
+    ], "most numerous first, the kindless skipped"
+    tied = kinds([{"kind": "b"}, {"kind": "a"}])
+    assert [k["kind"] for k in tied] == ["a", "b"], "ties break by name"
+
+    shell = JS_SOURCES["js/shell.js"]
+    assert "const visible = this.filter ? items.filter((item) => item.kind === this.filter) : items;" in shell
+    assert "if (this.filter && !kinds.some((k) => k.kind === this.filter)) this.filter = null;" in shell, (
+        "a vanished kind resets the view instead of showing nothing"
+    )
+    assert "if (kinds.length < 2)" in shell, "one kind alone earns no chip row"
+    assert "Kind chips are a view, never a mutation" in shell
+    assert 'id="notify-filter"' in HTML
+    assert ".notify-filter .chip.on" in CSS
+
+
 def test_the_routine_rows_offer_run_now() -> None:
     panels = JS_SOURCES["js/panels.js"]
     assert 'data-act="run"' in panels and "Çalıştır</button>" in panels

@@ -241,6 +241,10 @@ body.light #topbar { background: linear-gradient(180deg, rgba(255,255,255,0.82),
 }
 .notify-head .kicker { margin-right: auto; }
 .notify-summary { color: var(--ink-4); font-size: var(--text-xs); letter-spacing: 0.08em; }
+.notify-filter { display: flex; flex-wrap: wrap; gap: 0.3rem; padding: 0.1rem 0.8rem 0.35rem; }
+.notify-filter:empty { display: none; }
+.notify-filter .chip { cursor: pointer; border: 1px solid var(--line-1); background: none; }
+.notify-filter .chip.on { border-color: var(--accent); color: var(--accent); }
 .notify-list { min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0.35rem; display: flex; flex-direction: column; gap: 0.15rem; }
 .notify-empty { color: var(--ink-4); font-size: var(--text-sm); line-height: 1.5; padding: 1.2rem 1rem 1.4rem; text-align: center; }
 .notify-item {

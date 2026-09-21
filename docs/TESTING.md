@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The bell's chips (21 September 2026)
+
+QuickJS pins notifKinds (counts, order, ties by name, the kindless
+skipped); source pins hold the view-only filter line, the vanished-
+kind reset and the no-chips-for-one-kind rule.
+
 ## Run now (21 September 2026)
 
 The bridge test runs a routine now against a fake engine and pins the

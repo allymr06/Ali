@@ -193,6 +193,14 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The bell sorts itself (21 September 2026)
+
+The notification centre gained kind chips - Tümü plus one per kind
+present, real counts, most numerous first. The filter is a view and
+never a mutation: read-all and clear still reach everything, a kind
+that vanishes resets to Tümü, and a single-kind centre draws no
+chips at all.
+
 ## A routine can run right now (21 September 2026)
 
 Every routine row gained Çalıştır: the same engine, permission and

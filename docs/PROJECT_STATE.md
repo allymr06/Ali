@@ -193,6 +193,14 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Reminders can wait ten minutes (21 September 2026)
+
+Every reminder row gained "+10 dk": `ReminderService.snooze` moves the
+due time to now+minutes, resets claims, retries and the stale error,
+and refuses what is delivered, cancelled, unknown or non-positive. The
+bridge needs no confirmation - a snooze is reversible - and the chat
+model reaches the same tool ("ertele" selects it).
+
 ## Tables are tables (21 September 2026)
 
 The markdown renderer learned tables: a header row, a rule and body

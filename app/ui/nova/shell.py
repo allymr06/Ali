@@ -3815,6 +3815,21 @@ class NovaBridge:
         self._record_ui_event("reminder.created", "A reminder was created from the page.")
         return {"ok": True, "message": f"Hatırlatıcı kuruldu: {due}.", "due_local": str(due)}
 
+    def snooze_reminder(self, reminder_id: Any, minutes: Any = 10) -> dict[str, Any]:
+        """Push one reminder back a few minutes; reversible, so no dialog."""
+        service = self._reminders()
+        if service is None:
+            return {"ok": False, "error": "Hatırlatıcı hizmeti kapalı."}
+        try:
+            wanted = int(minutes)
+        except (TypeError, ValueError):
+            wanted = 10
+        result = service.snooze(str(reminder_id or ""), wanted)
+        if not result.succeeded:
+            return {"ok": False, "error": str(result.message or "Hatırlatıcı ertelenemedi.")}
+        self._record_ui_event("reminder.snoozed", "A reminder was pushed back from the page.")
+        return {"ok": True, "message": str(result.message)}
+
     def cancel_reminder(self, reminder_id: Any, confirmed: Any = False) -> dict[str, Any]:
         """Cancel one reminder; the page asks the user first, then says so."""
         if confirmed is not True:

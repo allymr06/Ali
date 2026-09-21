@@ -372,6 +372,7 @@ const Reminders = {
         <span class="routine-icon">⏰</span>
         <span class="routine-main"><span class="routine-name">${esc(row.text)}</span>
         <span class="routine-meta">${esc(row.due_local || "")}${row.status && row.status !== "bekliyor" ? ` · ${esc(row.status)}` : ""}</span></span>
+        <button type="button" class="btn btn-text" data-reminder-snooze="${esc(row.reminder_id)}" title="10 dakika sonraya ertele">+10 dk</button>
         <button type="button" class="btn btn-text" data-reminder-cancel="${esc(row.reminder_id)}">İptal</button>
       </div>`).join("");
   },
@@ -384,6 +385,13 @@ const Reminders = {
     const rows = result.reminders || [];
     $("#reminders-count").textContent = rows.length ? `${rows.length} aktif` : "";
     host.innerHTML = this.markup(rows);
+    $$("[data-reminder-snooze]", host).forEach((button) => button.addEventListener("click", async () => {
+      // A snooze is reversible, so no dialog - one press, ten minutes.
+      const done = await call("snooze_reminder", button.dataset.reminderSnooze, 10);
+      toast(done.message || done.error, done.ok ? "ok" : true);
+      Reminders.load();
+      renderHomeBrief(true);
+    }));
     $$("[data-reminder-cancel]", host).forEach((button) => button.addEventListener("click", async () => {
       const row = rows.find((item) => item.reminder_id === button.dataset.reminderCancel);
       const confirmed = await confirmDialog({

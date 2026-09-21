@@ -332,6 +332,49 @@ class ReminderService:
             ).fetchall()
         return [self._row_to_dict(row) for row in rows]
 
+    def snooze(self, reminder_id: str, minutes: int = 10) -> ToolResult:
+        """Push an undelivered reminder back, measured from now — "ertele"
+        means "remind me again in a while", whatever the original clock
+        said. Claims, retries and the stale error reset so the watcher
+        treats it as freshly scheduled; a delivery already in flight
+        cannot be recalled, but its acknowledgment then fails."""
+        try:
+            bounded = int(minutes)
+        except (TypeError, ValueError):
+            bounded = 0
+        if bounded <= 0:
+            return ToolResult(
+                ToolExecutionStatus.FAILED,
+                "snooze_reminder",
+                message="Erteleme süresi pozitif dakika olmalı.",
+                error="invalid_minutes",
+            )
+        bounded = min(bounded, 60 * 24)
+        due = self._now() + timedelta(minutes=bounded)
+        with self._connect() as connection:
+            changed = connection.execute(
+                "UPDATE reminders SET due_at = ?, attempts = 0, "
+                "claim_token = NULL, claimed_at = NULL, "
+                "next_attempt_at = NULL, last_error = NULL WHERE "
+                "reminder_id = ? AND delivered = 0 AND cancelled = 0",
+                (due.isoformat(), reminder_id.strip()),
+            ).rowcount
+        if not changed:
+            return ToolResult(
+                ToolExecutionStatus.FAILED,
+                "snooze_reminder",
+                message="Bu kimlikte aktif bir hatırlatıcı yok.",
+                error="not_found",
+            )
+        local = due.astimezone().strftime("%d.%m %H:%M")
+        return ToolResult(
+            ToolExecutionStatus.SUCCESS,
+            "snooze_reminder",
+            message=f"Hatırlatıcı {bounded} dakika ertelendi ({local}).",
+            data={"due_at": due.isoformat(), "due_local": local},
+            verified=True,
+        )
+
     def cancel(self, reminder_id: str) -> ToolResult:
         """Cancel a reminder that has not been delivered — waiting, claimed
         or between retries alike. A delivery already in flight cannot be
@@ -525,6 +568,9 @@ class ReminderService:
         def cancel_reminder(reminder_id: str) -> ToolResult:
             return self.cancel(reminder_id)
 
+        def snooze_reminder(reminder_id: str, minutes: int = 10) -> ToolResult:
+            return self.snooze(reminder_id, minutes)
+
         executor.register(
             define(
                 "create_reminder",
@@ -550,5 +596,14 @@ class ReminderService:
                 risk=RiskLevel.LOW,
             ),
             cancel_reminder,
+            source="integration:reminders",
+        )
+        executor.register(
+            define(
+                "snooze_reminder",
+                "Hatırlatıcıyı ertele: kimlik ve dakika (varsayılan 10).",
+                risk=RiskLevel.LOW,
+            ),
+            snooze_reminder,
             source="integration:reminders",
         )

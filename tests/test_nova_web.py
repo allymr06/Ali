@@ -2593,6 +2593,16 @@ def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
     assert "clearChatFind(); input.blur();" in conversation
 
 
+def test_the_reminder_rows_offer_a_ten_minute_snooze() -> None:
+    panels = JS_SOURCES["js/panels.js"]
+    assert 'data-reminder-snooze="${esc(row.reminder_id)}"' in panels
+    assert "+10 dk" in panels
+    assert 'call("snooze_reminder", button.dataset.reminderSnooze, 10)' in panels
+    handler = panels.split('data-reminder-snooze]", host')[1].split("}));")[0]
+    assert "confirmDialog" not in handler, "a snooze is reversible: no dialog"
+    assert "Reminders.load()" in handler and "renderHomeBrief(true)" in handler
+
+
 def test_the_palette_converts_money_and_sets_reminders() -> None:
     quickjs = pytest.importorskip("quickjs")
     context = quickjs.Context()

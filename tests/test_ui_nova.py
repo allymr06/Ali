@@ -3246,6 +3246,16 @@ def test_reminders_have_a_full_surface_on_the_bridge(booted) -> None:
     assert cancelled["ok"] is True
     assert {row["text"] for row in booted.bridge.list_reminders()["reminders"]} == {"Fizyoloji oku"}
 
+    keeper = booted.bridge.list_reminders()["reminders"][0]["reminder_id"]
+    ten = booted.bridge.snooze_reminder(keeper, 10)
+    assert ten["ok"] is True and "10 dakika" in ten["message"]
+    at_ten = booted.bridge.list_reminders()["reminders"][0]["due_local"]
+    assert booted.bridge.snooze_reminder(keeper, 25)["ok"] is True
+    at_twentyfive = booted.bridge.list_reminders()["reminders"][0]["due_local"]
+    # Both measured from now, 15 minutes apart: never the same shown time.
+    assert at_ten != at_twentyfive, "the shown time really moves with the minutes"
+    assert booted.bridge.snooze_reminder("yok-boyle")["ok"] is False
+
 
 def test_an_archived_conversation_can_come_back(booted) -> None:
     engine = booted.app.conversation_engine

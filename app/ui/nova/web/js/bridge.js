@@ -492,6 +492,10 @@ const DemoBridge = {
     return { ok: false, error: "Demo modunda hatırlatıcı yok." };
   },
 
+  async snooze_reminder(_id, _minutes) {
+    return { ok: false, error: "Demo modunda hatırlatıcı yok." };
+  },
+
   async mobile_status() {
     return { ok: true, enabled: true, running: true, port: 8765, local_url: "http://127.0.0.1:8765/", pending_code: null,
       sessions: [{ session_id: "demo-m1", label: "Demo telefon", created_at: new Date().toISOString(), last_seen_at: new Date().toISOString(), expires_at: new Date(Date.now() + 864e5).toISOString(), revoked: false, active: true }] };

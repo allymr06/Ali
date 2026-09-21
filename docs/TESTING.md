@@ -1226,6 +1226,14 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The ten-minute snooze (21 September 2026)
+
+`test_reminder_delivery` pins snooze against the controllable clock:
+past the old minute, claimable at the new one, retry state reset to a
+clean wait, and refusals for zero, cancelled and unknown. The bridge
+test moves a real row twice and compares the shown times; the web test
+pins the dialog-free handler.
+
 ## Tables (21 September 2026)
 
 The markdown test gained table vectors: the three-row shape, consumed

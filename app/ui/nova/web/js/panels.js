@@ -850,6 +850,7 @@ function renderSettings() {
   Files.render();
   renderStateBackups();
   Phone.render();
+  About.load();
 }
 
 function renderConfig() {
@@ -1201,6 +1202,37 @@ const Routines = {
   },
 };
 
+/* ── about: the build's own facts (pure markup) ──────────────────────
+   Every value is measured by the bridge or missing; a missing one is
+   an honest dash, never a guess. */
+
+function aboutRows(info) {
+  const row = (label, value) => `<div class="config-row"><span class="config-name">${esc(label)}</span><span class="config-value ${value ? "" : "off"}">${esc(value || "—")}</span></div>`;
+  return row("Uygulama", info.app_version)
+    + row("Python", info.python_version)
+    + row("WebView2", info.webview2_version)
+    + row("Veri klasörü", info.state_directory);
+}
+
+/* ── about: runtime ─────────────────────────────────────────── */
+
+const About = {
+  async load() {
+    const host = $("#about-rows");
+    if (!host) return;
+    const info = await call("about_info");
+    if (info.ok === false) { host.innerHTML = `<div class="ctx-empty">${esc(info.error || "Okunamadı.")}</div>`; return; }
+    host.innerHTML = aboutRows(info);
+  },
+
+  bind() {
+    $("#about-open-state")?.addEventListener("click", async () => {
+      const done = await call("open_state_folder");
+      if (done.ok === false) toast(done.error || "Klasör açılamadı.", true);
+    });
+  },
+};
+
 function bindPanels() {
   buildQuickActions();
   $("#vision-form").addEventListener("submit", submitVision);
@@ -1212,6 +1244,7 @@ function bindPanels() {
   $("#settings-backup-now").addEventListener("click", runStateBackup);
   Reminders.bind();
   Phone.bind();
+  About.bind();
   $("#exam-chip").addEventListener("click", () => { showScreen("medical"); if (typeof Medical !== "undefined") Medical.show("plan"); });
   $("#settings-test").addEventListener("click", testConnection);
   $("#settings-delete").addEventListener("click", deleteKey);

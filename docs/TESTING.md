@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The About card (21 September 2026)
+
+QuickJS renders aboutRows full, bare (four dashes, off styling) and
+hostile (escaped); the bridge test pins measured shapes and that the
+folder opened is the folder reported, with the OSError path in words.
+
 ## The bell's re-arm (21 September 2026)
 
 Source pins: the ⏰ only on reminder kinds, the honest "new

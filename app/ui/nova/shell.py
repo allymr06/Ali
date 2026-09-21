@@ -3843,6 +3843,30 @@ class NovaBridge:
         self._record_ui_event("reminder.cancelled", "A reminder was cancelled from the page.")
         return {"ok": True, "message": "Hatırlatıcı iptal edildi."}
 
+    def about_info(self) -> dict[str, Any]:
+        """What this build is: versions and the data folder, all measured."""
+        return {
+            "ok": True,
+            "app_version": _application_version(),
+            "python_version": platform.python_version(),
+            "webview2_version": detect_webview2_runtime(),
+            "state_directory": str(default_state_directory()),
+        }
+
+    def open_state_folder(self) -> dict[str, Any]:
+        """Open the data folder in the file manager; the page's click asked."""
+        if not hasattr(os, "startfile"):
+            return {"ok": False, "error": "Bu ortamda klasör açılamıyor."}
+        try:
+            os.startfile(str(default_state_directory()))  # noqa: S606
+        except OSError as exc:
+            return {"ok": False, "error": f"Klasör açılamadı ({type(exc).__name__})."}
+        self._record_ui_event(
+            "settings.state_folder_opened",
+            "The data folder was opened from the page.",
+        )
+        return {"ok": True}
+
     # ------------------------------------------------------------------
     # Mobile companion (Ayarlar > Telefon)
     # ------------------------------------------------------------------

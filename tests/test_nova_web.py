@@ -2631,6 +2631,32 @@ def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
     assert "clearChatFind(); input.blur();" in conversation
 
 
+def test_the_about_card_draws_dashes_for_what_is_unknown() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function esc(", "\nfunction store("))
+    context.eval(section(JS_SOURCES["js/panels.js"], "/* ── about: the build's own facts (pure markup)", "/* ── about: runtime"))
+    full = context.eval("aboutRows(" + json.dumps({
+        "app_version": "0.1.0", "python_version": "3.12.1",
+        "webview2_version": "129.0.1", "state_directory": "C:/veri"}) + ")")
+    assert "0.1.0" in full and "129.0.1" in full and "C:/veri" in full and "—" not in full
+    bare = context.eval("aboutRows(" + json.dumps({
+        "app_version": None, "python_version": None,
+        "webview2_version": None, "state_directory": None}) + ")")
+    assert bare.count("—") == 4 and 'class="config-value off"' in bare, "unknown is a dash, not a guess"
+    hostile = context.eval("aboutRows(" + json.dumps({
+        "app_version": "<b>x</b>", "python_version": "3",
+        "webview2_version": "1", "state_directory": "d"}) + ")")
+    assert "<b>" not in hostile and "&lt;b&gt;" in hostile
+
+    panels = JS_SOURCES["js/panels.js"]
+    assert 'const info = await call("about_info");' in panels
+    assert 'call("open_state_folder")' in panels
+    assert "About.load();" in panels and "About.bind();" in panels
+    for element_id in ("settings-about", "about-rows", "about-open-state"):
+        assert f'id="{element_id}"' in HTML, element_id
+
+
 def test_the_reminder_rows_offer_a_ten_minute_snooze() -> None:
     panels = JS_SOURCES["js/panels.js"]
     assert 'data-reminder-snooze="${esc(row.reminder_id)}"' in panels

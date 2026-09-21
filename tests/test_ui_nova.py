@@ -3257,6 +3257,32 @@ def test_reminders_have_a_full_surface_on_the_bridge(booted) -> None:
     assert booted.bridge.snooze_reminder("yok-boyle")["ok"] is False
 
 
+def test_the_about_card_reports_measured_facts(booted, monkeypatch) -> None:
+    import os
+
+    info = booted.bridge.about_info()
+    assert info["ok"] is True
+    for key in ("app_version", "python_version", "webview2_version", "state_directory"):
+        assert key in info
+    assert isinstance(info["python_version"], str) and "." in info["python_version"]
+    assert isinstance(info["state_directory"], str) and info["state_directory"]
+
+    opened: list[str] = []
+    if hasattr(os, "startfile"):
+        monkeypatch.setattr(os, "startfile", lambda path: opened.append(str(path)))
+        assert booted.bridge.open_state_folder()["ok"] is True
+        assert opened == [info["state_directory"]], "it opens the same folder it reports"
+
+        def refuse(path):
+            raise OSError("locked")
+
+        monkeypatch.setattr(os, "startfile", refuse)
+        refused = booted.bridge.open_state_folder()
+        assert refused["ok"] is False and "OSError" in refused["error"]
+    else:
+        assert booted.bridge.open_state_folder()["ok"] is False
+
+
 def test_an_archived_conversation_can_come_back(booted) -> None:
     engine = booted.app.conversation_engine
     stored = engine.create()

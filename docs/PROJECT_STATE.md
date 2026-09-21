@@ -193,6 +193,14 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The settings know their own build (21 September 2026)
+
+Ayarlar gained a Hakkında card: application, Python and WebView2
+versions plus the data folder path, every value measured by the bridge
+and a missing one drawn as a dash. "Veri klasörünü aç" opens that
+same folder through os.startfile, only on the page's own click, and
+failures come back as words.
+
 ## A fired reminder offers another round (21 September 2026)
 
 Reminder entries in the bell carry ⏰: one press creates a NEW

@@ -156,12 +156,14 @@
           <div class="conv-head"><span class="kicker">Konuşmalar</span><button id="conv-new" class="btn btn-text" type="button">+ Yeni</button></div>
           <input id="conv-search" class="conv-search" type="text" spellcheck="false" placeholder="Konuşmalarda ara… (içerikte)">
           <div id="conv-items" class="conv-items"></div>
-          <div class="settings-note">Sağ tık: arşivle</div>
+          <div class="settings-note">Sağ tık: arşivle · 📌 bu cihazda sabitler</div>
         </aside>
         <div class="chat-main">
           <div class="chat-toolbar">
             <button id="conv-toggle" class="btn btn-text" type="button">Konuşmalar</button>
             <span id="chat-title" class="chat-title">Yeni konuşma</span>
+            <input id="chat-find" class="chat-find" type="text" spellcheck="false" placeholder="Bu konuşmada ara…" aria-label="Bu konuşmada ara">
+            <span id="chat-find-count" class="chat-find-count" hidden></span>
             <button id="chat-export" class="btn btn-text" type="button" title="Açık konuşmayı Markdown dosyası olarak kaydeder">Dışa aktar</button>
             <button id="chat-new" class="btn btn-text" type="button" title="Yeni konuşma (Ctrl+N)">+ Yeni</button>
           </div>

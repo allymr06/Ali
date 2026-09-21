@@ -1226,6 +1226,15 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## Pins and find (21 September 2026)
+
+`test_nova_web` runs the pure drawer/find helpers in QuickJS: pin-set
+parsing tolerates blanks, unknown pins pin nothing, the split keeps
+order; the find filter lowercases Turkish, answers indexes, and an
+empty query means "off", not "nothing matches". Wiring pins the row's
+pin control, the localStorage key, the device-local note, the find box
+and its Escape-to-clear, and the CSS that hides misses.
+
 ## Sun, lira, nudge (21 September 2026)
 
 `test_almanac` pins the sunrise/sunset fields on the same forecast call

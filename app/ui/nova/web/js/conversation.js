@@ -96,6 +96,33 @@ function renderMarkdownLite(raw) {
   return parts.join("");
 }
 
+/* ── drawer pins & in-chat find (pure) ─────────────────────────── */
+
+/* Pins live in this device's localStorage, not in the conversation
+   store: a convenience of this screen, honest about its scope. */
+function convPinsParse(rawValue) {
+  return new Set(String(rawValue || "").split(",").map((piece) => piece.trim()).filter(Boolean));
+}
+
+function convOrder(items, pins) {
+  const list = Array.isArray(items) ? items : [];
+  return {
+    pinned: list.filter((item) => pins.has(item.conversation_id)),
+    rest: list.filter((item) => !pins.has(item.conversation_id)),
+  };
+}
+
+/* Which message indexes match the query; null means the filter is off. */
+function chatFindFilter(texts, query) {
+  const needle = String(query || "").trim().toLocaleLowerCase("tr");
+  if (!needle) return null;
+  const hits = [];
+  (texts || []).forEach((text, index) => {
+    if (String(text || "").toLocaleLowerCase("tr").includes(needle)) hits.push(index);
+  });
+  return hits;
+}
+
 function appendMessage(host, message, slim, { animate = true } = {}) {
   if (!host || !message || !String(message.text ?? "").trim()) return null;
   const node = el("div", `msg ${esc(message.role)}`);
@@ -110,6 +137,8 @@ function appendMessage(host, message, slim, { animate = true } = {}) {
   if (message.role === "assistant") node.querySelector(".msg-body").innerHTML = renderMarkdownLite(message.text);
   else node.querySelector(".msg-body").textContent = message.text;
   host.appendChild(node);
+  const find = typeof document !== "undefined" ? document.getElementById("chat-find") : null;
+  if (find && find.value.trim()) applyChatFind();
   if (animate) Motion.rise(node, { y: 10, duration: 360 });
   return node;
 }
@@ -261,17 +290,34 @@ function renderConversations() {
     renderChatTitle();
     return;
   }
-  let group = null;
-  host.innerHTML = items.map((item) => {
-    const label = convGroupLabel(item.updated_at);
-    const heading = label !== group ? `<div class="conv-group">${label}</div>` : "";
-    group = label;
-    return `${heading}
+  const pins = convPinsParse(store("nova.conv.pins"));
+  const ordered = convOrder(items, pins);
+  const row = (item) => `
     <button type="button" class="conv-item ${item.active ? "active" : ""}" data-id="${esc(item.conversation_id)}" title="${esc(item.title)}">
       <span class="conv-title">${esc(item.title)}</span>
       <span class="conv-meta"><span>${item.turn_count} mesaj${item.status === "archived" ? " · arşiv" : ""}</span><span>${esc(fmtRelative(item.updated_at))}</span></span>
+      <span class="conv-pin ${pins.has(item.conversation_id) ? "on" : ""}" data-pin="${esc(item.conversation_id)}" title="${pins.has(item.conversation_id) ? "Sabitlemeyi kaldır" : "Sabitle (bu cihazda)"}">📌</span>
     </button>`;
-  }).join("");
+  let group = null;
+  const parts = [];
+  if (ordered.pinned.length) {
+    parts.push('<div class="conv-group">Sabitlenmiş</div>');
+    ordered.pinned.forEach((item) => parts.push(row(item)));
+  }
+  ordered.rest.forEach((item) => {
+    const label = convGroupLabel(item.updated_at);
+    if (label !== group) { parts.push(`<div class="conv-group">${label}</div>`); group = label; }
+    parts.push(row(item));
+  });
+  host.innerHTML = parts.join("");
+  $$(".conv-pin", host).forEach((node) => node.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const current = convPinsParse(store("nova.conv.pins"));
+    if (current.has(node.dataset.pin)) current.delete(node.dataset.pin);
+    else current.add(node.dataset.pin);
+    store("nova.conv.pins", [...current].join(","));
+    renderConversations();
+  }));
   $$(".conv-item", host).forEach((node) => {
     node.addEventListener("click", () => openConversation(node.dataset.id));
     node.addEventListener("contextmenu", async (event) => {
@@ -502,6 +548,31 @@ function updateVoiceUI() {
 }
 
 /* ── wiring ───────────────────────────────────────────────────────── */
+
+function applyChatFind() {
+  const input = $("#chat-find");
+  const count = $("#chat-find-count");
+  if (!input || !count) return;
+  const nodes = $$("#chat-list .msg");
+  const hits = chatFindFilter(nodes.map((node) => node.innerText), input.value);
+  nodes.forEach((node, index) => node.classList.toggle("find-miss", hits !== null && !hits.includes(index)));
+  count.hidden = hits === null;
+  if (hits !== null) count.textContent = hits.length ? `${hits.length} eşleşme` : "eşleşme yok";
+}
+
+function clearChatFind() {
+  const input = $("#chat-find");
+  if (input && input.value) { input.value = ""; applyChatFind(); }
+}
+
+function bindChatFind() {
+  const input = $("#chat-find");
+  if (!input) return;
+  input.addEventListener("input", () => applyChatFind());
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") { event.stopPropagation(); clearChatFind(); input.blur(); }
+  });
+}
 
 function bindConversation() {
   $("#quick-form").addEventListener("submit", (event) => {

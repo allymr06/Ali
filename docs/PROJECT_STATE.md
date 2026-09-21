@@ -193,6 +193,18 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Pins in the drawer, find in the chat (21 September 2026)
+
+The conversation drawer can pin: a 📌 on every row keeps that thread
+in a "Sabitlenmiş" group at the top. Pins live in this device's
+localStorage - a convenience of the screen, and the drawer's note says
+so ("bu cihazda sabitler") instead of pretending they sync. The chat
+toolbar gained a find box: it filters the open conversation's bubbles
+as you type (Turkish-folded, case-insensitive), counts its matches
+("3 eşleşme" / "eşleşme yok"), keeps filtering messages that arrive
+while it is active, and Escape clears it before it ever reaches the
+global Escape chain.
+
 ## The sun, the lira and a nudge, all from the palette (21 September 2026)
 
 The almanac's daily answer now carries the day's frame - sunrise and

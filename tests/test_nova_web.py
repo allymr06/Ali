@@ -2349,6 +2349,43 @@ def test_the_palette_calculator_answers_and_stays_out_of_the_way() -> None:
     assert "eval(" not in JS_SOURCES["js/toolbox.js"]
 
 
+def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    conversation = JS_SOURCES["js/conversation.js"]
+    context.eval(section(conversation, "/* ── drawer pins & in-chat find (pure)", "\nfunction appendMessage("))
+
+    pins = lambda raw: json.loads(context.eval("JSON.stringify([...convPinsParse(" + json.dumps(raw) + ")])"))
+    assert pins("a,b") == ["a", "b"]
+    assert pins(" a , ,b, ") == ["a", "b"]
+    assert pins("") == [] and pins(None) == []
+
+    order = lambda items, raw: json.loads(context.eval(
+        "JSON.stringify(convOrder(" + json.dumps(items) + ", convPinsParse(" + json.dumps(raw) + ")))"))
+    items = [{"conversation_id": "one"}, {"conversation_id": "two"}, {"conversation_id": "three"}]
+    split = order(items, "three,ghost")
+    assert [item["conversation_id"] for item in split["pinned"]] == ["three"], "unknown pins pin nothing"
+    assert [item["conversation_id"] for item in split["rest"]] == ["one", "two"]
+    assert order([], "x") == {"pinned": [], "rest": []}
+
+    find = lambda texts, query: json.loads(context.eval(
+        "JSON.stringify(chatFindFilter(" + json.dumps(texts) + ", " + json.dumps(query) + "))"))
+    texts = ["Merhaba dünya", "Kalp anatomisi", "kalp krizi belirtileri"]
+    assert find(texts, "kalp") == [1, 2], "Turkish-lowercased, case-insensitive"
+    assert find(texts, "KALP") == [1, 2]
+    assert find(texts, "yürek") == []
+    assert find(texts, "") is None and find(texts, "   ") is None, "empty query means the filter is off"
+
+    # Wiring: the pin on every row, the find box, the escape, the clear.
+    assert 'data-pin="${esc(item.conversation_id)}"' in conversation
+    assert '"nova.conv.pins"' in conversation and "Sabitlenmiş" in conversation
+    assert "bindChatFind();" in JS_SOURCES["js/main.js"]
+    assert 'id="chat-find"' in HTML and 'id="chat-find-count"' in HTML
+    assert "bu cihazda sabitler" in HTML, "the note says pins are device-local"
+    assert ".msg.find-miss { display: none; }" in CSS
+    assert "clearChatFind(); input.blur();" in conversation
+
+
 def test_the_palette_converts_money_and_sets_reminders() -> None:
     quickjs = pytest.importorskip("quickjs")
     context = quickjs.Context()

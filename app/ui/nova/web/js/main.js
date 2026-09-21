@@ -14,6 +14,7 @@ async function main() {
   bindShell();
   bindConversation();
   bindReadaloud();
+  bindChatFind();
   bindActivity();
   bindPanels();
   bindMedical();

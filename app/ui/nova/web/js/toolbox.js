@@ -304,14 +304,9 @@ function eventMatches(event, query) {
   const attrs = Object.entries((event && event.attributes) || {}).map(([key, value]) => key + ":" + value).join(" ");
   const hay = [event && event.level, event && event.component, event && event.name, event && event.message, attrs]
     .map((part) => String(part || "")).join(" ");
-  // A deterministic fold instead of locale APIs (QuickJS has none): the
-  // whole Turkish I family - I, i, dotless ı, dotted İ and the
-  // combining-dot pair İ leaves behind - collapses to one letter, so
-  // PROVIDER finds provider and HATIRLATICI finds Hatırlatıcı.
-  const fold = (value) => value.toLowerCase()
-    .replace(/İ/g, "i")
-    .replace(/ı/g, "i")
-    .replace(/i̇/g, "i");
+  // The ledger's own copy of foundation's searchFold (these tests run
+  // this file alone): pre-map the I family one-to-one, then lower.
+  const fold = (value) => value.replace(/[Iİ]/g, "i").replace(/ı/g, "i").toLowerCase();
   return fold(hay).includes(fold(needle));
 }
 

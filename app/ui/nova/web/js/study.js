@@ -552,7 +552,7 @@ const Study = {
     const suggest = slot.querySelector("[data-prereq-suggest]");
     if (suggest) suggest.addEventListener("click", async () => {
       const typed = ((query && query.value) || "").trim();
-      const match = matches.find((item) => item.name.toLocaleLowerCase("tr") === typed.toLocaleLowerCase("tr")) || (matches.length === 1 ? matches[0] : null);
+      const match = matches.find((item) => searchFold(item.name) === searchFold(typed)) || (matches.length === 1 ? matches[0] : null);
       if (!match) { toast("Listeden bir kavram seç.", true); return; }
       const proposed = await this.request("prerequisite_suggest", { concept_id: conceptId, requires: match.concept_id, provenance: "student", note: "Öğrenci Anlama ekranından önerdi." });
       if (proposed.ok === false) { toast(proposed.error || "Öneri kaydedilemedi.", true); return; }

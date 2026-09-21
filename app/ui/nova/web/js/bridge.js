@@ -270,10 +270,10 @@ const DemoBridge = {
   },
 
   async search_conversations(query) {
-    const needle = String(query || "").trim().toLocaleLowerCase("tr-TR");
+    const needle = searchFold(String(query || "").trim());
     if (needle.length < 2) return { ok: false, error: "Arama için en az 2 karakter yaz." };
     const rows = (await this.list_conversations()).conversations
-      .filter((item) => item.title.toLocaleLowerCase("tr-TR").includes(needle))
+      .filter((item) => searchFold(item.title).includes(needle))
       .map((item) => ({ ...item, matches: 1, excerpt: item.title, excerpt_role: "user" }));
     return { ok: true, query: needle, results: rows };
   },

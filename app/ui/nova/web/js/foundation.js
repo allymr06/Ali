@@ -43,7 +43,19 @@ function el(tag, className, text) {
 }
 
 function clamp(value, low, high) { return Math.max(low, Math.min(high, value)); }
-const lower = (v) => String(v ?? "").trim().toLocaleLowerCase("tr");
+/* One deterministic fold for every user-facing search on the page: the
+   Turkish I family (I, ı, İ, i) collapses to plain i BEFORE the generic
+   lowering, so PROVIDER finds provider and HATIRLATICI finds
+   Hatırlatıcı - and, each replacement being one-to-one, an index into
+   the folded string still points into the original (the <mark> path
+   depends on that). QuickJS has no locale API, so tests and the live
+   window fold identically. eventMatches in toolbox.js carries its own
+   copy for the ledger's isolated tests. */
+function searchFold(value) {
+  return String(value ?? "").replace(/[Iİ]/g, "i").replace(/ı/g, "i").toLowerCase();
+}
+
+const lower = (v) => searchFold(String(v ?? "").trim());
 
 /* ── Turkish vocabulary ───────────────────────────────────────────── */
 

@@ -1737,6 +1737,7 @@ def test_conversation_search_markup_marks_matches_and_stays_honest() -> None:
         "function esc(v) { return String(v == null ? \"\" : v).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\"); }"
         + "function fmtRelative(v) { return \"az önce\"; }"
     )
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function searchFold(", "\nconst lower"))
     context.eval(section(JS_SOURCES["js/conversation.js"], "function convSearchMarkup", "\nlet convSearchTimer"))
 
     run = lambda payload: context.eval("convSearchMarkup(" + json.dumps(payload) + ")")
@@ -1753,6 +1754,12 @@ def test_conversation_search_markup_marks_matches_and_stays_honest() -> None:
         "turn_count": 4, "updated_at": "2026-09-15T07:00:00+03:00", "active": False,
     }]})
     assert "<mark>Böbrek</mark>" in rows, "the match is highlighted case-insensitively in Turkish"
+    upper = run({"ok": True, "query": "BÖBREK", "results": [{
+        "conversation_id": "c1", "title": "böbrek fizyolojisi", "status": "active", "matches": 1,
+        "excerpt": "", "excerpt_role": "user", "turn_count": 1,
+        "updated_at": "2026-09-15T07:00:00+03:00", "active": False,
+    }]})
+    assert "<mark>böbrek</mark>" in upper, "an uppercase query still lands its mark"
     assert "Sen: " in rows and "2 eşleşme" in rows
     assert "<b>" not in rows, "excerpt HTML is escaped, never injected"
 
@@ -2587,6 +2594,7 @@ def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
     quickjs = pytest.importorskip("quickjs")
     context = quickjs.Context()
     conversation = JS_SOURCES["js/conversation.js"]
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function searchFold(", "\nconst lower"))
     context.eval(section(conversation, "/* ── drawer pins & in-chat find (pure)", "\nfunction appendMessage("))
 
     pins = lambda raw: json.loads(context.eval("JSON.stringify([...convPinsParse(" + json.dumps(raw) + ")])"))
@@ -2618,6 +2626,8 @@ def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
     texts = ["Merhaba dünya", "Kalp anatomisi", "kalp krizi belirtileri"]
     assert find(texts, "kalp") == [1, 2], "Turkish-lowercased, case-insensitive"
     assert find(texts, "KALP") == [1, 2]
+    assert find(["PROVIDER hattı"], "provider") == [0], "an uppercase I folds to its dotted twin"
+    assert find(["Hatırlatıcı listesi"], "HATIRLATICI") == [0], "and the dotless family folds back"
     assert find(texts, "yürek") == []
     assert find(texts, "") is None and find(texts, "   ") is None, "empty query means the filter is off"
 
@@ -2629,6 +2639,28 @@ def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
     assert "bu cihazda sabitler" in HTML, "the note says pins are device-local"
     assert ".msg.find-miss { display: none; }" in CSS
     assert "clearChatFind(); input.blur();" in conversation
+
+
+def test_search_fold_collapses_the_turkish_i_family_one_to_one() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function searchFold(", "\nconst lower"))
+    fold = lambda value: context.eval("searchFold(" + json.dumps(value) + ")")
+
+    assert fold("PROVIDER") == "provider"
+    assert fold("HATIRLATICI") == fold("Hatırlatıcı") == "hatirlatici"
+    assert fold("İstanbul") == "istanbul" and len(fold("İstanbul")) == len("İstanbul"), (
+        "one-to-one: an index into the fold still points into the original"
+    )
+    assert fold(None) == "" and fold(123) == "123"
+
+    # Every user-facing search runs through the same fold family.
+    assert "searchFold(String(query || \"\").trim())" in JS_SOURCES["js/conversation.js"]
+    assert "searchFold(safe).indexOf(searchFold(needle))" in JS_SOURCES["js/conversation.js"]
+    assert "const lower = (v) => searchFold(" in JS_SOURCES["js/foundation.js"]
+    for name in ("js/medical.js", "js/study.js"):
+        assert "searchFold(" in JS_SOURCES[name], name
+    assert "toLocaleLowerCase" not in JS_SOURCES["js/bridge.js"], "the demo searches like the page"
 
 
 def test_the_ledger_sieve_matches_what_a_row_shows() -> None:

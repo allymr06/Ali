@@ -193,6 +193,17 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## One fold to search them all (21 September 2026)
+
+Every user-facing search on the page - chat find, conversation search
+and its <mark>, palette scoring via lower(), the Academy's document
+and concept filters, prerequisite matching, the demo bridge - now runs
+through one deterministic `searchFold`: the Turkish I family collapses
+one-to-one to plain i before the generic lowering. PROVIDER finds
+provider, HATIRLATICI finds Hatırlatıcı, indexes into the fold still
+point into the original, and QuickJS folds exactly like the live
+window (no locale APIs anywhere).
+
 ## The ledger can be searched (21 September 2026)
 
 Tanılama's event ledger gained a text sieve beside the level select:

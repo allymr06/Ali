@@ -170,11 +170,11 @@ function convOrder(items, pins, { hideArchived = false } = {}) {
 
 /* Which message indexes match the query; null means the filter is off. */
 function chatFindFilter(texts, query) {
-  const needle = String(query || "").trim().toLocaleLowerCase("tr");
+  const needle = searchFold(String(query || "").trim());
   if (!needle) return null;
   const hits = [];
   (texts || []).forEach((text, index) => {
-    if (String(text || "").toLocaleLowerCase("tr").includes(needle)) hits.push(index);
+    if (searchFold(text).includes(needle)) hits.push(index);
   });
   return hits;
 }
@@ -437,7 +437,7 @@ function convSearchMarkup(payload) {
   const mark = (text) => {
     const safe = esc(text);
     const needle = esc(payload.query);
-    const index = safe.toLocaleLowerCase("tr-TR").indexOf(needle.toLocaleLowerCase("tr-TR"));
+    const index = searchFold(safe).indexOf(searchFold(needle));
     if (index < 0) return safe;
     return safe.slice(0, index) + "<mark>" + safe.slice(index, index + needle.length) + "</mark>" + safe.slice(index + needle.length);
   };

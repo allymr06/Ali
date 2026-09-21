@@ -1226,6 +1226,14 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The search fold (21 September 2026)
+
+QuickJS pins searchFold's collapse in both directions, its one-to-one
+length, and the bare inputs; the chat-find and conv-search tests
+gained uppercase-I vectors and an uppercase <mark> proof; a sweep pin
+holds every search surface on the fold with no locale API left in the
+demo bridge.
+
 ## The ledger sieve (21 September 2026)
 
 QuickJS pins eventMatches over every shown field, empty-query

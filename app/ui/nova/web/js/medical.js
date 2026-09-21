@@ -667,14 +667,14 @@ const Medical = {
   },
 
   visibleDocuments() {
-    const query = String(($("#med-doc-search") || {}).value || "").trim().toLocaleLowerCase("tr");
+    const query = searchFold(String(($("#med-doc-search") || {}).value || "").trim());
     const set = this.setFilter ? (this.lectureSets || []).find((item) => item.set_id === this.setFilter) : null;
     return this.documents.filter((item) => {
       if (set && !(item.tags || []).includes(set.name)) return false;
       if (this.committeeFilter && !(item.tags || []).includes(this.committeeFilter)) return false;
       if (this.lessonFilter && !(item.tags || []).includes(this.lessonFilter)) return false;
       if (!query) return true;
-      const haystack = [item.title, item.file_name, item.subject, ...(item.tags || [])].join(" ").toLocaleLowerCase("tr");
+      const haystack = searchFold([item.title, item.file_name, item.subject, ...(item.tags || [])].join(" "));
       return haystack.includes(query);
     });
   },

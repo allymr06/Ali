@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## Cards that speak (21 September 2026)
+
+`test_nova_web` pins the card's voice-gated button, the on-screen-only
+spoken text (hidden backs stay silent), and the Speech player with no
+`<audio>` left in study.js.
+
 ## The visible sleep timer (21 September 2026)
 
 `test_integrations` pins the figure riding now_playing only while the

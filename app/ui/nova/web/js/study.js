@@ -158,12 +158,22 @@ const Cards = {
       <div class="mb-meta">
         <span class="chip" title="Kaynağı">${esc(card.provenance)}</span>
         <span class="spacer"></span>
+        ${State.snapshot?.voice_available ? '<button type="button" class="chip" data-card-speak title="Kartı sesli okur; cevap açıksa onu da">Seslendir</button>' : ""}
         <button type="button" class="chip" data-card-suspend="${esc(card.card_id)}">Askıya al</button>
       </div>
     </div>`;
     if (card.has_image) this.loadImage(host, card.card_id);
     const reveal = host.querySelector("[data-card-reveal]");
     if (reveal) reveal.addEventListener("click", () => { this.revealed = true; this.renderReview(); });
+    const speak = host.querySelector("[data-card-speak]");
+    if (speak) speak.addEventListener("click", async () => {
+      Speech.unlock(); // inside the gesture, before the slow synthesis
+      // The spoken text mirrors what is on screen: never the hidden back.
+      const spoken = this.revealed ? `${card.front}. Cevap: ${card.back}` : card.front;
+      const result = await call("speak_text", spoken);
+      if (result.ok === false || !result.audio) { toast(result.error || "Seslendirilemedi.", true); return; }
+      Speech.play(result.audio);
+    });
     $$("[data-grade]", host).forEach((node) => node.addEventListener("click", () => this.answer(node.dataset.grade)));
     $$("[data-card-suspend]", host).forEach((node) => node.addEventListener("click", async () => {
       const result = await this.request("cards_suspend", { card_id: node.dataset.cardSuspend });

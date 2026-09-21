@@ -193,6 +193,13 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Flashcards speak (21 September 2026)
+
+The SRS review card gained Seslendir: it reads exactly what is on
+screen - the front alone, or front plus answer once revealed, never
+the hidden back - through the same gesture-unlocked Speech player,
+and only when the voice service exists.
+
 ## The sleep timer shows itself (21 September 2026)
 
 While a Spotify sleep timer is armed, the remote's ⏰ button becomes

@@ -1226,6 +1226,14 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## Copy and the corner clock (21 September 2026)
+
+`test_nova_web` pins the copy control on full-size bubbles only, the
+single clipboard hand's three honest answers (copied, refused, nothing
+to copy), the report's Kopyala building the same Markdown the export
+writes, and the mini clock starting with compact mode and stopping
+with it.
+
 ## Session, data, snow (21 September 2026)
 
 `test_ui_nova` pins the size helper (top-level files only, a missing

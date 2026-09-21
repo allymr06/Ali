@@ -123,6 +123,11 @@ function chatFindFilter(texts, query) {
   return hits;
 }
 
+/* The copy control every full-size bubble carries. */
+function copyButton(slim) {
+  return slim ? "" : '<button type="button" class="msg-copy" data-copy title="Metni kopyala">⎘</button>';
+}
+
 function appendMessage(host, message, slim, { animate = true } = {}) {
   if (!host || !message || !String(message.text ?? "").trim()) return null;
   const node = el("div", `msg ${esc(message.role)}`);
@@ -131,7 +136,7 @@ function appendMessage(host, message, slim, { animate = true } = {}) {
   const speakButton = message.role === "assistant" && !slim && State.snapshot?.voice_available
     ? '<button type="button" class="msg-speak" data-speak title="Sesli oku">🔊</button>' : "";
   node.innerHTML =
-    (roleLabel && !slim ? `<div class="msg-meta"><span class="msg-role">${roleLabel}</span>${time}${speakButton}</div>` : "") +
+    (roleLabel && !slim ? `<div class="msg-meta"><span class="msg-role">${roleLabel}</span>${time}${speakButton}${copyButton(slim)}</div>` : "") +
     `<div class="msg-body"></div>` +
     (message.role === "assistant" && !slim ? assuranceChips(message.metadata) : "");
   if (message.role === "assistant") node.querySelector(".msg-body").innerHTML = renderMarkdownLite(message.text);
@@ -679,5 +684,24 @@ function bindReadaloud() {
   host.addEventListener("click", (event) => {
     const button = event.target.closest("[data-speak]");
     if (button) Readaloud.toggle(button);
+    const copy = event.target.closest("[data-copy]");
+    if (copy) {
+      const body = copy.closest(".msg")?.querySelector(".msg-body");
+      if (body) copyTextToClipboard(body.innerText);
+    }
   });
+}
+
+/* One clipboard hand for the page: reports what actually happened. */
+async function copyTextToClipboard(text) {
+  const value = String(text ?? "");
+  if (!value.trim()) { toast("Kopyalanacak metin yok.", true); return false; }
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch (error) {
+    toast("Panoya erişilemedi.", true);
+    return false;
+  }
+  toast("Panoya kopyalandı.", "ok");
+  return true;
 }

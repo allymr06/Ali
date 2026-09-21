@@ -193,6 +193,17 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## A copy at hand, a clock in the corner (21 September 2026)
+
+Every full-size chat bubble - the user's and JARVIS's alike - carries a
+copy control that puts the bubble's text on the clipboard through one
+shared hand, and that hand reports what actually happened ("Panoya
+kopyalandı" only after the write succeeded, "Panoya erişilemedi" when
+the platform refused). The research report gained the same: "Kopyala"
+beside the export button puts the exact Markdown the export writes on
+the clipboard. And the mini window shows a small clock, ticking every
+half minute only while the mini window is the one on screen.
+
 ## The session on the pulse, and snow (21 September 2026)
 
 The pulse gained two measured rows: how long this JARVIS has been up

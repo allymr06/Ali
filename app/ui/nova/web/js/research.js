@@ -271,6 +271,12 @@ function researchReportMarkdown(report, catalogue) {
   return lines.join("\n");
 }
 
+async function copyResearchReport() {
+  const report = State.lastResearchReport;
+  if (!report) { toast("Kopyalanacak rapor yok.", true); return; }
+  await copyTextToClipboard(researchReportMarkdown(report, Research.catalogue));
+}
+
 async function exportResearchReport() {
   const report = State.lastResearchReport;
   if (!report) { toast("Dışa aktarılacak rapor yok; önce bir araştırma çalıştır.", true); return; }
@@ -304,7 +310,7 @@ function renderResearch(ok, report, error) {
   const uncertainties = Array.isArray(report.uncertainties) ? report.uncertainties.map(researchUncertaintyTr).filter(Boolean) : [];
   panel.innerHTML = `
     <div class="res-report-head">
-      <span class="kicker">Rapor</span><button type="button" id="res-export" class="btn btn-ghost small res-export" title="Raporu Markdown olarak kaydet">Dışa aktar (.md)</button>
+      <span class="kicker">Rapor</span><button type="button" id="res-copy" class="btn btn-ghost small res-export" title="Raporu Markdown olarak panoya kopyalar">Kopyala</button><button type="button" id="res-export" class="btn btn-ghost small res-export" title="Raporu Markdown olarak kaydet">Dışa aktar (.md)</button>
       <h2>${esc(report.question || report.query || "")}</h2>
       <p class="res-report-meta">${esc(provenance)}</p>
     </div>
@@ -315,6 +321,7 @@ function renderResearch(ok, report, error) {
     const opened = await call("open_external", node.dataset.openUrl);
     if (opened.ok === false) toast(opened.error || "Bağlantı açılamadı.", true);
   }));
+  $("#res-copy", panel)?.addEventListener("click", () => copyResearchReport());
   const exporter = $("#res-export", panel);
   if (exporter) exporter.addEventListener("click", exportResearchReport);
   if (Motion.allowed()) Motion.stagger($$(".res-card", panel), { step: 45, y: 10 });

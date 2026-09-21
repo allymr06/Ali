@@ -546,10 +546,29 @@ function applyCompact(compact) {
   document.body.classList.toggle("compact", compact);
   $("#mini").hidden = !compact;
   $("#compact-btn").classList.toggle("active", compact);
-  if (compact) { Palette.hide(); renderMiniLine(); $("#mini-input").focus(); }
+  if (compact) { Palette.hide(); renderMiniLine(); MiniClock.start(); $("#mini-input").focus(); }
+  else MiniClock.stop();
   requestAnimationFrame(() => Engine.resize());
   Engine.wake();
 }
+
+/* The mini window is a glanceable corner; a corner wants a clock. */
+const MiniClock = {
+  timer: 0,
+  tick() {
+    const host = $("#mini-clock");
+    if (host) host.textContent = fmtClock(new Date());
+  },
+  start() {
+    this.stop();
+    this.tick();
+    this.timer = setInterval(() => this.tick(), 30000);
+  },
+  stop() {
+    clearInterval(this.timer);
+    this.timer = 0;
+  },
+};
 
 function renderMiniLine(text) {
   const line = $("#mini-line");

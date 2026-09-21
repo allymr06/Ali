@@ -2349,6 +2349,32 @@ def test_the_palette_calculator_answers_and_stays_out_of_the_way() -> None:
     assert "eval(" not in JS_SOURCES["js/toolbox.js"]
 
 
+def test_copy_hands_and_the_mini_clock_are_wired() -> None:
+    conversation = JS_SOURCES["js/conversation.js"]
+    # Every full-size bubble carries the copy control; slim ones do not.
+    assert "function copyButton(slim)" in conversation and "${copyButton(slim)}" in conversation
+    assert 'data-copy title="Metni kopyala"' in conversation
+    assert 'copy.closest(".msg")?.querySelector(".msg-body")' in conversation
+    # One clipboard hand, honest in both directions.
+    assert "async function copyTextToClipboard(" in conversation
+    assert 'toast("Panoya erişilemedi.", true);' in conversation
+    assert 'toast("Panoya kopyalandı.", "ok");' in conversation
+    assert 'toast("Kopyalanacak metin yok.", true);' in conversation
+
+    research = JS_SOURCES["js/research.js"]
+    assert 'id="res-copy"' in research
+    assert "copyResearchReport" in research
+    assert 'toast("Kopyalanacak rapor yok.", true);' in research
+    assert "researchReportMarkdown(report, Research.catalogue)" in research
+
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert 'id="mini-clock"' in HTML
+    assert "const MiniClock = {" in shell_js
+    assert "MiniClock.start();" in shell_js and "else MiniClock.stop();" in shell_js
+    assert "setInterval(() => this.tick(), 30000)" in shell_js
+    assert ".mini-clock" in CSS and ".msg-copy" in CSS
+
+
 def test_uptime_speaks_and_snow_respects_reduced_motion() -> None:
     quickjs = pytest.importorskip("quickjs")
     context = quickjs.Context()

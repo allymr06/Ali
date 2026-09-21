@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The visible sleep timer (21 September 2026)
+
+`test_integrations` pins the figure riding now_playing only while the
+timer runs; `test_nova_web` pins the button swap (arm ↔ cancel, never
+both).
+
 ## The quiet glance (21 September 2026)
 
 `test_integrations` pins launch=False answering BLOCKED without a

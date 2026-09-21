@@ -2665,6 +2665,10 @@ def test_the_home_remote_draws_what_the_tools_reported() -> None:
     panels_glance = JS_SOURCES["js/panels.js"]
     assert '"whatsapp_read_chats", { limit: 20, launch: false }' in panels_glance
 
+    sleeping = draw({"ok": True, "data": {"running": True, "playing": True, "artist": "Duman", "track": "Bal\u0131k", "sleep_minutes_left": 23}})
+    assert "⏰ 23 dk · iptal" in sleeping and 'data-tool="spotify_cancel_sleep_timer"' in sleeping
+    assert 'data-tool="spotify_sleep_timer"' not in sleeping, "one timer button at a time"
+
     queue_input = draw({"ok": True, "data": {"running": True, "playing": False}})
     assert 'class="remote-queue"' in queue_input, "the request line ships with a live card"
     assert "remote-queue" not in closed, "no Spotify, no request line"

@@ -152,6 +152,9 @@ class SpotifyIntegration:
             message = "Spotify açık ama şu an bir şey çalmıyor."
         if bar and bar.get("position") and bar.get("duration"):
             message += f" ({bar['position']} / {bar['duration']})"
+        timer = self._sleep_timer
+        if timer is not None and timer.active and timer.ends_at is not None:
+            state["sleep_minutes_left"] = max(1, round((timer.ends_at - time.monotonic()) / 60))
         return ToolResult(
             ToolExecutionStatus.SUCCESS,
             "spotify_now_playing",

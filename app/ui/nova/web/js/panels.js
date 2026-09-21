@@ -148,7 +148,9 @@ function remoteMarkup(now, delegation, chats) {
       `<button type="button" class="remote-btn primary" data-tool="spotify_play_pause" title="${data.playing ? "Duraklat" : "Çal"}">${data.playing ? "⏸" : "▶"}</button>` +
       '<button type="button" class="remote-btn" data-tool="spotify_next_track" title="Sonraki">⏭</button>' +
       `<button type="button" class="remote-btn ${data.liked ? "liked" : ""}" data-tool="spotify_like_track" title="${data.liked ? "Beğenilen Şarkılar'da" : "Beğen"}">♥</button>` +
-      '<button type="button" class="remote-btn" data-tool="spotify_sleep_timer" data-args=\'{"minutes":30}\' title="30 dakika sonra sesi kısıp duraklat">⏰ 30</button>' +
+      (typeof data.sleep_minutes_left === "number"
+        ? `<button type="button" class="remote-btn liked" data-tool="spotify_cancel_sleep_timer" title="Uyku zamanlayıcısını iptal et">⏰ ${esc(String(data.sleep_minutes_left))} dk · iptal</button>`
+        : '<button type="button" class="remote-btn" data-tool="spotify_sleep_timer" data-args=\'{"minutes":30}\' title="30 dakika sonra sesi kısıp duraklat">⏰ 30</button>') +
       "</div>");
     if (typeof data.volume_percent === "number") {
       parts.push(`<label class="remote-volume-row"><span>Ses %${esc(String(data.volume_percent))}</span>` +

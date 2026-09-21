@@ -799,6 +799,13 @@ async def test_spotify_sleep_timer_tools_start_and_cancel() -> None:
     assert (await spotify.sleep_timer(0)).error == "invalid_minutes"
     started = await spotify.sleep_timer(45)
     assert started.status is ToolExecutionStatus.SUCCESS and spotify._sleep_timer.active is True
+    ticking = await desktop_spotify(
+        FakeSpotifyUia(names=["Play"], texts=[]), titles=("Spotify Premium",)
+    ).now_playing()
+    assert "sleep_minutes_left" not in ticking.data, "no timer, no figure"
+    spotify._powershell = FakePowerShell([(0, "Spotify Premium")])
+    with_timer = await spotify.now_playing()
+    assert with_timer.data["sleep_minutes_left"] == 45
     cancelled = await spotify.cancel_sleep_timer()
     assert cancelled.data == {"cancelled": True}
     assert (await spotify.cancel_sleep_timer()).data == {"cancelled": False}

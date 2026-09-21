@@ -193,6 +193,13 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The sleep timer shows itself (21 September 2026)
+
+While a Spotify sleep timer is armed, the remote's ⏰ button becomes
+"⏰ 23 dk · iptal" - the measured minutes left, and one press cancels
+through the allow-listed tool. now_playing carries the figure only
+while the timer is really running.
+
 ## The remote glances at WhatsApp (21 September 2026)
 
 The Kumanda card shows "💬 3 sohbette okunmamış mesaj" - a count,

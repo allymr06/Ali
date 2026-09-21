@@ -251,6 +251,8 @@ async function sendCommand(raw) {
   if (State.paused) { toast(PAUSED_NOTICE, true); return; }
   if (!text || State.busy || !bridgeReady()) return;
   const message = { role: "user", text, at: Date.now() };
+  // The palette's short memory: this device only, five entries, newest first.
+  store("nova.palette.recent", paletteRecentAdd(store("nova.palette.recent"), text));
   State.pendingSources = null; // sources belong to the turn that earned them
   hideChatEmpty();
   updateChat(() => {

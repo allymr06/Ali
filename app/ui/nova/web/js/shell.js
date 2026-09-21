@@ -457,6 +457,19 @@ const Palette = {
       const score = q ? Math.max(fuzzyScore(q, item.label) ?? -1, (fuzzyScore(q, item.keywords) ?? -1) * 0.6) : 0;
       return { item, score };
     }).filter(({ score }) => !q || score >= 0).sort((a, b) => b.score - a.score).slice(0, 9).map(({ item }) => item);
+    if (!q) {
+      const recent = paletteRecentParse(store("nova.palette.recent"));
+      if (recent.length) {
+        scored.push({
+          group: "son", icon: "close", label: "Son komutları unut (bu cihazda)",
+          keywords: "", run: () => { store("nova.palette.recent", "[]"); toast("Son komutlar unutuldu.", "ok"); },
+        });
+        [...recent].reverse().forEach((command) => scored.unshift({
+          group: "son", icon: "send", label: `Tekrar gönder: “${command}”`,
+          keywords: "", run: () => { showScreen("chat"); sendCommand(command); },
+        }));
+      }
+    }
     if (q) {
       const math = paletteMath(q);
       if (math) scored.unshift({ group: "hesap", icon: "tools", label: math.display, keywords: "", run: () => toast(math.display, "ok") });

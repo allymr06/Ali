@@ -1226,6 +1226,13 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The palette's short memory (21 September 2026)
+
+`test_nova_web` runs the pure recent-list in QuickJS: five entries
+newest first, repeats promoted not duplicated, junk JSON answering an
+empty list, long commands clipped; and pins the empty-query rows, the
+forget row's device-local label, and the write on `sendCommand`.
+
 ## The focus that asks (21 September 2026)
 
 `test_nova_web` pins the offer's guardrails: only a finished session

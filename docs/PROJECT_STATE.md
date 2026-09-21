@@ -193,6 +193,14 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The palette's short memory (21 September 2026)
+
+An empty palette now lists the last five commands actually sent to
+JARVIS - "Tekrar gönder" rows, newest first, a repeat moving up rather
+than duplicating, entries clipped at 80 characters. The memory lives in
+this device's localStorage and one more row forgets it on request,
+saying so in its own label ("bu cihazda").
+
 ## A finished focus asks to be counted (21 September 2026)
 
 When a focus session runs its full course and the Academy is open,

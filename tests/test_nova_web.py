@@ -2349,6 +2349,31 @@ def test_the_palette_calculator_answers_and_stays_out_of_the_way() -> None:
     assert "eval(" not in JS_SOURCES["js/toolbox.js"]
 
 
+def test_the_palette_remembers_five_commands_and_forgets_on_request() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    parse = lambda raw: json.loads(context.eval("JSON.stringify(paletteRecentParse(" + json.dumps(raw) + "))"))
+    add = lambda raw, cmd: context.eval("paletteRecentAdd(" + json.dumps(raw) + ", " + json.dumps(cmd) + ")")
+
+    state = "[]"
+    for command in ("bir", "iki", "üç", "dört", "beş", "altı"):
+        state = add(state, command)
+    assert parse(state) == ["altı", "beş", "dört", "üç", "iki"], "five entries, newest first"
+    state = add(state, "dört")
+    assert parse(state)[0] == "dört" and parse(state).count("dört") == 1, "a repeat moves up, never duplicates"
+    assert parse(add("[]", "   ")) == [] and add("[]", "") == "[]"
+    assert parse("bozuk json") == [] and parse(json.dumps({"a": 1})) == []
+    long_command = "x" * 200
+    assert len(parse(add("[]", long_command))[0]) == 80, "entries are clipped, not refused"
+
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert 'paletteRecentParse(store("nova.palette.recent"))' in shell_js
+    assert "Tekrar gönder: “" in shell_js
+    assert "Son komutları unut (bu cihazda)" in shell_js
+    assert 'paletteRecentAdd(store("nova.palette.recent"), text)' in JS_SOURCES["js/conversation.js"]
+
+
 def test_a_finished_focus_offers_itself_to_the_academy_log() -> None:
     shell_js = JS_SOURCES["js/shell.js"]
     # Asked, never assumed - and only when it could be study at all.

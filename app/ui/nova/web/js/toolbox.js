@@ -271,3 +271,24 @@ function paletteReminder(query) {
   }
   return null;
 }
+
+/* ── the palette's short memory of sent commands (pure) ────────── */
+
+const PALETTE_RECENT_LIMIT = 5;
+
+function paletteRecentParse(raw) {
+  try {
+    const parsed = JSON.parse(String(raw || "[]"));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item) => typeof item === "string" && item.trim()).slice(0, PALETTE_RECENT_LIMIT);
+  } catch (error) {
+    return [];
+  }
+}
+
+function paletteRecentAdd(raw, command) {
+  const text = String(command || "").trim().slice(0, 80);
+  if (!text) return String(raw || "[]");
+  const rest = paletteRecentParse(raw).filter((item) => item !== text);
+  return JSON.stringify([text, ...rest].slice(0, PALETTE_RECENT_LIMIT));
+}

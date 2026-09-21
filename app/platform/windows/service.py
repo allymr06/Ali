@@ -233,6 +233,37 @@ class WindowsIntegrationService:
         return idle.value, kernel.value, user.value
 
     @staticmethod
+    def read_power_status() -> dict[str, object]:
+        """GetSystemPowerStatus, reported as the API states it.
+
+        A desktop without a battery answers has_battery=False; an
+        unknown percentage (the API's 255) stays None instead of a
+        guess. Charging means "on AC power" exactly as Windows says it.
+        """
+        import ctypes
+
+        class SYSTEM_POWER_STATUS(ctypes.Structure):
+            _fields_ = [
+                ("ACLineStatus", ctypes.c_ubyte),
+                ("BatteryFlag", ctypes.c_ubyte),
+                ("BatteryLifePercent", ctypes.c_ubyte),
+                ("SystemStatusFlag", ctypes.c_ubyte),
+                ("BatteryLifeTime", ctypes.c_ulong),
+                ("BatteryFullLifeTime", ctypes.c_ulong),
+            ]
+
+        status = SYSTEM_POWER_STATUS()
+        if not ctypes.WinDLL("kernel32").GetSystemPowerStatus(ctypes.byref(status)):
+            raise OSError("GetSystemPowerStatus failed")
+        no_battery = bool(status.BatteryFlag & 128) or status.BatteryFlag == 255
+        percent = None if status.BatteryLifePercent > 100 else int(status.BatteryLifePercent)
+        return {
+            "has_battery": not no_battery,
+            "percent": None if no_battery else percent,
+            "charging": None if no_battery else status.ACLineStatus == 1,
+        }
+
+    @staticmethod
     def system_info() -> dict[str, object]:
         if os.name != "nt":
             raise OSError("Windows system information requires Windows.")

@@ -101,7 +101,17 @@ def backup_state_now(
         shutil.rmtree(leftover, ignore_errors=True)
     stamp = _utc_now().strftime(_STAMP_FORMAT)
     target = root / f"{STATE_BACKUP_PREFIX}{stamp}"
-    partial = root / f"{STATE_BACKUP_PREFIX}{stamp}.tmp"
+    # Windows serves the clock in ~16 ms steps, so two quick backups can
+    # share a stamp to the microsecond - and on Windows replace() onto
+    # the existing folder fails with WinError 5, while elsewhere it
+    # would silently eat a kept copy. A same-instant sibling takes a
+    # lettered counter: "b2" sorts after the plain name, so the name
+    # order stays the creation order the rotation relies on.
+    counter = 2
+    while target.exists():
+        target = root / f"{STATE_BACKUP_PREFIX}{stamp}b{counter}"
+        counter += 1
+    partial = root / f"{target.name}.tmp"
     partial.mkdir()
     copied: list[str] = []
     try:

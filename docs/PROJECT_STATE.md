@@ -193,6 +193,21 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Quiet hours and the battery (21 September 2026)
+
+Ayarlar' assistant card gained "Sessiz saatler": inside the window
+(e.g. 23:00-08:00, wrapping midnight) the native Windows toast is held
+back while the in-app notification centre keeps collecting - nothing
+is lost, only postponed, and the card says exactly that. The window
+lives in the desktop profile next to the brief time, is normalized on
+save, refuses a start equal to its end, and a page that omits the key
+keeps the stored choice. A broken stored spec fails open: it never
+silences notifications by accident. The Tanılama pulse now carries the
+battery when the machine has one - percent and "şarjda" from
+GetSystemPowerStatus, the API's unknown 255 answered as None, and a
+desktop without a battery simply has no battery cell rather than a
+dash pretending one failed.
+
 ## Pins in the drawer, find in the chat (21 September 2026)
 
 The conversation drawer can pin: a 📌 on every row keeps that thread

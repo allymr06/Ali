@@ -285,6 +285,7 @@ def test_boot_returns_live_state_without_secrets(booted) -> None:
         "research_enabled": True,
         "almanac_city": "",
         "vision_enabled": True,
+        "quiet_hours": "",
     }
     assert SECRET not in json.dumps(boot)
     assert SECRET not in json.dumps(booted.bridge.refresh())
@@ -328,6 +329,7 @@ def test_settings_snapshot_carries_only_non_secret_fields(booted) -> None:
         "research_enabled",
         "almanac_city",
         "vision_enabled",
+        "quiet_hours",
     }
     assert settings["credential_configured"] is True
 
@@ -2923,6 +2925,109 @@ def test_the_morning_brief_clock_and_line_are_exact_and_honest() -> None:
     assert ambient_only == "Bekleyen iş yok · İstanbul 21°, parçalı bulutlu · 1 $ = 41,2 ₺"
     dead = {"weather": {"available": False, "reason": "Şehir ayarlanmadı."}, "rates": {"available": False, "reason": "x"}}
     assert shell.brief_notification_body({"almanac": dead}) == "Bugün için bekleyen bir şey görünmüyor."
+
+
+def test_the_pulse_reports_the_battery_only_when_one_exists(booted, monkeypatch) -> None:
+    from app.platform.windows import service as windows_service
+
+    monkeypatch.setattr(
+        windows_service.WindowsIntegrationService, "read_power_status",
+        staticmethod(lambda: {"has_battery": True, "percent": 84, "charging": True}),
+    )
+    pulse = booted.bridge.system_pulse()
+    assert pulse["ok"] is True and pulse["battery_percent"] == 84 and pulse["battery_charging"] is True
+
+    monkeypatch.setattr(
+        windows_service.WindowsIntegrationService, "read_power_status",
+        staticmethod(lambda: {"has_battery": False, "percent": None, "charging": None}),
+    )
+    desktop = booted.bridge.system_pulse()
+    assert desktop["battery_percent"] is None and desktop["battery_charging"] is None
+
+    def boom():
+        raise OSError("no api")
+
+    monkeypatch.setattr(
+        windows_service.WindowsIntegrationService, "read_power_status", staticmethod(boom)
+    )
+    surviving = booted.bridge.system_pulse()
+    assert surviving["ok"] is True and surviving["battery_percent"] is None, "a power API failure never kills the pulse"
+
+
+def test_the_pulse_reports_the_battery_only_when_one_exists(booted, monkeypatch) -> None:
+    from app.platform.windows import service as windows_service
+
+    monkeypatch.setattr(
+        windows_service.WindowsIntegrationService, "read_power_status",
+        staticmethod(lambda: {"has_battery": True, "percent": 84, "charging": True}),
+    )
+    pulse = booted.bridge.system_pulse()
+    assert pulse["ok"] is True and pulse["battery_percent"] == 84 and pulse["battery_charging"] is True
+
+    monkeypatch.setattr(
+        windows_service.WindowsIntegrationService, "read_power_status",
+        staticmethod(lambda: {"has_battery": False, "percent": None, "charging": None}),
+    )
+    desktop = booted.bridge.system_pulse()
+    assert desktop["battery_percent"] is None and desktop["battery_charging"] is None
+
+    def boom():
+        raise OSError("no api")
+
+    monkeypatch.setattr(
+        windows_service.WindowsIntegrationService, "read_power_status", staticmethod(boom)
+    )
+    surviving = booted.bridge.system_pulse()
+    assert surviving["ok"] is True and surviving["battery_percent"] is None, "a power API failure never kills the pulse"
+
+
+def test_quiet_hours_hold_the_toast_but_never_the_centre(booted, monkeypatch) -> None:
+    from datetime import datetime as real_datetime
+
+    # The pure clock check first: wrap over midnight, honest on junk.
+    night = real_datetime(2026, 9, 21, 23, 30)
+    morning = real_datetime(2026, 9, 22, 7, 59)
+    noon = real_datetime(2026, 9, 21, 12, 0)
+    assert shell.within_quiet_hours(night, "23:00-08:00") is True
+    assert shell.within_quiet_hours(morning, "23:00-08:00") is True
+    assert shell.within_quiet_hours(noon, "23:00-08:00") is False
+    assert shell.within_quiet_hours(real_datetime(2026, 9, 21, 13, 30), "13:00-14:00") is True
+    assert shell.within_quiet_hours(real_datetime(2026, 9, 21, 14, 0), "13:00-14:00") is False
+    for junk in ("", "bozuk", "23:00", "a-b", "23:00-23:00"):
+        assert shell.within_quiet_hours(noon, junk) is False, junk
+
+    # The bridge path: inside the window the OS notifier stays silent,
+    # the in-app centre still records; outside it the toast fires.
+    sent: list[tuple[str, str]] = []
+    booted.bridge._os_notifier = lambda title, body: sent.append((title, body))
+    booted.bridge.set_visible(False)
+    saved = booted.bridge.save_desktop_settings({
+        "daily_brief_notification": True, "daily_brief_time": "08:30",
+        "research_enabled": True, "quiet_hours": "23:00-08:00",
+    })
+    assert saved["ok"] is True and saved["settings"]["quiet_hours"] == "23:00-08:00"
+
+    monkeypatch.setattr(shell, "_now", lambda: night)
+    before = booted.bridge.list_notifications(limit=50)
+    booted.bridge._publish("task", "Gece işi", "bitti", alert=True)
+    wait_until(lambda: len(booted.bridge.list_notifications(limit=50)["items"]) > len(before["items"]))
+    assert sent == [], "the toast sleeps"
+
+    monkeypatch.setattr(shell, "_now", lambda: noon)
+    booted.bridge._publish("task", "Öğle işi", "bitti", alert=True)
+    wait_until(lambda: sent != [])
+    assert sent == [("Öğle işi", "bitti")]
+
+    bad = booted.bridge.save_desktop_settings({
+        "daily_brief_notification": True, "daily_brief_time": "08:30",
+        "research_enabled": True, "quiet_hours": "gece",
+    })
+    assert bad == {"ok": False, "error": "Sessiz saatler boş ya da SS:DD-SS:DD olmalı (örn. 23:00-08:00)."}
+    # A page that never mentions the key keeps the stored window.
+    kept = booted.bridge.save_desktop_settings({
+        "daily_brief_notification": True, "daily_brief_time": "08:30", "research_enabled": True,
+    })
+    assert kept["settings"]["quiet_hours"] == "23:00-08:00"
 
 
 def test_the_home_remote_runs_only_allowed_tools_through_the_executor(booted) -> None:

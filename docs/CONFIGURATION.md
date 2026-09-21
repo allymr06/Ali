@@ -97,6 +97,11 @@ records a `nova.unavailable` warning.
 | --- | --- |
 | `%LOCALAPPDATA%\JARVIS\webview` | WebView2 profile holding the page's own preferences (theme, "Hareketi azalt"). Follows `JARVIS_STATE_DIRECTORY` when that override is set. |
 
+"Sessiz saatler" (assistant card) holds Windows toasts inside a
+"SS:DD-SS:DD" window (it may wrap midnight); the in-app notification
+centre still collects everything. Stored in the desktop profile's
+`quiet_hours`; empty disables it.
+
 The settings screen shows the voice, vision, research, memory, model and
 system variables from this document read-only, with the environment variable
 name next to each value; only the Gemini model and credential are editable

@@ -305,6 +305,25 @@ def test_desktop_preferences_round_trip_and_validate(tmp_path, monkeypatch) -> N
     assert overridden.daily_brief_time == "09:15" and overridden.research_enabled is True
 
 
+def test_quiet_hours_round_trip_and_validate(tmp_path) -> None:
+    instance, _credentials, _preferences, _clients = service(tmp_path)
+
+    assert instance.snapshot().quiet_hours == ""
+    instance.save_desktop(
+        daily_brief_notification=True, daily_brief_time="08:30",
+        research_enabled=True, quiet_hours="23:0-8:5",
+    )
+    assert instance.snapshot().quiet_hours == "23:00-08:05", "both halves are normalized"
+
+    with pytest.raises(ValueError, match="quiet_hours"):
+        instance.save_desktop(daily_brief_notification=True, daily_brief_time="08:30", research_enabled=True, quiet_hours="gece")
+    with pytest.raises(ValueError, match="quiet_hours"):
+        instance.save_desktop(daily_brief_notification=True, daily_brief_time="08:30", research_enabled=True, quiet_hours="23:00-23:00")
+
+    instance.save_desktop(daily_brief_notification=True, daily_brief_time="08:30", research_enabled=True, quiet_hours="")
+    assert instance.snapshot().quiet_hours == ""
+
+
 def test_vision_rides_the_profile_and_only_where_a_screen_exists(tmp_path, monkeypatch) -> None:
     instance, _credentials, _preferences, _clients = service(tmp_path)
     monkeypatch.delenv("JARVIS_VISION_ENABLED", raising=False)

@@ -1226,6 +1226,18 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## Quiet hours and the battery (21 September 2026)
+
+`test_ui_api_settings` round-trips the quiet window (halves normalized,
+equal ends refused, empty allowed). `test_ui_nova` walks the pure clock
+check (midnight wrap, a daytime window's exclusive end, junk answering
+False) and then the bridge itself with a frozen `_now`: inside the
+window the stubbed OS notifier stays silent while the centre records,
+outside it fires once; the settings error is Turkish and an omitted key
+keeps the stored window. The pulse tests stub `read_power_status` three
+ways - battery, no battery, a raising API - and the live Windows test
+asserts the power answer's shape in the API's own terms.
+
 ## Pins and find (21 September 2026)
 
 `test_nova_web` runs the pure drawer/find helpers in QuickJS: pin-set

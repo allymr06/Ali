@@ -96,3 +96,31 @@ def test_due_logic_and_refusals_are_honest(tmp_path) -> None:
     assert all(not row["folder"].endswith(".tmp") for row in list_state_backups(tmp_path))
     backup_state_now(tmp_path)
     assert not partial.exists(), "the stale half-copy is swept on the next run"
+
+
+def test_backups_of_the_same_instant_never_fight_over_a_name(tmp_path, monkeypatch) -> None:
+    """Windows ticks the clock in ~16 ms steps; a shared stamp must fork.
+
+    This was the gate's 1-in-6 flake: the second same-instant backup hit
+    WinError 5 replacing the folder the first had just made - and on a
+    kinder filesystem it would have replaced it silently instead.
+    """
+    from app import state_backup as module
+
+    make_database(tmp_path / "jarvis_memory.sqlite3", 2)
+    frozen = module._utc_now()
+    monkeypatch.setattr(module, "_utc_now", lambda: frozen)
+
+    folders = [backup_state_now(tmp_path, keep=3)["folder"] for _ in range(3)]
+
+    assert len(set(folders)) == 3, "one folder per backup, even inside one clock tick"
+    stamp = frozen.strftime(module._STAMP_FORMAT)
+    assert folders[0].endswith(stamp)
+    assert folders[1].endswith(f"{stamp}b2") and folders[2].endswith(f"{stamp}b3")
+    assert [row["folder"] for row in list_state_backups(tmp_path)] == sorted(folders, reverse=True)
+
+    fourth = backup_state_now(tmp_path, keep=3)
+    remaining = [row["folder"] for row in list_state_backups(tmp_path)]
+    assert fourth["folder"] in remaining and folders[0] not in remaining, (
+        "the plain name is the oldest of the shared instant"
+    )

@@ -201,7 +201,8 @@ const DemoBridge = {
 
   async system_pulse() {
     return { ok: true, cpu_percent: 12.5, memory_percent: 41.2, memory_used_gib: 6.6,
-             memory_total_gib: 16, disk_free_gib: 208.4, disk_total_gib: 476 };
+             memory_total_gib: 16, disk_free_gib: 208.4, disk_total_gib: 476,
+             battery_percent: 84, battery_charging: true };
   },
 
   async speak_text() {
@@ -462,7 +463,7 @@ const DemoBridge = {
   async get_settings() { return { provider: "gemini", model: "gemini-2.5-pro",
     credential_configured: true, credential_required: true,
     daily_brief_notification: true, daily_brief_time: "08:30", research_enabled: true, almanac_city: "",
-    vision_enabled: true }; },
+    vision_enabled: true, quiet_hours: "" }; },
   async save_settings() {
     return { ok: true, message: "Demo modu: ayarlar kaydedilmedi." };
   },

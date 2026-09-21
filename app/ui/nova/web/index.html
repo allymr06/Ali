@@ -887,6 +887,7 @@
             <label class="switch-row"><span>Web araştırması<small>Soru güncel bilgi gerektirdiğinde JARVIS webde arar ve kaynak gösterir. Kapatınca araştırma aracı hiç kaydedilmez.</small></span><input type="checkbox" id="settings-research" class="switch"></label>
             <label class="switch-row"><span>Görüş (ekran analizi)<small>Görüş ekranından istediğinde JARVIS ekranın tek bir görüntüsünü alıp modele gösterir; her görüntü o istek için verilen tek kullanımlık rızayla alınır, görev çubuğu maskelenir, ham görüntü saklanmaz. Kapatınca görüş servisi hiç kurulmaz.</small></span><input type="checkbox" id="settings-vision-toggle" class="switch"></label>
             <label class="switch-row"><span>Hava durumu şehri<small>Sabah özetine o şehrin bugünkü havasını ekler (Open-Meteo, anahtarsız). Boş bırakınca özet hava satırı taşımaz.</small></span><input id="settings-city" type="text" maxlength="80" placeholder="örn. İstanbul" spellcheck="false"></label>
+            <label class="switch-row"><span>Sessiz saatler<small>Bu aralıkta Windows bildirimi (toast) gösterilmez; uygulama içi bildirim merkezi almaya devam eder. Boş = hep açık.</small></span><input id="settings-quiet" type="text" maxlength="11" placeholder="23:00-08:00" spellcheck="false"></label>
             <div id="settings-assistant-status" class="settings-status" role="status"></div>
             <div class="btn-row">
               <button type="button" id="settings-assistant-save" class="btn btn-primary">Kaydet</button>

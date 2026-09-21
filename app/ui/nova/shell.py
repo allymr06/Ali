@@ -342,6 +342,37 @@ def compose_voice_state_callback(push: Callable[[Any], None], ducker: Any | None
     return callback
 
 
+def within_quiet_hours(now: datetime, spec: str) -> bool:
+    """Whether the OS-toast quiet window covers this moment.
+
+    The spec is "SS:DD-SS:DD" (already validated where it is stored);
+    a window across midnight wraps. Anything unreadable answers False:
+    a broken spec must never silence notifications by accident.
+    """
+    text = str(spec or "").strip()
+    if not text or "-" not in text:
+        return False
+    try:
+        start_text, end_text = text.split("-")
+        start_hour, start_minute = (int(piece) for piece in start_text.split(":"))
+        end_hour, end_minute = (int(piece) for piece in end_text.split(":"))
+    except ValueError:
+        return False
+    start = start_hour * 60 + start_minute
+    end = end_hour * 60 + end_minute
+    moment = now.hour * 60 + now.minute
+    if start == end:
+        return False
+    if start < end:
+        return start <= moment < end
+    return moment >= start or moment < end
+
+
+def _now() -> datetime:
+    """The clock the quiet-hours check reads; tests replace it."""
+    return datetime.now()
+
+
 def brief_notification_body(brief: Mapping[str, Any]) -> str:
     """The day's summary as one honest notification line.
 
@@ -1175,6 +1206,15 @@ class NovaBridge:
         notifier = self._os_notifier
         if notifier is None or not self._os_notifications_enabled():
             return False
+        # Quiet hours hold the native toast only; the in-app centre has
+        # already collected the entry, so nothing is lost.
+        if self.api_settings is not None:
+            try:
+                spec = self.api_settings.preferences.load().quiet_hours
+            except Exception:
+                spec = ""
+            if within_quiet_hours(_now(), spec):
+                return False
         with self._os_lock:
             if self._os_in_flight >= OS_NOTIFICATION_MAX_IN_FLIGHT:
                 return False
@@ -3179,8 +3219,14 @@ class NovaBridge:
         cpu = cpu_percent_between(previous, times) if previous is not None else None
         total = int(info.get("memory_total_bytes") or 0)
         available = int(info.get("memory_available_bytes") or 0)
+        try:
+            battery = WindowsIntegrationService.read_power_status()
+        except OSError:
+            battery = {"has_battery": False, "percent": None, "charging": None}
         return {
             "ok": True,
+            "battery_percent": battery["percent"] if battery["has_battery"] else None,
+            "battery_charging": battery["charging"] if battery["has_battery"] else None,
             "cpu_percent": cpu,
             "memory_percent": round(100.0 * (total - available) / total, 1) if total else None,
             "memory_used_gib": round((total - available) / 1024 ** 3, 1) if total else None,
@@ -3892,16 +3938,19 @@ class NovaBridge:
         data = payload if isinstance(payload, Mapping) else {}
         # A caller that does not mention vision keeps the stored choice:
         # an older page must not switch the screen off by omission.
-        stored_vision = self.api_settings.preferences.load().vision_enabled
+        stored = self.api_settings.preferences.load()
         try:
             self.api_settings.save_desktop(
                 daily_brief_notification=bool(data.get("daily_brief_notification")),
                 daily_brief_time=str(data.get("daily_brief_time") or ""),
                 research_enabled=bool(data.get("research_enabled")),
                 almanac_city=str(data.get("almanac_city") or ""),
-                vision_enabled=bool(data.get("vision_enabled", stored_vision)),
+                vision_enabled=bool(data.get("vision_enabled", stored.vision_enabled)),
+                quiet_hours=str(data.get("quiet_hours", stored.quiet_hours) or ""),
             )
-        except ValueError:
+        except ValueError as exc:
+            if "quiet_hours" in str(exc):
+                return {"ok": False, "error": "Sessiz saatler boş ya da SS:DD-SS:DD olmalı (örn. 23:00-08:00)."}
             return {"ok": False, "error": "Saat biçimi SS:DD olmalı (örn. 08:30)."}
         try:
             self._rebuild_runtime()

@@ -26,6 +26,20 @@ def validate_model(model: str) -> str:
     return normalized
 
 
+def validate_quiet_hours(value: str) -> str:
+    """Empty, or "SS:DD-SS:DD"; both halves on the 24-hour clock."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    halves = text.split("-")
+    if len(halves) != 2:
+        raise ValueError("quiet_hours must be empty or HH:MM-HH:MM.")
+    start, end = (validate_brief_time(half) for half in halves)
+    if start == end:
+        raise ValueError("quiet_hours must name two different times.")
+    return f"{start}-{end}"
+
+
 def validate_brief_time(value: str) -> str:
     """HH:MM on a 24-hour clock, normalized to two digits each."""
     parts = str(value).strip().split(":")
@@ -53,6 +67,10 @@ class ProviderPreferences:
     # still needs the one-use consent the Vision screen's own request
     # grants, and JARVIS_VISION_ENABLED keeps precedence like the others.
     vision_enabled: bool = True
+    # OS toasts sleep inside this window ("23:00-08:00"; empty = never).
+    # Only the native toast is held back: the in-app centre still
+    # collects every notification, so nothing is lost, only postponed.
+    quiet_hours: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "provider", validate_provider(self.provider))
@@ -65,6 +83,7 @@ class ProviderPreferences:
         )
         object.__setattr__(self, "research_enabled", bool(self.research_enabled))
         object.__setattr__(self, "vision_enabled", bool(self.vision_enabled))
+        object.__setattr__(self, "quiet_hours", validate_quiet_hours(self.quiet_hours))
         object.__setattr__(self, "almanac_city", str(self.almanac_city or "").strip()[:80])
         if self.version != 1:
             raise ValueError("Unsupported provider preference version.")
@@ -101,6 +120,7 @@ class ProviderPreferencesStore:
                 research_enabled=bool(payload.get("research_enabled", True)),
                 almanac_city=str(payload.get("almanac_city", "")),
                 vision_enabled=bool(payload.get("vision_enabled", True)),
+                quiet_hours=str(payload.get("quiet_hours", "")),
             )
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return ProviderPreferences()

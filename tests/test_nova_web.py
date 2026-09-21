@@ -2349,6 +2349,16 @@ def test_the_palette_calculator_answers_and_stays_out_of_the_way() -> None:
     assert "eval(" not in JS_SOURCES["js/toolbox.js"]
 
 
+def test_the_settings_card_and_pulse_carry_quiet_hours_and_battery() -> None:
+    assert 'id="settings-quiet"' in HTML and "Sessiz saatler" in HTML
+    assert "uygulama içi bildirim merkezi almaya devam eder" in HTML
+    panels = JS_SOURCES["js/panels.js"]
+    assert '$("#settings-quiet").value = s.quiet_hours || "";' in panels
+    assert 'quiet_hours: $("#settings-quiet").value.trim(),' in panels
+    assert "battery_percent" in panels and "şarjda" in panels
+    assert "battery_percent: 84" in JS_SOURCES["js/bridge.js"]
+
+
 def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
     quickjs = pytest.importorskip("quickjs")
     context = quickjs.Context()

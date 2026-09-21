@@ -26,6 +26,7 @@ class APISettingsSnapshot:
     research_enabled: bool = True
     almanac_city: str = ""
     vision_enabled: bool = True
+    quiet_hours: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +124,7 @@ class APISettingsService:
             almanac_city=profile.almanac_city,
             research_enabled=profile.research_enabled,
             vision_enabled=profile.vision_enabled,
+            quiet_hours=profile.quiet_hours,
         )
 
     def save_desktop(
@@ -133,6 +135,7 @@ class APISettingsService:
         research_enabled: bool,
         almanac_city: str = "",
         vision_enabled: bool = True,
+        quiet_hours: str = "",
     ) -> None:
         """Persist the non-secret assistant preferences atomically."""
         profile = self.preferences.load()
@@ -146,6 +149,7 @@ class APISettingsService:
                 research_enabled=research_enabled,
                 almanac_city=almanac_city,
                 vision_enabled=vision_enabled,
+                quiet_hours=quiet_hours,
             )
         )
 

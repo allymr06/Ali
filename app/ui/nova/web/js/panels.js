@@ -584,7 +584,11 @@ const Pulse = {
     const memory = pulse.memory_percent === null || pulse.memory_percent === undefined ? "—"
       : `%${String(pulse.memory_percent).replace(".", ",")} (${String(pulse.memory_used_gib).replace(".", ",")}/${String(pulse.memory_total_gib).replace(".", ",")} GB)`;
     const disk = pulse.disk_free_gib === null || pulse.disk_free_gib === undefined ? "—" : `${String(pulse.disk_free_gib).replace(".", ",")} GB boş`;
-    return `<span>CPU ${esc(cpu)}</span><span>RAM ${esc(memory)}</span><span>Disk ${esc(disk)}</span>`;
+    // A machine without a battery simply has no battery cell - a dash
+    // would imply one that failed to answer.
+    const battery = pulse.battery_percent === null || pulse.battery_percent === undefined ? ""
+      : `<span>Pil %${esc(String(pulse.battery_percent))}${pulse.battery_charging ? " · şarjda" : ""}</span>`;
+    return `<span>CPU ${esc(cpu)}</span><span>RAM ${esc(memory)}</span><span>Disk ${esc(disk)}</span>${battery}`;
   },
 
   async beat() {
@@ -782,6 +786,7 @@ function renderSettings() {
     $("#settings-research").checked = s.research_enabled !== false;
     $("#settings-vision-toggle").checked = s.vision_enabled !== false;
     $("#settings-city").value = s.almanac_city || "";
+    $("#settings-quiet").value = s.quiet_hours || "";
     $("#settings-accent").value = ACCENTS.includes(store("nova.accent") || "") ? (store("nova.accent") || "") : "";
   }
   $("#settings-motion").checked = State.reducedMotion;
@@ -1028,6 +1033,7 @@ async function saveAssistantSettings() {
     research_enabled: $("#settings-research").checked,
     almanac_city: $("#settings-city").value.trim(),
     vision_enabled: $("#settings-vision-toggle").checked,
+    quiet_hours: $("#settings-quiet").value.trim(),
   });
   status.textContent = result.message || result.error || "";
   status.className = `settings-status ${result.ok ? "ok" : "err"}`;

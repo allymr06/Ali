@@ -526,3 +526,21 @@ def test_console_launcher_uses_visible_new_console(
         ]
         is False
     )
+
+
+def test_power_status_answers_in_the_apis_own_terms() -> None:
+    """Live GetSystemPowerStatus: shape only, since the machine decides
+    whether a battery exists. Unknown percent must be None, never 255."""
+    import sys
+
+    if sys.platform != "win32":
+        pytest.skip("Windows API")
+
+    status = WindowsIntegrationService.read_power_status()
+    assert set(status) == {"has_battery", "percent", "charging"}
+    assert isinstance(status["has_battery"], bool)
+    if status["has_battery"]:
+        assert status["percent"] is None or 0 <= status["percent"] <= 100
+        assert isinstance(status["charging"], bool)
+    else:
+        assert status["percent"] is None and status["charging"] is None

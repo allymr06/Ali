@@ -306,8 +306,15 @@ const Medical = {
              <span class="mt-latin">${esc(term.latin)}</span>
              <span class="mt-turkish">${esc(term.turkish)}</span>
              <span class="med-row-meta">${esc(term.region_label)} · ${esc(term.kind_label)}</span>
-           </button>`
+           </button>${State.snapshot?.voice_available ? '<button type="button" class="btn btn-ghost small med-term-speak" data-term-speak title="Latince adı ve Türkçesini okur">Seslendir</button>' : ""}`
         : medEmpty("Günün terimi yok", "Anatomi kataloğu boş.");
+      const speakButton = $("[data-term-speak]", termHost);
+      if (speakButton && term) speakButton.addEventListener("click", async () => {
+        Speech.unlock(); // inside the gesture, before the slow synthesis
+        const result = await call("speak_text", `${term.latin}. Türkçesi: ${term.turkish}.`);
+        if (result.ok === false || !result.audio) { toast(result.error || "Seslendirilemedi.", true); return; }
+        Speech.play(result.audio);
+      });
       const termButton = $("[data-term]", termHost);
       if (termButton) termButton.addEventListener("click", () => {
         Lab.pendingSelect = termButton.dataset.term;

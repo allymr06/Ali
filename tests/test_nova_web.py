@@ -2349,6 +2349,16 @@ def test_the_palette_calculator_answers_and_stays_out_of_the_way() -> None:
     assert "eval(" not in JS_SOURCES["js/toolbox.js"]
 
 
+def test_the_term_of_the_day_speaks_when_the_voice_can() -> None:
+    medical = JS_SOURCES["js/medical.js"]
+    assert "data-term-speak" in medical
+    assert "State.snapshot?.voice_available" in medical, "no voice service, no button"
+    assert "Speech.unlock(); // inside the gesture" in medical
+    assert "Speech.play(result.audio);" in medical
+    assert "Türkçesi: ${term.turkish}" in medical
+    assert "new Audio(" not in medical
+
+
 def test_read_aloud_survives_the_slow_synthesis() -> None:
     """The 4-second synthesis outlives Chromium's activation window, so
     playback goes through a context the click itself unlocked - and the

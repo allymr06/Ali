@@ -193,6 +193,12 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The term of the day speaks (21 September 2026)
+
+The Academy's term-of-the-day card gained Seslendir: the Latin name and
+its Turkish, through the same gesture-unlocked Speech player as the
+chat and the dictionary - and only when the voice service exists.
+
 ## The dictionary speaks (21 September 2026)
 
 The TDK card gained two hands: Seslendir reads the headword and its

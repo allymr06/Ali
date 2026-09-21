@@ -579,6 +579,7 @@ details.disclosure > .disclosure-body { margin-top: 0.6rem; }
 .dict-compounds { color: var(--ink-2); font-size: var(--text-sm); line-height: 1.55; border-top: 1px solid var(--line-1); padding-top: 0.5rem; }
 .dict-credit { color: var(--ink-3); font-size: var(--text-xs); }
 .dict-actions { display: flex; gap: 0.4rem; margin-top: 0.2rem; }
+.med-term-speak { margin-top: 0.4rem; }
 .dict-wait, .dict-miss { color: var(--ink-2); font-size: var(--text-sm); padding: 0.4rem 0; }
 
 .notify-quiet { margin-left: 0.35rem; font-size: 0.7rem; opacity: 0.8; }

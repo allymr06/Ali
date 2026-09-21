@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The term that speaks (21 September 2026)
+
+`test_nova_web` pins the term card's voice-gated button, the in-gesture
+unlock, the Speech player (no `<audio>` left in medical.js), and the
+spoken sentence carrying both names.
+
 ## The dictionary's hands (21 September 2026)
 
 `test_nova_web` pins the card's action bar: voice-gated Seslendir, the

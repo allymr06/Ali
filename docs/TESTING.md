@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The dictionary's hands (21 September 2026)
+
+`test_nova_web` pins the card's action bar: voice-gated Seslendir, the
+two-sense spoken text, the copy that strips its own buttons, and the
+audio data URL matching the bridge's mime.
+
 ## The moon on the held toast (21 September 2026)
 
 The quiet-hours bridge test now also reads the centre: the night entry

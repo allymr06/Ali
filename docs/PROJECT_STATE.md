@@ -193,6 +193,13 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The dictionary speaks (21 September 2026)
+
+The TDK card gained two hands: Seslendir reads the headword and its
+first two senses through the same speak_text path the chat uses (the
+button exists only when the voice service does), and Kopyala puts the
+card's text on the clipboard with the action bar stripped out first.
+
 ## The held toast wears a moon (21 September 2026)
 
 When quiet hours hold a toast back, the notification centre's entry now

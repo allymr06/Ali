@@ -4265,6 +4265,17 @@ def launch_nova(
     )
 
     start_options: dict[str, Any] = {"debug": False}
+    # Read-aloud plays a clip the user just asked for by clicking, but
+    # synthesis takes seconds and Chromium's activation window does not
+    # wait that long - WebView2 then rejects play(). Autoplay is allowed
+    # explicitly; anything already in the variable (a debugging port on
+    # the QA instance) is kept.
+    autoplay_flag = "--autoplay-policy=no-user-gesture-required"
+    existing_arguments = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
+    if autoplay_flag not in existing_arguments:
+        os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
+            f"{existing_arguments} {autoplay_flag}".strip()
+        )
     storage = webview_storage_directory()
     try:
         storage.mkdir(parents=True, exist_ok=True)

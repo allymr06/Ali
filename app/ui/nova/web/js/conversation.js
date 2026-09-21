@@ -678,15 +678,17 @@ const Readaloud = {
   active: null,
 
   stop() {
-    if (this.audio) { try { this.audio.pause(); } catch (_error) { /* already stopped */ } }
+    Speech.stop();
     if (this.active) this.active.classList.remove("speaking");
-    this.audio = null;
     this.active = null;
   },
 
   async toggle(button) {
     if (this.active === button) { this.stop(); return; }
     this.stop();
+    // The click is the moment the audio context can be unlocked; the
+    // clip arriving seconds later then plays without an activation.
+    Speech.unlock();
     const body = button.closest(".msg")?.querySelector(".msg-body");
     const text = body ? body.textContent : "";
     if (!text.trim() || !bridgeReady()) return;
@@ -695,10 +697,8 @@ const Readaloud = {
     const result = await call("speak_text", text);
     if (this.active !== button) return;   // stopped or replaced while synthesizing
     if (result.ok === false) { this.stop(); toast(result.error || "Ses üretilemedi.", true); return; }
-    const audio = new Audio(`data:${result.mime};base64,${result.audio}`);
-    this.audio = audio;
-    audio.addEventListener("ended", () => { if (this.active === button) this.stop(); });
-    audio.play().catch(() => { this.stop(); toast("Ses çalınamadı.", true); });
+    const played = await Speech.play(result.audio, () => { if (this.active === button) this.stop(); });
+    if (!played) this.stop();
   },
 };
 
@@ -715,6 +715,63 @@ function bindReadaloud() {
     }
   });
 }
+
+/* One speech player for the page. A click unlocks the shared
+   AudioContext immediately (that part must happen inside the gesture);
+   the clip that arrives seconds later then plays through it, which no
+   autoplay policy blocks. Success and failure both speak. */
+const Speech = {
+  context: null,
+  source: null,
+  onended: null,
+
+  unlock() {
+    try {
+      if (!this.context) this.context = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.context.state === "suspended") this.context.resume();
+      return true;
+    } catch (error) {
+      return false;
+    }
+  },
+
+  async play(base64, onended) {
+    if (!this.context) this.unlock();
+    if (!this.context) { toast("Ses çalınamadı.", true); return false; }
+    this.stop();
+    try {
+      const raw = atob(base64);
+      const bytes = new Uint8Array(raw.length);
+      for (let index = 0; index < raw.length; index += 1) bytes[index] = raw.charCodeAt(index);
+      const buffer = await this.context.decodeAudioData(bytes.buffer);
+      const source = this.context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(this.context.destination);
+      this.source = source;
+      this.onended = onended || null;
+      source.onended = () => {
+        if (this.source === source) {
+          this.source = null;
+          if (this.onended) this.onended();
+        }
+      };
+      source.start();
+      return true;
+    } catch (error) {
+      toast("Ses çalınamadı.", true);
+      return false;
+    }
+  },
+
+  stop() {
+    if (this.source) {
+      const source = this.source;
+      this.source = null;
+      this.onended = null;
+      try { source.stop(); } catch (error) { /* already ended */ }
+    }
+  },
+};
 
 /* One clipboard hand for the page: reports what actually happened. */
 async function copyTextToClipboard(text) {

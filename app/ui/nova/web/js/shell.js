@@ -795,6 +795,37 @@ const Dict = {
       return;
     }
     $("#dict-body").innerHTML = dictionaryMarkup(result);
+    this.attachActions(result);
+  },
+
+  /* The card's two hands: hear the entry, keep the entry. The markup
+     stays pure; the buttons are the runtime's. */
+  attachActions(entry) {
+    const body = $("#dict-body");
+    if (!body) return;
+    const bar = el("div", "dict-actions");
+    const spoken = () => {
+      const senses = (entry.meanings || []).map((meaning) => meaning.sense).filter(Boolean);
+      return `${entry.word}. ${senses.slice(0, 2).join(" ")}`;
+    };
+    let markup = "";
+    if (State.snapshot?.voice_available) {
+      markup += '<button type="button" class="btn btn-ghost small" data-dict-speak>Seslendir</button>';
+    }
+    markup += '<button type="button" class="btn btn-ghost small" data-dict-copy>Kopyala</button>';
+    bar.innerHTML = markup;
+    body.appendChild(bar);
+    bar.querySelector("[data-dict-speak]")?.addEventListener("click", async () => {
+      Speech.unlock(); // inside the gesture, before the slow synthesis
+      const result = await call("speak_text", spoken());
+      if (result.ok === false || !result.audio) { toast(result.error || "Seslendirilemedi.", true); return; }
+      Speech.play(result.audio);
+    });
+    bar.querySelector("[data-dict-copy]")?.addEventListener("click", () => {
+      const clone = body.cloneNode(true);
+      clone.querySelector(".dict-actions")?.remove();
+      copyTextToClipboard(clone.innerText);
+    });
   },
   close() {
     const veil = $("#dictcard");

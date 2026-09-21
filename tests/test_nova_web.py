@@ -2349,6 +2349,35 @@ def test_the_palette_calculator_answers_and_stays_out_of_the_way() -> None:
     assert "eval(" not in JS_SOURCES["js/toolbox.js"]
 
 
+def test_read_aloud_survives_the_slow_synthesis() -> None:
+    """The 4-second synthesis outlives Chromium's activation window, so
+    playback goes through a context the click itself unlocked - and the
+    window asks WebView2 for autoplay outright."""
+    conversation = JS_SOURCES["js/conversation.js"]
+    assert "const Speech = {" in conversation
+    assert "Speech.unlock();" in conversation, "the unlock happens inside the gesture"
+    assert "decodeAudioData" in conversation and "createBufferSource" in conversation
+    assert "new Audio(" not in conversation, "no <audio> path is left to be blocked"
+    assert 'toast("Ses çalınamadı.", true)' in conversation
+    assert "--autoplay-policy=no-user-gesture-required" in __import__("io").open(
+        "app/ui/nova/shell.py", encoding="utf-8").read()
+
+
+def test_the_dictionary_card_speaks_and_copies() -> None:
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "attachActions(entry) {" in shell_js
+    # The voice button exists only when the voice service does.
+    assert "if (State.snapshot?.voice_available) {" in shell_js and "data-dict-speak" in shell_js
+    assert "data-dict-copy" in shell_js
+    # It speaks the word and at most two senses - not the whole card.
+    assert "senses.slice(0, 2).join" in shell_js
+    # The copy strips the action bar so buttons never enter the clipboard.
+    assert 'clone.querySelector(".dict-actions")?.remove();' in shell_js
+    assert "Speech.unlock(); // inside the gesture" in shell_js
+    assert "Speech.play(result.audio);" in shell_js
+    assert ".dict-actions" in CSS
+
+
 def test_a_held_notification_wears_its_moon_in_the_centre() -> None:
     shell_js = JS_SOURCES["js/shell.js"]
     assert "item.data && item.data.quiet_held" in shell_js

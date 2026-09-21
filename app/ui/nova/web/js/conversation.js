@@ -77,22 +77,32 @@ function renderMarkdownLite(raw) {
   const parts = [];
   let list = null; // "ul" | "ol" | null
   let fence = null; // collected lines of an open ``` block
+  let fenceLang = ""; // the opener's info word, only when it is a clean token
   const isRow = (line) => /^\s*\|.*\|\s*$/.test(line || "");
   const isRule = (line) => isRow(line) && /^[\s|:\-]+$/.test(line || "") && (line || "").includes("-");
   const cells = (line) => String(line).trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
   const closeList = () => { if (list) { parts.push(`</${list}>`); list = null; } };
   const closeFence = () => {
     if (fence === null) return;
-    parts.push('<pre class="md-code"><button type="button" class="code-copy" data-code-copy title="Kodu kopyala">⎘</button><code>'
+    const lang = fenceLang ? `<span class="code-lang">${fenceLang}</span>` : "";
+    parts.push('<pre class="md-code">' + lang + '<button type="button" class="code-copy" data-code-copy title="Kodu kopyala">⎘</button><code>'
       + fence.join("\n") + "</code></pre>");
     fence = null;
+    fenceLang = "";
   };
   for (let at = 0; at < lines.length; at += 1) {
     const line = lines[at];
     // ``` opens and closes a literal block; inline markdown stays out
     // of it, and a stream cut mid-block still renders what arrived.
-    if (/^\s*```/.test(line)) {
-      if (fence === null) { closeList(); fence = []; } else closeFence();
+    const fenceMark = /^\s*```\s*(\S*)/.exec(line);
+    if (fenceMark) {
+      if (fence === null) {
+        closeList();
+        fence = [];
+        // The info word rides the badge only as a clean token; anything
+        // stranger (already HTML-escaped here) earns no badge at all.
+        fenceLang = /^[A-Za-z0-9_+#.\-]{1,24}$/.test(fenceMark[1]) ? fenceMark[1] : "";
+      } else closeFence();
       continue;
     }
     if (fence !== null) { fence.push(line); continue; }

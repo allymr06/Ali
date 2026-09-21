@@ -1226,6 +1226,11 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The language badge (21 September 2026)
+
+Vectors: python and c++ badges, the bare fence with none, the hostile
+opener refused outright, and the mid-stream cut keeping its badge.
+
 ## The bell's chips (21 September 2026)
 
 QuickJS pins notifKinds (counts, order, ties by name, the kindless

@@ -2631,6 +2631,28 @@ def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
     assert "clearChatFind(); input.blur();" in conversation
 
 
+def test_fenced_code_wears_its_language_but_only_clean_tokens() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval("function esc(v) { return String(v == null ? \"\" : v).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\").replace(/\"/g, \"&quot;\"); }")
+    context.eval(section(JS_SOURCES["js/conversation.js"], "function renderMarkdownLite", "\nfunction appendMessage"))
+    run = lambda text: context.eval("renderMarkdownLite(" + json.dumps(text) + ")")
+    NL = chr(10)
+
+    tagged = run("```python" + NL + "x = 1" + NL + "```")
+    assert '<span class="code-lang">python</span>' in tagged and "data-code-copy" in tagged
+    plain = run("```" + NL + "x" + NL + "```")
+    assert "code-lang" not in plain, "no info word, no badge"
+    plus = run("```c++" + NL + "int x;" + NL + "```")
+    assert '<span class="code-lang">c++</span>' in plus
+    hostile = run("```<script>alert(1)</script>" + NL + "kod" + NL + "```")
+    assert "code-lang" not in hostile, "a strange info word earns no badge at all"
+    assert "<script" not in hostile
+    cut = run("```sql" + NL + "SELECT 1")
+    assert '<span class="code-lang">sql</span>' in cut, "a mid-stream cut keeps its badge"
+    assert ".code-lang" in CSS
+
+
 def test_the_bell_counts_its_kinds_without_inventing_any() -> None:
     quickjs = pytest.importorskip("quickjs")
     context = quickjs.Context()

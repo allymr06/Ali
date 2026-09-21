@@ -193,6 +193,13 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## Fenced code wears its language (21 September 2026)
+
+A ``` opener's info word becomes a small corner badge beside the copy
+control - but only as a clean token (letters, digits, `_+#.-`, at most
+24). Anything stranger, hostile included, earns no badge at all, and a
+mid-stream cut keeps the badge it opened with.
+
 ## The bell sorts itself (21 September 2026)
 
 The notification centre gained kind chips - Tümü plus one per kind

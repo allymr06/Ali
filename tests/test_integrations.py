@@ -615,6 +615,11 @@ async def test_whatsapp_reads_chats_and_conversation_without_taking_focus(tmp_pa
         contacts_path=tmp_path / "contacts.json", uia_client=uia, uri_launcher=FakeUri()
     )
 
+    quiet = await WhatsAppIntegration(
+        contacts_path=tmp_path / "kapali.json", uia_client=FakeUia(window=False), uri_launcher=FakeUri()
+    ).read_recent_chats(limit=5, launch=False)
+    assert quiet.status is ToolExecutionStatus.BLOCKED and quiet.message == "WhatsApp kapalı."
+
     chats = await integration.read_recent_chats(limit=5)
     assert chats.status is ToolExecutionStatus.SUCCESS and chats.verified is True
     assert chats.data["unread_chats"] == 1

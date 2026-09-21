@@ -324,6 +324,7 @@ REMOTE_TOOLS: frozenset[str] = frozenset({
     "spotify_cancel_sleep_timer",
     "whatsapp_delegation_status",
     "whatsapp_stop_delegation",
+    "whatsapp_read_chats",
 })
 
 

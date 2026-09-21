@@ -280,11 +280,25 @@ class WhatsAppIntegration:
                 return True
         return False
 
-    async def read_recent_chats(self, limit: int = 8) -> ToolResult:
-        """The chat list as a person glances at it: who, how many unread."""
+    async def read_recent_chats(self, limit: int = 8, launch: bool = True) -> ToolResult:
+        """The chat list as a person glances at it: who, how many unread.
+
+        ``launch=False`` is the quiet glance: a closed WhatsApp answers
+        BLOCKED instead of being started - the home remote polls with
+        it, and a poll must never open applications by itself.
+        """
         bounded = max(1, min(int(limit), 20))
         client = self._uia_client()
-        await self._ensure_window()
+        if launch:
+            await self._ensure_window()
+        elif not await asyncio.to_thread(client.window_exists, _WINDOW_TITLE):
+            return ToolResult(
+                ToolExecutionStatus.BLOCKED,
+                "whatsapp_read_chats",
+                message="WhatsApp kapalı.",
+                error="window_not_found",
+                verified=True,
+            )
         try:
             rows = await asyncio.to_thread(
                 client.read_chat_rows, _WINDOW_TITLE, limit=bounded
@@ -626,8 +640,8 @@ class WhatsAppIntegration:
         def list_contacts() -> ToolResult:
             return self.list_contacts()
 
-        async def read_chats(limit: int = 8) -> ToolResult:
-            return await self.read_recent_chats(limit)
+        async def read_chats(limit: int = 8, launch: bool = True) -> ToolResult:
+            return await self.read_recent_chats(limit, launch=launch)
 
         async def read_conversation(limit: int = 12) -> ToolResult:
             return await self.read_open_conversation(limit)

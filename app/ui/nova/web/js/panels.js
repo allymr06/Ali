@@ -131,7 +131,7 @@ function renderGreeting() {
 
 /* What the tools reported, drawn as a remote a thumb can use. The
    phone loads this very page, so this is the phone's remote too. */
-function remoteMarkup(now, delegation) {
+function remoteMarkup(now, delegation, chats) {
   const parts = [];
   const data = (now && now.data) || {};
   if (!now || (now.ok === false && !data.running)) {
@@ -156,6 +156,10 @@ function remoteMarkup(now, delegation) {
     }
     parts.push('<input type="text" class="remote-queue" placeholder="Sıraya şarkı ekle… (Enter)" aria-label="Sıraya şarkı ekle" spellcheck="false">');
   }
+  const glance = (chats && chats.ok !== false && chats.data) || null;
+  if (glance && glance.unread_chats) {
+    parts.push(`<div class="remote-wa"><span>💬 ${esc(String(glance.unread_chats))} sohbette okunmamış mesaj</span></div>`);
+  }
   const wa = (delegation && delegation.data) || {};
   if (wa.active) {
     parts.push(`<div class="remote-wa"><span>WhatsApp: <b>${esc(wa.contact || "")}</b> için yazışıyor (${esc(String(wa.turns_taken ?? 0))}/${esc(String(wa.max_turns ?? 0))})</span>` +
@@ -179,11 +183,13 @@ const Remote = {
     }
     this.busy = true;
     try {
-      const [now, delegation] = await Promise.all([
+      const [now, delegation, chats] = await Promise.all([
         call("run_remote_tool", "spotify_now_playing", {}),
         call("run_remote_tool", "whatsapp_delegation_status", {}),
+        // The quiet glance: a closed WhatsApp stays closed.
+        call("run_remote_tool", "whatsapp_read_chats", { limit: 20, launch: false }),
       ]);
-      host.innerHTML = remoteMarkup(now, delegation);
+      host.innerHTML = remoteMarkup(now, delegation, chats);
     } catch (error) {
       host.innerHTML = `<div class="remote-off">${esc(String((error && error.message) || error || "Kumanda okunamadı."))}</div>`;
     } finally {

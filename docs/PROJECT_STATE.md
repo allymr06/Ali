@@ -193,6 +193,14 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The remote glances at WhatsApp (21 September 2026)
+
+The Kumanda card shows "💬 3 sohbette okunmamış mesaj" - a count,
+never a name or a preview. The glance uses `whatsapp_read_chats` with
+its new `launch=False`: a closed WhatsApp answers "WhatsApp kapalı"
+and stays closed, because a 12-second poll must never open
+applications by itself.
+
 ## The remote takes requests (21 September 2026)
 
 The Kumanda card gained a request line: type a song, press Enter, and

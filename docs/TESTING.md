@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The quiet glance (21 September 2026)
+
+`test_integrations` pins launch=False answering BLOCKED without a
+window; `test_nova_web` pins the count line (and its absence when the
+glance is blocked) plus the poll's quiet parameters.
+
 ## The request line (21 September 2026)
 
 `test_nova_web` pins the request line appearing only on a live card,

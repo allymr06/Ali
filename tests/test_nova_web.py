@@ -2656,6 +2656,15 @@ def test_the_home_remote_draws_what_the_tools_reported() -> None:
     hostile = draw({"ok": True, "data": {"running": True, "playing": True, "artist": "<img src=x>", "track": "x"}})
     assert "<img" not in hostile and "&lt;img" in hostile
 
+    glanced = context.eval("remoteMarkup(" + json.dumps({"ok": True, "data": {"running": True, "playing": False}})
+                            + ", null, " + json.dumps({"ok": True, "data": {"unread_chats": 3}}) + ")")
+    assert "3 sohbette okunmamış mesaj" in glanced
+    closed_wa = context.eval("remoteMarkup(" + json.dumps({"ok": True, "data": {"running": True, "playing": False}})
+                              + ", null, " + json.dumps({"ok": False, "status": "blocked", "message": "WhatsApp kapalı."}) + ")")
+    assert "okunmamış" not in closed_wa, "a closed WhatsApp draws no line"
+    panels_glance = JS_SOURCES["js/panels.js"]
+    assert '"whatsapp_read_chats", { limit: 20, launch: false }' in panels_glance
+
     queue_input = draw({"ok": True, "data": {"running": True, "playing": False}})
     assert 'class="remote-queue"' in queue_input, "the request line ships with a live card"
     assert "remote-queue" not in closed, "no Spotify, no request line"

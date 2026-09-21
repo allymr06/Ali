@@ -575,6 +575,17 @@ function renderVisionResult(ok, text, error) {
    source chips, the report. bindPanels still binds the form's submit. */
 
 /* ── the system pulse: alive only while Tanılama is on screen ─────── */
+/* Seconds into the words a person says: "3 g 4 sa", "2 sa 14 dk", "48 dk". */
+function pulseUptime(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  if (days) return `${days} g ${hours} sa`;
+  if (hours) return `${hours} sa ${minutes} dk`;
+  return `${minutes} dk`;
+}
+
 const Pulse = {
   timer: 0,
 
@@ -588,7 +599,10 @@ const Pulse = {
     // would imply one that failed to answer.
     const battery = pulse.battery_percent === null || pulse.battery_percent === undefined ? ""
       : `<span>Pil %${esc(String(pulse.battery_percent))}${pulse.battery_charging ? " · şarjda" : ""}</span>`;
-    return `<span>CPU ${esc(cpu)}</span><span>RAM ${esc(memory)}</span><span>Disk ${esc(disk)}</span>${battery}`;
+    const session = pulse.uptime_seconds === null || pulse.uptime_seconds === undefined ? ""
+      : `<span>Oturum ${esc(pulseUptime(pulse.uptime_seconds))}</span>`;
+    const data = pulse.state_data_bytes ? `<span>Veri ${esc(fmtBytes(pulse.state_data_bytes))}</span>` : "";
+    return `<span>CPU ${esc(cpu)}</span><span>RAM ${esc(memory)}</span><span>Disk ${esc(disk)}</span>${battery}${session}${data}`;
   },
 
   async beat() {

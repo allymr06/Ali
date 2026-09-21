@@ -441,6 +441,7 @@ const Palette = {
     list.push({ group: "eylem", icon: "palette", label: "Klavye kısayolları", keywords: "kisayol tuş klavye yardım f1", run: () => setShortcutsOpen(true) });
     // Two honest toys: the result is random and says so, nothing more.
     list.push({ group: "eylem", icon: "spark", label: "Zar at", keywords: "zar rastgele oyun dice", run: () => toast(`Zar: ${1 + Math.floor(Math.random() * 6)} 🎲 (rastgele)`, "ok") });
+    list.push({ group: "eylem", icon: "spark", label: "Kar yağdır", keywords: "kar kış snow eğlence", run: () => Snow.fall() });
     list.push({ group: "eylem", icon: "spark", label: "Yazı tura at", keywords: "yazı tura para rastgele coin", run: () => toast(`${Math.random() < 0.5 ? "Yazı" : "Tura"} 🪙 (rastgele)`, "ok") });
     list.push({ group: "eylem", icon: "refresh", label: "Sistem sağlığını denetle", keywords: "tanılama health", run: () => { showScreen("diagnostics"); Diagnostics.refresh(); } });
     list.push({ group: "eylem", icon: "alarm", label: Focus.timer || Focus.endsAt ? "Odak sayacını durdur" : "25 dk odak sayacı", keywords: "odak pomodoro sayaç focus", run: () => Focus.toggle() });
@@ -698,6 +699,28 @@ function applyAccent(name) {
   const picker = $("#settings-accent");
   if (picker && picker.value !== accent) picker.value = accent;
 }
+
+/* ── fifteen seconds of snow: pure whimsy, honest about motion ───── */
+
+const Snow = {
+  fall() {
+    if (State.reducedMotion) { toast("Hareket azaltılmışken kar yağmaz.", true); return; }
+    if (document.querySelector(".snowfall")) return; // one sky at a time
+    const layer = el("div", "snowfall");
+    layer.setAttribute("aria-hidden", "true");
+    let flakes = "";
+    for (let index = 0; index < 42; index += 1) {
+      const left = Math.random() * 100;
+      const delay = Math.random() * 5;
+      const fall = 6 + Math.random() * 6;
+      const size = 0.5 + Math.random() * 0.7;
+      flakes += `<span style="left:${left.toFixed(1)}%;animation-delay:${delay.toFixed(2)}s;animation-duration:${fall.toFixed(2)}s;font-size:${size.toFixed(2)}rem">❄</span>`;
+    }
+    layer.innerHTML = flakes;
+    document.body.appendChild(layer);
+    setTimeout(() => layer.remove(), 15000);
+  },
+};
 
 function setShortcutsOpen(open) {
   const veil = $("#shortcuts");

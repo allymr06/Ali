@@ -1226,6 +1226,15 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## Session, data, snow (21 September 2026)
+
+`test_ui_nova` pins the size helper (top-level files only, a missing
+directory is zero), the pulse's cached data figure (a livelier helper
+is not consulted inside the minute) and a monotonic uptime.
+`test_nova_web` walks `pulseUptime`'s words and the snow's three
+honesty pins: the reduced-motion refusal, the single sky, the
+self-removal.
+
 ## Quiet hours and the battery (21 September 2026)
 
 `test_ui_api_settings` round-trips the quiet window (halves normalized,

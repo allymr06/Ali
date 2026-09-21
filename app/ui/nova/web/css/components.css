@@ -580,6 +580,11 @@ details.disclosure > .disclosure-body { margin-top: 0.6rem; }
 .dict-credit { color: var(--ink-3); font-size: var(--text-xs); }
 .dict-wait, .dict-miss { color: var(--ink-2); font-size: var(--text-sm); padding: 0.4rem 0; }
 
+/* ── snowfall ───────────────────────────────────────────────────── */
+.snowfall { position: fixed; inset: 0; pointer-events: none; z-index: 90; overflow: hidden; }
+.snowfall span { position: absolute; top: -2rem; color: var(--ink-2); opacity: 0.8; animation-name: snow-drop; animation-timing-function: linear; animation-iteration-count: infinite; }
+@keyframes snow-drop { to { transform: translateY(105vh) rotate(200deg); } }
+
 /* ── read-aloud ───────────────────────────────────────────────────── */
 .msg-speak { margin-left: 0.35rem; padding: 0 0.25rem; opacity: 0; font-size: 0.8rem; transition: opacity var(--motion-normal); }
 .msg:hover .msg-speak, .msg-speak.speaking { opacity: 0.85; }

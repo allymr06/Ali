@@ -202,7 +202,8 @@ const DemoBridge = {
   async system_pulse() {
     return { ok: true, cpu_percent: 12.5, memory_percent: 41.2, memory_used_gib: 6.6,
              memory_total_gib: 16, disk_free_gib: 208.4, disk_total_gib: 476,
-             battery_percent: 84, battery_charging: true };
+             battery_percent: 84, battery_charging: true,
+             uptime_seconds: 8100, state_data_bytes: 1_234_567 };
   },
 
   async speak_text() {

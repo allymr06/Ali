@@ -342,6 +342,27 @@ def compose_voice_state_callback(push: Callable[[Any], None], ducker: Any | None
     return callback
 
 
+def state_data_bytes(directory: Path) -> int:
+    """Total size of the files sitting in the state directory, measured.
+
+    Top-level files only (the databases and their -wal/-shm shadows);
+    a missing directory or an unreadable file counts as zero rather
+    than failing the pulse.
+    """
+    total = 0
+    try:
+        entries = list(directory.iterdir())
+    except OSError:
+        return 0
+    for entry in entries:
+        try:
+            if entry.is_file():
+                total += entry.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
 def within_quiet_hours(now: datetime, spec: str) -> bool:
     """Whether the OS-toast quiet window covers this moment.
 
@@ -835,6 +856,10 @@ class NovaBridge:
         # The previous GetSystemTimes sample; the pulse's CPU figure
         # is the delta between two beats.
         self._pulse_times: tuple[int, int, int] | None = None
+        # When this bridge came up, for the pulse's session row; the
+        # data-size figure is remeasured at most once a minute.
+        self._pulse_started = time.time()
+        self._state_size_cache: tuple[float, int] | None = None
         self._stream_last_flush = 0.0
         self._command_future: Future[Any] | None = None
         # A turn claimed by submit_command but not yet handed to the runner;
@@ -3223,8 +3248,14 @@ class NovaBridge:
             battery = WindowsIntegrationService.read_power_status()
         except OSError:
             battery = {"has_battery": False, "percent": None, "charging": None}
+        cache = self._state_size_cache
+        if cache is None or time.time() - cache[0] > 60.0:
+            cache = (time.time(), state_data_bytes(default_state_directory()))
+            self._state_size_cache = cache
         return {
             "ok": True,
+            "uptime_seconds": int(time.time() - self._pulse_started),
+            "state_data_bytes": cache[1],
             "battery_percent": battery["percent"] if battery["has_battery"] else None,
             "battery_charging": battery["charging"] if battery["has_battery"] else None,
             "cpu_percent": cpu,

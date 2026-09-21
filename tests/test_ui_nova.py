@@ -2927,31 +2927,25 @@ def test_the_morning_brief_clock_and_line_are_exact_and_honest() -> None:
     assert shell.brief_notification_body({"almanac": dead}) == "Bugün için bekleyen bir şey görünmüyor."
 
 
-def test_the_pulse_reports_the_battery_only_when_one_exists(booted, monkeypatch) -> None:
-    from app.platform.windows import service as windows_service
+def test_the_pulse_measures_the_session_and_the_data_it_sits_on(booted, monkeypatch, tmp_path) -> None:
+    # The size helper measures exactly what is there.
+    (tmp_path / "a.sqlite3").write_bytes(b"x" * 1000)
+    (tmp_path / "a.sqlite3-wal").write_bytes(b"y" * 500)
+    (tmp_path / "folder").mkdir()
+    (tmp_path / "folder" / "ignored.bin").write_bytes(b"z" * 9999)
+    assert shell.state_data_bytes(tmp_path) == 1500, "top-level files only"
+    assert shell.state_data_bytes(tmp_path / "yok") == 0
 
-    monkeypatch.setattr(
-        windows_service.WindowsIntegrationService, "read_power_status",
-        staticmethod(lambda: {"has_battery": True, "percent": 84, "charging": True}),
-    )
-    pulse = booted.bridge.system_pulse()
-    assert pulse["ok"] is True and pulse["battery_percent"] == 84 and pulse["battery_charging"] is True
-
-    monkeypatch.setattr(
-        windows_service.WindowsIntegrationService, "read_power_status",
-        staticmethod(lambda: {"has_battery": False, "percent": None, "charging": None}),
-    )
-    desktop = booted.bridge.system_pulse()
-    assert desktop["battery_percent"] is None and desktop["battery_charging"] is None
-
-    def boom():
-        raise OSError("no api")
-
-    monkeypatch.setattr(
-        windows_service.WindowsIntegrationService, "read_power_status", staticmethod(boom)
-    )
-    surviving = booted.bridge.system_pulse()
-    assert surviving["ok"] is True and surviving["battery_percent"] is None, "a power API failure never kills the pulse"
+    monkeypatch.setattr(shell, "state_data_bytes", lambda directory: 123456)
+    booted.bridge._state_size_cache = None
+    first = booted.bridge.system_pulse()
+    assert first["state_data_bytes"] == 123456
+    assert isinstance(first["uptime_seconds"], int) and first["uptime_seconds"] >= 0
+    # The size is cached for a minute: a livelier helper is not consulted.
+    monkeypatch.setattr(shell, "state_data_bytes", lambda directory: 999)
+    again = booted.bridge.system_pulse()
+    assert again["state_data_bytes"] == 123456
+    assert again["uptime_seconds"] >= first["uptime_seconds"]
 
 
 def test_the_pulse_reports_the_battery_only_when_one_exists(booted, monkeypatch) -> None:

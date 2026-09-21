@@ -193,6 +193,15 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The session on the pulse, and snow (21 September 2026)
+
+The pulse gained two measured rows: how long this JARVIS has been up
+(seconds since the bridge came up, spoken as "2 sa 14 dk") and how much
+the state directory's files weigh, remeasured at most once a minute.
+And one piece of pure whimsy: "Kar yağdır" in the palette drops
+fifteen seconds of CSS snow over the shell - it refuses honestly when
+reduced motion is on, never stacks two skies, and removes itself.
+
 ## Quiet hours and the battery (21 September 2026)
 
 Ayarlar' assistant card gained "Sessiz saatler": inside the window

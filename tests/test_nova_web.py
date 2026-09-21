@@ -2349,6 +2349,29 @@ def test_the_palette_calculator_answers_and_stays_out_of_the_way() -> None:
     assert "eval(" not in JS_SOURCES["js/toolbox.js"]
 
 
+def test_uptime_speaks_and_snow_respects_reduced_motion() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/panels.js"], "function pulseUptime", "\nconst Pulse = {"))
+    uptime = lambda seconds: context.eval("pulseUptime(" + json.dumps(seconds) + ")")
+    assert uptime(0) == "0 dk"
+    assert uptime(48 * 60) == "48 dk"
+    assert uptime(2 * 3600 + 14 * 60) == "2 sa 14 dk"
+    assert uptime(3 * 86400 + 4 * 3600) == "3 g 4 sa"
+    assert uptime(-5) == "0 dk" and uptime(None) == "0 dk"
+
+    panels = JS_SOURCES["js/panels.js"]
+    assert "Oturum ${esc(pulseUptime(pulse.uptime_seconds))}" in panels
+    assert "Veri ${esc(fmtBytes(pulse.state_data_bytes))}" in panels
+
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert '"Kar yağdır"' in shell_js and "Snow.fall()" in shell_js
+    assert 'if (State.reducedMotion) { toast("Hareket azaltılmışken kar yağmaz.", true); return; }' in shell_js
+    assert 'setTimeout(() => layer.remove(), 15000);' in shell_js
+    assert ".snowfall { position: fixed" in CSS and "pointer-events: none" in CSS
+    assert "@keyframes snow-drop" in CSS
+
+
 def test_the_settings_card_and_pulse_carry_quiet_hours_and_battery() -> None:
     assert 'id="settings-quiet"' in HTML and "Sessiz saatler" in HTML
     assert "uygulama içi bildirim merkezi almaya devam eder" in HTML

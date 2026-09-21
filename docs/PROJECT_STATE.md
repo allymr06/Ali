@@ -193,6 +193,14 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The composer remembers what you sent (21 September 2026)
+
+Ctrl+ArrowUp/Down in the chat box walks the palette's short memory of
+sent commands, terminal style: the unsent draft waits at the bottom of
+the walk, typing by hand or sending leaves it, and plain arrows keep
+moving the caret. `historyStep` is pure and edge-honest (null at both
+ends, clamped after the history shrinks).
+
 ## Reminders can wait ten minutes (21 September 2026)
 
 Every reminder row gained "+10 dk": `ReminderService.snooze` moves the

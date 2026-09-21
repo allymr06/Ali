@@ -2474,6 +2474,31 @@ def test_the_palette_remembers_five_commands_and_forgets_on_request() -> None:
     assert 'paletteRecentAdd(store("nova.palette.recent"), text)' in JS_SOURCES["js/conversation.js"]
 
 
+def test_the_composer_walks_its_sent_history_with_ctrl_arrows() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    step = lambda entries, index, direction, draft="": json.loads(context.eval(
+        "JSON.stringify(historyStep(" + json.dumps(entries) + ", " + json.dumps(index)
+        + ", " + json.dumps(direction) + ", " + json.dumps(draft) + ") || null)"))
+
+    assert step([], -1, "back") is None, "no history, no walk"
+    assert step(["son", "eski"], -1, "back") == {"index": 0, "text": "son"}
+    assert step(["son", "eski"], 0, "back") == {"index": 1, "text": "eski"}
+    assert step(["son", "eski"], 1, "back") is None, "the oldest is the edge"
+    assert step(["son", "eski"], 0, "forward", "taslak") == {"index": -1, "text": "taslak"}
+    assert step(["son", "eski"], -1, "forward", "taslak") is None
+    assert step(["son"], 5, "back") is None, "an index beyond a shrunken history clamps"
+    assert step(["son"], 5, "forward") == {"index": -1, "text": ""}
+    assert step([1, " ", "gerçek"], -1, "back") == {"index": 0, "text": "gerçek"}
+
+    conversation = JS_SOURCES["js/conversation.js"]
+    assert 'event.key === "ArrowUp" ? "back" : "forward"' in conversation
+    assert "if (historyIndex === -1) historyDraft = chatInput.value;" in conversation
+    assert "historyIndex = -1; // typing by hand leaves the walk" in conversation
+    assert 'historyIndex = -1; historyDraft = "";' in conversation, "a send resets the walk"
+
+
 def test_a_finished_focus_offers_itself_to_the_academy_log() -> None:
     shell_js = JS_SOURCES["js/shell.js"]
     # Asked, never assumed - and only when it could be study at all.

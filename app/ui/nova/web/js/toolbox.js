@@ -292,3 +292,18 @@ function paletteRecentAdd(raw, command) {
   const rest = paletteRecentParse(raw).filter((item) => item !== text);
   return JSON.stringify([text, ...rest].slice(0, PALETTE_RECENT_LIMIT));
 }
+
+/* ── the composer's history walk (pure) ─────────────────────────────────
+   Index -1 is the live draft; "back" climbs toward the oldest sent
+   command, "forward" returns toward the draft. Null means the edge:
+   the caller changes nothing. */
+
+function historyStep(entries, index, direction, draft) {
+  const list = Array.isArray(entries) ? entries.filter((item) => typeof item === "string" && item.trim()) : [];
+  if (!list.length) return null;
+  const at = typeof index === "number" && index >= 0 ? Math.min(index, list.length - 1) : -1;
+  const next = at + (direction === "back" ? 1 : -1);
+  if (next < -1 || next >= list.length) return null;
+  if (next === -1) return { index: -1, text: String(draft || "") };
+  return { index: next, text: list[next] };
+}

@@ -655,6 +655,8 @@ function bindConversation() {
   });
   $("#quick-send").innerHTML = icon("send");
 
+  let historyIndex = -1; // -1 = the live draft; 0.. walks the sent history
+  let historyDraft = "";
   $("#chat-form").addEventListener("submit", (event) => {
     event.preventDefault();
     const input = $("#chat-input");
@@ -662,13 +664,29 @@ function bindConversation() {
     if (!text.trim()) return;
     if (State.busy) { toast("JARVIS hâlâ yanıtlıyor; mesajın bekliyor, yanıt bitince gönder.", true); return; }
     input.value = ""; input.style.height = "auto";
+    historyIndex = -1; historyDraft = "";
     sendCommand(text);
   });
   const chatInput = $("#chat-input");
   chatInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("#chat-form").requestSubmit(); }
+    // Ctrl+ArrowUp/Down: step through the short sent history, terminal
+    // style; the unsent draft waits at the bottom of the walk.
+    if (event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+      if (historyIndex === -1) historyDraft = chatInput.value;
+      const step = historyStep(paletteRecentParse(store("nova.palette.recent")), historyIndex,
+        event.key === "ArrowUp" ? "back" : "forward", historyDraft);
+      if (!step) return;
+      event.preventDefault();
+      historyIndex = step.index;
+      chatInput.value = step.text;
+      chatInput.style.height = "auto";
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 176) + "px";
+      chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length);
+    }
   });
   chatInput.addEventListener("input", () => {
+    historyIndex = -1; // typing by hand leaves the walk
     chatInput.style.height = "auto";
     chatInput.style.height = Math.min(chatInput.scrollHeight, 176) + "px";
   });

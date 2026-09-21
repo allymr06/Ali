@@ -1226,6 +1226,12 @@ speaker button gated on `voice_available`, the export button and
 before the rooms, the settings select) and the report Markdown builder
 against a fixture, uncertainty translation included.
 
+## The composer's history walk (21 September 2026)
+
+QuickJS drives `historyStep` over both edges, the draft's seat at -1,
+a shrunken-history clamp and non-string entries; source pins hold the
+Ctrl-arrow wiring, the draft capture and both resets.
+
 ## The ten-minute snooze (21 September 2026)
 
 `test_reminder_delivery` pins snooze against the controllable clock:

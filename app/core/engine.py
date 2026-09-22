@@ -35,7 +35,7 @@ from app.planning.planner import Planner
 from app.planning.models import Plan, PlanStep
 from app.planning.executor import PlanExecutor
 from app.memory.policy import MemoryPolicy
-from app.providers.base import ModelResponse
+from app.providers.base import ModelResponse, ProviderTimeoutError
 from app.providers.registry import ProviderRegistry
 from app.reliability.admission import (
     AdmissionController,
@@ -1592,6 +1592,17 @@ class CoreEngine:
                 except _ExecutionCancelled:
                     outcome = "cancelled"
                     break
+                except ProviderTimeoutError:
+                    # Provider deadlines are independent of the Core budget.
+                    # This exception also inherits TimeoutError, so catch it first.
+                    outcome = "provider_timeout"
+                    self._record_diagnostic(
+                        "request.provider_timeout",
+                        "Model provider did not finish within its timeout.",
+                        trace_id=str(request.request_id),
+                        attributes={"iteration": usage.model_iterations},
+                    )
+                    break
                 except TimeoutError:
                     outcome = "budget_exhausted"
                     budget_reason = "time"
@@ -1898,7 +1909,18 @@ class CoreEngine:
         # core can turn into a promise about the disk.
         other_tools_ran = executed_tool_calls > gated_tool_calls
 
-        if outcome == "approval_required":
+        if outcome == "provider_timeout":
+            response_text = (
+                "Yapay zekâ sağlayıcısı zamanında yanıt veremedi; "
+                "istek zaman aşımına uğradı."
+            )
+            if executed_tool_calls:
+                response_text += (
+                    " Bazı araç işlemleri çalıştı, ancak son yanıt alınamadı."
+                )
+            provider_name = provider.name
+            model_name = getattr(model_response, "model", None)
+        elif outcome == "approval_required":
             if other_tools_ran:
                 response_text = APPROVAL_REQUIRED_AFTER_WORK
             else:

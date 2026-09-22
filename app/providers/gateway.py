@@ -48,7 +48,7 @@ class ProviderGateway:
         registry: ProviderRegistry,
         *,
         router: ModelRouter | None = None,
-        timeout_seconds: float = 15.0,
+        timeout_seconds: float = 60.0,
         max_retries: int = 1,
         retry_backoff_seconds: float = 0.25,
         max_retry_delay_seconds: float = 2.0,
@@ -68,7 +68,7 @@ class ProviderGateway:
             raise ValueError("Circuit breaker limits are invalid.")
         self._registry = registry
         self._router = router or ModelRouter(registry)
-        self._timeout_seconds = min(timeout_seconds, 15.0)
+        self._timeout_seconds = timeout_seconds
         self._max_retries = min(max_retries, 1)
         self._retry_backoff_seconds = retry_backoff_seconds
         self._max_retry_delay_seconds = max_retry_delay_seconds

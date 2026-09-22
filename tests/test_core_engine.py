@@ -2426,3 +2426,70 @@ async def test_budget_exhausted_before_any_answer_speaks_turkish() -> None:
 
     assert response.metadata["outcome"] == "budget_exhausted"
     assert response.text == "Bir yanıt üretilemeden çalışma bütçesi doldu."
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("streamed", [False, True])
+@pytest.mark.parametrize("tool_first", [False, True])
+async def test_provider_timeout_is_not_core_budget_exhaustion(streamed, tool_first):
+    from app.providers.base import ModelCapabilities, ModelResponse, ModelStreamChunk
+    from app.providers.gateway import ProviderGateway
+
+    stopped = asyncio.Event()
+
+    class SlowProvider(MockProvider):
+        calls = 0
+
+        @property
+        def capabilities(self):
+            return ModelCapabilities(text=True, streaming=True, tool_calling=True)
+
+        async def generate(self, request, context, **kwargs):
+            self.calls += 1
+            if tool_first and self.calls == 1:
+                return ModelResponse(
+                    text="", model="mock-model", provider="mock",
+                    tool_calls=[{
+                        "id": "read-1", "type": "function",
+                        "function": {"name": "read_state", "arguments": "{}"},
+                    }],
+                )
+            try:
+                await asyncio.Event().wait()
+            finally:
+                stopped.set()
+
+        async def stream(self, request, context, **kwargs):
+            result = await self.generate(request, context, **kwargs)
+            yield ModelStreamChunk(
+                text=result.text, model=result.model, provider=result.provider,
+                tool_calls=result.tool_calls,
+            )
+
+    registry = ProviderRegistry()
+    registry.register(SlowProvider(), make_default=True)
+    executor = ToolExecutor()
+    ran = []
+    executor.register(
+        ToolDefinition(name="read_state", description="Read state."),
+        lambda: ran.append(True),
+    )
+    engine = CoreEngine(
+        registry, MemoryManager(InMemoryStore()), tool_executor=executor,
+        provider_gateway=ProviderGateway(
+            registry, timeout_seconds=0.05, max_retries=0, fallback_enabled=False,
+        ),
+    )
+    response = await asyncio.wait_for(
+        engine.handle(Request("kontrol et"), stream_callback=(lambda _: None) if streamed else None),
+        timeout=5,
+    )
+    assert stopped.is_set()
+    assert ran == ([True] if tool_first else [])
+    assert response.metadata["outcome"] == "provider_timeout"
+    assert response.metadata["budget_reason"] is None
+    assert response.metadata["completion_verified"] is False
+    assert "sağlayıcısı" in response.text
+    assert "zaman aşımına" in response.text
+    assert "bütçe" not in response.text
+    assert ("Bazı araç işlemleri çalıştı" in response.text) is tool_first

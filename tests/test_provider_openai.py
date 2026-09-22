@@ -259,7 +259,7 @@ def test_openai_provider_creates_client_from_settings(monkeypatch) -> None:
     assert client.api_key == "test-secret"
     assert str(client.base_url).rstrip("/") == "https://example.test/v1"
     assert client.max_retries == 0
-    assert client.timeout == 15.0
+    assert client.timeout == 60.0
 
 
 @pytest.mark.asyncio

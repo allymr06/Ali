@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import pytest
 
 from app.core.engine import CoreEngine
 from app.core.models import (
@@ -80,6 +81,59 @@ def test_launch_exposes_only_launcher():
             "launch_windows_application",
         }
     )
+
+
+@pytest.mark.parametrize("question", [
+    "insanda kaç kemik var?",
+    "İnsanda kac kemik var",
+    "nasıl doldu?",
+    "Fotosentez nedir?",
+    "Gökyüzü neden mavi?",
+    "How many bones does a human have?",
+    "Fotosentezi açıkla",
+])
+def test_general_questions_do_not_expose_desktop_tools(question):
+    result = ToolSchemaSelector().select(
+        Request(question),
+        available_names=set(ALL_NAMES) | {
+            "spotify_now_playing", "whatsapp_read_chats",
+            "whatsapp_delegation_status",
+        },
+    )
+    assert result.names == frozenset()
+    assert result.reason == "informational_question"
+
+
+def test_question_with_explicit_action_keeps_tools():
+    result = ToolSchemaSelector().select(
+        Request("İnsanda kaç kemik var WhatsApp'tan Ali'ye gönder"),
+        available_names={"whatsapp_send_message", "whatsapp_read_chats"},
+    )
+    assert result.names == frozenset({"whatsapp_send_message"})
+
+
+def test_general_question_reaches_model_without_tools_or_action_escalation():
+    provider = CapturingProvider()
+    registry = ProviderRegistry(default_provider="gemini")
+    registry.register(provider)
+    executor = ToolExecutor()
+    ran = []
+    for name in ("spotify_now_playing", "whatsapp_read_chats"):
+        executor.register(
+            ToolDefinition(name=name, description="Read app state."),
+            lambda: ran.append(True),
+        )
+    engine = CoreEngine(
+        registry, MemoryManager(InMemoryStore()),
+        tool_executor=executor,
+        tool_schema_selector=ToolSchemaSelector(),
+    )
+    response = asyncio.run(engine.handle(Request("insanda kaç kemik var?")))
+    assert response.text == "ok"
+    assert response.metadata["outcome"] == "completed"
+    assert response.metadata["tool_calls"] == 0
+    assert provider.calls == [{"model": None, "tools": None}]
+    assert ran == []
 
 
 def test_pause_task_exposes_only_pause():

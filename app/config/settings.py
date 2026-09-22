@@ -135,7 +135,7 @@ class Settings:
     # tool, so escalation is opt-in (JARVIS_GEMINI_ACTION_MODEL).
     gemini_action_model: str = ""
 
-    provider_timeout_seconds: float = 15.0
+    provider_timeout_seconds: float = 60.0
     provider_max_retries: int = 1
     provider_retry_backoff_seconds: float = 0.25
 
@@ -645,7 +645,7 @@ class Settings:
             ).strip(),
             provider_timeout_seconds=_get_float(
                 "JARVIS_PROVIDER_TIMEOUT",
-                15.0,
+                60.0,
             ),
             provider_max_retries=_get_non_negative_int(
                 "JARVIS_PROVIDER_MAX_RETRIES",

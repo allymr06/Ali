@@ -20,9 +20,9 @@ class ToolSchemaSelector:
     """
     Deterministically narrow provider-visible tools.
 
-    The selector never adds a tool that was not already
-    exposed by Core. Unknown intent fails closed instead
-    of exposing the complete registry.
+    The selector never adds a tool that was not already exposed by Core.
+    Unmatched informational questions need no tools; unresolved actions
+    may still use the available inventory.
     """
 
     _CALLER_FILTER_KEYS = (
@@ -571,9 +571,9 @@ class ToolSchemaSelector:
             ),
         )
 
-        launch_intent = self._has_stem(
-            tokens,
-            self._LAUNCH,
+        # "açıkla" is an explanation request, not the verb "aç".
+        launch_intent = "ac" in tokens or self._has_stem(
+            tokens, tuple(stem for stem in self._LAUNCH if stem != "ac")
         )
 
         list_intent = self._has_stem(
@@ -851,6 +851,30 @@ class ToolSchemaSelector:
         )
 
         if not selected:
+            # Domain matches above take precedence: "WhatsApp'ta kaç mesaj
+            # var?" needs tools, while "insanda kaç kemik var?" does not.
+            # Preserve compound requests that also ask for an action.
+            question = self._has_any(
+                tokens,
+                frozenset({
+                    "kac", "nedir", "neden", "niye", "nasil", "kimdir",
+                    "nelerdir", "what", "why", "how", "explain",
+                    "acikla", "anlat",
+                }),
+            )
+            action = launch_intent or self._has_stem(
+                tokens,
+                self._DELETE + self._SEARCH + self._UNDO
+                + self._PAUSE + self._RESUME + self._CANCEL
+                + ("gonder", "kaydet", "olustur", "ekle", "tasi",
+                   "kopyala", "send", "save", "create", "move", "copy"),
+            )
+            if question and not action:
+                return ToolSchemaSelection(
+                    frozenset(),
+                    "informational_question",
+                )
+
             # No deterministic keyword matched. Rather than fail closed
             # — which left the model blind and unable to act on any
             # paraphrase the vocabulary did not anticipate — expose the

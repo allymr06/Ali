@@ -1,0 +1,45 @@
+TIP AKADEMİSİ
+Çalışma merkezi
+
+Birinci sınıf tıp müfredatı, kendi ders materyalin ve hocanın soru tarzı tek yerde.
+
+BİYOKİMYA
+BİYOKİMYA › KARBONHİDRAT METABOLİZMASI
+ÖĞRET
+STANDART
+DERS MATERYALİ + JARVIS BİLGİSİ
+PANEL
+PLAN
+KONULAR
+KÜTÜPHANE
+243
+NOTLAR
+SINAV
+1
+SORU BANKASI
+716
+ANLAMA
+HİSTOLOJİ
+HOCA TARZI
+İLERLEME
+ANATOMİ LAB
+SINAV PLANLARI
+Sınav planı yok — Aşağıdaki formdan sınavı, tarihini ve günlük süreyi gir.
+SINAV ADI
+SINAV TARİHİ
+DERSLER (BOŞ BIRAKILIRSA BELGELERDEN ÖNERİLİR)
+Anatomi
+Histoloji
+Mikrobiyoloji
+Biyokimya
+Biyofizik
+Fizyoloji
+Biyoloji
+GÜNLÜK SÜRE (DK)
+Sabah hatırlat
+Saat
+
+Süreler tahmindir ve tamamladığın etkinliklerin gerçek süresiyle güncellenir; plan günlük süreyi hiç aşmaz.
+
+PLAN OLUŞTUR
+Plan seçilmedi — Bir plan oluşturunca bugünün etkinlikleri, kapsam durumu ve haftalık yerleşim burada görünür.

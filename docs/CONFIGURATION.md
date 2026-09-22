@@ -48,7 +48,7 @@ selectable from the desktop Settings screen.
 | `JARVIS_DEFAULT_PROVIDER` | `gemini` | Default registered provider. Only `gemini` is supported for normal use; `mock` additionally registers the offline test provider. |
 | `JARVIS_DEFAULT_MODEL` | `gemini-3.5-flash-lite` | Default model for the selected provider. |
 | `JARVIS_GEMINI_MODEL` | unset | Gemini model override. |
-| `JARVIS_PROVIDER_TIMEOUT` | `15` | Per-attempt timeout in seconds. |
+| `JARVIS_PROVIDER_TIMEOUT` | `60` | Total timeout in seconds for one model call, shared across retries/fallbacks. Core's remaining execution budget also applies. |
 | `JARVIS_PROVIDER_MAX_RETRIES` | `1` | Maximum retries after the first attempt. |
 | `JARVIS_PROVIDER_RETRY_BACKOFF` | `0.25` | Initial exponential backoff in seconds. |
 

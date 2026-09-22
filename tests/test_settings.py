@@ -28,7 +28,7 @@ def test_settings_defaults(monkeypatch, tmp_path) -> None:
     assert settings.gemini_base_url == (
         "https://generativelanguage.googleapis.com/v1beta/openai/"
     )
-    assert settings.provider_timeout_seconds == 15.0
+    assert settings.provider_timeout_seconds == 60.0
     assert settings.provider_max_retries == 1
     assert settings.provider_retry_backoff_seconds == 0.25
     assert settings.conversation_max_messages == 50

@@ -77,6 +77,13 @@ class DesktopController:
         repr=False,
     )
     paused: bool = False
+    # Surfaces that keep a conversation open while something else closes
+    # it. The phone holds a thread on screen with a live composer, and
+    # only the surface that archived it knows - see _announce_status.
+    conversation_status_watchers: list[Callable[[str, str], None]] = field(
+        default_factory=list,
+        repr=False,
+    )
     _runner: AsyncRunner | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -136,7 +143,11 @@ class DesktopController:
 
     @staticmethod
     def conversation_title(conversation: Any, limit: int = 80) -> str:
-        """The first thing the user said, or a neutral placeholder."""
+        """The user's own name for it when one is stored, else the first
+        thing they said, else a neutral placeholder."""
+        custom = str((conversation.metadata or {}).get("title") or "").strip()
+        if custom:
+            return custom if len(custom) <= limit else custom[: limit - 1] + "…"
         for turn in conversation.turns:
             if (
                 turn.role is MessageRole.USER
@@ -233,18 +244,47 @@ class DesktopController:
                 break
         return results
 
+    def conversation_snapshot(
+        self,
+        conversation_id: str,
+    ) -> tuple[str, str, str, list[ChatMessage]]:
+        """(title, created date, status, messages) from a single store read.
+
+        A caller that needs more than one of these - the phone wants the
+        title, the status and the transcript in one answer - must not pay
+        for the conversation twice: behind the engine is a database file
+        whose read rebuilds every turn.
+        """
+        conversation = self.application.conversation_engine.get(UUID(str(conversation_id)))
+        return (
+            self.conversation_title(conversation),
+            conversation.created_at.astimezone().strftime("%d.%m.%Y %H:%M"),
+            conversation.status.value,
+            self._visible_turns(conversation),
+        )
+
     def conversation_export(self, conversation_id: str) -> tuple[str, str, list[ChatMessage]]:
         """(title, created date, visible messages) of a stored conversation.
 
         Reading for export never activates or switches anything: the student
         can print an old conversation while another one stays active.
         """
-        conversation = self.application.conversation_engine.get(UUID(str(conversation_id)))
-        return (
-            self.conversation_title(conversation),
-            conversation.created_at.astimezone().strftime("%d.%m.%Y %H:%M"),
-            self._visible_turns(conversation),
-        )
+        title, created, _status, messages = self.conversation_snapshot(conversation_id)
+        return (title, created, messages)
+
+    def _announce_status(self, conversation_id: UUID, status: ConversationStatus) -> None:
+        """Tell the other surfaces what may now be done with a thread.
+
+        A surface can be showing this conversation with a composer of its
+        own - the phone is, over the network - and nothing else in the
+        process can see that it just stopped taking messages.
+        """
+        for watcher in list(self.conversation_status_watchers):
+            try:
+                watcher(str(conversation_id), status.value)
+            except Exception:
+                # A listening surface must not undo the archive itself.
+                pass
 
     def open_conversation(self, conversation_id: str) -> list[ChatMessage]:
         """Switch the shared context to a stored conversation."""
@@ -253,6 +293,7 @@ class DesktopController:
         conversation = engine.get(identifier)
         if conversation.status is not ConversationStatus.ACTIVE:
             conversation = engine.activate(identifier)
+            self._announce_status(identifier, conversation.status)
         self._load_conversation(conversation)
         return list(self.state.messages)
 
@@ -266,7 +307,8 @@ class DesktopController:
     def archive_conversation(self, conversation_id: str) -> bool:
         """Archive a conversation; returns whether it was the open one."""
         identifier = UUID(str(conversation_id))
-        self.application.conversation_engine.archive(identifier)
+        archived = self.application.conversation_engine.archive(identifier)
+        self._announce_status(identifier, archived.status)
         if identifier == self.context.conversation_id:
             self.start_new_conversation()
             return True
@@ -274,7 +316,9 @@ class DesktopController:
 
     def unarchive_conversation(self, conversation_id: str) -> None:
         """Bring an archived conversation back to the active list."""
-        self.application.conversation_engine.activate(UUID(str(conversation_id)))
+        identifier = UUID(str(conversation_id))
+        activated = self.application.conversation_engine.activate(identifier)
+        self._announce_status(identifier, activated.status)
 
     def snapshot(self) -> RuntimeSnapshot:
         settings = self.application.settings
@@ -647,14 +691,26 @@ class DesktopController:
         return bool(await interrupt())
 
     async def run_research(
-        self, query: str, *, max_sources: int = 5
+        self,
+        query: str,
+        *,
+        max_sources: int = 5,
+        sources: tuple[str, ...] = (),
+        site: str | None = None,
     ) -> dict[str, object]:
         if self.application.research is None:
             raise RuntimeError("Web research is not enabled in configuration.")
+        # Only a chosen source list or site travels: a research backend
+        # that knows nothing of them is asked the way it always was.
+        options: dict[str, object] = {"max_sources": max_sources}
+        if sources:
+            options["sources"] = tuple(sources)
+        if site:
+            options["site"] = site
         report = await asyncio.to_thread(
             self.application.research.research,
             query,
-            max_sources=max_sources,
+            **options,
         )
         return report.to_dict()
 
@@ -665,8 +721,11 @@ class DesktopController:
         request = service.request_consent(purpose)
         grant = service.approve_consent(request.request_id)
         result = await service.analyze(purpose, grant, context=self.context)
-        if result.response is not None:
-            return result.response.text
+        # VisionSessionResult carries the model's words as response_text;
+        # the first live capture found this reading a field that never
+        # existed, hidden by a test double that had invented it.
+        if result.response_text is not None:
+            return result.response_text
         return result.error_code or result.state.value
 
     def submit_background(

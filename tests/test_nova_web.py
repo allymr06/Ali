@@ -1711,6 +1711,16 @@ def test_home_brief_markup_shows_what_exists_and_invents_nothing() -> None:
     assert 'class="hb-row warn"' in full, "a committee 3 days away is marked urgent"
     assert 'data-brief-go="tasks"' in full and 'data-brief-medical="cards"' in full
 
+    # A reminder that brings its id also brings +10; one without stays plain.
+    with_id = run({"ok": True, "date": "x",
+                   "reminders": [{"text": "Su iç", "due_local": "09.00", "reminder_id": "r<1>"}],
+                   "reminders_available": True, "routines": [], "routines_available": False,
+                   "tasks_open": 0, "notifications_unread": 0, "medical": {"available": False}})
+    assert 'data-brief-snooze="r&lt;1&gt;"' in with_id and ">+10</span>" in with_id, (
+        "the id rides escaped, the badge draws"
+    )
+    assert "data-brief-snooze" not in full, "no id, no badge - the fixture rows stay plain"
+
     # Nothing anywhere: an honest empty state, no invented rows.
     empty = run({"ok": True, "date": "", "reminders": [], "reminders_available": False, "routines": [],
                  "routines_available": False, "tasks_open": 0, "notifications_unread": 0, "medical": {"available": False}})
@@ -1737,6 +1747,7 @@ def test_conversation_search_markup_marks_matches_and_stays_honest() -> None:
         "function esc(v) { return String(v == null ? \"\" : v).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\"); }"
         + "function fmtRelative(v) { return \"az önce\"; }"
     )
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function searchFold(", "\nconst lower"))
     context.eval(section(JS_SOURCES["js/conversation.js"], "function convSearchMarkup", "\nlet convSearchTimer"))
 
     run = lambda payload: context.eval("convSearchMarkup(" + json.dumps(payload) + ")")
@@ -1753,6 +1764,12 @@ def test_conversation_search_markup_marks_matches_and_stays_honest() -> None:
         "turn_count": 4, "updated_at": "2026-09-15T07:00:00+03:00", "active": False,
     }]})
     assert "<mark>Böbrek</mark>" in rows, "the match is highlighted case-insensitively in Turkish"
+    upper = run({"ok": True, "query": "BÖBREK", "results": [{
+        "conversation_id": "c1", "title": "böbrek fizyolojisi", "status": "active", "matches": 1,
+        "excerpt": "", "excerpt_role": "user", "turn_count": 1,
+        "updated_at": "2026-09-15T07:00:00+03:00", "active": False,
+    }]})
+    assert "<mark>böbrek</mark>" in upper, "an uppercase query still lands its mark"
     assert "Sen: " in rows and "2 eşleşme" in rows
     assert "<b>" not in rows, "excerpt HTML is escaped, never injected"
 
@@ -1797,6 +1814,32 @@ def test_assistant_markdown_renders_the_safe_subset_and_nothing_else() -> None:
     listed = run("Plan:" + NL + "- birinci" + NL + "- ikinci" + NL + NL + "1. adim" + NL + "2. adim")
     assert listed.count("<li>") == 4 and "<ul>" in listed and "<ol>" in listed
     assert listed.index("</ul>") < listed.index("<ol>"), "the bullet list closes before the numbered one opens"
+
+    # Tables: header + rule + rows become a real table; cells keep inline
+    # markdown; a stray pipe line without a rule stays plain text.
+    table = run("| İlaç | Doz |" + NL + "|---|:---:|" + NL + "| **Aspirin** | 100 mg |" + NL + "| Parol | 500 mg |" + NL + "Bitti")
+    assert '<table class="md-table">' in table and table.count("<tr>") == 3
+    assert "<th>İlaç</th>" in table and "<td><strong>Aspirin</strong></td>" in table
+    assert "---" not in table, "the rule row is consumed, not printed"
+    assert "<div>Bitti</div>" in table
+    stray = run("a | b | c" + NL + "| tek satır |")
+    assert "<table" not in stray, "no rule, no table"
+    ragged = run("| A | B |" + NL + "|---|---|" + NL + "| yalnız |")
+    assert ragged.count("<td>") == 2 and "<td>yalnız</td>" in ragged and "<td></td>" in ragged, (
+        "a short row pads to the header, never crashes"
+    )
+    hostile_cell = run("| A |" + NL + "|---|" + NL + "| <script>x</script> |")
+    assert "<script" not in hostile_cell and "&lt;script&gt;" in hostile_cell
+
+    # Fenced code: literal, inline markdown left alone, copy in the corner.
+    fenced = run("Açıklama:" + NL + "```python" + NL + "x = a * b  # **not bold**" + NL + "print(x)" + NL + "```" + NL + "Bitti **tamam**")
+    assert '<pre class="md-code">' in fenced and "data-code-copy" in fenced
+    assert "x = a * b  # **not bold**" in fenced, "inline markdown never runs inside a fence"
+    assert fenced.count("<pre") == 1 and "<strong>tamam</strong>" in fenced
+    cut = run("```" + NL + "yarım kalan satır")
+    assert '<pre class="md-code">' in cut and "yarım kalan satır" in cut, "a stream cut mid-block still renders"
+    hostile_fence = run("```" + NL + "<script>alert(1)</script>" + NL + "```")
+    assert "<script" not in hostile_fence and "&lt;script&gt;" in hostile_fence
 
     # Injection: model or web text can never smuggle HTML through.
     hostile = run('<img src=x onerror=alert(1)> ve **<script>alert(2)</script>**')
@@ -1885,3 +1928,1278 @@ def test_the_phone_wav_encoder_downsamples_into_a_valid_mono_pcm16_file() -> Non
     assert report["rate"] == 16000 and report["byteRate"] == 32000
     assert report["dataSize"] == 16000 * 2 and report["total"] == 44 + 16000 * 2, "one second at 48 kHz becomes one second at 16 kHz"
     assert 0x3000 < report["peak"] <= 0x4000, "a half-scale sine stays half scale after the box filter"
+
+
+def test_engine_failures_are_shown_in_turkish_and_unknown_ones_verbatim() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/panels.js"], "const TASK_ERROR_TR", "\nfunction renderTasks"))
+
+    assert context.eval('taskErrorTr("Execution time budget exhausted.")') == "Süre bütçesi doldu; adım yarıda kesildi."
+    assert context.eval('taskErrorTr("Invalid tool_name.")') == "Adımın aracı tanımsız."
+    assert context.eval('taskErrorTr("User confirmation required.")') == "Bu adım için onayın gerekiyor."
+    assert context.eval('taskErrorTr("")') == "" and context.eval("taskErrorTr(null)") == ""
+    unknown = "Some future engine string."
+    assert context.eval('taskErrorTr("' + unknown + '")') == unknown, "an unmapped failure is shown as it came, never invented"
+    panels = JS_SOURCES["js/panels.js"]
+    assert "esc(taskErrorTr(task.error))" in panels and "esc(taskErrorTr(step.error))" in panels
+
+
+def test_the_phone_task_card_shows_the_goal_not_the_uuid() -> None:
+    from app.mobile.server import WEB_ROOT
+    from app.tasks.manager import TaskManager
+    from app.tasks.service import TaskControlService
+
+    source = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    assert "esc(task.goal || task.title" in source, "the client reads the key the server actually sends"
+
+    row = TaskControlService(TaskManager(), None)._serialize(TaskManager().create("PDF'leri dönüştür"))
+    assert row["goal"] and "title" not in row, "the server contract is goal, and the client follows it"
+
+
+# ---------------------------------------------------------------------------
+# the busy bracket on a surface that did not start the turn
+# ---------------------------------------------------------------------------
+
+
+def lift_push_handler(name: str) -> str:
+    """One PUSH handler, exactly as bridge.js writes it."""
+    source = JS_SOURCES["js/bridge.js"]
+    start = source.index(f"  {name}({{")
+    return source[start : source.index("\n  },", start) + len("\n  },")]
+
+
+def lift_function(file: str, name: str) -> str:
+    source = JS_SOURCES[file]
+    start = source.index(f"function {name}(")
+    return source[start : source.index("\n}", start) + 2]
+
+
+# The smallest stubs that keep the handler's control flow honest: setBusy
+# writes State.busy as shell.js does, ensurePendingBubble hands back the one
+# open bubble as conversation.js does, and appendMessage/updateChat record
+# what the reader would have seen.
+WATCHED_TURN_STUBS = """
+var State = { busy: false, messages: [], pendingSources: null, pendingEl: null,
+              watchedTurn: null, status: "" };
+var chat = [];
+var forced = [];
+var removed = [];
+function hideChatEmpty() {}
+function $(_selector) { return {}; }
+function appendMessage(_host, message) { chat.push(message.text); return {}; }
+function updateChat(mutate, options) { forced.push(!!(options && options.force)); mutate(); }
+var Activity = {
+  current: null,
+  beginTurn(goal) { this.current = { goal: goal, status: "thinking", error: null }; return this.current; },
+  abortTurn(error) {
+    if (!this.current) return;
+    this.current.status = "failed";
+    this.current.error = error;
+    this.current = null;
+  },
+};
+function ensurePendingBubble() {
+  if (State.pendingEl) return State.pendingEl;
+  State.pendingEl = { id: chat.length, remove() { removed.push(this.id); } };
+  return State.pendingEl;
+}
+function showThinking() { ensurePendingBubble(); }
+function setBusy(busy, status) { State.busy = busy; if (status) State.status = status; }
+function renderHomeSession() {}
+"""
+
+
+def watching_surface():
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(WATCHED_TURN_STUBS)
+    context.eval(lift_function("js/conversation.js", "closeWatchedTurn"))
+    context.eval("var PUSH = {\n" + lift_push_handler("busy") + "\n};")
+    return context
+
+
+def test_the_watching_page_closes_the_turn_a_busy_push_opened() -> None:
+    """The phone typed and this page drew the question and the thinking mark.
+    Nothing else here ever closes that turn - sendCommand's cleanup belongs
+    to the page that sent the message - so a submission with no answer (the
+    runner refused it, the turn was cancelled) has to be closed by the
+    busy:false that ends the bracket, or the orphan bubble is handed to the
+    next question and the answer lands above it."""
+    context = watching_surface()
+    context.eval(
+        'PUSH.busy({ busy: true, status: "PROCESSING", text: "telefondan selam", spoken: false });'
+    )
+    assert json.loads(context.eval("JSON.stringify(chat)")) == ["telefondan selam"]
+    assert context.eval("State.pendingEl !== null")
+    assert context.eval("Activity.current !== null")
+
+    context.eval('PUSH.busy({ busy: false, status: "LOCAL CORE READY" });')
+    assert context.eval("State.pendingEl === null"), "the thinking bubble outlived the turn"
+    assert context.eval("Activity.current === null"), "the activity turn was left open"
+    assert context.eval("State.watchedTurn === null")
+    assert json.loads(context.eval("JSON.stringify(removed)")) == [1]
+    assert context.eval("State.busy") is False
+
+    # The next question gets a bubble of its own, not the orphan.
+    context.eval(
+        'PUSH.busy({ busy: true, status: "PROCESSING", text: "ikinci soru", spoken: false });'
+    )
+    assert json.loads(context.eval("JSON.stringify(chat)")) == ["telefondan selam", "ikinci soru"]
+    assert context.eval("State.pendingEl.id") == 2
+
+
+def test_the_closing_push_undoes_only_what_it_opened() -> None:
+    """busy:false ends every turn, answered or not. An answered bubble was
+    already finalized by PUSH.reply, and a background turn belongs to the
+    tool activity that raised it; neither is this push's to take down."""
+    context = watching_surface()
+    context.eval(
+        'PUSH.busy({ busy: true, status: "PROCESSING", text: "telefondan selam", spoken: false });'
+    )
+    # PUSH.reply -> finalizePendingBubble keeps the node and clears the slot;
+    # Activity.onReply finishes the turn. Then a tool event opens its own.
+    context.eval("State.pendingEl = null; Activity.current = null;")
+    context.eval("Activity.current = { goal: 'arka plan', status: 'thinking', error: null };")
+
+    context.eval('PUSH.busy({ busy: false, status: "LOCAL CORE READY" });')
+    assert json.loads(context.eval("JSON.stringify(removed)")) == [], "an answered bubble was removed"
+    assert context.eval("Activity.current !== null"), "a background turn was aborted"
+    assert context.eval("State.watchedTurn === null")
+
+
+def test_a_turn_from_another_device_does_not_yank_the_reader_down() -> None:
+    """conversation.js carries the rule: only a reader already at the bottom
+    is scrolled, and anyone reading older messages gets the pill instead.
+    sendCommand forces the scroll because the reader just typed; on the
+    watching surface nobody did."""
+    context = watching_surface()
+    context.eval(
+        'PUSH.busy({ busy: true, status: "PROCESSING", text: "telefondan selam", spoken: false });'
+    )
+    assert json.loads(context.eval("JSON.stringify(forced)")) == [False]
+    assert "force" not in lift_push_handler("busy")
+    sent = section(JS_SOURCES["js/conversation.js"], "async function sendCommand(", "\n}")
+    assert "{ force: true }" in sent, "the page that typed still scrolls itself down"
+
+
+def test_the_demo_bridge_raises_the_same_busy_bracket_as_python() -> None:
+    """?demo=1 exists to exercise this page, so a demo turn has to open the
+    bracket the real bridge opens and not only close it."""
+    demo = section(JS, "  async submit_command(text) {", "\n  },")
+    assert 'busy: true, status: "PROCESSING", text, spoken: false' in demo
+    assert demo.index("busy: true") < demo.index("busy: false")
+    python = inspect.getsource(shell.NovaBridge.submit_command)
+    assert '"status": WORKING_STATUS' in python and '"spoken": spoken is True' in python
+
+
+# ---------------------------------------------------------------------------
+# Tıp Akademisi: a bright room of its own, with an opening
+# ---------------------------------------------------------------------------
+
+
+def test_the_academy_room_is_declared_and_wired() -> None:
+    assert "css/academy.css" in shell.WEB_ASSETS and "js/academy.js" in shell.WEB_ASSETS
+    for element_id in ("academy-intro", "academy-ecg-path", "academy-heart", "academy-intro-line",
+                       "med-back", "med-sound", "med-greeting", "med-tabs"):
+        assert f'id="{element_id}"' in HTML, element_id
+    assert '<aside class="med-side"' in HTML and '<div class="med-main">' in HTML
+    assert "Geçmek için tıkla" in HTML
+    # Entering the screen is what opens the room; leaving any other way closes it.
+    show = section(JS_SOURCES["js/shell.js"], "function showScreen(", "function setStatus(")
+    assert 'if (id === "medical") Academy.enter(); else Academy.leave();' in show
+    assert JS_SOURCES["js/main.js"].count("bindAcademy();") == 1, "bound once: a second binding makes every toggle undo itself"
+    # The opening never reports a figure the topbar chip would not: both read one field.
+    assert "State.examCountdown = countdown || null;" in JS_SOURCES["js/panels.js"]
+    assert "academyIntroLine(State.examCountdown)" in JS_SOURCES["js/academy.js"]
+
+
+def test_the_academy_palette_is_daylight_and_lives_in_tokens() -> None:
+    tokens = (WEB / "css/tokens.css").read_text(encoding="utf-8")
+    block = section(tokens, "body.academy, body.academy.light {", "\n}")
+    academy_css = (WEB / "css/academy.css").read_text(encoding="utf-8")
+
+    def luminance(hex_colour: str) -> float:
+        """WCAG relative luminance, so the pin below is the contrast ratio."""
+        value = hex_colour.lstrip("#")
+        channels = []
+        for i in (0, 2, 4):
+            c = int(value[i:i + 2], 16) / 255
+            channels.append(c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4)
+        r, g, b = channels
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    def contrast(a: str, b: str) -> float:
+        light, dark = sorted((luminance(a), luminance(b)), reverse=True)
+        return (light + 0.05) / (dark + 0.05)
+
+    colour = lambda name: re.search(name + r":\s+(#[0-9a-f]{6});", block).group(1)
+    assert luminance(colour("--bg")) > 0.85, "the academy ground is bright"
+    # Body ink and the secondary ink both clear WCAG AAA on the ground; the
+    # tertiary ink, used for asides, still clears AA.
+    assert contrast(colour("--bg"), colour("--ink-1")) >= 7
+    assert contrast(colour("--bg"), colour("--ink-2")) >= 7
+    assert contrast(colour("--bg"), colour("--ink-3")) >= 4.5
+    assert contrast(colour("--surface-solid"), colour("--accent-2")) >= 4.5, "accent text reads on a card"
+    assert "--font-display:" in block and "serif" in block
+    # The academy re-binds the shell's tokens only in tokens.css; its own file adds layout.
+    for token in ("--accent:", "--bg:", "--ink-1:", "--font-display:"):
+        assert token not in academy_css, token
+    assert "--acad-pulse:" in tokens and "--acad-sun-rgb:" in tokens
+
+
+def test_the_academy_sets_its_type_heavier() -> None:
+    academy_css = (WEB / "css/academy.css").read_text(encoding="utf-8")
+    assert re.search(r"\.med-tab \{[^}]*font-weight: 600", academy_css)
+    assert re.search(r"\.med-head-main h1 \{[^}]*font-weight: 700", academy_css)
+    assert re.search(r'\.screen\[data-screen="medical"\] \{ font-weight: 500; \}', academy_css)
+    assert "color-scheme: light" in academy_css, "native fields follow the academy's daylight"
+
+
+def test_the_opening_speaks_only_of_what_the_core_reported() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/academy.js"], "function academyIntroLine(", "\n/* Where along the trace"))
+    line = lambda payload: context.eval("academyIntroLine(" + json.dumps(payload) + ")")
+    assert line({"name": "Komite 2", "days_left": 9}) == "Komite 2 · 9 gün kaldı"
+    assert line({"name": "Komite 2", "days_left": 0}) == "Komite 2 · bugün"
+    assert line({"name": "Komite 2", "days_left": -1}) == ""
+    assert line({"name": "", "days_left": 3}) == ""
+    assert line(None) == "" and line({"days_left": "yakında"}) == ""
+    greeting = lambda hour: context.eval("academyGreeting({ getHours() { return " + str(hour) + "; } })")
+    assert greeting(4) == "İyi geceler" and greeting(9) == "Günaydın"
+    assert greeting(14) == "İyi günler" and greeting(21) == "İyi akşamlar"
+
+
+def test_the_opening_is_skipped_without_motion_and_silent_when_muted() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval("var preferences = {}; function store(key, value) { if (value === undefined) return preferences[key] === undefined ? null : preferences[key]; preferences[key] = value; return value; }")
+    context.eval("var State = { compact: false }; var Motion = { allowed() { return !State.reducedMotion; } };")
+    context.eval("var window = {}; var touched = 0;")
+    context.eval(section(JS_SOURCES["js/academy.js"], "const AcademySound = {", "\n/* ── the room"))
+    context.eval(section(JS_SOURCES["js/academy.js"], "const Academy = {", "\n  enter() {") + "\n};")
+    # Sound is on by default and off when the student said so; a muted academy never opens an audio context.
+    assert context.eval("AcademySound.enabled()") is True
+    context.eval('store("nova.academy.sound", "off")')
+    assert context.eval("AcademySound.enabled()") is False
+    assert context.eval("AcademySound.ensure()") is None
+    # Motion off means no opening at all.
+    assert context.eval("Academy.shouldPlayIntro()") is True
+    context.eval("State.reducedMotion = true")
+    assert context.eval("Academy.shouldPlayIntro()") is False
+    context.eval("State.reducedMotion = false; State.compact = true")
+    assert context.eval("Academy.shouldPlayIntro()") is False
+
+
+def test_the_academy_sections_are_grouped_in_the_order_listed() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/medical.js"], "const MED_TABS = [", "\nconst MED_ORIGIN_TR"))
+    ids = json.loads(context.eval("JSON.stringify(MED_TABS.map(([id]) => id))"))
+    groups = json.loads(context.eval("JSON.stringify(MED_TAB_GROUPS)"))
+    assert set(groups) <= set(ids), set(groups) - set(ids)
+    assert ids[0] == "dashboard" and groups["dashboard"] == "Çalış"
+    assert [ids.index(key) for key in ("dashboard", "exam", "understanding", "histology")] == sorted(
+        ids.index(key) for key in ("dashboard", "exam", "understanding", "histology")
+    ), "each heading opens the group that follows it"
+    assert 'host.appendChild(el("span", "med-tab-group", MED_TAB_GROUPS[id]))' in JS_SOURCES["js/medical.js"]
+
+
+def _wcag_luminance(hex_colour: str) -> float:
+    value = hex_colour.lstrip("#")
+    channels = []
+    for i in (0, 2, 4):
+        c = int(value[i:i + 2], 16) / 255
+        channels.append(c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4)
+    r, g, b = channels
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _wcag_contrast(a: str, b: str) -> float:
+    light, dark = sorted((_wcag_luminance(a), _wcag_luminance(b)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
+
+
+def test_the_academy_turns_dark_on_request_and_keeps_its_contrast() -> None:
+    tokens = (WEB / "css/tokens.css").read_text(encoding="utf-8")
+    # The academy's own switch outranks the shell's theme: its block comes last.
+    assert tokens.index("body.academy.academy-dark {") > tokens.index("body.academy, body.academy.light {")
+    night = section(tokens, "body.academy.academy-dark {", "\n}")
+    colour = lambda name: re.search(name + r":\s+(#[0-9a-f]{6});", night).group(1)
+    assert _wcag_luminance(colour("--bg")) < 0.05, "night is dark"
+    assert _wcag_contrast(colour("--bg"), colour("--ink-1")) >= 7
+    assert _wcag_contrast(colour("--bg"), colour("--ink-2")) >= 7
+    assert _wcag_contrast(colour("--bg"), colour("--ink-3")) >= 4.5
+    assert _wcag_contrast(colour("--surface-solid"), colour("--accent-2")) >= 4.5
+    # The switch lives in the side column, remembers itself, and leaves with the room.
+    assert 'id="med-theme"' in HTML
+    academy_js = JS_SOURCES["js/academy.js"]
+    assert 'store("nova.academy.theme")' in academy_js
+    assert 'classList.toggle("academy-dark", this.dark())' in academy_js
+    assert 'document.body.classList.remove("academy", "academy-dark")' in academy_js
+    academy_css = (WEB / "css/academy.css").read_text(encoding="utf-8")
+    assert re.search(r"body\.academy\.academy-dark [^{]*\{ color-scheme: dark; \}", academy_css)
+    assert "sun:" in JS_SOURCES["js/shell.js"] and "moon:" in JS_SOURCES["js/shell.js"]
+
+
+def test_the_academy_theme_defaults_to_daylight() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval("var preferences = {}; function store(key, value) { if (value === undefined) return preferences[key] === undefined ? null : preferences[key]; preferences[key] = value; return value; }")
+    context.eval("var document = { body: { classes: {}, classList: { toggle(name, on) { this.classes[name] = !!on; } } } }; document.body.classList.classes = document.body.classes;")
+    context.eval(section(JS_SOURCES["js/academy.js"], "const AcademyTheme = {", "\n/* ── the room"))
+    assert context.eval("AcademyTheme.dark()") is False
+    context.eval("AcademyTheme.set(true); AcademyTheme.apply()")
+    assert context.eval("AcademyTheme.dark()") is True
+    assert context.eval("document.body.classes['academy-dark']") is True
+    context.eval("AcademyTheme.set(false); AcademyTheme.apply()")
+    assert context.eval("document.body.classes['academy-dark']") is False
+
+
+# ---------------------------------------------------------------------------
+# Araştırma: many doors, and a room of its own
+# ---------------------------------------------------------------------------
+
+
+def test_the_research_room_is_declared_and_wired() -> None:
+    for name in ("css/research.css", "js/rooms.js", "js/research.js"):
+        assert name in shell.WEB_ASSETS, name
+    assert JS_FILES.index("js/rooms.js") < JS_FILES.index("js/research.js") < JS_FILES.index("js/main.js")
+    for element_id in ("research-intro", "res-back", "res-theme", "res-sound", "res-presets", "res-sources",
+                       "research-site", "research-count", "research-form", "research-input", "research-submit",
+                       "research-history", "research-result"):
+        assert f'id="{element_id}"' in HTML, element_id
+    for source in ("web", "wikipedia", "youtube", "github", "pubmed", "arxiv", "stackoverflow", "hackernews"):
+        assert f'class="ri-node" data-source="{source}"' in HTML, source
+        assert f'class="ri-line" data-source="{source}"' in HTML, source
+    show = section(JS_SOURCES["js/shell.js"], "function showScreen(", "function setStatus(")
+    assert 'if (id === "research") ResearchRoom.enter(); else ResearchRoom.leave();' in show
+    assert JS_SOURCES["js/main.js"].count("bindResearch();") == 1
+    research_js = JS_SOURCES["js/research.js"]
+    assert "async function submitResearch(" in research_js and "submitResearch(" not in JS_SOURCES["js/panels.js"].replace("addEventListener(\"submit\", submitResearch)", "")
+    # The page asks the core where it may look and sends the selection back with the question.
+    assert 'call("research_sources")' in research_js
+    assert 'call("run_research", query, Number($("#research-count").value), sources, site || null)' in research_js
+    assert "Math.random" not in research_js and "Math.random" not in JS_SOURCES["js/rooms.js"]
+
+
+def test_the_research_palette_is_daylight_with_a_night_and_keeps_contrast() -> None:
+    tokens = (WEB / "css/tokens.css").read_text(encoding="utf-8")
+    assert tokens.index("body.research.research-dark {") > tokens.index("body.research, body.research.light {")
+    for header in ("body.research, body.research.light {", "body.research.research-dark {"):
+        block = section(tokens, header, "\n}")
+        colour = lambda name: re.search(name + r":\s+(#[0-9a-f]{6});", block).group(1)
+        assert _wcag_contrast(colour("--bg"), colour("--ink-1")) >= 7, header
+        assert _wcag_contrast(colour("--bg"), colour("--ink-2")) >= 7, header
+        assert _wcag_contrast(colour("--bg"), colour("--ink-3")) >= 4.5, header
+        assert _wcag_contrast(colour("--surface-solid"), colour("--accent-2")) >= 4.5, header
+    day = section(tokens, "body.research, body.research.light {", "\n}")
+    night = section(tokens, "body.research.research-dark {", "\n}")
+    assert _wcag_luminance(re.search(r"--bg:\s+(#[0-9a-f]{6});", day).group(1)) > 0.85
+    assert _wcag_luminance(re.search(r"--bg:\s+(#[0-9a-f]{6});", night).group(1)) < 0.05
+    research_css = (WEB / "css/research.css").read_text(encoding="utf-8")
+    for token in ("--accent:", "--bg:", "--ink-1:", "--font-display:", "--res-lamp:"):
+        assert token not in research_css, token
+
+
+def test_research_uncertainties_read_in_turkish_and_unknown_ones_verbatim() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/research.js"], "const RESEARCH_UNCERTAINTY_TR = [", "\nconst RESEARCH_FRESHNESS_TR"))
+    tr = lambda text: context.eval("researchUncertaintyTr(" + json.dumps(text) + ")")
+    assert tr("Source Hacker News was unavailable (SearchError).") == "Hacker News kaynağına ulaşılamadı (SearchError)."
+    assert tr("2 candidate source(s) could not be safely collected.") == "2 aday kaynak güvenle toplanamadı."
+    assert tr("The evidence was not corroborated across independent domains.") == "Kanıt bağımsız alan adlarında doğrulanmadı."
+    assert tr("Live research was unavailable; cached evidence was returned and may be outdated (FetchError).").startswith("Canlı araştırma yapılamadı")
+    assert tr("Some future service string.") == "Some future service string."
+    assert tr("") == "" and tr(None) == ""
+
+
+def test_research_presets_offer_only_sources_the_core_enabled() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/research.js"], "const RESEARCH_PRESETS = [", "\n/* The facts a card shows"))
+    catalogue = json.dumps([{"id": "web"}, {"id": "github"}, {"id": "youtube"}, {"id": "site"}])
+    preset = lambda name: json.loads(context.eval("JSON.stringify(researchPreset(" + json.dumps(name) + ", " + catalogue + "))"))
+    assert preset("general") == ["web", "youtube", "github"], "in the preset's order, only what exists, never the site"
+    assert preset("science") == ["web"]
+    assert preset("all") == ["web", "github", "youtube"]
+    assert preset("video") == ["youtube"]
+    assert preset("nonsense") == preset("general")
+
+
+def test_research_cards_escape_untrusted_source_text_and_name_their_facts() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function esc(", "\nfunction store("))
+    context.eval("function icon(name) { return '<svg data-icon=\"' + name + '\"></svg>'; }")
+    context.eval(section(JS_SOURCES["js/research.js"], "const RESEARCH_KINDS = {", "\n/* A preset is"))
+    context.eval(section(JS_SOURCES["js/research.js"], "const RESEARCH_FRESHNESS_TR = {", "\n/* ── the workspace"))
+    catalogue = json.dumps([{"id": "github", "label": "GitHub"}, {"id": "youtube", "label": "YouTube"}])
+    repo = {"id": "S1", "title": "octo/atlas <script>alert(1)</script>", "url": "https://github.com/octo/atlas", "kind": "repo",
+            "source": "github", "freshness": "current", "excerpt": "3D atlas \"quoted\"", "meta": {"stars": "1240", "language": "Python", "updated": "2026-09-01"},
+            "prompt_injection_findings": ["ignore_previous"]}
+    html = context.eval("researchSourceMarkup(" + json.dumps(repo) + ", " + catalogue + ")")
+    assert "<script" not in html and "&lt;script&gt;" in html and "&quot;quoted&quot;" in html
+    assert "★ 1240" in html and "Python" in html and "güncelleme 2026-09-01" in html
+    assert "yönlendirme kalıbı" in html and "güncel" in html and 'data-icon="repo"' in html and "GitHub" in html
+    video = {"id": "S2", "title": "Ders", "url": "https://www.youtube.com/watch?v=x", "kind": "video", "source": "youtube",
+             "freshness": "unknown", "excerpt": "", "meta": {"channel": "Anatomi", "confirmed": "no"}}
+    html = context.eval("researchSourceMarkup(" + json.dumps(video) + ", " + catalogue + ")")
+    assert "Anatomi" in html and "kanal doğrulanamadı" in html and "tarih bilinmiyor" in html
+    claims = context.eval("researchClaimsMarkup(" + json.dumps([{"text": "a <b>claim</b>", "citations": ["S1", "S2"], "confidence": 0.8}]) + ")")
+    assert "&lt;b&gt;" in claims and "S1" in claims and "birden çok kaynak" in claims
+
+
+def test_a_room_remembers_its_switches_and_defaults_to_day_and_sound() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval("var preferences = {}; function store(key, value) { if (value === undefined) return preferences[key] === undefined ? null : preferences[key]; preferences[key] = value; return value; }")
+    context.eval("var document = { body: { classes: {}, classList: { toggle(name, on) { document.body.classes[name] = !!on; } } } };")
+    context.eval(section(JS_SOURCES["js/rooms.js"], "function roomSwitch(", "\n/* ── the opening"))
+    context.eval('var sound = roomSwitch("k.sound"); var night = roomNight("k.theme", "x-dark");')
+    assert context.eval("sound.on()") is True and context.eval("night.dark()") is False
+    context.eval("sound.set(false); night.set(true); night.apply()")
+    assert context.eval("sound.on()") is False and context.eval("document.body.classes['x-dark']") is True
+    assert context.eval('preferences["k.sound"]') == "off" and context.eval('preferences["k.theme"]') == "dark"
+
+
+# ---------------------------------------------------------------------------
+# toolbox: the palette answers arithmetic; the academy computes at the bedside
+# ---------------------------------------------------------------------------
+
+
+def test_the_palette_calculator_answers_and_stays_out_of_the_way() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    answer = lambda q: context.eval("JSON.stringify(paletteMath(" + json.dumps(q) + "))")
+    assert json.loads(answer("12*(3+2)"))["display"] == "12*(3+2) = 60"
+    assert json.loads(answer("3,5+1,5"))["display"] == "3,5+1,5 = 5"
+    assert json.loads(answer("2^10"))["value"] == 1024
+    assert json.loads(answer("sqrt(144)+1"))["value"] == 13
+    assert json.loads(answer("sin(30)"))["display"] == "sin(30) = 0,5", "trig speaks degrees on this surface"
+    assert json.loads(answer("-3+5"))["value"] == 2
+    assert json.loads(answer("70 kg lb"))["display"] == "70 kg = 154,324 lb"
+    assert json.loads(answer("37 c f"))["display"] == "37 c = 98,6 f"
+    assert json.loads(answer("120 mmhg kpa"))["value"] == pytest.approx(15.9987, abs=0.001)
+    assert json.loads(answer("90 dk sa"))["display"] == "90 dk = 1,5 sa"
+    assert json.loads(answer("5 mi km"))["value"] == pytest.approx(8.04672, abs=0.001)
+    assert json.loads(answer("5 MIL KM"))["value"] == pytest.approx(8.04672, abs=0.001), (
+        "an uppercase I in a unit folds to its dotted twin, never to dotless"
+    )
+    assert json.loads(answer("70 KG LB"))["display"] == "70 kg = 154,324 lb", (
+        "the display speaks the folded unit, not the shouted one"
+    )
+    # The guard: ordinary queries, junk and undefined arithmetic stay out.
+    for query in ("notlar", "3 elma", "hatırlatıcı kur 5", "1/0", "", "kg lb", "12*", "5 kg kg", "alert(1)"):
+        assert json.loads(answer(query)) is None, query
+    assert "eval(" not in JS_SOURCES["js/toolbox.js"]
+
+
+def test_flashcards_speak_only_what_is_on_screen() -> None:
+    study = JS_SOURCES["js/study.js"]
+    assert "data-card-speak" in study
+    assert "State.snapshot?.voice_available" in study, "no voice, no button"
+    assert "this.revealed ? `${card.front}. Cevap: ${card.back}` : card.front" in study, (
+        "the hidden back is never spoken"
+    )
+    assert "Speech.unlock(); // inside the gesture" in study
+    assert "Speech.play(result.audio);" in study
+    assert "new Audio(" not in study
+
+
+def test_the_term_of_the_day_speaks_when_the_voice_can() -> None:
+    medical = JS_SOURCES["js/medical.js"]
+    assert "data-term-speak" in medical
+    assert "State.snapshot?.voice_available" in medical, "no voice service, no button"
+    assert "Speech.unlock(); // inside the gesture" in medical
+    assert "Speech.play(result.audio);" in medical
+    assert "Türkçesi: ${term.turkish}" in medical
+    assert "new Audio(" not in medical
+
+
+def test_read_aloud_survives_the_slow_synthesis() -> None:
+    """The 4-second synthesis outlives Chromium's activation window, so
+    playback goes through a context the click itself unlocked - and the
+    window asks WebView2 for autoplay outright."""
+    conversation = JS_SOURCES["js/conversation.js"]
+    assert "const Speech = {" in conversation
+    assert "Speech.unlock();" in conversation, "the unlock happens inside the gesture"
+    assert "decodeAudioData" in conversation and "createBufferSource" in conversation
+    assert "new Audio(" not in conversation, "no <audio> path is left to be blocked"
+    assert 'toast("Ses çalınamadı.", true)' in conversation
+    assert "--autoplay-policy=no-user-gesture-required" in __import__("io").open(
+        "app/ui/nova/shell.py", encoding="utf-8").read()
+
+
+def test_the_dictionary_card_speaks_and_copies() -> None:
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "attachActions(entry) {" in shell_js
+    # The voice button exists only when the voice service does.
+    assert "if (State.snapshot?.voice_available) {" in shell_js and "data-dict-speak" in shell_js
+    assert "data-dict-copy" in shell_js
+    # It speaks the word and at most two senses - not the whole card.
+    assert "senses.slice(0, 2).join" in shell_js
+    # The copy strips the action bar so buttons never enter the clipboard.
+    assert 'clone.querySelector(".dict-actions")?.remove();' in shell_js
+    assert "Speech.unlock(); // inside the gesture" in shell_js
+    assert "Speech.play(result.audio);" in shell_js
+    assert ".dict-actions" in CSS
+
+
+def test_a_held_notification_wears_its_moon_in_the_centre() -> None:
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "item.data && item.data.quiet_held" in shell_js
+    assert "Sessiz saatlerde geldi; Windows bildirimi gösterilmedi" in shell_js
+    assert ".notify-quiet" in CSS
+
+
+def test_archived_threads_hide_on_request_and_the_ledger_copies() -> None:
+    conversation = JS_SOURCES["js/conversation.js"]
+    assert '"nova.conv.hidearchive"' in conversation
+    assert "arşivli konuşma gizli · göster" in conversation
+    assert "Arşivlileri gizle" in conversation
+    assert 'item.status !== "archived" || item.active' in conversation
+
+    panels = JS_SOURCES["js/panels.js"]
+    assert "copyEvents() {" in panels
+    assert 'toast("Kopyalanacak olay yok.", true);' in panels
+    assert "copyTextToClipboard(lines.join(" in panels
+    assert "fmtTime(e.observed_at)" in panels and "e.component" in panels, "the copy speaks the ledger's own fields"
+    assert 'id="diag-copy"' in HTML
+    assert 'Diagnostics.copyEvents());' in panels
+
+
+def test_the_palette_remembers_five_commands_and_forgets_on_request() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    parse = lambda raw: json.loads(context.eval("JSON.stringify(paletteRecentParse(" + json.dumps(raw) + "))"))
+    add = lambda raw, cmd: context.eval("paletteRecentAdd(" + json.dumps(raw) + ", " + json.dumps(cmd) + ")")
+
+    state = "[]"
+    for command in ("bir", "iki", "üç", "dört", "beş", "altı"):
+        state = add(state, command)
+    assert parse(state) == ["altı", "beş", "dört", "üç", "iki"], "five entries, newest first"
+    state = add(state, "dört")
+    assert parse(state)[0] == "dört" and parse(state).count("dört") == 1, "a repeat moves up, never duplicates"
+    assert parse(add("[]", "   ")) == [] and add("[]", "") == "[]"
+    assert parse("bozuk json") == [] and parse(json.dumps({"a": 1})) == []
+    long_command = "x" * 200
+    assert len(parse(add("[]", long_command))[0]) == 80, "entries are clipped, not refused"
+
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert 'paletteRecentParse(store("nova.palette.recent"))' in shell_js
+    assert "Tekrar gönder: “" in shell_js
+    assert "Son komutları unut (bu cihazda)" in shell_js
+    assert 'paletteRecentAdd(store("nova.palette.recent"), text)' in JS_SOURCES["js/conversation.js"]
+
+
+def test_a_fired_reminder_notification_offers_to_rearm_itself() -> None:
+    shell = JS_SOURCES["js/shell.js"]
+    assert 'item.kind === "reminder" ? `<button type="button" class="icon-btn small notify-rearm"' in shell, (
+        "only reminder entries carry the ⏰"
+    )
+    assert "10 dakika sonraya yeni hatırlatıcı kur" in shell, "the title admits it arms a NEW reminder"
+    assert 'call("create_reminder", item.body, "+10")' in shell
+    assert 'item.kind !== "reminder") return;' in shell, "rearm refuses other kinds"
+    rearm_branch = shell.index("data-act='rearm'")
+    dismiss_branch = shell.index("data-act='dismiss'")
+    assert rearm_branch < dismiss_branch, "rearm is checked before the row activates"
+
+
+def test_the_composer_walks_its_sent_history_with_ctrl_arrows() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    step = lambda entries, index, direction, draft="": json.loads(context.eval(
+        "JSON.stringify(historyStep(" + json.dumps(entries) + ", " + json.dumps(index)
+        + ", " + json.dumps(direction) + ", " + json.dumps(draft) + ") || null)"))
+
+    assert step([], -1, "back") is None, "no history, no walk"
+    assert step(["son", "eski"], -1, "back") == {"index": 0, "text": "son"}
+    assert step(["son", "eski"], 0, "back") == {"index": 1, "text": "eski"}
+    assert step(["son", "eski"], 1, "back") is None, "the oldest is the edge"
+    assert step(["son", "eski"], 0, "forward", "taslak") == {"index": -1, "text": "taslak"}
+    assert step(["son", "eski"], -1, "forward", "taslak") is None
+    assert step(["son"], 5, "back") is None, "an index beyond a shrunken history clamps"
+    assert step(["son"], 5, "forward") == {"index": -1, "text": ""}
+    assert step([1, " ", "gerçek"], -1, "back") == {"index": 0, "text": "gerçek"}
+
+    conversation = JS_SOURCES["js/conversation.js"]
+    assert 'event.key === "ArrowUp" ? "back" : "forward"' in conversation
+    assert "if (historyIndex === -1) historyDraft = chatInput.value;" in conversation
+    assert "historyIndex = -1; // typing by hand leaves the walk" in conversation
+    assert 'historyIndex = -1; historyDraft = "";' in conversation, "a send resets the walk"
+
+
+def test_a_finished_focus_offers_itself_to_the_academy_log() -> None:
+    shell_js = JS_SOURCES["js/shell.js"]
+    # Asked, never assumed - and only when it could be study at all.
+    assert "if (finished) this.offerToLog(this.minutes);" in shell_js
+    assert "if (!minutes || minutes < 5 || !State.medical?.available" in shell_js
+    assert "Akademi günlüğüne yazılsın mı?" in shell_js
+    assert 'Medical.request("plan_log_study", { activity: "focus", minutes })' in shell_js
+    assert "çalışma günlüğüne işlendi." in shell_js
+    # The stopped-early path never offers: only stop(true) does.
+    assert shell_js.count("this.offerToLog(") == 1
+
+
+def test_copy_hands_and_the_mini_clock_are_wired() -> None:
+    conversation = JS_SOURCES["js/conversation.js"]
+    # Every full-size bubble carries the copy control; slim ones do not.
+    assert "function copyButton(slim)" in conversation and "${copyButton(slim)}" in conversation
+    assert 'data-copy title="Metni kopyala"' in conversation
+    assert 'copy.closest(".msg")?.querySelector(".msg-body")' in conversation
+    # One clipboard hand, honest in both directions.
+    assert "async function copyTextToClipboard(" in conversation
+    assert 'toast("Panoya erişilemedi.", true);' in conversation
+    assert 'toast("Panoya kopyalandı.", "ok");' in conversation
+    assert 'toast("Kopyalanacak metin yok.", true);' in conversation
+
+    research = JS_SOURCES["js/research.js"]
+    assert 'id="res-copy"' in research
+    assert "copyResearchReport" in research
+    assert 'toast("Kopyalanacak rapor yok.", true);' in research
+    assert "researchReportMarkdown(report, Research.catalogue)" in research
+
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert 'id="mini-clock"' in HTML
+    assert "const MiniClock = {" in shell_js
+    assert "MiniClock.start();" in shell_js and "else MiniClock.stop();" in shell_js
+    assert "setInterval(() => this.tick(), 30000)" in shell_js
+    assert ".mini-clock" in CSS and ".msg-copy" in CSS
+
+
+def test_uptime_speaks_and_snow_respects_reduced_motion() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/panels.js"], "function pulseUptime", "\nconst Pulse = {"))
+    uptime = lambda seconds: context.eval("pulseUptime(" + json.dumps(seconds) + ")")
+    assert uptime(0) == "0 dk"
+    assert uptime(48 * 60) == "48 dk"
+    assert uptime(2 * 3600 + 14 * 60) == "2 sa 14 dk"
+    assert uptime(3 * 86400 + 4 * 3600) == "3 g 4 sa"
+    assert uptime(-5) == "0 dk" and uptime(None) == "0 dk"
+
+    panels = JS_SOURCES["js/panels.js"]
+    assert "Oturum ${esc(pulseUptime(pulse.uptime_seconds))}" in panels
+    assert "Veri ${esc(fmtBytes(pulse.state_data_bytes))}" in panels
+
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert '"Kar yağdır"' in shell_js and "Snow.fall()" in shell_js
+    assert 'if (State.reducedMotion) { toast("Hareket azaltılmışken kar yağmaz.", true); return; }' in shell_js
+    assert 'setTimeout(() => layer.remove(), 15000);' in shell_js
+    assert ".snowfall { position: fixed" in CSS and "pointer-events: none" in CSS
+    assert "@keyframes snow-drop" in CSS
+
+
+def test_the_settings_card_and_pulse_carry_quiet_hours_and_battery() -> None:
+    assert 'id="settings-quiet"' in HTML and "Sessiz saatler" in HTML
+    assert "uygulama içi bildirim merkezi almaya devam eder" in HTML
+    panels = JS_SOURCES["js/panels.js"]
+    assert '$("#settings-quiet").value = s.quiet_hours || "";' in panels
+    assert 'quiet_hours: $("#settings-quiet").value.trim(),' in panels
+    assert "battery_percent" in panels and "şarjda" in panels
+    assert "battery_percent: 84" in JS_SOURCES["js/bridge.js"]
+
+
+def test_the_drawer_pins_and_the_chat_find_are_pure_and_honest() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    conversation = JS_SOURCES["js/conversation.js"]
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function searchFold(", "\nconst lower"))
+    context.eval(section(conversation, "/* ── drawer pins & in-chat find (pure)", "\nfunction appendMessage("))
+
+    pins = lambda raw: json.loads(context.eval("JSON.stringify([...convPinsParse(" + json.dumps(raw) + ")])"))
+    assert pins("a,b") == ["a", "b"]
+    assert pins(" a , ,b, ") == ["a", "b"]
+    assert pins("") == [] and pins(None) == []
+
+    order = lambda items, raw: json.loads(context.eval(
+        "JSON.stringify(convOrder(" + json.dumps(items) + ", convPinsParse(" + json.dumps(raw) + ")))"))
+    items = [{"conversation_id": "one"}, {"conversation_id": "two"}, {"conversation_id": "three"}]
+    split = order(items, "three,ghost")
+    assert [item["conversation_id"] for item in split["pinned"]] == ["three"], "unknown pins pin nothing"
+    assert [item["conversation_id"] for item in split["rest"]] == ["one", "two"]
+    assert order([], "x") == {"pinned": [], "rest": [], "hiddenCount": 0}
+
+    hide = lambda payload: json.loads(context.eval(
+        "JSON.stringify(convOrder(" + json.dumps(payload) + ", convPinsParse(''), { hideArchived: true }))"))
+    mixed = [
+        {"conversation_id": "a", "status": "active"},
+        {"conversation_id": "b", "status": "archived"},
+        {"conversation_id": "c", "status": "archived", "active": True},
+    ]
+    hidden = hide(mixed)
+    assert [item["conversation_id"] for item in hidden["rest"]] == ["a", "c"], "the open thread never hides"
+    assert hidden["hiddenCount"] == 1
+
+    find = lambda texts, query: json.loads(context.eval(
+        "JSON.stringify(chatFindFilter(" + json.dumps(texts) + ", " + json.dumps(query) + "))"))
+    texts = ["Merhaba dünya", "Kalp anatomisi", "kalp krizi belirtileri"]
+    assert find(texts, "kalp") == [1, 2], "Turkish-lowercased, case-insensitive"
+    assert find(texts, "KALP") == [1, 2]
+    assert find(["PROVIDER hattı"], "provider") == [0], "an uppercase I folds to its dotted twin"
+    assert find(["Hatırlatıcı listesi"], "HATIRLATICI") == [0], "and the dotless family folds back"
+    assert find(texts, "yürek") == []
+    assert find(texts, "") is None and find(texts, "   ") is None, "empty query means the filter is off"
+
+    # Wiring: the pin on every row, the find box, the escape, the clear.
+    assert 'data-pin="${esc(item.conversation_id)}"' in conversation
+    assert '"nova.conv.pins"' in conversation and "Sabitlenmiş" in conversation
+    assert "bindChatFind();" in JS_SOURCES["js/main.js"]
+    assert 'id="chat-find"' in HTML and 'id="chat-find-count"' in HTML
+    assert "bu cihazda sabitler" in HTML, "the note says pins are device-local"
+    assert ".msg.find-miss { display: none; }" in CSS
+    assert "clearChatFind(); input.blur();" in conversation
+
+
+def test_the_drawer_offers_rename_through_one_prompt_dialog() -> None:
+    foundation = JS_SOURCES["js/foundation.js"]
+    assert JS.count("function promptDialog(") == 1, (
+        "one dialog for the whole page - a second declaration in a later "
+        "script silently shadows this one (medical.js did exactly that)"
+    )
+    assert "function promptDialog(" in foundation
+    prompt_body = foundation.split("function promptDialog(")[1]
+    assert 'if (!multiline && event.key === "Enter") { event.preventDefault(); finish(field.value.trim()); }' in prompt_body
+    assert "finish(null)" in prompt_body, "cancel and Escape resolve null, never an empty string"
+    assert 'field.hidden = true; field.value = "";' in prompt_body, "the shared modal leaves no field behind"
+    assert 'id="confirm-input"' in HTML and 'id="confirm-area"' in HTML
+    assert '!multiline && event.key === "Enter"' in prompt_body, (
+        "Enter confirms one-line fields only; a textarea keeps it for newlines"
+    )
+    assert 'multiline: true, confirmLabel: "İÇE AKTAR"' in JS_SOURCES["js/medical.js"], (
+        "the exam-paste prompt rides the shared dialog"
+    )
+
+    conversation = JS_SOURCES["js/conversation.js"]
+    assert 'id="chat-rename"' in HTML
+    assert "pencil.hidden = !active;" in conversation, "no stored thread, no pencil"
+    assert '$("#chat-rename").addEventListener("click", renameActiveConversation);' in conversation
+    assert 'call("rename_conversation", active.conversation_id, name)' in conversation
+    assert 'data-ren="${esc(item.conversation_id)}"' in conversation
+    assert 'call("rename_conversation", item.conversation_id, name)' in conversation
+    assert "if (name === null) return;" in conversation, "cancelling changes nothing"
+    assert "Boş bırakırsan başlık otomatiğe döner" in conversation
+    assert ".conv-ren" in CSS
+    assert "Demo modunda yeniden adlandırma yok." in JS_SOURCES["js/bridge.js"]
+
+
+def test_the_brief_snooze_stays_put_and_reloads() -> None:
+    panels = JS_SOURCES["js/panels.js"]
+    handler = panels.split('[data-brief-snooze]", host')[1].split("}));")[0]
+    assert "event.stopPropagation();" in handler, "+10 must not also jump to Tasks"
+    assert 'call("snooze_reminder", node.dataset.briefSnooze, 10)' in handler
+    assert "renderHomeBrief(true)" in handler
+    assert "confirmDialog" not in handler, "a snooze is reversible: no dialog"
+    assert "#home-brief .hb-snz" in CSS
+
+
+def test_the_memory_screen_takes_a_note_by_hand() -> None:
+    for element_id in ("memory-note-form", "memory-note-input"):
+        assert f'id="{element_id}"' in HTML, element_id
+    assert 'maxlength="500"' in HTML, "the field admits the bridge's own bound"
+    panels = JS_SOURCES["js/panels.js"]
+    handler = panels.split('$("#memory-note-form").addEventListener("submit"')[1].split("});")[0]
+    assert 'call("remember_note", body)' in handler, "the same guarded bridge path as the palette"
+    assert "Memory.load()" in handler and 'input.value = ""' in handler
+    assert "if (!body) return;" in handler, "an empty note never leaves the page"
+    assert ".memory-note input" in CSS
+
+
+def test_the_palette_note_query_is_pure_and_minimal() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    note = lambda q: context.eval("JSON.stringify(noteQuery(" + json.dumps(q) + ") || null)")
+
+    assert note("not: sınav 3 hafta sonra") == '"sınav 3 hafta sonra"'
+    assert note("NOT defter camlı dolapta") == '"defter camlı dolapta"'
+    assert note("not:") == "null" and note("not") == "null"
+    assert note("nota bak") == "null", "only the prefix, never a word that starts with it"
+    assert note("not: ab") == "null", "under three characters is a typo, not a note"
+
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "const note = noteQuery(q);" in shell_js
+    assert 'call("remember_note", note)' in shell_js
+    assert "Demo modunda hafızaya yazılmaz." in JS_SOURCES["js/bridge.js"]
+
+
+def test_search_fold_collapses_the_turkish_i_family_one_to_one() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function searchFold(", "\nconst lower"))
+    fold = lambda value: context.eval("searchFold(" + json.dumps(value) + ")")
+
+    assert fold("PROVIDER") == "provider"
+    assert fold("HATIRLATICI") == fold("Hatırlatıcı") == "hatirlatici"
+    assert fold("İstanbul") == "istanbul" and len(fold("İstanbul")) == len("İstanbul"), (
+        "one-to-one: an index into the fold still points into the original"
+    )
+    assert fold(None) == "" and fold(123) == "123"
+
+    # Every user-facing search runs through the same fold family.
+    assert "searchFold(String(query || \"\").trim())" in JS_SOURCES["js/conversation.js"]
+    assert "searchFold(safe).indexOf(searchFold(needle))" in JS_SOURCES["js/conversation.js"]
+    assert "const lower = (v) => searchFold(" in JS_SOURCES["js/foundation.js"]
+    for name in ("js/medical.js", "js/study.js"):
+        assert "searchFold(" in JS_SOURCES[name], name
+    assert "toLocaleLowerCase" not in JS_SOURCES["js/bridge.js"], "the demo searches like the page"
+    assert "toLocaleLowerCase" not in JS_SOURCES["js/toolbox.js"], "units and the sieve fold deterministically"
+
+
+def test_the_ledger_sieve_matches_what_a_row_shows() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    match = lambda event, query: context.eval(
+        "eventMatches(" + json.dumps(event) + ", " + json.dumps(query) + ")")
+
+    event = {"level": "warning", "component": "ui", "name": "reminder.snoozed",
+             "message": "Hatırlatıcı ertelendi", "attributes": {"routine_id": "abc123"}}
+    assert match(event, "") is True and match(event, "   ") is True, "empty query keeps everything"
+    assert match(event, "SNOOZED") is True, "case folds"
+    assert match(event, "REMINDER.SNOOZED") is True, "an uppercase I still finds its dotted i"
+    assert match(event, "HATIRLATICI") is True, "and the Turkish fold still finds dotted friends"
+    assert match(event, "hatırlatıcı") is True
+    assert match(event, "abc123") is True, "attributes match too"
+    assert match(event, "warning") is True
+    assert match(event, "yok-boyle") is False
+    assert match({"message": None}, "x") is False, "a bare row never crashes"
+
+    panels = JS_SOURCES["js/panels.js"]
+    assert 'textFilter: "",' in panels
+    assert panels.count("eventMatches(") == 3, "render, fresh-row mark and copy all sieve"
+    assert "`${rows.length} / ${State.diagnosticEvents.length} olay`" in panels
+    assert '$("#diag-find").addEventListener("input"' in panels
+    assert 'id="diag-find"' in HTML
+
+
+def test_fenced_code_wears_its_language_but_only_clean_tokens() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval("function esc(v) { return String(v == null ? \"\" : v).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\").replace(/\"/g, \"&quot;\"); }")
+    context.eval(section(JS_SOURCES["js/conversation.js"], "function renderMarkdownLite", "\nfunction appendMessage"))
+    run = lambda text: context.eval("renderMarkdownLite(" + json.dumps(text) + ")")
+    NL = chr(10)
+
+    tagged = run("```python" + NL + "x = 1" + NL + "```")
+    assert '<span class="code-lang">python</span>' in tagged and "data-code-copy" in tagged
+    plain = run("```" + NL + "x" + NL + "```")
+    assert "code-lang" not in plain, "no info word, no badge"
+    plus = run("```c++" + NL + "int x;" + NL + "```")
+    assert '<span class="code-lang">c++</span>' in plus
+    hostile = run("```<script>alert(1)</script>" + NL + "kod" + NL + "```")
+    assert "code-lang" not in hostile, "a strange info word earns no badge at all"
+    assert "<script" not in hostile
+    cut = run("```sql" + NL + "SELECT 1")
+    assert '<span class="code-lang">sql</span>' in cut, "a mid-stream cut keeps its badge"
+    assert ".code-lang" in CSS
+
+
+def test_the_bell_counts_its_kinds_without_inventing_any() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    kinds = lambda items: json.loads(context.eval(
+        "JSON.stringify(notifKinds(" + json.dumps(items) + "))"))
+
+    assert kinds([]) == []
+    mixed = kinds([
+        {"kind": "reminder"}, {"kind": "task"}, {"kind": "reminder"},
+        {"kind": "approval"}, {"kind": "task"}, {"kind": "reminder"},
+        {"kind": ""}, {"notitle": True},
+    ])
+    assert mixed == [
+        {"kind": "reminder", "count": 3},
+        {"kind": "task", "count": 2},
+        {"kind": "approval", "count": 1},
+    ], "most numerous first, the kindless skipped"
+    tied = kinds([{"kind": "b"}, {"kind": "a"}])
+    assert [k["kind"] for k in tied] == ["a", "b"], "ties break by name"
+
+    shell = JS_SOURCES["js/shell.js"]
+    assert "const visible = this.filter ? items.filter((item) => item.kind === this.filter) : items;" in shell
+    assert "if (this.filter && !kinds.some((k) => k.kind === this.filter)) this.filter = null;" in shell, (
+        "a vanished kind resets the view instead of showing nothing"
+    )
+    assert "if (kinds.length < 2)" in shell, "one kind alone earns no chip row"
+    assert "Kind chips are a view, never a mutation" in shell
+    assert 'id="notify-filter"' in HTML
+    assert ".notify-filter .chip.on" in CSS
+
+
+def test_the_routine_rows_offer_run_now() -> None:
+    panels = JS_SOURCES["js/panels.js"]
+    assert 'data-act="run"' in panels and "Çalıştır</button>" in panels
+    assert 'call("run_routine_now", btn.closest(".routine-row").dataset.id)' in panels
+    run_handler = panels.split("[data-act='run']\", host")[1].split("}));")[0]
+    assert "btn.disabled = true;" in run_handler, "no double starts while one runs"
+    assert "confirmDialog" not in run_handler, "running is not destructive: no dialog"
+
+
+def test_the_about_card_draws_dashes_for_what_is_unknown() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function esc(", "\nfunction store("))
+    context.eval(section(JS_SOURCES["js/panels.js"], "/* ── about: the build's own facts (pure markup)", "/* ── about: runtime"))
+    full = context.eval("aboutRows(" + json.dumps({
+        "app_version": "0.1.0", "python_version": "3.12.1",
+        "webview2_version": "129.0.1", "state_directory": "C:/veri"}) + ")")
+    assert "0.1.0" in full and "129.0.1" in full and "C:/veri" in full and "—" not in full
+    bare = context.eval("aboutRows(" + json.dumps({
+        "app_version": None, "python_version": None,
+        "webview2_version": None, "state_directory": None}) + ")")
+    assert bare.count("—") == 4 and 'class="config-value off"' in bare, "unknown is a dash, not a guess"
+    hostile = context.eval("aboutRows(" + json.dumps({
+        "app_version": "<b>x</b>", "python_version": "3",
+        "webview2_version": "1", "state_directory": "d"}) + ")")
+    assert "<b>" not in hostile and "&lt;b&gt;" in hostile
+
+    panels = JS_SOURCES["js/panels.js"]
+    assert 'const info = await call("about_info");' in panels
+    assert 'call("open_state_folder")' in panels
+    assert "About.load();" in panels and "About.bind();" in panels
+    for element_id in ("settings-about", "about-rows", "about-open-state"):
+        assert f'id="{element_id}"' in HTML, element_id
+
+
+def test_the_reminder_rows_offer_a_ten_minute_snooze() -> None:
+    panels = JS_SOURCES["js/panels.js"]
+    assert 'data-reminder-snooze="${esc(row.reminder_id)}"' in panels
+    assert "+10 dk" in panels
+    assert 'call("snooze_reminder", button.dataset.reminderSnooze, 10)' in panels
+    handler = panels.split('data-reminder-snooze]", host')[1].split("}));")[0]
+    assert "confirmDialog" not in handler, "a snooze is reversible: no dialog"
+    assert "Reminders.load()" in handler and "renderHomeBrief(true)" in handler
+
+
+def test_the_palette_converts_money_and_sets_reminders() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    money = lambda q: json.loads(context.eval("JSON.stringify(paletteCurrency(" + json.dumps(q) + "))"))
+    assert money("100 usd") == {"amount": 100, "from": "USD", "to": "TRY"}
+    assert money("100 usd eur") == {"amount": 100, "from": "USD", "to": "EUR"}
+    assert money("$50") == {"amount": 50, "from": "USD", "to": "TRY"}
+    assert money("€10 tl") == {"amount": 10, "from": "EUR", "to": "TRY"}
+    assert money("3,5 euro") == {"amount": 3.5, "from": "EUR", "to": "TRY"}
+    assert money("250 tl usd") == {"amount": 250, "from": "TRY", "to": "USD"}
+    assert money("48,78 lira eur") == {"amount": 48.78, "from": "TRY", "to": "EUR"}
+    assert money("5 LİRA eur") == {"amount": 5, "from": "TRY", "to": "EUR"}, "dotted İ folds into the word"
+    for query in ("100 tl", "100 usd usd", "70 kg lb", "12*3", "usd", "0 usd", "1000000001 usd", "yüz dolar", ""):
+        assert money(query) is None, query
+
+    remind = lambda q: json.loads(context.eval("JSON.stringify(paletteReminder(" + json.dumps(q) + "))"))
+    assert remind("hatırlat 10 dk su iç") == {"when": "+10", "label": "10 dk sonra", "text": "su iç"}
+    assert remind("hatirlat 2 sa ilaç al") == {"when": "+120", "label": "120 dk sonra", "text": "ilaç al"}
+    assert remind("HATIRLAT 45 dakika mola") == {"when": "+45", "label": "45 dk sonra", "text": "mola"}
+    assert remind("hatırlat 09:30 komiteye çalış") == {"when": "09:30", "label": "09:30", "text": "komiteye çalış"}
+    assert remind("hatırlat 9:30 toplantı") == {"when": "09:30", "label": "09:30", "text": "toplantı"}
+    for query in ("hatırlat su iç", "hatırlatma ayarı", "hatırlat 25:00 x", "hatırlat 9:5 x", "hatırlat 0 dk x", "hatırlat 2000 dk x", "su iç"):
+        assert remind(query) is None, query
+
+    # Wiring: the rows, the bridge call, the focus shortcut.
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "const money = paletteCurrency(q);" in shell_js
+    assert 'call("convert_currency", money.amount, money.from, money.to)' in shell_js
+    assert "const remind = paletteReminder(q);" in shell_js
+    assert 'call("create_reminder", remind.text, remind.when)' in shell_js
+    assert "Focus.start(Number(focusMinutes[1]))" in shell_js
+
+
+def test_the_palette_hands_a_word_to_the_dictionary_and_the_card_escapes() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(JS_SOURCES["js/toolbox.js"])
+    ask = lambda q: context.eval("dictionaryQuery(" + json.dumps(q) + ")")
+    assert ask("sözlük kalp") == "kalp"
+    assert ask("sozluk yürek") == "yürek"
+    assert ask("TDK göz") == "göz"
+    assert ask("SÖZLÜK Kalp") == "Kalp", "the word keeps its casing; the service folds it"
+    assert ask("sözlük iki kelime") == "iki kelime"
+    for query in ("sözlük", "tdk", "kalp", "hesap 12*3", "sözlük " + "a" * 65, ""):
+        assert ask(query) is None, query
+
+    entry = {"ok": True, "word": "kalp", "origin": "Arapça ḳalb",
+             "meanings": [{"features": "isim, anatomi", "sense": "Organ.", "example": "Kalbim çarpıyor."}],
+             "compounds": ["kalp ağrısı"]}
+    markup = context.eval("dictionaryMarkup(" + json.dumps(entry) + ")")
+    assert '<div class="dict-word">kalp</div>' in markup
+    assert '<i class="dict-feat">isim, anatomi</i>' in markup and "Organ." in markup
+    assert "“Kalbim çarpıyor.”" in markup and "kalp ağrısı" in markup
+    assert "TDK Güncel Türkçe Sözlük" in markup and "canlı sorgu" in markup
+    hostile = dict(entry, word="<script>alert(1)</script>", compounds=["<img src=x>"])
+    poisoned = context.eval("dictionaryMarkup(" + json.dumps(hostile) + ")")
+    assert "<script>" not in poisoned and "&lt;script&gt;" in poisoned and "<img" not in poisoned
+    assert context.eval("dictionaryMarkup(null)") == ""
+    assert context.eval("dictionaryMarkup({ok: false})") == ""
+
+    # Wiring: the palette row, the card, its Escape, and close buttons
+    # that actually close (the shortcuts X used to be dead).
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "const wordQuery = dictionaryQuery(q);" in shell_js
+    assert "Dict.lookup(wordQuery)" in shell_js
+    assert 'if (event.key === "Escape" && !$("#dictcard").hidden)' in shell_js
+    assert '$("#dict-close").addEventListener("click", () => Dict.close());' in shell_js
+    assert '$("#shortcuts-close").addEventListener("click", () => setShortcutsOpen(false));' in shell_js
+    for element_id in ("dictcard", "dict-close", "dict-body"):
+        assert f'id="{element_id}"' in HTML, element_id
+    assert "sözlük kalp" in HTML, "the F1 card teaches the prefix"
+    assert ".modal.dict" in CSS
+
+
+def test_the_home_remote_draws_what_the_tools_reported() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function esc(", "\nfunction store("))
+    context.eval(section(JS_SOURCES["js/panels.js"], "/* ── remote: the home card's markup (pure)", "/* ── remote: runtime"))
+    draw = lambda now, wa=None: context.eval("remoteMarkup(" + json.dumps(now) + ", " + json.dumps(wa) + ")")
+
+    playing = draw({"ok": True, "data": {"running": True, "playing": True, "artist": "Duman", "track": "Bal\u0131k", "position": "0:12", "duration": "2:48", "liked": True, "volume_percent": 80}})
+    assert "Duman — Balık" in playing and "0:12 / 2:48" in playing
+    assert "⏸" in playing and 'title="Duraklat"' in playing
+    assert 'class="remote-btn liked"' in playing and 'value="80"' in playing
+    assert 'data-tool="spotify_sleep_timer"' in playing and '{&quot;minutes&quot;:30}' not in playing, "the args stay valid JSON in the attribute"
+    assert "remote-wa" not in playing, "no delegation, no delegation line"
+
+    paused = draw({"ok": True, "data": {"running": True, "playing": False, "track": "Bal\u0131k", "artists": ["Duman"]}})
+    assert "Duman — Balık" in paused and "▶" in paused and 'title="Çal"' in paused
+    assert "remote-volume" not in paused, "no volume read, no slider invented"
+
+    closed = draw({"ok": False, "status": "blocked", "message": "Spotify çalışmıyor. Önce uygulamayı aç.", "data": {"running": False}})
+    assert 'class="remote-off"' in closed and "Spotify çalışmıyor" in closed and "remote-btn" not in closed
+
+    busy = draw({"ok": True, "data": {"running": True, "playing": False}}, {"ok": True, "data": {"active": True, "contact": "Ahmet", "turns_taken": 2, "max_turns": 8}})
+    assert "Bir şey çalmıyor" in busy
+    assert "<b>Ahmet</b>" in busy and "(2/8)" in busy and 'data-tool="whatsapp_stop_delegation"' in busy
+    hostile = draw({"ok": True, "data": {"running": True, "playing": True, "artist": "<img src=x>", "track": "x"}})
+    assert "<img" not in hostile and "&lt;img" in hostile
+
+    glanced = context.eval("remoteMarkup(" + json.dumps({"ok": True, "data": {"running": True, "playing": False}})
+                            + ", null, " + json.dumps({"ok": True, "data": {"unread_chats": 3}}) + ")")
+    assert "3 sohbette okunmamış mesaj" in glanced
+    closed_wa = context.eval("remoteMarkup(" + json.dumps({"ok": True, "data": {"running": True, "playing": False}})
+                              + ", null, " + json.dumps({"ok": False, "status": "blocked", "message": "WhatsApp kapalı."}) + ")")
+    assert "okunmamış" not in closed_wa, "a closed WhatsApp draws no line"
+    panels_glance = JS_SOURCES["js/panels.js"]
+    assert '"whatsapp_read_chats", { limit: 20, launch: false }' in panels_glance
+
+    sleeping = draw({"ok": True, "data": {"running": True, "playing": True, "artist": "Duman", "track": "Bal\u0131k", "sleep_minutes_left": 23}})
+    assert "⏰ 23 dk · iptal" in sleeping and 'data-tool="spotify_cancel_sleep_timer"' in sleeping
+    assert 'data-tool="spotify_sleep_timer"' not in sleeping, "one timer button at a time"
+
+    queue_input = draw({"ok": True, "data": {"running": True, "playing": False}})
+    assert 'class="remote-queue"' in queue_input, "the request line ships with a live card"
+    assert "remote-queue" not in closed, "no Spotify, no request line"
+
+    # Wiring: the card, its start/stop with the screen, the bridge call.
+    assert 'id="home-remote"' in HTML
+    panels_js = JS_SOURCES["js/panels.js"]
+    assert '"spotify_queue_track", { query: wanted }' in panels_js
+    assert "queue.disabled = true;" in panels_js, "one request at a time"
+    assert 'if (id === "home") Remote.start(); else Remote.stop();' in JS_SOURCES["js/shell.js"]
+    assert 'call("run_remote_tool", "spotify_now_playing", {})' in JS_SOURCES["js/panels.js"]
+    assert ".remote-btn" in CSS
+
+
+def test_the_settings_screen_carries_the_vision_switch() -> None:
+    assert 'id="settings-vision-toggle"' in HTML
+    panels = JS_SOURCES["js/panels.js"]
+    assert '$("#settings-vision-toggle").checked = s.vision_enabled !== false;' in panels
+    assert 'vision_enabled: $("#settings-vision-toggle").checked,' in panels
+
+
+def test_the_clinical_calculators_apply_the_formulas_they_name() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/medcalc.js"], "const MEDCALC = [", "\n/* ── render"))
+    run = lambda calc, values: json.loads(context.eval(
+        "JSON.stringify(medcalcResult(MEDCALC.find((item) => item.id === " + json.dumps(calc) + "), " + json.dumps(values) + "))"))
+    assert run("bmi", {"weight": 70, "height": 175})["value"] == pytest.approx(22.9, abs=0.01)
+    assert run("bsa", {"height": 175, "weight": 70})["value"] == pytest.approx(1.84, abs=0.01)
+    assert run("ibw", {"height": 175, "sex": "male"})["value"] == pytest.approx(70.5, abs=0.1)
+    assert run("ibw", {"height": 175, "sex": "female"})["value"] == pytest.approx(66.0, abs=0.1)
+    assert run("crcl", {"age": 40, "weight": 70, "creatinine": 1.0, "sex": "male"})["value"] == pytest.approx(97.2, abs=0.1)
+    assert run("crcl", {"age": 40, "weight": 70, "creatinine": 1.0, "sex": "female"})["value"] == pytest.approx(82.6, abs=0.1)
+    assert run("aniongap", {"sodium": 140, "chloride": 104, "bicarbonate": 24})["value"] == 12
+    assert run("corrca", {"calcium": 8.0, "albumin": 2.0})["value"] == pytest.approx(9.6)
+    assert run("corrna", {"sodium": 130, "glucose": 600})["value"] == pytest.approx(138.0)
+    assert run("ldl", {"total": 200, "hdl": 50, "tg": 150})["value"] == 120
+    assert "geçerli değildir" in run("ldl", {"total": 200, "hdl": 50, "tg": 450})["warn"]
+    assert run("map", {"systolic": 120, "diastolic": 80})["value"] == 93
+    assert run("osm", {"sodium": 140, "glucose": 90, "bun": 14})["value"] == 290
+    assert run("maxhr", {"age": 20})["value"] == 200
+    assert run("units", {"value": 90, "what": "glucose"})["value"] == pytest.approx(5.0, abs=0.01)
+    assert run("units", {"value": 5, "what": "glucose_r"})["value"] == pytest.approx(90.08, abs=0.01)
+    assert run("units", {"value": 1.0, "what": "cr"})["value"] == pytest.approx(88.4)
+    # Missing inputs answer with silence, never zero.
+    assert run("bmi", {"weight": 70}) is None
+    assert run("crcl", {"age": 40, "weight": 70, "creatinine": 1.0}) is None
+
+
+def test_batch_one_surfaces_are_declared_and_wired() -> None:
+    for name in ("js/toolbox.js", "js/medcalc.js"):
+        assert name in shell.WEB_ASSETS, name
+    assert JS_FILES.index("js/toolbox.js") < JS_FILES.index("js/shell.js")
+    assert JS_FILES.index("js/medcalc.js") < JS_FILES.index("js/main.js")
+    for element_id in ("med-calc-grid", "med-term", "shortcuts", "shortcuts-close"):
+        assert f'id="{element_id}"' in HTML, element_id
+    assert 'data-view="calc"' in HTML and "Eğitim amaçlıdır" in HTML
+    tabs = section(JS_SOURCES["js/medical.js"], "const MED_TABS = [", "];")
+    assert '["calc", "Hesaplar",' in tabs
+    assert 'if (view === "calc") { MedCalc.render(); return; }' in JS_SOURCES["js/medical.js"]
+    # The palette's answer row and the F1 card exist, and every key the card
+    # names is a binding the shell actually has.
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "const math = paletteMath(q);" in shell_js
+    assert 'if (event.key === "F1")' in shell_js and "function setShortcutsOpen(" in shell_js
+    card = section(HTML, 'id="shortcuts"', "ARAŞTIRMA AÇILIŞI")
+    for key_markup, binding in (
+        ("<kbd>Ctrl</kbd>+<kbd>K</kbd>", 'key === "k"'),
+        ("<kbd>Ctrl</kbd>+<kbd>D</kbd>", 'key === "d"'),
+        ("<kbd>Ctrl</kbd>+<kbd>,</kbd>", 'event.key === ","'),
+        ("<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>", 'key === "b"'),
+        ("<kbd>F1</kbd>", 'event.key === "F1"'),
+    ):
+        assert key_markup in card, key_markup
+        assert binding in shell_js, binding
+    # The day's term renders only what the core sent and opens the lab.
+    medical_js = JS_SOURCES["js/medical.js"]
+    assert "this.state.term_of_day" in medical_js
+    assert "Lab.pendingSelect = termButton.dataset.term" in medical_js
+    assert "const pending = this.pendingSelect;" in medical_js
+
+
+def test_the_brief_carries_the_almanac_and_stays_silent_without_a_city() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function esc(", "\nfunction store("))
+    context.eval("function emptyState() { return '<empty>'; }")
+    context.eval(section(JS_SOURCES["js/panels.js"], "function homeBriefMarkup", "\nlet briefFetchedAt"))
+    markup = lambda brief: context.eval("homeBriefMarkup(" + json.dumps(brief) + ")")
+    full = markup({"ok": True, "date": "20 Eylül", "almanac": {
+        "weather": {"available": True, "city": "İstanbul", "temperature": 21, "label": "parçalı bulutlu", "high": 24, "low": 18},
+        "rates": {"available": True, "usd_try": 41.2, "eur_try": 44.8, "date": "2026-09-19"},
+    }})
+    assert "İstanbul 21° · parçalı bulutlu" in full and "↑24° ↓18°" in full
+    assert "1 $ = 41,2 ₺ · 1 € = 44,8 ₺" in full
+    assert "Gün doğumu" not in full, "no sun times in the payload, no sun row invented"
+    sunny = markup({"ok": True, "date": "21 Eylül", "almanac": {
+        "weather": {"available": True, "city": "İstanbul", "temperature": 21, "label": "açık",
+                     "high": 24, "low": 18, "sunrise": "06:52", "sunset": "19:24"},
+        "rates": {"available": False, "reason": "x"},
+    }})
+    assert "Gün doğumu 06:52 · batımı 19:24" in sunny
+    assert "Yarın" not in sunny, "no tomorrow in the payload, no tomorrow row"
+    tomorrow = markup({"ok": True, "date": "21 Eylül", "almanac": {
+        "weather": {"available": True, "city": "İstanbul", "temperature": 21, "label": "açık",
+                     "high": 24, "low": 18, "tomorrow_high": 18, "tomorrow_low": 12},
+        "rates": {"available": False, "reason": "x"},
+    }})
+    assert "Yarın" in tomorrow and "↑18° ↓12°" in tomorrow
+    # No city configured: no weather row and no nagging.
+    silent = markup({"ok": True, "almanac": {"weather": {"available": False, "reason": "Şehir ayarlanmadı."},
+                                             "rates": {"available": False, "reason": "Kur servisi yanıt vermedi (HTTP 503)."}}})
+    assert "Şehir ayarlanmadı" not in silent and "Kur servisi" not in silent
+    # A real failure is shown as the reason it is.
+    failed = markup({"ok": True, "almanac": {"weather": {"available": False, "reason": "Hava servisi yanıt vermedi (HTTP 503)."},
+                                             "rates": {"available": False, "reason": "x"}}})
+    assert "Hava servisi yanıt vermedi (HTTP 503)." in failed
+    # The settings card round-trips the city.
+    assert 'id="settings-city"' in HTML
+    panels = JS_SOURCES["js/panels.js"]
+    assert 'almanac_city: $("#settings-city").value.trim(),' in panels
+    assert '$("#settings-city").value = s.almanac_city || "";' in panels
+
+
+def test_batch_three_surfaces_are_wired_and_accents_stay_out_of_the_rooms() -> None:
+    # Read-aloud: only when the voice service exists, stripped by the bridge.
+    conversation = JS_SOURCES["js/conversation.js"]
+    assert "State.snapshot?.voice_available" in conversation and 'call("speak_text", text)' in conversation
+    assert "const Readaloud = {" in conversation and "bindReadaloud();" in JS_SOURCES["js/main.js"]
+    # Research export: the page composes, the bridge bounds and writes.
+    research = JS_SOURCES["js/research.js"]
+    assert "function researchReportMarkdown(" in research
+    assert 'call("save_markdown", picked.path' in research and 'id="res-export"' in research
+    assert "State.lastResearchReport = report;" in research
+    # Accents: tokens only, declared before the rooms so they never leak in.
+    tokens = (WEB / "css/tokens.css").read_text(encoding="utf-8")
+    for name in ("zumrut", "kehribar", "gul", "leylak"):
+        assert f'body[data-accent="{name}"]' in tokens, name
+        assert f'body.light[data-accent="{name}"]' in tokens, name
+    assert tokens.index('body[data-accent="zumrut"]') < tokens.index("body.academy, body.academy.light {")
+    assert 'id="settings-accent"' in HTML
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "function applyAccent(" in shell_js and 'store("nova.accent", accent)' in shell_js
+    assert 'applyAccent(store("nova.accent") || "")' in JS_SOURCES["js/main.js"]
+
+
+def test_the_research_report_markdown_says_only_what_the_report_says() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/research.js"], "const RESEARCH_UNCERTAINTY_TR = [", "\nconst RESEARCH_FRESHNESS_TR"))
+    context.eval(section(JS_SOURCES["js/research.js"], "const RESEARCH_FRESHNESS_TR = {", "\nfunction researchPreset"))
+    context.eval(section(JS_SOURCES["js/research.js"], "function researchReportMarkdown(", "\nasync function exportResearchReport"))
+    report = {
+        "question": "omuz anatomisi", "cache_hit": False, "created_at": "2026-09-20T18:00:00+00:00",
+        "claims": [{"text": "Bir bulgu.", "citations": ["S1"]}],
+        "sources": [{"id": "S1", "title": "Kaynak", "url": "https://example.org/a", "source": "web",
+                     "freshness": "current", "excerpt": "Alıntı.", "published_at": "2026-09-01T00:00:00+00:00"}],
+        "uncertainties": ["Source Hacker News was unavailable (HTTP 503)."],
+    }
+    markdown = context.eval("researchReportMarkdown(" + json.dumps(report) + ", " + json.dumps([{"id": "web", "label": "Web"}]) + ")")
+    assert markdown.splitlines()[0] == "# Araştırma raporu: omuz anatomisi"
+    assert "- Bir bulgu. _[S1]_" in markdown
+    assert "### S1 · Kaynak" in markdown and "- https://example.org/a" in markdown
+    assert "Web · güncel · 2026-09-01" in markdown and "> Alıntı." in markdown
+    assert "- Hacker News kaynağına ulaşılamadı (HTTP 503)." in markdown
+    assert "1 kaynak · canlı · 2026-09-20T18:00:00+00:00" in markdown
+
+
+def test_the_months_rhythm_draws_exactly_what_the_records_say() -> None:
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function esc(", "\nfunction store("))
+    rhythm = JS_SOURCES["js/medical.js"]
+    context.eval(rhythm[rhythm.index("function monthRhythmLevel("):])
+    assert [context.eval(f"monthRhythmLevel({m})") for m in (0, 1, 14, 15, 29, 30, 59, 60, 240)] == [0, 1, 1, 2, 2, 3, 3, 4, 4]
+    days = [{"date": f"2026-09-{index:02d}", "minutes": index % 3 and index or 0, "answers": index, "cards": 0} for index in range(1, 29)]
+    markup = context.eval("monthRhythmMarkup(" + json.dumps(days) + ")")
+    assert markup.count("mr-cell") == 28 and 'data-day="2026-09-28"' in markup
+    # Day 3 logged no minutes but 3 answers: the legend counts it active,
+    # so the cell wears the first shade instead of sitting empty.
+    assert 'class="mr-cell l1" title="2026-09-03' in markup
+    quiet = context.eval("monthRhythmMarkup(" + json.dumps(
+        [{"date": "2026-09-01", "minutes": 0, "answers": 0, "cards": 0}]) + ")")
+    assert 'class="mr-cell l0"' in quiet, "a truly empty day stays empty"
+    assert "2026-09-05 · 5 dk · 5 soru · 0 kart" in markup
+    assert "aktif gün" in markup and "dk</span>" in markup
+    assert context.eval("monthRhythmMarkup([])") == ""
+    # The page asks the same weekly_report action, just for 28 days.
+    assert 'this.request("weekly_report", { days: 28 })' in JS_SOURCES["js/medical.js"]
+    assert 'id="med-month"' in HTML
+
+
+def test_the_pulse_and_the_focus_noise_are_wired_honestly() -> None:
+    panels = JS_SOURCES["js/panels.js"]
+    assert "const Pulse = {" in panels and 'call("system_pulse")' in panels
+    assert 'State.screen !== "diagnostics"' in panels, "the pulse beats only on the diagnostics screen"
+    shell_js = JS_SOURCES["js/shell.js"]
+    assert "Pulse.start(); } else Pulse.stop();" in shell_js
+    assert 'id="diag-pulse"' in HTML
+    # The first beat shows a dash for CPU: null is a dash, never a zero.
+    quickjs = pytest.importorskip("quickjs")
+    context = quickjs.Context()
+    context.eval(section(JS_SOURCES["js/foundation.js"], "function esc(", "\nfunction store("))
+    context.eval(section(panels, "const Pulse = {", "\n/* ── diagnostics"))
+    markup = context.eval('Pulse.markup({ ok: true, cpu_percent: null, memory_percent: 41.2, memory_used_gib: 6.6, memory_total_gib: 16, disk_free_gib: 208.4 })')
+    assert "CPU —" in markup and "%41,2" in markup and "208,4 GB boş" in markup
+    assert context.eval("Pulse.markup({ ok: false })") == ""
+    # The focus noise says it is synthetic and stops before the voice stage.
+    assert "const FocusNoise = {" in shell_js and "sentezlenmiş kahverengi gürültü" in shell_js
+    assert "FocusNoise.playing) { FocusNoise.stop(); return; }" in shell_js

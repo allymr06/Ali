@@ -100,6 +100,7 @@ h1 { margin: 0.1rem 0 0; font-size: 1.35rem; font-weight: 500; }
 .msg .state.failed { color: var(--bad); }
 .composer { display: flex; align-items: flex-end; gap: 0.5rem; padding: 0.55rem 0.8rem calc(0.55rem + env(safe-area-inset-bottom) * 0); border-top: 1px solid var(--line-1); background: var(--bg-2); }
 .composer textarea { flex: 1; min-height: 44px; max-height: 40vh; resize: none; padding: 0.6rem 0.8rem; border-radius: var(--radius-3); border: 1px solid var(--line-2); background: var(--surface-2); line-height: 1.35; }
+.composer textarea:disabled { background: var(--surface-3); color: var(--ink-4); }
 .send { width: 46px; height: 46px; border-radius: 50%; border: none; background: var(--accent); color: var(--on-accent); font-size: 1.1rem; flex-shrink: 0; }
 .send:disabled { background: var(--surface-3); color: var(--ink-4); }
 
@@ -130,6 +131,8 @@ h1 { margin: 0.1rem 0 0; font-size: 1.35rem; font-weight: 500; }
 .task .status.failed, .task .status.cancelled { color: var(--bad); }
 .task .status.paused, .task .status.waiting_for_approval, .task .status.waiting_for_input { color: var(--warn); }
 .task .steps { margin: 0.4rem 0 0; padding-left: 1.1rem; color: var(--ink-3); font-size: 0.85rem; }
+.task .fail { display: block; margin: 0.35rem 0 0; color: var(--bad); font-size: 0.8rem; }
+.task .steps .fail { font-size: 0.78rem; margin-top: 0.1rem; }
 .task .actions { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
 .task .none { font-size: 0.78rem; color: var(--ink-4); margin-top: 0.4rem; }
 .approval-card { background: rgba(var(--warn-rgb), 0.08); border: 1px solid rgba(var(--warn-rgb), 0.4); border-radius: var(--radius-2); padding: 0.7rem 0.9rem; }

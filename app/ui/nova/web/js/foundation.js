@@ -43,7 +43,19 @@ function el(tag, className, text) {
 }
 
 function clamp(value, low, high) { return Math.max(low, Math.min(high, value)); }
-const lower = (v) => String(v ?? "").trim().toLocaleLowerCase("tr");
+/* One deterministic fold for every user-facing search on the page: the
+   Turkish I family (I, ı, İ, i) collapses to plain i BEFORE the generic
+   lowering, so PROVIDER finds provider and HATIRLATICI finds
+   Hatırlatıcı - and, each replacement being one-to-one, an index into
+   the folded string still points into the original (the <mark> path
+   depends on that). QuickJS has no locale API, so tests and the live
+   window fold identically. eventMatches in toolbox.js carries its own
+   copy for the ledger's isolated tests. */
+function searchFold(value) {
+  return String(value ?? "").replace(/[Iİ]/g, "i").replace(/ı/g, "i").toLowerCase();
+}
+
+const lower = (v) => searchFold(String(v ?? "").trim());
 
 /* ── Turkish vocabulary ───────────────────────────────────────────── */
 
@@ -145,6 +157,16 @@ const TOOL_LABELS = {
   spotify_open_search: ["Spotify araması açılıyor", "Spotify araması açıldı"],
   spotify_create_playlist: ["Spotify listesi oluşturuluyor", "Spotify listesi oluşturuldu"],
   spotify_listening_stats: ["Spotify istatistikleri okunuyor", "Spotify istatistikleri okundu"],
+  spotify_set_volume: ["Spotify sesi ayarlanıyor", "Spotify sesi ayarlandı"],
+  spotify_seek: ["Spotify parça sarılıyor", "Spotify parça sarıldı"],
+  spotify_shuffle: ["Spotify karıştırma ayarlanıyor", "Spotify karıştırma ayarlandı"],
+  spotify_repeat: ["Spotify yineleme ayarlanıyor", "Spotify yineleme ayarlandı"],
+  spotify_like_track: ["Spotify parça beğeniliyor", "Spotify parça beğenildi"],
+  spotify_library: ["Spotify kütüphanesi okunuyor", "Spotify kütüphanesi okundu"],
+  spotify_play_library: ["Spotify listesi açılıyor", "Spotify listesi çalıyor"],
+  spotify_queue_track: ["Spotify kuyruğa ekleniyor", "Spotify kuyruğa eklendi"],
+  spotify_sleep_timer: ["Spotify uyku zamanlayıcısı kuruluyor", "Spotify uyku zamanlayıcısı kuruldu"],
+  spotify_cancel_sleep_timer: ["Spotify uyku zamanlayıcısı iptal ediliyor", "Spotify uyku zamanlayıcısı iptal edildi"],
   whatsapp_send_message: ["WhatsApp mesajı gönderiliyor", "WhatsApp mesajı gönderildi"],
   whatsapp_open_chat: ["WhatsApp sohbeti açılıyor", "WhatsApp sohbeti açıldı"],
   whatsapp_read_chats: ["WhatsApp sohbetleri okunuyor", "WhatsApp sohbetleri okundu"],
@@ -413,10 +435,13 @@ const State = {
   voiceLevel: 0,
   core: "offline",          // see Presence in presence.js
   pendingEl: null,          // streaming assistant message
+  watchedTurn: null,        // turn a busy push opened here, not this page
   approvals: [],            // session approval log
   diagnosticEvents: [],     // live ledger tail
   requestDurations: [],     // real per-request seconds from request.completed
   lastStatus: null,         // last system_status() answer
+  lastResearchReport: null, // the report on screen, for the .md export
+  examCountdown: null,      // nearest exam from the daily brief, as the topbar chip shows it
   /* Motion is the interface's language, so it defaults ON regardless of
      the OS-wide animation toggle; the in-app switch persists an explicit
      opt-out. */
@@ -513,5 +538,53 @@ function confirmDialog({ title, body, confirmLabel = "ONAYLA",
     veil.hidden = false;
     Motion.rise(veil.querySelector(".modal"), { y: 14, scale: 0.97, duration: Motion.panel });
     cancel.focus();   // the safe choice is the default focus
+  });
+}
+
+/* confirmDialog's sibling with one text field: resolves the trimmed
+   value on confirm or Enter, null on cancel or Escape - so a caller
+   can tell "clear it" (empty string) from "leave it" (null). */
+function promptDialog({ title, body = "", value = "", placeholder = "",
+                        confirmLabel = "KAYDET", cancelLabel = "VAZGEÇ",
+                        maxLength = 80, multiline = false, rows = 8 }) {
+  return new Promise((resolve) => {
+    const veil = $("#confirm");
+    const ok = $("#confirm-ok"), cancel = $("#confirm-cancel");
+    const field = multiline ? $("#confirm-area") : $("#confirm-input");
+    const previous = document.activeElement;
+    $("#confirm-title").textContent = title;
+    $("#confirm-text").textContent = body;
+    ok.textContent = confirmLabel;
+    cancel.textContent = cancelLabel;
+    ok.className = "btn btn-primary";
+    field.value = value;
+    field.placeholder = placeholder;
+    if (multiline) field.rows = rows;
+    else field.maxLength = maxLength;
+    field.hidden = false;
+    const finish = (result) => {
+      ok.onclick = null; cancel.onclick = null; field.onkeydown = null;
+      window.removeEventListener("keydown", onKey, true);
+      field.hidden = true; field.value = "";
+      veil.hidden = true;
+      confirmOpen = false;
+      if (previous && typeof previous.focus === "function" && document.contains(previous)) previous.focus();
+      resolve(result);
+    };
+    const onKey = (event) => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); finish(null); }
+    };
+    field.onkeydown = (event) => {
+      // A one-line field confirms on Enter; a textarea keeps it for newlines.
+      if (!multiline && event.key === "Enter") { event.preventDefault(); finish(field.value.trim()); }
+    };
+    ok.onclick = () => finish(field.value.trim());
+    cancel.onclick = () => finish(null);
+    window.addEventListener("keydown", onKey, true);
+    confirmOpen = true;
+    veil.hidden = false;
+    Motion.rise(veil.querySelector(".modal"), { y: 14, scale: 0.97, duration: Motion.panel });
+    field.focus();
+    field.select();
   });
 }

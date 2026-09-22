@@ -7,14 +7,19 @@
 
 async function main() {
   if (store("nova.theme") === "light") document.body.classList.add("light");
+  applyAccent(store("nova.accent") || "");
   document.body.classList.toggle("reduced-motion", State.reducedMotion);
 
   buildRail();
   bindShell();
   bindConversation();
+  bindReadaloud();
+  bindChatFind();
   bindActivity();
   bindPanels();
   bindMedical();
+  bindAcademy();
+  bindResearch();
   Engine.staticFrame = State.reducedMotion;
   Engine.init();
 

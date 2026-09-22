@@ -158,12 +158,22 @@ const Cards = {
       <div class="mb-meta">
         <span class="chip" title="Kaynağı">${esc(card.provenance)}</span>
         <span class="spacer"></span>
+        ${State.snapshot?.voice_available ? '<button type="button" class="chip" data-card-speak title="Kartı sesli okur; cevap açıksa onu da">Seslendir</button>' : ""}
         <button type="button" class="chip" data-card-suspend="${esc(card.card_id)}">Askıya al</button>
       </div>
     </div>`;
     if (card.has_image) this.loadImage(host, card.card_id);
     const reveal = host.querySelector("[data-card-reveal]");
     if (reveal) reveal.addEventListener("click", () => { this.revealed = true; this.renderReview(); });
+    const speak = host.querySelector("[data-card-speak]");
+    if (speak) speak.addEventListener("click", async () => {
+      Speech.unlock(); // inside the gesture, before the slow synthesis
+      // The spoken text mirrors what is on screen: never the hidden back.
+      const spoken = this.revealed ? `${card.front}. Cevap: ${card.back}` : card.front;
+      const result = await call("speak_text", spoken);
+      if (result.ok === false || !result.audio) { toast(result.error || "Seslendirilemedi.", true); return; }
+      Speech.play(result.audio);
+    });
     $$("[data-grade]", host).forEach((node) => node.addEventListener("click", () => this.answer(node.dataset.grade)));
     $$("[data-card-suspend]", host).forEach((node) => node.addEventListener("click", async () => {
       const result = await this.request("cards_suspend", { card_id: node.dataset.cardSuspend });
@@ -542,7 +552,7 @@ const Study = {
     const suggest = slot.querySelector("[data-prereq-suggest]");
     if (suggest) suggest.addEventListener("click", async () => {
       const typed = ((query && query.value) || "").trim();
-      const match = matches.find((item) => item.name.toLocaleLowerCase("tr") === typed.toLocaleLowerCase("tr")) || (matches.length === 1 ? matches[0] : null);
+      const match = matches.find((item) => searchFold(item.name) === searchFold(typed)) || (matches.length === 1 ? matches[0] : null);
       if (!match) { toast("Listeden bir kavram seç.", true); return; }
       const proposed = await this.request("prerequisite_suggest", { concept_id: conceptId, requires: match.concept_id, provenance: "student", note: "Öğrenci Anlama ekranından önerdi." });
       if (proposed.ok === false) { toast(proposed.error || "Öneri kaydedilemedi.", true); return; }
@@ -1122,7 +1132,7 @@ const Study = {
           <button type="button" class="btn btn-ghost small" data-plan-act="delete">Planı sil</button></div></div>
       <div class="panel med-card"><div class="panel-title"><span class="kicker">Bugün</span><span class="faint">${esc(studyDate(today.today.date))}</span></div>${this.todayMarkup(today.today)}</div>
       <div class="panel med-card"><div class="panel-title"><span class="kicker">Kapsam</span><span class="faint">${plan.coverage ? plan.coverage.total : 0} konu</span></div>${this.coverageMarkup(plan.coverage)}
-        ${(plan.uncovered || []).length ? `<h4 class="study-h4">Açıkta kalanlar</h4>${plan.uncovered.map((item) => `<div class="med-row"><span class="med-row-title">${esc(item.title)}</span><span class="med-row-side">≈ ${studyMinutes(item.estimate_minutes)}</span><span class="med-row-meta">${esc(item.reason)}</span></div>`).join("")}` : ""}</div>
+        ${(plan.uncovered || []).length ? `<h4 class="study-h4">Açıkta kalanlar</h4>${plan.uncovered_note ? `<p class="med-review-note warn-text">${esc(plan.uncovered_note)}</p>` : ""}${plan.uncovered.map((item) => `<div class="med-row"><span class="med-row-title">${esc(item.title)}</span><span class="med-row-side">≈ ${studyMinutes(item.estimate_minutes)}</span><span class="med-row-meta">${esc(item.reason)}</span></div>`).join("")}` : ""}</div>
       <div class="panel med-card"><div class="panel-title"><span class="kicker">Bu hafta</span></div>${this.daysMarkup(plan.days)}</div>
       ${(plan.history || []).length ? `<div class="panel med-card"><div class="panel-title"><span class="kicker">Plan geçmişi</span></div>${plan.history.slice(-6).reverse().map((item) => `<div class="med-row"><span class="med-row-sub">${esc(String(item.at || "").slice(0, 16).replace("T", " "))} · ${esc(item.note)}</span></div>`).join("")}</div>` : ""}`;
     this.bindPlanDetail(host);

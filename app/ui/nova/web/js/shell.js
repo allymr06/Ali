@@ -45,6 +45,14 @@ const ICONS = {
   bell: '<path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 1.5H5z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   medical: '<path d="M12 3.2 5 6v5.4c0 4.4 2.9 7.5 7 9.4 4.1-1.9 7-5 7-9.4V6z"/><path d="M12 8.6v5.6M9.2 11.4h5.6"/>',
   alarm: '<circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.5 1.5M4.5 6.5 7 4M19.5 6.5 17 4"/>',
+  sound: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.8a7.6 7.6 0 0 1 0 10.4"/>',
+  mute: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
+  sun: '<circle cx="12" cy="12" r="3.8"/><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M5.3 18.7 7 17M17 7l1.7-1.7"/>',
+  globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.6 2.6 14.4 0 17M12 3.5c-2.6 2.6-2.6 14.4 0 17"/>',
+  repo: '<circle cx="7" cy="5.5" r="2"/><circle cx="7" cy="18.5" r="2"/><circle cx="17" cy="8.5" r="2"/><path d="M7 7.5v9M17 10.5c0 3-3 4-6 4.5s-4 1.5-4 2.5"/>',
+  paper: '<path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20V4a.5.5 0 0 1 .5-.5z"/><path d="M14 3.5v4h4M9 12h6M9 15.5h6"/>',
+  discuss: '<path d="M4 5.5h11v8H8l-4 3z"/><path d="M15 9.5h5v8h-3l-3 2.5v-2.5h-2"/>',
+  book: '<path d="M4.5 5.5a2 2 0 0 1 2-2H12v16H6.5a2 2 0 0 0-2 2z"/><path d="M19.5 5.5a2 2 0 0 0-2-2H12v16h5.5a2 2 0 0 1 2 2z"/>',
 };
 function icon(name) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
@@ -102,6 +110,10 @@ function showScreen(id, { focus = true } = {}) {
 
   const next = $(`.screen[data-screen="${id}"]`);
   $$(".screen").forEach((s) => s.classList.toggle("active", s === next));
+  // The academy is a room of its own: entering it takes the rail and the
+  // top bar away and plays its opening; leaving it gives the window back.
+  if (id === "medical") Academy.enter(); else Academy.leave();
+  if (id === "research") ResearchRoom.enter(); else ResearchRoom.leave();
   if (Motion.allowed()) {
     next.animate(
       [{ opacity: 0, transform: "translateY(10px) scale(0.995)" },
@@ -111,7 +123,8 @@ function showScreen(id, { focus = true } = {}) {
   }
   if (id === "chat") { scrollChat({ force: true, instant: true }); if (focus) $("#chat-input").focus(); }
   if (id === "home" && focus) $("#quick-input").focus();
-  if (id === "diagnostics") Diagnostics.refresh({ quiet: true });
+  if (id === "diagnostics") { Diagnostics.refresh({ quiet: true }); Pulse.start(); } else Pulse.stop();
+  if (id === "home") Remote.start(); else Remote.stop();
   if (id === "memory") Memory.load();
   if (id === "integrations") Trust.refresh();
   if (id === "tasks") { renderTasks(State.snapshot?.tasks || []); Routines.load(); Reminders.load(); }
@@ -261,17 +274,38 @@ const Notify = {
     $("#notify-clear").disabled = items.length === 0;
     if (!items.length) {
       host.innerHTML = '<div class="notify-empty">Bildirim yok. Hatırlatıcılar, sen bakmazken gelen yanıtlar ve onay istekleri, tanılama uyarıları burada birikir.</div>';
+      $("#notify-filter").innerHTML = "";
+      this.filter = null;
       return;
     }
-    host.innerHTML = items.map((item) => `
+    // Kind chips are a view, never a mutation: read-all and clear still
+    // reach everything. One kind alone earns no chip row.
+    const kinds = notifKinds(items);
+    if (this.filter && !kinds.some((k) => k.kind === this.filter)) this.filter = null;
+    const filterHost = $("#notify-filter");
+    if (kinds.length < 2) {
+      filterHost.innerHTML = "";
+      this.filter = null;
+    } else {
+      const chip = (label, kind, count, active) => `<button type="button" class="chip ${active ? "on" : ""}" data-kind="${esc(kind)}">${esc(label)} ${count}</button>`;
+      filterHost.innerHTML = chip("Tümü", "", items.length, !this.filter)
+        + kinds.map((k) => chip(NOTIFICATION_KIND_TR[k.kind] || k.kind, k.kind, k.count, this.filter === k.kind)).join("");
+      $$("#notify-filter .chip").forEach((button) => button.addEventListener("click", () => {
+        this.filter = button.dataset.kind || null;
+        this.render();
+      }));
+    }
+    const visible = this.filter ? items.filter((item) => item.kind === this.filter) : items;
+    host.innerHTML = visible.map((item) => `
       <div class="notify-item ${item.read ? "" : "unread"} ${esc(item.severity)}" data-id="${esc(item.notification_id)}" role="button" tabindex="0">
         <span class="notify-icon" title="${esc(NOTIFICATION_KIND_TR[item.kind] || item.kind)}">${icon(NOTIFICATION_KIND_ICON[item.kind] || "spark")}</span>
-        <span><div class="notify-title">${esc(item.title)}</div><div class="notify-body">${esc(item.body)}</div></span>
-        <span class="notify-meta"><span class="notify-time" title="${esc(fmtTime(item.updated_at))}">${esc(fmtRelative(item.updated_at))}</span>${item.count > 1 ? `<span class="notify-count">×${item.count}</span>` : ""}<button type="button" class="icon-btn small notify-dismiss" data-act="dismiss" title="Kaldır">${icon("close")}</button></span>
+        <span><div class="notify-title">${esc(item.title)}${item.data && item.data.quiet_held ? '<span class="notify-quiet" title="Sessiz saatlerde geldi; Windows bildirimi gösterilmedi">🌙</span>' : ""}</div><div class="notify-body">${esc(item.body)}</div></span>
+        <span class="notify-meta"><span class="notify-time" title="${esc(fmtTime(item.updated_at))}">${esc(fmtRelative(item.updated_at))}</span>${item.count > 1 ? `<span class="notify-count">×${item.count}</span>` : ""}${item.kind === "reminder" ? `<button type="button" class="icon-btn small notify-rearm" data-act="rearm" title="Aynı metinle 10 dakika sonraya yeni hatırlatıcı kur">⏰</button>` : ""}<button type="button" class="icon-btn small notify-dismiss" data-act="dismiss" title="Kaldır">${icon("close")}</button></span>
       </div>`).join("");
     $$(".notify-item", host).forEach((row) => {
       const id = row.dataset.id;
       row.addEventListener("click", (event) => {
+        if (event.target.closest("[data-act='rearm']")) { event.stopPropagation(); this.rearm(id); return; }
         if (event.target.closest("[data-act='dismiss']")) { event.stopPropagation(); this.dismiss(id); return; }
         this.activate(id);
       });
@@ -280,6 +314,16 @@ const Notify = {
         else if (event.key === "Delete") { event.preventDefault(); this.dismiss(id); }
       });
     });
+  },
+
+  /* A delivered reminder is spent; the bell's ⏰ arms a NEW one with
+     the same text, ten minutes out - the button's title says exactly
+     that, and the entry itself stays as the durable record. */
+  async rearm(id) {
+    const item = State.notifications.find((n) => n.notification_id === id);
+    if (!item || item.kind !== "reminder") return;
+    const done = await call("create_reminder", item.body, "+10");
+    toast(done.ok ? (done.message || "Hatırlatıcı 10 dakika sonraya kuruldu.") : (done.error || "Kurulamadı."), done.ok ? "ok" : true);
   },
 
   async activate(id) {
@@ -425,8 +469,14 @@ const Palette = {
       list.push({ group: "tıp", icon: "medical", label: "Beni sına (seçili konudan)", keywords: "quiz sina soru sor", run: () => Medical.quickAsk("bu konudan beni sına") });
     }
     list.push({ group: "eylem", icon: "chevron", label: State.railCollapsed ? "Gezinmeyi genişlet" : "Gezinmeyi daralt", keywords: "menü rail", run: () => setRailCollapsed(!State.railCollapsed) });
+    list.push({ group: "eylem", icon: "palette", label: "Klavye kısayolları", keywords: "kisayol tuş klavye yardım f1", run: () => setShortcutsOpen(true) });
+    // Two honest toys: the result is random and says so, nothing more.
+    list.push({ group: "eylem", icon: "spark", label: "Zar at", keywords: "zar rastgele oyun dice", run: () => toast(`Zar: ${1 + Math.floor(Math.random() * 6)} 🎲 (rastgele)`, "ok") });
+    list.push({ group: "eylem", icon: "spark", label: "Kar yağdır", keywords: "kar kış snow eğlence", run: () => Snow.fall() });
+    list.push({ group: "eylem", icon: "spark", label: "Yazı tura at", keywords: "yazı tura para rastgele coin", run: () => toast(`${Math.random() < 0.5 ? "Yazı" : "Tura"} 🪙 (rastgele)`, "ok") });
     list.push({ group: "eylem", icon: "refresh", label: "Sistem sağlığını denetle", keywords: "tanılama health", run: () => { showScreen("diagnostics"); Diagnostics.refresh(); } });
     list.push({ group: "eylem", icon: "alarm", label: Focus.timer || Focus.endsAt ? "Odak sayacını durdur" : "25 dk odak sayacı", keywords: "odak pomodoro sayaç focus", run: () => Focus.toggle() });
+    list.push({ group: "eylem", icon: "voice", label: FocusNoise.playing ? "Odak sesini kapat" : "Odak sesi (sentetik gürültü)", keywords: "gürültü ses odak yağmur noise", run: () => FocusNoise.toggle() });
     list.push({ group: "eylem", icon: "alarm", label: "Hatırlatıcı kur", keywords: "hatırlat alarm kur reminder", run: () => { showScreen("tasks"); setTimeout(() => $("#reminder-text")?.focus(), 350); } });
     list.push({ group: "eylem", icon: "send", label: "Konuşmayı dışa aktar (.md)", keywords: "export kaydet markdown konuşma", run: () => { showScreen("chat"); $("#chat-export")?.click(); } });
     list.push({ group: "eylem", icon: "archive", label: "Durum yedeği al", keywords: "yedek backup güvenlik kopya", run: () => runStateBackup() });
@@ -438,7 +488,41 @@ const Palette = {
       const score = q ? Math.max(fuzzyScore(q, item.label) ?? -1, (fuzzyScore(q, item.keywords) ?? -1) * 0.6) : 0;
       return { item, score };
     }).filter(({ score }) => !q || score >= 0).sort((a, b) => b.score - a.score).slice(0, 9).map(({ item }) => item);
+    if (!q) {
+      const recent = paletteRecentParse(store("nova.palette.recent"));
+      if (recent.length) {
+        scored.push({
+          group: "son", icon: "close", label: "Son komutları unut (bu cihazda)",
+          keywords: "", run: () => { store("nova.palette.recent", "[]"); toast("Son komutlar unutuldu.", "ok"); },
+        });
+        [...recent].reverse().forEach((command) => scored.unshift({
+          group: "son", icon: "send", label: `Tekrar gönder: “${command}”`,
+          keywords: "", run: () => { showScreen("chat"); sendCommand(command); },
+        }));
+      }
+    }
     if (q) {
+      const math = paletteMath(q);
+      if (math) scored.unshift({ group: "hesap", icon: "tools", label: math.display, keywords: "", run: () => toast(math.display, "ok") });
+      const wordQuery = dictionaryQuery(q);
+      if (wordQuery) scored.unshift({ group: "sözlük", icon: "book", label: `Sözlükte ara: “${wordQuery}” (TDK)`, keywords: "", run: () => Dict.lookup(wordQuery) });
+      const note = noteQuery(q);
+      if (note) scored.unshift({ group: "hafıza", icon: "spark", label: `Hafızaya not: “${note}”`, keywords: "", run: async () => {
+        const done = await call("remember_note", note);
+        toast(done.message || done.error, done.ok ? "ok" : true);
+      } });
+      const money = paletteCurrency(q);
+      if (money) scored.unshift({ group: "kur", icon: "tools", label: `Kura çevir: ${String(money.amount).replace(".", ",")} ${money.from} → ${money.to}`, keywords: "", run: async () => {
+        const result = await call("convert_currency", money.amount, money.from, money.to);
+        toast(result.display || result.error || "Çevrilemedi.", result.ok === false);
+      } });
+      const remind = paletteReminder(q);
+      if (remind) scored.unshift({ group: "hatırlat", icon: "alarm", label: `Hatırlatıcı kur: “${remind.text}” (${remind.label})`, keywords: "", run: async () => {
+        const result = await call("create_reminder", remind.text, remind.when);
+        toast(result.ok === false ? (result.error || "Hatırlatıcı kurulamadı.") : (result.message || `Hatırlatıcı kuruldu (${remind.label}).`), result.ok === false);
+      } });
+      const focusMinutes = q.match(/^odak\s+([0-9]{1,3})$/i);
+      if (focusMinutes) scored.unshift({ group: "odak", icon: "alarm", label: `${focusMinutes[1]} dk odak sayacı başlat`, keywords: "", run: () => Focus.start(Number(focusMinutes[1])) });
       scored.push({ group: "sor", icon: "spark", label: `JARVIS'e sor: “${q}”`, run: () => { showScreen("chat"); sendCommand(q); } });
       if (State.snapshot?.research_available) scored.push({ group: "araştır", icon: "research", label: `Araştır: “${q}”`, run: () => { showScreen("research"); $("#research-input").value = q; $("#research-form").requestSubmit(); } });
       if (State.snapshot?.vision_available) scored.push({ group: "görüş", icon: "vision", label: `Ekranı incele: “${q}”`, run: () => { showScreen("vision"); $("#vision-input").value = q; $("#vision-form").requestSubmit(); } });
@@ -511,10 +595,29 @@ function applyCompact(compact) {
   document.body.classList.toggle("compact", compact);
   $("#mini").hidden = !compact;
   $("#compact-btn").classList.toggle("active", compact);
-  if (compact) { Palette.hide(); renderMiniLine(); $("#mini-input").focus(); }
+  if (compact) { Palette.hide(); renderMiniLine(); MiniClock.start(); $("#mini-input").focus(); }
+  else MiniClock.stop();
   requestAnimationFrame(() => Engine.resize());
   Engine.wake();
 }
+
+/* The mini window is a glanceable corner; a corner wants a clock. */
+const MiniClock = {
+  timer: 0,
+  tick() {
+    const host = $("#mini-clock");
+    if (host) host.textContent = fmtClock(new Date());
+  },
+  start() {
+    this.stop();
+    this.tick();
+    this.timer = setInterval(() => this.tick(), 30000);
+  },
+  stop() {
+    clearInterval(this.timer);
+    this.timer = 0;
+  },
+};
 
 function renderMiniLine(text) {
   const line = $("#mini-line");
@@ -606,6 +709,25 @@ const Focus = {
       toast(`Odak durduruldu (${spent} dk geçmişti).`);
     }
     this.endsAt = 0;
+    if (finished) this.offerToLog(this.minutes);
+  },
+
+  /* A finished session may have been study - only Ali knows, so ask.
+     Short sits and a closed Academy are not worth a dialog. */
+  async offerToLog(minutes) {
+    if (!minutes || minutes < 5 || !State.medical?.available || typeof Medical === "undefined") return;
+    const wanted = await confirmDialog({
+      title: "Akademi günlüğüne yazılsın mı?",
+      body: `${minutes} dakikalık odak seansı bitti. Bu süre Tıp Akademisi çalışma günlüğüne (haftalık özete ve ay ritmine) işlensin mi?`,
+      confirmLabel: "İŞLE",
+    });
+    if (!wanted) return;
+    const result = await Medical.request("plan_log_study", { activity: "focus", minutes });
+    if (result && result.ok !== false && result.log) {
+      toast(`${minutes} dk çalışma günlüğüne işlendi.`, "ok");
+    } else {
+      toast((result && result.error) || "Günlüğe işlenemedi.", true);
+    }
   },
 
   tick() {
@@ -654,6 +776,99 @@ const Focus = {
   },
 };
 
+const ACCENTS = ["", "zumrut", "kehribar", "gul", "leylak"];
+
+function applyAccent(name) {
+  const accent = ACCENTS.includes(name) ? name : "";
+  if (accent) document.body.dataset.accent = accent;
+  else delete document.body.dataset.accent;
+  store("nova.accent", accent);
+  const picker = $("#settings-accent");
+  if (picker && picker.value !== accent) picker.value = accent;
+}
+
+/* ── fifteen seconds of snow: pure whimsy, honest about motion ───── */
+
+const Snow = {
+  fall() {
+    if (State.reducedMotion) { toast("Hareket azaltılmışken kar yağmaz.", true); return; }
+    if (document.querySelector(".snowfall")) return; // one sky at a time
+    const layer = el("div", "snowfall");
+    layer.setAttribute("aria-hidden", "true");
+    let flakes = "";
+    for (let index = 0; index < 42; index += 1) {
+      const left = Math.random() * 100;
+      const delay = Math.random() * 5;
+      const fall = 6 + Math.random() * 6;
+      const size = 0.5 + Math.random() * 0.7;
+      flakes += `<span style="left:${left.toFixed(1)}%;animation-delay:${delay.toFixed(2)}s;animation-duration:${fall.toFixed(2)}s;font-size:${size.toFixed(2)}rem">❄</span>`;
+    }
+    layer.innerHTML = flakes;
+    document.body.appendChild(layer);
+    setTimeout(() => layer.remove(), 15000);
+  },
+};
+
+function setShortcutsOpen(open) {
+  const veil = $("#shortcuts");
+  if (!veil) return;
+  veil.hidden = !open;
+}
+
+/* ── the dictionary card: one live TDK entry, never rephrased ────── */
+
+const Dict = {
+  async lookup(word) {
+    const veil = $("#dictcard");
+    if (!veil) return;
+    if (!bridgeReady()) { toast("Sözlük masaüstü köprüsünü ister.", true); return; }
+    veil.hidden = false;
+    $("#dict-body").innerHTML = '<div class="dict-wait">Sözlükte aranıyor…</div>';
+    const result = await call("define_word", word);
+    if (veil.hidden) return; // closed while the lookup was in flight
+    if (!result || result.ok === false) {
+      $("#dict-body").innerHTML = `<div class="dict-miss">${esc((result && result.error) || "Sözlüğe ulaşılamadı.")}</div>`;
+      return;
+    }
+    $("#dict-body").innerHTML = dictionaryMarkup(result);
+    this.attachActions(result);
+  },
+
+  /* The card's two hands: hear the entry, keep the entry. The markup
+     stays pure; the buttons are the runtime's. */
+  attachActions(entry) {
+    const body = $("#dict-body");
+    if (!body) return;
+    const bar = el("div", "dict-actions");
+    const spoken = () => {
+      const senses = (entry.meanings || []).map((meaning) => meaning.sense).filter(Boolean);
+      return `${entry.word}. ${senses.slice(0, 2).join(" ")}`;
+    };
+    let markup = "";
+    if (State.snapshot?.voice_available) {
+      markup += '<button type="button" class="btn btn-ghost small" data-dict-speak>Seslendir</button>';
+    }
+    markup += '<button type="button" class="btn btn-ghost small" data-dict-copy>Kopyala</button>';
+    bar.innerHTML = markup;
+    body.appendChild(bar);
+    bar.querySelector("[data-dict-speak]")?.addEventListener("click", async () => {
+      Speech.unlock(); // inside the gesture, before the slow synthesis
+      const result = await call("speak_text", spoken());
+      if (result.ok === false || !result.audio) { toast(result.error || "Seslendirilemedi.", true); return; }
+      Speech.play(result.audio);
+    });
+    bar.querySelector("[data-dict-copy]")?.addEventListener("click", () => {
+      const clone = body.cloneNode(true);
+      clone.querySelector(".dict-actions")?.remove();
+      copyTextToClipboard(clone.innerText);
+    });
+  },
+  close() {
+    const veil = $("#dictcard");
+    if (veil) veil.hidden = true;
+  },
+};
+
 function bindKeyboard() {
   addEventListener("keydown", (event) => {
     if (!State.booted) return;
@@ -666,6 +881,9 @@ function bindKeyboard() {
       else if (event.ctrlKey && key === "k") { event.preventDefault(); Palette.hide(); }
       return;
     }
+    if (event.key === "F1") { event.preventDefault(); setShortcutsOpen($("#shortcuts").hidden); return; }
+    if (event.key === "Escape" && !$("#shortcuts").hidden) { event.preventDefault(); setShortcutsOpen(false); return; }
+    if (event.key === "Escape" && !$("#dictcard").hidden) { event.preventDefault(); Dict.close(); return; }
     if (event.ctrlKey && key === "k") { event.preventDefault(); Palette.show(); return; }
     if (event.altKey && !event.ctrlKey && !event.shiftKey) {
       const digit = event.key === "0" ? 9 : parseInt(event.key, 10) - 1;
@@ -704,6 +922,7 @@ function bindKeyboard() {
     }
     if (event.ctrlKey && event.shiftKey && key === "b") { event.preventDefault(); setRailCollapsed(!State.railCollapsed); }
     if (event.key === "Escape" && !activeApproval && !confirmOpen) {
+      if (FocusNoise.playing) { FocusNoise.stop(); return; }
       if (VoiceStage.active) toggleVoice();
       else if (State.compact) setCompact(false);
       else showScreen("home");
@@ -837,6 +1056,12 @@ function bindShell() {
   $("#pause-btn").innerHTML = icon("pause");
   $("#pause-btn").addEventListener("click", togglePause);
   $("#palette").addEventListener("click", (event) => { if (event.target === $("#palette")) Palette.hide(); });
+  $("#shortcuts-close").innerHTML = icon("close");
+  $("#shortcuts-close").addEventListener("click", () => setShortcutsOpen(false));
+  $("#shortcuts").addEventListener("click", (event) => { if (event.target === $("#shortcuts")) setShortcutsOpen(false); });
+  $("#dict-close").innerHTML = icon("close");
+  $("#dict-close").addEventListener("click", () => Dict.close());
+  $("#dictcard").addEventListener("click", (event) => { if (event.target === $("#dictcard")) Dict.close(); });
   $("#palette-input").addEventListener("input", () => { Palette.selected = 0; Palette.render(); });
   $("#mini-expand").innerHTML = icon("expand");
   $("#mini-expand").addEventListener("click", () => setCompact(false));
@@ -854,3 +1079,51 @@ function bindShell() {
   startClock();
   bindKeyboard();
 }
+
+/* ── focus noise ──────────────────────────────────────────────────────
+   Four seconds of brown noise, synthesized once and looped through a
+   low-pass filter: a steady rain-like bed for studying. Honest about
+   what it is - the palette entry says synthetic - and it never starts
+   by itself, never persists, and stops the moment it is toggled or the
+   voice stage opens. */
+const FocusNoise = {
+  playing: false,
+  source: null,
+  gain: null,
+
+  toggle() {
+    if (this.playing) { this.stop(); toast("Odak sesi kapandı.", "ok"); return; }
+    const context = RoomAudio.ensure();
+    if (!context) { toast("Ses aygıtı yok.", true); return; }
+    const seconds = 4;
+    const buffer = context.createBuffer(1, context.sampleRate * seconds, context.sampleRate);
+    const channel = buffer.getChannelData(0);
+    let last = 0;
+    for (let index = 0; index < channel.length; index += 1) {
+      const white = Math.random() * 2 - 1;
+      last = (last + 0.02 * white) / 1.02;   // brown noise: integrated white
+      channel[index] = last * 3.5;
+    }
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    const filter = context.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 500;
+    const gain = context.createGain();
+    gain.gain.value = 0.12;
+    source.connect(filter).connect(gain).connect(context.destination);
+    source.start();
+    this.source = source;
+    this.gain = gain;
+    this.playing = true;
+    toast("Odak sesi açık: sentezlenmiş kahverengi gürültü.", "ok");
+  },
+
+  stop() {
+    if (this.source) { try { this.source.stop(); } catch (_error) { /* already stopped */ } }
+    this.source = null;
+    this.gain = null;
+    this.playing = false;
+  },
+};

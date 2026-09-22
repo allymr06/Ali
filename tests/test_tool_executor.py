@@ -344,6 +344,27 @@ def test_executor_rejects_wrong_argument_type() -> None:
     assert called is False
 
 
+def test_executor_accepts_an_int_where_a_float_is_annotated() -> None:
+    """JSON has no 100.0: a whole number must satisfy a float parameter."""
+    executor = ToolExecutor()
+    executor.register(
+        ToolDefinition(name="volume", description="Typed tool"),
+        lambda percent: percent * 2,
+    )
+    # A handler annotated with float, as the media tools are.
+    def set_volume(percent: float) -> float:
+        return percent * 2
+
+    executor.register(ToolDefinition(name="volume_typed", description="Typed tool"), set_volume)
+
+    accepted = executor.execute("volume_typed", parameters={"percent": 100})
+    assert accepted.status is ToolExecutionStatus.SUCCESS and accepted.data == 200
+
+    refused = executor.execute("volume_typed", parameters={"percent": True})
+    assert refused.status is ToolExecutionStatus.FAILED, "a bool is not a number here"
+    assert refused.message == "Invalid tool arguments."
+
+
 def test_executor_accepts_matching_argument_type() -> None:
     executor = ToolExecutor()
 

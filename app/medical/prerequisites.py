@@ -36,6 +36,7 @@ from typing import Any
 from app.core.time import utc_now
 from app.medical.models import SUBJECT_LABELS_TR, MasteryLevel, new_id
 from app.medical.questions import grade, question_payload
+from app.medical.review import rule_decision
 
 DATA_DIRECTORY = Path(__file__).with_name("data")
 PREREQUISITES_FILE = DATA_DIRECTORY / "prerequisites.json"
@@ -261,12 +262,15 @@ class PrerequisiteGraph:
 class PrerequisiteDiagnosis:
     """Find the foundation a struggle rests on, repair it briefly, come back."""
 
-    def __init__(self, graph: PrerequisiteGraph, store: Any, learning: Any, understanding: Any | None, curriculum: Any, *, clock: Callable[[], datetime] | None = None) -> None:
+    def __init__(self, graph: PrerequisiteGraph, store: Any, learning: Any, understanding: Any | None, curriculum: Any, *, scoring: Callable[[Any], dict[str, Any]] | None = None, clock: Callable[[], datetime] | None = None) -> None:
         self._graph = graph
         self._store = store
         self._learning = learning
         self._understanding = understanding
         self._curriculum = curriculum
+        # The one scoring decision (app/medical/review.py): the reviewer's
+        # fuller version where there is one, the rules alone otherwise.
+        self._scoring = scoring or rule_decision
         self._clock = clock or utc_now
 
     # ------------------------------------------------------------------
@@ -398,7 +402,15 @@ class PrerequisiteDiagnosis:
         if question is None:
             raise ValueError("Soru bulunamadı.")
         correct = grade(question, answer_key)
-        self._learning.record(question, bool(correct), chosen_key=answer_key)
+        # The diagnosis takes whatever answer-keyed question the bank has for a
+        # prerequisite, which may be one the generator wrote from no source.
+        # Locating the gap is a bounded, labelled claim about this diagnosis and
+        # stands on the answer either way; a mastery row is a claim about what
+        # the student knows, read back by the planner, the review queue and the
+        # adaptive level. Only an answer the scoring policy counts earns one.
+        scored = bool(self._scoring(question).get("scored", False))
+        if scored:
+            self._learning.record(question, bool(correct), chosen_key=answer_key)
         event_id = None
         if self._understanding is not None:
             event = self._understanding.record_event(question, correct=correct, answer_key=answer_key, confidence=confidence, source="diagnosis", submission_id=submission_id)

@@ -411,18 +411,37 @@ and TLS certificate verification. Proxies, cookies, credentials, automatic
 redirects, authentication, and compressed responses are not used. Every
 redirect target passes the complete policy again and HTTPS cannot downgrade.
 
+TLS verification is never relaxed; on Windows, where the root store as
+Python reads it can lag behind the browser's, the certifi bundle is loaded
+on top of the system store when it is installed, so a site whose chain
+rests on a newer root does not fail as "expired" here while Edge opens it.
+
 `SafeWebFetcher` bounds time, redirect count, response bytes, extracted
 characters, content types, and status codes. Attachments and binary downloads
 fail closed. HTML extraction removes active and hidden elements. Web text is
 always marked as untrusted data; prompt-injection indicators are hashed and
 reported but never interpreted as instructions.
 
-`SearXNGSearchProvider` uses the administrator-configured JSON endpoint. The
-`ResearchService` deduplicates and bounds candidates, collects independent
-sources concurrently, records observation/publication times, resolved IPs and
+`DuckDuckGoSearchProvider` is the keyless default; `SearXNGSearchProvider`
+and `GeminiGroundedSearch` are the alternatives. Around whichever web backend
+is chosen, `app/research/sources.py` adds the places that have their own
+doors - GitHub, YouTube (candidates from the web index, confirmed by
+YouTube's oEmbed), Wikipedia (Turkish first), PubMed, arXiv, Stack Overflow,
+Hacker News, and one named site - each a keyless read-only endpoint spoken
+to through the same pinned transport and URL policy. `MultiSourceSearchProvider`
+runs the chosen sources concurrently, interleaves their answers, and names
+a source that failed instead of hiding it. A hit that carries its source's
+own evidence (a repository's description, a paper's abstract, a video's
+channel) is cited as it is; only web hits are fetched. The `ResearchService`
+deduplicates and bounds candidates, collects independent sources
+concurrently, records observation/publication times, resolved IPs and
 content hashes, assigns freshness, cross-checks excerpts, and validates every
 claim citation against the returned source set. The structured report labels
-every claim as observation or inference and lists unresolved limitations.
+every claim as observation or inference, lists unresolved limitations, and
+carries each source's kind, origin and facts. The tool `research_web` keeps
+searching the web alone unless the model asks for `sources` or a `site`; the
+cache key includes both, so a YouTube question is not answered from a web
+one.
 
 ## Desktop interface
 
@@ -440,20 +459,54 @@ submitted to the controller's runner. Results flow back through
 serialization, so the page only ever renders data the core produced: snapshot,
 reply, stream, busy, voice_message, voice_phase, voice_state, voice_level,
 vision_result, research_result, approval, approval_closed, tool_activity,
-diagnostic_event, notification, navigate, and paused. The bridge subscribes, read-only, to
-the tool executor (every execution start and outcome), to the diagnostics
-ledger (every sealed event) and to the microphone level, and re-subscribes
-when a settings save replaces the runtime. Since the 5 September 2026
-redesign the page is a small design system — `web/css/` tokens, base, shell,
-components and screens; `web/js/` foundation (vocabulary, state, motion
-primitives), bridge (API and push channel), presence (the state machine and
-the `JarvisCore` visualization), shell (rail, drawer, palette, compact mode,
-boot), conversation, activity (execution timeline and the approval overlay),
-panels and main. All motion runs on the browser compositor at the monitor
-refresh rate, throttles when calm and pauses when hidden; canvases scale
-with `devicePixelRatio`. Window geometry changes for the compact mode are
-marshalled onto the WinForms UI thread because pywebview applies them on
-the calling thread.
+diagnostic_event, notification, navigate, and paused. `busy` is a bracket, not
+a flag: the opening push carries the question's `text` and whether it was
+`spoken`, because a turn typed on the phone reaches the same bridge and every
+other surface has to draw that question and its thinking mark itself. The
+closing push takes that turn back down — an answered one was already finalized
+by `reply`, and a turn that produced no answer (the runner refused it, it was
+cancelled) has nothing else on the watching page to close it, so the bridge
+sends the closing half even when there is no reply to report. The bridge
+subscribes, read-only, to the tool executor (every execution start and
+outcome), to the diagnostics ledger (every sealed event) and to the
+microphone level, and re-subscribes when a settings save replaces the
+runtime. Since the 5 September 2026 redesign the page is a small design
+system — `web/css/` tokens, base, shell, components and screens; `web/js/`
+foundation (vocabulary, state, motion primitives), bridge (API and push
+channel), presence (the state machine and the `JarvisCore` visualization),
+shell (rail, drawer, palette, compact mode, boot), conversation, activity
+(execution timeline and the approval overlay), panels and main. All motion
+runs on the browser compositor at the monitor refresh rate, throttles when
+calm and pauses when hidden; canvases scale with `devicePixelRatio`. Window
+geometry changes for the compact mode are marshalled onto the WinForms UI
+thread because pywebview applies them on the calling thread.
+
+The Medical Academy (`Alt+3`) is a room of its own inside that page rather
+than a thirteenth screen in the same dress. `showScreen("medical")` sets
+`body.academy`, under which `css/tokens.css` re-binds every token the
+components read (a white ground, deep slate ink set heavier, a teal accent,
+serif display faces, a coral heartbeat) and `css/academy.css` hides the
+rail, the top bar and the ambient field, lays the academy out as a side
+column of grouped sections beside a serif masthead, and draws the opening.
+`js/academy.js` plays that opening on entry - a heartbeat trace, the monitor
+answering it, the masthead settling - with sounds synthesised on the spot by
+Web Audio (no audio file ships; a switch in the side column remembers the
+student's choice in `localStorage`), skips it on any click or key, and never
+plays it while the in-app motion switch is off. The line under the title is
+the nearest exam countdown exactly as the topbar chip shows it, or nothing.
+A switch in the side column turns the academy dark (`body.academy-dark`,
+the same identity with the lights down) and remembers the choice.
+
+Research (`Alt+8`) is the second such room. `js/rooms.js` holds what the
+two share - the Web Audio engine, the remembered switches and the veil
+runner that plays an opening timeline until a click ends it - and
+`js/research.js` builds the room on it: `body.research` and its indigo
+daylight (night under `body.research-dark`), a side column that asks the
+core where it may look (`research_sources`) and remembers the selection,
+presets for a starting choice, a constellation opening in which each source
+lights up on its own line to the hub, and a report drawn as cards by kind
+with the facts each source's endpoint gave, the findings with their
+citations, and the uncertainties the service admitted, in Turkish.
 
 Nova's honesty rules: the page waits for the real bridge and shows an explicit
 failure screen if it never arrives; the demo bridge is reachable only with

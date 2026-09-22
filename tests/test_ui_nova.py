@@ -283,6 +283,9 @@ def test_boot_returns_live_state_without_secrets(booted) -> None:
         "daily_brief_notification": True,
         "daily_brief_time": "08:30",
         "research_enabled": True,
+        "almanac_city": "",
+        "vision_enabled": True,
+        "quiet_hours": "",
     }
     assert SECRET not in json.dumps(boot)
     assert SECRET not in json.dumps(booted.bridge.refresh())
@@ -324,6 +327,9 @@ def test_settings_snapshot_carries_only_non_secret_fields(booted) -> None:
         "daily_brief_notification",
         "daily_brief_time",
         "research_enabled",
+        "almanac_city",
+        "vision_enabled",
+        "quiet_hours",
     }
     assert settings["credential_configured"] is True
 
@@ -420,12 +426,17 @@ def test_second_command_is_rejected_while_the_first_runs(booted) -> None:
     wait_until(lambda: "snapshot" in booted.window.kinds())
 
     kinds = booted.window.kinds()
-    assert kinds.index("reply") < kinds.index("busy") < kinds.index("snapshot")
+    settled = max(index for index, kind in enumerate(kinds) if kind == "busy")
+    assert kinds.index("busy") < kinds.index("reply") < settled < kinds.index("snapshot")
     reply = booted.window.payloads("reply")[0]
     assert reply["role"] == "assistant"
     assert reply["text"] == "Bitti: ilk"
+    # A turn brackets itself: working when it starts, ready when it ends.
+    # The rejected second command never opened one, so there is no pair
+    # for it.
     assert booted.window.payloads("busy") == [
-        {"busy": False, "status": "LOCAL CORE READY"}
+        {"busy": True, "status": "PROCESSING", "text": "ilk", "spoken": False},
+        {"busy": False, "status": "LOCAL CORE READY"},
     ]
     assert booted.controller.state.busy is False
     assert [m.role for m in booted.controller.state.messages] == [
@@ -449,7 +460,8 @@ def test_streamed_chunks_reach_the_page_in_order(booted) -> None:
     booted.app.engine = StreamingEngine()
 
     assert booted.bridge.submit_command("selam") == {"ok": True}
-    wait_until(lambda: "busy" in booted.window.kinds())
+    # "snapshot" closes the turn; "busy" now opens one as well.
+    wait_until(lambda: "snapshot" in booted.window.kinds())
 
     kinds = booted.window.kinds()
     streamed = "".join(p["text"] for p in booted.window.payloads("stream"))
@@ -465,12 +477,81 @@ def test_core_failure_is_reported_as_a_system_message(booted) -> None:
     booted.app.engine = BrokenEngine()
 
     assert booted.bridge.submit_command("patla") == {"ok": True}
-    wait_until(lambda: "busy" in booted.window.kinds())
+    # "snapshot" closes the turn; "busy" now opens one as well.
+    wait_until(lambda: "snapshot" in booted.window.kinds())
 
     reply = booted.window.payloads("reply")[0]
     assert reply["role"] == "system"
     assert "RuntimeError" in reply["text"]
     assert "çok gizli ayrıntı" not in json.dumps(booted.window.events())
+
+
+def test_a_submit_from_elsewhere_still_drives_the_window(booted) -> None:
+    """A phone message reaches this very method (app/mobile/server.py's
+    /api/bridge/<method> route), and the desktop page did not draw anything
+    for it: without a busy push the window sits at READY while a bubble
+    fills itself in."""
+    release = threading.Event()
+
+    class GatedEngine:
+        async def handle(self, request, context, **_kwargs):
+            while not release.is_set():
+                await asyncio.sleep(0.01)
+            return Response("Bitti", request_id=request.request_id)
+
+    booted.app.engine = GatedEngine()
+
+    assert booted.bridge.submit_command("telefondan selam") == {"ok": True}
+    wait_until(lambda: "busy" in booted.window.kinds())
+    # Before any answer exists, the page already knows a turn is running
+    # and which question it belongs to. The bridge holds a live diagnostics
+    # subscription that can seal an event at any moment, so the ordering is
+    # asserted over the pushes this turn is made of: the opening busy is the
+    # last of them until an answer exists.
+    kinds = [
+        kind for kind in booted.window.kinds() if kind != "diagnostic_event"
+    ]
+    assert kinds[-1] == "busy"
+    assert not {"reply", "snapshot"} & set(kinds)
+    assert booted.window.payloads("busy")[0] == {
+        "busy": True,
+        "status": "PROCESSING",
+        "text": "telefondan selam",
+        "spoken": False,
+    }
+
+    release.set()
+    wait_until(lambda: "snapshot" in booted.window.kinds())
+    assert booted.window.payloads("busy")[-1] == {
+        "busy": False,
+        "status": "LOCAL CORE READY",
+    }
+
+
+def test_the_phone_voice_loop_marks_its_turn_as_spoken(booted) -> None:
+    """The phone's voice loop writes the transcript itself, so the page has
+    to be able to tell that turn from a typed one and not draw it twice."""
+    booted.bridge.submit_command("saat kaç", True)
+    wait_until(lambda: "busy" in booted.window.kinds())
+    assert booted.window.payloads("busy")[0]["spoken"] is True
+
+
+def test_a_refused_submission_closes_the_busy_bracket(booted, monkeypatch) -> None:
+    """Python's half of the contract: the turn it opened is closed again.
+    That the page then takes the bubble down is pinned on the page's own
+    side, by test_nova_web.py's watching-surface tests."""
+
+    def refuse(_controller, operation, _callback):
+        operation.close()  # the real runner would have consumed the coroutine
+        raise RuntimeError("runner kapalı")
+
+    monkeypatch.setattr(DesktopController, "submit_background", refuse)
+    result = booted.bridge.submit_command("selam")
+    assert result["ok"] is False and "runner kapalı" in result["error"]
+    assert [payload["busy"] for payload in booted.window.payloads("busy")] == [
+        True,
+        False,
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -1796,8 +1877,17 @@ def test_vision_and_research_results_on_a_hidden_window_are_collected(booted) ->
             return SimpleNamespace(request_id=request_id)
 
         async def analyze(self, purpose, grant, context=None):
-            return SimpleNamespace(
-                response=SimpleNamespace(text="Ekranda bir tablo var."), error_code=None
+            # The real result type: a double must not invent fields the
+            # controller then reads (the first live capture found exactly
+            # that).
+            from uuid import uuid4
+
+            from app.vision.models import VisionSessionResult, VisionSessionState
+
+            return VisionSessionResult(
+                session_id=uuid4(),
+                state=VisionSessionState.COMPLETED,
+                response_text="Ekranda bir tablo var.",
             )
 
     class Research:
@@ -1918,6 +2008,83 @@ def test_launch_nova_installs_an_os_notifier_and_window_visibility_hooks(monkeyp
     assert visibility == [True, False, True, False]
 
 
+def test_two_pushes_of_a_kind_are_not_mistaken_for_one(booted) -> None:
+    """The window worker drops a job whose key is already waiting, so a push
+    key has to identify the push rather than describe its size. These two
+    notifications serialize to exactly the same number of bytes."""
+    gate = threading.Event()
+    assert booted.bridge._defer("gate", gate.wait) is True  # hold the worker
+    booted.bridge._ui_thread_id = threading.get_ident()  # take the deferred branch
+    try:
+        booted.bridge._push("notification", {"title": "AAAA"})
+        booted.bridge._push("notification", {"title": "BBBB"})
+    finally:
+        booted.bridge._ui_thread_id = None
+        gate.set()
+
+    assert booted.bridge._window_worker.wait_idle(5.0)
+    assert booted.window.payloads("notification") == [
+        {"title": "AAAA"},
+        {"title": "BBBB"},
+    ]
+
+
+def test_the_ui_thread_is_learned_from_the_window_not_the_event_thread(
+    booted, monkeypatch
+) -> None:
+    """pywebview runs a non-blocking window event (``shown``, ``minimized``)
+    on a thread it starts for that one callback and then drops, so the ident
+    read inside the handler belongs to a thread that is already gone. The
+    guard in ``_push`` then answers for nobody."""
+    ui_thread = threading.get_ident()
+    handoff: list[tuple] = []
+
+    class NativeForm:
+        """WinForms answers this from any thread."""
+
+        @property
+        def InvokeRequired(self) -> bool:  # noqa: N802 - the .NET spelling
+            return threading.get_ident() != ui_thread
+
+    def marshal(_window, operation) -> None:
+        done = threading.Event()
+        handoff.append((operation, done))
+        assert done.wait(5.0), "the operation never reached the UI thread"
+
+    monkeypatch.setattr(shell, "_run_on_ui_thread", marshal)
+    window = FakeWindow()
+    window.native = NativeForm()
+    booted.bridge._attach(window)
+    booted.bridge._ui_thread_id = None
+
+    event_thread: dict[str, int] = {}
+
+    def deliver_window_event() -> None:
+        event_thread["ident"] = threading.get_ident()
+        booted.bridge._note_ui_thread()
+
+    thread = threading.Thread(target=deliver_window_event, name="pywebview-event")
+    thread.start()
+    wait_until(lambda: bool(handoff))
+    operation, done = handoff.pop()
+    operation()  # this thread is the window's own; that is the whole point
+    done.set()
+    thread.join(5.0)
+
+    assert booted.bridge._ui_thread_id == ui_thread
+    assert booted.bridge._ui_thread_id != event_thread["ident"]
+
+    # A later window event arrives on yet another throwaway thread and does
+    # not replace what the window already told us.
+    again = threading.Thread(target=booted.bridge._note_ui_thread)
+    again.start()
+    again.join(5.0)
+    assert booted.bridge._ui_thread_id == ui_thread
+    assert handoff == [], "the window was asked again for an answer it had"
+
+    booted.bridge._ui_thread_id = None
+
+
 def test_boot_warms_the_provider_connection_on_the_runner(booted) -> None:
     warmed: list[str] = []
 
@@ -2016,6 +2183,38 @@ def test_routine_failures_are_reported_not_hidden(booted) -> None:
     assert note["severity"] == "error"
     assert note["body"] == "Rutin çalıştırılamadı (RuntimeError)."
     assert "gizli ayrıntı" not in json.dumps(booted.window.events())
+
+
+def test_run_now_uses_the_same_path_but_never_touches_the_schedule(booted) -> None:
+    class Engine:
+        async def handle(self, request, context, *, approval_callback=None, **_kwargs):
+            return Response("Koştum.", request_id=request.request_id,
+                            metadata={"outcome": "completed"})
+
+    booted.app.engine = Engine()
+    created = booted.app.routines.create("Prova", "provayı koştur", at="09:00")
+    routine_id = created.data["routine_id"]
+    scheduled = booted.app.routines.get(routine_id)["next_run_at"]
+
+    assert booted.bridge.run_routine_now("yok-boyle")["ok"] is False
+    started = booted.bridge.run_routine_now(routine_id)
+    assert started["ok"] is True and "Prova" in started["message"]
+    wait_until(lambda: booted.app.routines.get(routine_id)["run_count"] == 1)
+    assert booted.app.routines.get(routine_id)["next_run_at"] == scheduled, (
+        "running now leaves the schedule exactly where it was"
+    )
+    events = [e.name for e in booted.app.diagnostics.ledger.list(component="ui", limit=30)]
+    assert "routine.run_now" in events and "routine.started" in events
+
+    booted.controller.set_paused(True)
+    refused = booted.bridge.run_routine_now(routine_id)
+    assert refused["ok"] is False and "meşgul" in refused["error"]
+    assert booted.app.routines.get(routine_id)["next_run_at"] == scheduled, (
+        "a refused run-now does not pull the schedule closer"
+    )
+    booted.controller.set_paused(False)
+    events = [e.name for e in booted.app.diagnostics.ledger.list(component="ui", limit=30)]
+    assert "routine.deferred" not in events, "run now never queues silently"
 
 
 def test_paused_or_busy_desktop_defers_a_due_routine(booted) -> None:
@@ -2747,6 +2946,254 @@ def test_the_morning_brief_clock_and_line_are_exact_and_honest() -> None:
         assert piece in full, piece
     assert shell.brief_notification_body({}) == "Bugün için bekleyen bir şey görünmüyor."
 
+    # The almanac rides along when it answered - and only then.
+    almanac = {
+        "weather": {"available": True, "city": "İstanbul", "temperature": 21, "label": "parçalı bulutlu"},
+        "rates": {"available": True, "usd_try": 41.2, "eur_try": 44.8},
+    }
+    with_almanac = shell.brief_notification_body({"tasks_open": 1, "almanac": almanac})
+    assert "1 açık görev · İstanbul 21°, parçalı bulutlu · 1 $ = 41,2 ₺" == with_almanac
+    ambient_only = shell.brief_notification_body({"almanac": almanac})
+    assert ambient_only == "Bekleyen iş yok · İstanbul 21°, parçalı bulutlu · 1 $ = 41,2 ₺"
+    dead = {"weather": {"available": False, "reason": "Şehir ayarlanmadı."}, "rates": {"available": False, "reason": "x"}}
+    assert shell.brief_notification_body({"almanac": dead}) == "Bugün için bekleyen bir şey görünmüyor."
+
+
+def test_the_pulse_measures_the_session_and_the_data_it_sits_on(booted, monkeypatch, tmp_path) -> None:
+    # The size helper measures exactly what is there.
+    (tmp_path / "a.sqlite3").write_bytes(b"x" * 1000)
+    (tmp_path / "a.sqlite3-wal").write_bytes(b"y" * 500)
+    (tmp_path / "folder").mkdir()
+    (tmp_path / "folder" / "ignored.bin").write_bytes(b"z" * 9999)
+    assert shell.state_data_bytes(tmp_path) == 1500, "top-level files only"
+    assert shell.state_data_bytes(tmp_path / "yok") == 0
+
+    monkeypatch.setattr(shell, "state_data_bytes", lambda directory: 123456)
+    booted.bridge._state_size_cache = None
+    first = booted.bridge.system_pulse()
+    assert first["state_data_bytes"] == 123456
+    assert isinstance(first["uptime_seconds"], int) and first["uptime_seconds"] >= 0
+    # The size is cached for a minute: a livelier helper is not consulted.
+    monkeypatch.setattr(shell, "state_data_bytes", lambda directory: 999)
+    again = booted.bridge.system_pulse()
+    assert again["state_data_bytes"] == 123456
+    assert again["uptime_seconds"] >= first["uptime_seconds"]
+
+
+def test_the_pulse_reports_the_battery_only_when_one_exists(booted, monkeypatch) -> None:
+    from app.platform.windows import service as windows_service
+
+    monkeypatch.setattr(
+        windows_service.WindowsIntegrationService, "read_power_status",
+        staticmethod(lambda: {"has_battery": True, "percent": 84, "charging": True}),
+    )
+    pulse = booted.bridge.system_pulse()
+    assert pulse["ok"] is True and pulse["battery_percent"] == 84 and pulse["battery_charging"] is True
+
+    monkeypatch.setattr(
+        windows_service.WindowsIntegrationService, "read_power_status",
+        staticmethod(lambda: {"has_battery": False, "percent": None, "charging": None}),
+    )
+    desktop = booted.bridge.system_pulse()
+    assert desktop["battery_percent"] is None and desktop["battery_charging"] is None
+
+    def boom():
+        raise OSError("no api")
+
+    monkeypatch.setattr(
+        windows_service.WindowsIntegrationService, "read_power_status", staticmethod(boom)
+    )
+    surviving = booted.bridge.system_pulse()
+    assert surviving["ok"] is True and surviving["battery_percent"] is None, "a power API failure never kills the pulse"
+
+
+def test_quiet_hours_hold_the_toast_but_never_the_centre(booted, monkeypatch) -> None:
+    from datetime import datetime as real_datetime
+
+    # The pure clock check first: wrap over midnight, honest on junk.
+    night = real_datetime(2026, 9, 21, 23, 30)
+    morning = real_datetime(2026, 9, 22, 7, 59)
+    noon = real_datetime(2026, 9, 21, 12, 0)
+    assert shell.within_quiet_hours(night, "23:00-08:00") is True
+    assert shell.within_quiet_hours(morning, "23:00-08:00") is True
+    assert shell.within_quiet_hours(noon, "23:00-08:00") is False
+    assert shell.within_quiet_hours(real_datetime(2026, 9, 21, 13, 30), "13:00-14:00") is True
+    assert shell.within_quiet_hours(real_datetime(2026, 9, 21, 14, 0), "13:00-14:00") is False
+    for junk in ("", "bozuk", "23:00", "a-b", "23:00-23:00"):
+        assert shell.within_quiet_hours(noon, junk) is False, junk
+
+    # The bridge path: inside the window the OS notifier stays silent,
+    # the in-app centre still records; outside it the toast fires.
+    sent: list[tuple[str, str]] = []
+    booted.bridge._os_notifier = lambda title, body: sent.append((title, body))
+    booted.bridge.set_visible(False)
+    saved = booted.bridge.save_desktop_settings({
+        "daily_brief_notification": True, "daily_brief_time": "08:30",
+        "research_enabled": True, "quiet_hours": "23:00-08:00",
+    })
+    assert saved["ok"] is True and saved["settings"]["quiet_hours"] == "23:00-08:00"
+
+    monkeypatch.setattr(shell, "_now", lambda: night)
+    before = booted.bridge.list_notifications(limit=50)
+    booted.bridge._publish("task", "Gece işi", "bitti", alert=True)
+    wait_until(lambda: len(booted.bridge.list_notifications(limit=50)["items"]) > len(before["items"]))
+    assert sent == [], "the toast sleeps"
+    held = next(item for item in booted.bridge.list_notifications(limit=50)["items"] if item["title"] == "Gece işi")
+    assert held["data"] == {"quiet_held": True}, "the centre's entry wears the mark"
+
+    monkeypatch.setattr(shell, "_now", lambda: noon)
+    booted.bridge._publish("task", "Öğle işi", "bitti", alert=True)
+    wait_until(lambda: sent != [])
+    assert sent == [("Öğle işi", "bitti")]
+    daytime = next(item for item in booted.bridge.list_notifications(limit=50)["items"] if item["title"] == "Öğle işi")
+    assert not (daytime["data"] or {}).get("quiet_held"), "a delivered toast wears no moon"
+
+    bad = booted.bridge.save_desktop_settings({
+        "daily_brief_notification": True, "daily_brief_time": "08:30",
+        "research_enabled": True, "quiet_hours": "gece",
+    })
+    assert bad == {"ok": False, "error": "Sessiz saatler boş ya da SS:DD-SS:DD olmalı (örn. 23:00-08:00)."}
+    # A page that never mentions the key keeps the stored window.
+    kept = booted.bridge.save_desktop_settings({
+        "daily_brief_notification": True, "daily_brief_time": "08:30", "research_enabled": True,
+    })
+    assert kept["settings"]["quiet_hours"] == "23:00-08:00"
+
+
+def test_the_home_remote_runs_only_allowed_tools_through_the_executor(booted) -> None:
+    from app.core.models import ToolDefinition, ToolExecutionStatus, ToolResult
+
+    calls: list[str] = []
+
+    def now_playing() -> ToolResult:
+        calls.append("now")
+        return ToolResult(
+            ToolExecutionStatus.SUCCESS, "spotify_now_playing",
+            message="Çalıyor: Duman — Balık", data={"playing": True, "track": "Balık", "volume_percent": 80}, verified=True,
+        )
+
+    booted.app.tool_executor.register(
+        ToolDefinition(
+            name="spotify_now_playing", description="test", risk_level=RiskLevel.READ_ONLY,
+            requires_confirmation=False, version="1.0.0", capabilities=frozenset({"spotify"}),
+            tags=frozenset({"spotify"}), timeout_seconds=5.0, metadata={},
+        ),
+        now_playing,
+        source="integration:spotify",
+    )
+
+    result = booted.bridge.run_remote_tool("spotify_now_playing", {})
+    assert result["ok"] is True and result["status"] == "success" and result["verified"] is True
+    assert result["message"] == "Çalıyor: Duman — Balık" and result["data"]["volume_percent"] == 80
+    assert calls == ["now"], "the executor ran the registered tool once"
+
+    # The real media tools are coroutines with float parameters; the
+    # bridge runs them on the controller's loop and JSON's 100 is a float.
+    async def set_volume(percent: float) -> ToolResult:
+        calls.append(f"volume:{percent}")
+        return ToolResult(ToolExecutionStatus.SUCCESS, "spotify_set_volume", message=f"Spotify sesi %{percent:g}.", verified=True)
+
+    booted.app.tool_executor.register(
+        ToolDefinition(
+            name="spotify_set_volume", description="test", risk_level=RiskLevel.LOW,
+            requires_confirmation=False, version="1.0.0", capabilities=frozenset({"spotify"}),
+            tags=frozenset({"spotify"}), timeout_seconds=5.0, metadata={},
+        ),
+        set_volume,
+        source="integration:spotify",
+    )
+    volume = booted.bridge.run_remote_tool("spotify_set_volume", {"percent": 100})
+    assert volume == {"ok": True, "status": "success", "message": "Spotify sesi %100.", "data": {}, "verified": True, "error": None}
+    assert calls[-1] == "volume:100"
+
+    # Not on the allow-list: refused before the executor is even asked.
+    assert booted.bridge.run_remote_tool("fs_delete", {}) == {"ok": False, "error": "Bu araç kumandadan çalıştırılamaz."}
+    assert booted.bridge.run_remote_tool("", None)["ok"] is False
+    # Allowed but not registered in this configuration: said plainly.
+    assert booted.bridge.run_remote_tool("spotify_seek", {"position": "+30"}) == {"ok": False, "error": "Bu araç bu yapılandırmada kayıtlı değil."}
+
+
+def test_voice_phases_reach_the_page_and_duck_the_music_without_risking_the_turn() -> None:
+    pushed: list[str] = []
+
+    class Ducker:
+        def __init__(self) -> None:
+            self.states: list[str] = []
+
+        def on_voice_state(self, state) -> None:
+            self.states.append(str(state))
+            if state == "speaking":
+                raise RuntimeError("spotify gone")
+
+    ducker = Ducker()
+    callback = shell.compose_voice_state_callback(pushed.append, ducker)
+    callback("listening")
+    callback("speaking")
+    assert pushed == ["listening", "speaking"], "the page hears every phase even when the ducker fails"
+    assert ducker.states == ["listening", "speaking"]
+    shell.compose_voice_state_callback(pushed.append, None)("idle")
+    assert pushed[-1] == "idle"
+
+
+def test_the_bridge_converts_money_on_the_almanacs_dated_rates(booted) -> None:
+    class _StubAlmanac:
+        def __init__(self, payload) -> None:
+            self.payload = payload
+            self.asked = 0
+
+        def rates(self):
+            self.asked += 1
+            return self.payload
+
+    booted.controller.application.almanac = _StubAlmanac(
+        {"available": True, "usd_try": 41.2, "eur_try": 44.8, "date": "2026-09-19"}
+    )
+
+    lira = booted.bridge.convert_currency(100, "usd", "try")
+    assert lira["ok"] is True and lira["value"] == 4120.0
+    assert lira["display"] == "100 USD = 4.120,00 TRY (ECB 2026-09-19 kuru)"
+
+    back = booted.bridge.convert_currency(41.2, "TRY", "USD")
+    assert back["value"] == 1.0 and back["display"].startswith("41,20 TRY = 1,00 USD")
+
+    cross = booted.bridge.convert_currency(1, "EUR", "USD")
+    assert cross["value"] == round(44.8 / 41.2, 2)
+
+    assert booted.bridge.convert_currency(0, "usd", "try")["error"] == "Tutar 0 ile 1 milyar arası olmalı."
+    assert booted.bridge.convert_currency("yüz", "usd", "try")["error"] == "Tutar sayı olmalı."
+    assert booted.bridge.convert_currency(5, "usd", "usd")["error"] == "Yalnız USD, EUR ve TRY arası çevrilir."
+    assert booted.bridge.convert_currency(5, "gbp", "try")["error"] == "Yalnız USD, EUR ve TRY arası çevrilir."
+
+    booted.controller.application.almanac = _StubAlmanac({"available": False, "reason": "Kur servisi yanıt vermedi (HTTP 503)."})
+    assert booted.bridge.convert_currency(5, "usd", "try") == {"ok": False, "error": "Kur servisi yanıt vermedi (HTTP 503)."}
+    booted.controller.application.almanac = None
+    assert booted.bridge.convert_currency(5, "usd", "try") == {"ok": False, "error": "Almanak servisi hazır değil."}
+
+
+def test_the_bridge_hands_the_palette_one_dictionary_entry(booted) -> None:
+    class _StubDictionary:
+        def __init__(self) -> None:
+            self.asked: list[str] = []
+
+        def lookup(self, word: str) -> dict:
+            self.asked.append(word)
+            if word == "kalp":
+                return {"ok": True, "word": "kalp", "origin": "Arapça ḳalb",
+                        "meanings": [{"features": "isim", "sense": "Organ.", "example": ""}], "compounds": []}
+            if word == "patla":
+                raise RuntimeError("boom")
+            return {"ok": False, "reason": f"Sözlükte bulunamadı: {word}."}
+
+    stub = _StubDictionary()
+    booted.controller.application.dictionary = stub
+
+    entry = booted.bridge.define_word("kalp")
+    assert entry["ok"] is True and entry["word"] == "kalp" and stub.asked == ["kalp"]
+    assert booted.bridge.define_word("yok") == {"ok": False, "error": "Sözlükte bulunamadı: yok."}
+    assert booted.bridge.define_word("patla") == {"ok": False, "error": "Sözlük okunamadı (RuntimeError)."}
+    booted.controller.application.dictionary = None
+    assert booted.bridge.define_word("kalp") == {"ok": False, "error": "Sözlük servisi hazır değil."}
+
 
 def test_the_bridge_saves_assistant_settings_and_applies_them_live(booted) -> None:
     bad = booted.bridge.save_desktop_settings({"daily_brief_notification": True, "daily_brief_time": "sabah", "research_enabled": True})
@@ -2831,6 +3278,104 @@ def test_reminders_have_a_full_surface_on_the_bridge(booted) -> None:
     assert cancelled["ok"] is True
     assert {row["text"] for row in booted.bridge.list_reminders()["reminders"]} == {"Fizyoloji oku"}
 
+    keeper = booted.bridge.list_reminders()["reminders"][0]["reminder_id"]
+    ten = booted.bridge.snooze_reminder(keeper, 10)
+    assert ten["ok"] is True and "10 dakika" in ten["message"]
+    at_ten = booted.bridge.list_reminders()["reminders"][0]["due_local"]
+    assert booted.bridge.snooze_reminder(keeper, 25)["ok"] is True
+    at_twentyfive = booted.bridge.list_reminders()["reminders"][0]["due_local"]
+    # Both measured from now, 15 minutes apart: never the same shown time.
+    assert at_ten != at_twentyfive, "the shown time really moves with the minutes"
+    assert booted.bridge.snooze_reminder("yok-boyle")["ok"] is False
+
+
+def test_a_palette_note_lands_in_memory_once(booted, monkeypatch) -> None:
+    assert booted.bridge.remember_note("   ")["ok"] is False
+    assert booted.bridge.remember_note("x" * 501)["ok"] is False
+
+    first = booted.bridge.remember_note("Anatomi defteri camlı dolapta")
+    assert first["ok"] is True and first["memory_id"]
+    again = booted.bridge.remember_note("Anatomi defteri camlı dolapta")
+    assert again["ok"] is True and again["memory_id"] == first["memory_id"], (
+        "a duplicate returns the existing entry, never a copy"
+    )
+    mine = [m for m in booted.bridge.list_memories()["memories"]
+            if m["content"] == "Anatomi defteri camlı dolapta"]
+    assert len(mine) == 1 and mine[0]["source"] == "user"
+
+    manager = booted.app.memory_service.manager
+
+    def refuse(self, content, **kwargs):
+        raise RuntimeError("guard says no")
+
+    monkeypatch.setattr(type(manager), "remember", refuse)
+    blocked = booted.bridge.remember_note("gizli anahtar")
+    assert blocked["ok"] is False and "RuntimeError" in blocked["error"]
+    assert "guard says no" not in blocked["error"], "the guard's detail stays inside"
+
+
+def test_the_about_card_reports_measured_facts(booted, monkeypatch) -> None:
+    import os
+
+    info = booted.bridge.about_info()
+    assert info["ok"] is True
+    for key in ("app_version", "python_version", "webview2_version", "state_directory"):
+        assert key in info
+    assert isinstance(info["python_version"], str) and "." in info["python_version"]
+    assert isinstance(info["state_directory"], str) and info["state_directory"]
+
+    opened: list[str] = []
+    if hasattr(os, "startfile"):
+        monkeypatch.setattr(os, "startfile", lambda path: opened.append(str(path)))
+        assert booted.bridge.open_state_folder()["ok"] is True
+        assert opened == [info["state_directory"]], "it opens the same folder it reports"
+
+        def refuse(path):
+            raise OSError("locked")
+
+        monkeypatch.setattr(os, "startfile", refuse)
+        refused = booted.bridge.open_state_folder()
+        assert refused["ok"] is False and "OSError" in refused["error"]
+    else:
+        assert booted.bridge.open_state_folder()["ok"] is False
+
+
+def test_a_conversation_can_carry_a_name_of_its_own(booted) -> None:
+    engine = booted.app.conversation_engine
+    stored = engine.create()
+    stored.turns.append(ConversationTurn(stored.conversation_id, MessageRole.USER, "Kalp anatomisi sorusu"))
+    engine.store.save(stored)
+    cid = str(stored.conversation_id)
+
+    listed = lambda: next(
+        row for row in booted.bridge.list_conversations()["conversations"]
+        if row["conversation_id"] == cid
+    )
+    assert listed()["title"] == "Kalp anatomisi sorusu"
+
+    assert booted.bridge.rename_conversation("yok-boyle", "X")["ok"] is False
+    assert booted.bridge.rename_conversation(cid, "y" * 81)["ok"] is False
+
+    renamed = booted.bridge.rename_conversation(cid, "  Komite   provası  ")
+    assert renamed["ok"] is True and renamed["title"] == "Komite provası"
+    assert listed()["title"] == "Komite provası", "the drawer speaks the new name"
+    searched = booted.bridge.search_conversations("Komite")
+    assert any(row["conversation_id"] == cid for row in searched["results"]), (
+        "search finds the hand-given name"
+    )
+
+    booted.bridge.archive_conversation(cid)
+    assert booted.bridge.rename_conversation(cid, "Arşivde ad")["ok"] is True, (
+        "metadata is not a turn: archived threads rename too"
+    )
+
+    cleared = booted.bridge.rename_conversation(cid, "   ")
+    assert cleared["ok"] is True and cleared["title"] == "Kalp anatomisi sorusu", (
+        "an empty name returns to the derived title"
+    )
+    events = [e.name for e in booted.app.diagnostics.ledger.list(component="ui", limit=40)]
+    assert "conversation.renamed" in events
+
 
 def test_an_archived_conversation_can_come_back(booted) -> None:
     engine = booted.app.conversation_engine
@@ -2873,3 +3418,395 @@ def test_open_external_validates_and_uses_the_launcher(booted) -> None:
     bare = booted.bridge.open_external("nobelprize.org")
     assert bare["ok"] is True and bare["url"] == "https://nobelprize.org"
     assert launcher.opened == ["https://osym.gov.tr/takvim", "https://nobelprize.org"]
+
+
+def test_the_streamed_bubble_shows_the_answer_not_a_concatenation(booted) -> None:
+    """The engine streams cumulative text; joining snapshots garbled the bubble."""
+    import time
+
+    pushed: list[str] = []
+    booted.bridge._push = lambda kind, payload=None: pushed.append(payload["text"]) if kind == "stream" else None
+
+    # Three cumulative snapshots inside one flush window, as a fast provider sends them.
+    booted.bridge._stream_last_flush = time.monotonic()
+    for snapshot in ("Bu", "Bu bir", "Bu bir deneme"):
+        booted.bridge._stream_latest = snapshot
+    booted.bridge._flush_stream()
+
+    assert pushed == ["Bu bir deneme"], "the newest snapshot is the whole answer so far"
+    assert "BuBu" not in "".join(pushed)
+
+    # A flush with nothing new pushes nothing, and never repeats the last frame.
+    booted.bridge._flush_stream()
+    assert pushed == ["Bu bir deneme"]
+
+
+def test_a_cancelled_turn_still_closes_the_busy_bracket(booted, monkeypatch) -> None:
+    """A cancelled turn produces no answer, and every surface but the one
+    that typed the message learns a turn ended from this push alone: the
+    bracket is what it has, so returning early would strand it."""
+    captured: list[Future[Any]] = []
+
+    def capture(_controller, operation, callback):
+        operation.close()  # the real runner would have consumed the coroutine
+        future: Future[Any] = Future()
+        captured.append(future)
+        future.add_done_callback(callback)
+        return future
+
+    monkeypatch.setattr(DesktopController, "submit_background", capture)
+    assert booted.bridge.submit_command("selam") == {"ok": True}
+    assert captured[0].cancel()
+
+    assert [payload["busy"] for payload in booted.window.payloads("busy")] == [
+        True,
+        False,
+    ]
+    assert booted.window.payloads("reply") == [], "nothing was answered"
+
+
+def test_the_bridge_lock_is_not_held_while_the_window_is_pushed_to(booted) -> None:
+    """``done`` takes this lock on the core's event-loop thread, and a push
+    blocks until WebView2 answers. A turn that answers immediately - the
+    direct clock reply, a cached one - would park the whole core on a
+    browser round-trip if the opening push were raised under the lock."""
+    verdicts: list[bool] = []
+
+    def lock_is_held() -> bool:
+        # From another thread: the RLock would let its own owner straight in.
+        acquired = booted.bridge._lock.acquire(timeout=2.0)
+        if acquired:
+            booted.bridge._lock.release()
+        return not acquired
+
+    class ProbingWindow(FakeWindow):
+        def evaluate_js(self, script: str) -> None:
+            if '"busy": true' in script:
+                answer: list[bool] = []
+                prober = threading.Thread(
+                    target=lambda: answer.append(lock_is_held()),
+                    name="lock-probe",
+                )
+                prober.start()
+                prober.join(5.0)
+                verdicts.extend(answer)
+            super().evaluate_js(script)
+
+    window = ProbingWindow()
+    booted.bridge._attach(window)
+    assert booted.bridge.submit_command("saat kaç") == {"ok": True}
+    wait_until(lambda: verdicts != [])
+    assert verdicts == [False], "the bridge lock was held across a window round-trip"
+
+
+def test_a_provisional_ui_thread_ident_is_asked_again(booted, monkeypatch) -> None:
+    """WinForms answers ``InvokeRequired`` false from every thread while no
+    handle exists in the parent chain, so a pre-handle window event brands a
+    throwaway thread as the message loop. Nothing is marshalled for such an
+    answer, so nothing settles it either: the next event overwrites it, and
+    only a marshalled answer is final."""
+    ui_thread = threading.get_ident()
+    handle_created = threading.Event()
+    handoff: list[tuple] = []
+
+    class NativeForm:
+        @property
+        def InvokeRequired(self) -> bool:  # noqa: N802 - the .NET spelling
+            if not handle_created.is_set():
+                return False  # no handle anywhere: false on every thread
+            return threading.get_ident() != ui_thread
+
+    def marshal(_window, operation) -> None:
+        done = threading.Event()
+        handoff.append((operation, done))
+        assert done.wait(5.0), "the operation never reached the UI thread"
+
+    monkeypatch.setattr(shell, "_run_on_ui_thread", marshal)
+    window = FakeWindow()
+    window.native = NativeForm()
+    booted.bridge._attach(window)
+    booted.bridge._ui_thread_id = None
+    booted.bridge._ui_thread_confirmed = False
+
+    stray: list[int] = []
+
+    def early_window_event() -> None:
+        stray.append(threading.get_ident())
+        booted.bridge._note_ui_thread()
+
+    for index in range(2):
+        thread = threading.Thread(
+            target=early_window_event, name=f"pywebview-event-{index}"
+        )
+        thread.start()
+        thread.join(5.0)
+    assert handoff == [], "the form was asked while it still had no handle"
+    assert stray[0] != stray[1], "pywebview drops each event thread it starts"
+    # The unconditional overwrite is the whole defence against a pre-handle
+    # ident: take it away and the first throwaway thread stays on record.
+    assert booted.bridge._ui_thread_id == stray[1]  # the newest false negative
+    assert booted.bridge._ui_thread_confirmed is False
+
+    handle_created.set()
+    later = threading.Thread(target=booted.bridge._note_ui_thread)
+    later.start()
+    wait_until(lambda: bool(handoff))
+    operation, done = handoff.pop()
+    operation()  # this thread is the window's own; that is the whole point
+    done.set()
+    later.join(5.0)
+    assert booted.bridge._ui_thread_id == ui_thread, "a wrong ident became permanent"
+    assert booted.bridge._ui_thread_confirmed is True
+
+    booted.bridge._ui_thread_id = None
+
+
+def test_an_answer_the_window_never_marshalled_is_not_taken_as_final(
+    booted, monkeypatch
+) -> None:
+    """The ask is only worth what the marshalling is worth. A window that
+    runs it on the asking thread has answered about the wrong thread, so the
+    ident stays provisional and the failure is recorded."""
+
+    class NativeForm:
+        InvokeRequired = True  # from every thread, including this one
+
+    monkeypatch.setattr(
+        shell, "_run_on_ui_thread", lambda _window, operation: operation()
+    )
+    window = FakeWindow()
+    window.native = NativeForm()
+    booted.bridge._attach(window)
+    booted.bridge._ui_thread_id = None
+    booted.bridge._ui_thread_confirmed = False
+
+    booted.bridge._note_ui_thread()
+
+    assert booted.bridge._ui_thread_id is None
+    assert booted.bridge._ui_thread_confirmed is False
+    recorded = [
+        event
+        for event in booted.app.diagnostics.ledger.list(component="ui", limit=50)
+        if event.name == "window.ui_thread_unknown"
+    ]
+    assert recorded, "the application was left without a UI-thread guard in silence"
+
+
+def test_a_window_that_cannot_be_asked_says_so(booted, monkeypatch) -> None:
+    """The guard in ``_push`` is only as good as this ident; a failed ask
+    that leaves the application without one is recorded, not swallowed."""
+
+    class NativeForm:
+        InvokeRequired = True
+
+    def refuse(_window, _operation) -> None:
+        raise RuntimeError("the form is gone")
+
+    monkeypatch.setattr(shell, "_run_on_ui_thread", refuse)
+    window = FakeWindow()
+    window.native = NativeForm()
+    booted.bridge._attach(window)
+    booted.bridge._ui_thread_id = None
+    booted.bridge._ui_thread_confirmed = False
+
+    booted.bridge._note_ui_thread()
+
+    assert booted.bridge._ui_thread_id is None
+    recorded = [
+        event
+        for event in booted.app.diagnostics.ledger.list(component="ui", limit=50)
+        if event.name == "window.ui_thread_unknown"
+    ]
+    assert recorded and recorded[-1].attributes["error"] == "RuntimeError"
+
+
+def test_a_deferred_routine_is_reported_with_the_lock_released(booted) -> None:
+    """The ledger calls its listeners on the recording thread, so this
+    diagnostic ends inside a blocking window round-trip. The branch fires
+    exactly while a chat turn is running, and that turn's done() finishes by
+    taking this same lock from the core's event-loop thread."""
+    recorder = threading.get_ident()
+    pushed_from: list[int] = []
+    verdicts: list[bool] = []
+
+    def lock_is_held() -> bool:
+        # From another thread: the RLock would let its own owner straight in.
+        acquired = booted.bridge._lock.acquire(timeout=2.0)
+        if acquired:
+            booted.bridge._lock.release()
+        return not acquired
+
+    class ProbingWindow(FakeWindow):
+        def evaluate_js(self, script: str) -> None:
+            if "routine.deferred" in script:
+                pushed_from.append(threading.get_ident())
+                answer: list[bool] = []
+                prober = threading.Thread(
+                    target=lambda: answer.append(lock_is_held()),
+                    name="lock-probe",
+                )
+                prober.start()
+                prober.join(5.0)
+                verdicts.extend(answer)
+            super().evaluate_js(script)
+
+    booted.bridge._attach(ProbingWindow())
+    created = booted.app.routines.create("Sabah", "özetle", at="09:00")
+    routine = booted.app.routines.get(created.data["routine_id"])
+    booted.controller.state.busy = True  # a chat turn is running
+
+    booted.bridge._run_routine(routine)
+
+    wait_until(lambda: verdicts != [])
+    assert pushed_from == [recorder], "the diagnostic did not travel inline"
+    assert verdicts == [False], "the bridge lock was held across a window round-trip"
+
+
+def test_a_turn_opening_during_shutdown_does_not_outlive_the_window(
+    booted, monkeypatch
+) -> None:
+    """_shutdown cancels the turn it finds and never looks again. The opening
+    push waits on the browser with the lock released, so a turn can reach the
+    runner after that sweep; one that did would answer into a dead window."""
+    captured: list[Future[Any]] = []
+    pushing = threading.Event()
+    release = threading.Event()
+
+    def capture(_controller, operation, callback):
+        operation.close()  # the real runner would have consumed the coroutine
+        future: Future[Any] = Future()
+        captured.append(future)
+        future.add_done_callback(callback)
+        return future
+
+    monkeypatch.setattr(DesktopController, "submit_background", capture)
+
+    class SlowWindow(FakeWindow):
+        def evaluate_js(self, script: str) -> None:
+            if '"busy": true' in script:
+                pushing.set()
+                assert release.wait(5.0), "the test never let the push finish"
+            super().evaluate_js(script)
+
+    booted.bridge._attach(SlowWindow())
+    answers: list[dict] = []
+    sender = threading.Thread(
+        target=lambda: answers.append(booted.bridge.submit_command("selam")),
+        name="pywebview-js-api",
+    )
+    sender.start()
+    assert pushing.wait(5.0)
+
+    booted.bridge._shutdown()  # the lock is free: the sender is in the browser
+    release.set()
+    sender.join(5.0)
+
+    assert captured and captured[0].cancelled(), "a turn survived the shutdown"
+    assert booted.bridge._command_future is None
+    assert answers == [{"ok": False, "error": "JARVIS kapanıyor."}]
+
+
+def test_the_daily_brief_reports_the_almanac_and_survives_its_absence(booted) -> None:
+    """The brief carries what the almanac answered, and one broken half never hides the day."""
+
+    class FakeAlmanac:
+        def snapshot(self):
+            return {
+                "weather": {"available": True, "city": "İstanbul", "temperature": 21,
+                            "feels_like": 20, "label": "açık", "high": 24, "low": 18},
+                "rates": {"available": False, "reason": "Kur servisi yanıt vermedi (HTTP 503)."},
+            }
+
+    booted.app.almanac = FakeAlmanac()
+    brief = booted.bridge.daily_brief()
+    assert brief["almanac"]["weather"]["city"] == "İstanbul"
+    assert brief["almanac"]["rates"]["available"] is False
+
+    class BrokenAlmanac:
+        def snapshot(self):
+            raise RuntimeError("down")
+
+    booted.app.almanac = BrokenAlmanac()
+    brief = booted.bridge.daily_brief()
+    assert brief["ok"] is True, "a broken almanac never takes the brief down"
+    assert brief["almanac"]["weather"]["available"] is False
+    assert "Almanak okunamadı (RuntimeError)." == brief["almanac"]["weather"]["reason"]
+
+    booted.app.almanac = None
+    assert "almanac" not in booted.bridge.daily_brief()
+
+
+def test_speak_text_uses_the_real_voices_and_refuses_honestly(booted) -> None:
+    """The page's read-aloud rides the same synthesizers as the phone."""
+    import base64
+    from types import SimpleNamespace
+
+    booted.app.voice = None
+    refused = booted.bridge.speak_text("Merhaba")
+    assert refused == {"ok": False, "error": "Sesli iletişim bu bilgisayarda ayarlanmamış."}
+
+    class FakeSynthesizer:
+        def __init__(self) -> None:
+            self.texts = []
+
+        async def synthesize(self, text):
+            self.texts.append(text)
+            return SimpleNamespace(encoding=SimpleNamespace(value="pcm16"), data=b"\x00\x01" * 32)
+
+    synthesizer = FakeSynthesizer()
+    booted.app.voice = SimpleNamespace(synthesizer=synthesizer)
+    spoken = booted.bridge.speak_text("**Kalın** `kod` başlık")
+    assert spoken["ok"] is True and spoken["mime"] == "audio/wav" and spoken["source"] == "cloud"
+    assert base64.b64decode(spoken["audio"])[:4] == b"RIFF", "a playable WAV, not raw PCM"
+    assert synthesizer.texts == ["Kalın kod başlık"], "markup is stripped before speech"
+    assert booted.bridge.speak_text("   ") == {"ok": False, "error": "Seslendirilecek metin boş."}
+
+
+def test_save_markdown_bounds_names_sizes_and_never_overwrites(booted, tmp_path) -> None:
+    saved = booted.bridge.save_markdown(str(tmp_path), 'arastirma: "tus" <2026>', "# Rapor\n")
+    assert saved["ok"] is True and saved["file"] == "arastirma-tus-2026.md"
+    assert (tmp_path / saved["file"]).read_text(encoding="utf-8") == "# Rapor\n"
+
+    second = booted.bridge.save_markdown(str(tmp_path), 'arastirma: "tus" <2026>', "başka")
+    assert second["file"] == "arastirma-tus-2026-2.md", "an existing file is never overwritten"
+
+    assert booted.bridge.save_markdown(str(tmp_path / "yok"), "x", "y")["ok"] is False
+    assert booted.bridge.save_markdown(str(tmp_path), "x", "  ")["ok"] is False
+    assert booted.bridge.save_markdown(str(tmp_path), "x", "a" * 512_001)["ok"] is False
+    unnamed = booted.bridge.save_markdown(str(tmp_path), "!!!", "içerik")
+    assert unnamed["file"] == "jarvis-notu.md"
+
+
+def test_the_system_pulse_measures_between_two_beats(booted, monkeypatch) -> None:
+    """CPU is a delta of two samples; the first beat honestly shows nothing."""
+    from app.platform.windows import service as windows_service
+
+    samples = [(1000, 3000, 1000), (1600, 3800, 1200)]
+    monkeypatch.setattr(
+        windows_service.WindowsIntegrationService, "read_cpu_times",
+        staticmethod(lambda: samples.pop(0)),
+    )
+    monkeypatch.setattr(
+        windows_service.WindowsIntegrationService, "system_info",
+        staticmethod(lambda: {
+            "memory_total_bytes": 16 * 1024 ** 3, "memory_available_bytes": 4 * 1024 ** 3,
+            "memory_total_gib": 16.0, "disk_free_gib": 100.0, "disk_total_gib": 476.0,
+        }),
+    )
+
+    first = booted.bridge.system_pulse()
+    assert first["ok"] is True and first["cpu_percent"] is None, "no previous beat, no figure"
+    assert first["memory_percent"] == 75.0 and first["memory_used_gib"] == 12.0
+
+    second = booted.bridge.system_pulse()
+    # kernel includes idle: total = 800 + 200, busy = 1000 - 600 idle = 400.
+    assert second["cpu_percent"] == 40.0
+
+
+def test_cpu_percent_between_refuses_nonsense() -> None:
+    from app.platform.windows.service import cpu_percent_between
+
+    assert cpu_percent_between((0, 0, 0), (0, 0, 0)) is None, "no time passed"
+    assert cpu_percent_between((10, 10, 10), (5, 20, 20)) is None, "a counter went backwards"
+    assert cpu_percent_between((0, 100, 0), (100, 200, 0)) == 0.0, "fully idle"
+    assert cpu_percent_between((0, 100, 0), (0, 200, 100)) == 100.0, "fully busy"

@@ -482,3 +482,31 @@ def test_exam_titles_name_the_topic_the_filter_and_the_size(build) -> None:
     assert exam.generation_notes == ["Soru bankasından seçildi.", "2 soru istendi, 1 soru hazırlandı."]
     assert exam.title == "Anatomi · Yılmaz Hoca tarzı · 1 soru"
     assert academy.store.get_exam(exam.exam_id).title == exam.title
+
+
+def test_the_term_of_day_is_deterministic_and_comes_from_the_catalogue(build) -> None:
+    """The dashboard's daily term is a real catalogue entry, fixed for the day."""
+    from datetime import date
+
+    academy = build()
+    first = academy.term_of_day(date(2026, 9, 20))
+    again = academy.term_of_day(date(2026, 9, 20))
+    assert first == again, "the same day always shows the same term"
+    assert first is not None
+    described = academy.anatomy.describe(first["structure_id"])
+    assert described is not None and described["canonical"] == first["latin"]
+    assert first["turkish"] and first["region_label"] and first["kind_label"]
+    # Consecutive days walk the catalogue instead of repeating one entry.
+    from datetime import timedelta as _delta
+    seen = {academy.term_of_day(date(2026, 9, 20) + _delta(days=offset))["structure_id"] for offset in range(5)}
+    assert len(seen) == 5
+    assert "term_of_day" in academy.dashboard()
+
+
+def test_the_weekly_report_stretches_to_a_month_and_caps_honestly(build) -> None:
+    academy = build()
+    month = academy.study.weekly_report(days=28)
+    assert len(month["days"]) == 28
+    assert month["days"][0]["date"] < month["days"][-1]["date"]
+    assert academy.study.weekly_report(days=99)["days"].__len__() == 31, "the cap holds"
+    assert len(academy.study.call("weekly_report", {"days": 28})["days"]) == 28

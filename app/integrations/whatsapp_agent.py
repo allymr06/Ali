@@ -10,6 +10,12 @@ core model, and sends them. Delegation is deliberately bounded:
 - drafts that look like commitments the user did not authorize are
   held back rather than sent
 
+And it behaves like a person rather than a bot: it answers only what
+the other side wrote (never its own bubbles, never a chat the user
+switched to), writes in the user's own measured style, leaves a plain
+"tamam" unanswered, sleeps through the night, takes time to read and
+to type, and sends short bubbles instead of one paragraph.
+
 Nothing here bypasses the tool permission engine: the agent is started
 by an approval-gated tool and sends through the HIGH-risk send tool's
 underlying verified path.
@@ -20,7 +26,16 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import datetime
+from typing import Any, Callable
+
+from app.integrations.whatsapp_human import (
+    Pacing,
+    QuietHours,
+    StyleProfile,
+    decide_reply,
+    split_bubbles,
+)
 
 from app.core.models import (
     Context,
@@ -34,12 +49,14 @@ from app.core.models import (
 
 _PERSONA_PROMPT = (
     "Kullanıcı adına WhatsApp'ta yazışıyorsun. Kurallar:\n"
-    "- Kullanıcının ağzından, doğal ve kısa yaz (en fazla iki cümle).\n"
-    "- Emoji ve üslup karşı tarafın tonuna uysun; abartma.\n"
+    "- Kullanıcının ağzından, aşağıdaki üslup ölçümüne uyarak yaz.\n"
+    "- Bir insan gibi kısa yaz; gerekirse en fazla üç satır, her satır ayrı "
+    "bir mesaj balonu olarak gider.\n"
+    "- Emoji ve ton karşı tarafa ve kullanıcının üslubuna uysun; abartma.\n"
     "- ASLA para, adres, şifre, kod veya kişisel bilgi paylaşma.\n"
     "- Kullanıcı adına söz verme, randevu/ödeme taahhüt etme.\n"
-    "- Bilmediğin bir şey sorulursa 'ona sonra döneceğim' de.\n"
-    "- Sadece gönderilecek mesajı yaz; açıklama veya tırnak ekleme."
+    "- Bilmediğin bir şey sorulursa 'sonra bakıp döneceğim' de.\n"
+    "- Sadece gönderilecek satırları yaz; açıklama, tırnak veya etiket ekleme."
 )
 
 # Draft guards: the agent must not commit the user to anything or leak
@@ -68,9 +85,18 @@ class DelegationState:
     max_turns: int
     started_at: float = field(default_factory=time.monotonic)
     turns_taken: int = 0
-    last_seen: tuple[str, ...] = ()
+    seen: set[tuple[str, str, str]] = field(default_factory=set)
+    style: StyleProfile = field(default_factory=StyleProfile)
     stopped: bool = False
     log: list[dict[str, str]] = field(default_factory=list)
+
+
+def message_key(message: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(message.get("author") or ""),
+        str(message.get("text") or ""),
+        str(message.get("time") or ""),
+    )
 
 
 def screen_draft(text: str) -> tuple[str | None, str | None]:
@@ -99,10 +125,16 @@ class WhatsAppConversationAgent:
         whatsapp: Any,
         engine: Any,
         max_turns: int = 8,
+        pacing: Pacing | None = None,
+        quiet_hours: QuietHours | None = None,
+        clock: Callable[[], datetime] = datetime.now,
     ) -> None:
         self._whatsapp = whatsapp
         self._engine = engine
         self._default_max_turns = max_turns
+        self._pacing = pacing or Pacing()
+        self._quiet = QuietHours() if quiet_hours is None else quiet_hours
+        self._clock = clock
         self._state: DelegationState | None = None
         self._task: asyncio.Task | None = None
 
@@ -135,6 +167,7 @@ class WhatsAppConversationAgent:
                 "goal": state.goal,
                 "turns_taken": state.turns_taken,
                 "max_turns": state.max_turns,
+                "style": state.style.describe(),
                 "log": state.log[-10:],
             },
             verified=True,
@@ -166,15 +199,16 @@ class WhatsAppConversationAgent:
     # ------------------------------------------------------------------
 
     async def _draft_reply(
-        self, state: DelegationState, incoming: list[str]
-    ) -> tuple[str | None, str | None]:
-        conversation = "\n".join(incoming[-8:])
+        self, state: DelegationState, transcript: list[str]
+    ) -> str:
+        conversation = "\n".join(transcript[-10:])
         prompt = (
             f"{_PERSONA_PROMPT}\n\n"
+            f"{state.style.describe()}\n\n"
             f"Kişi: {state.contact}\n"
             f"Kullanıcının talimatı: {state.goal}\n\n"
-            f"Son mesajlar:\n{conversation}\n\n"
-            "Şimdi gönderilecek yanıtı yaz:"
+            f"Son mesajlar (Siz = kullanıcı):\n{conversation}\n\n"
+            "Şimdi gönderilecek satır(lar)ı yaz:"
         )
         response = await self._engine.handle(
             Request(
@@ -190,7 +224,26 @@ class WhatsAppConversationAgent:
             ),
             Context(),
         )
-        return screen_draft(response.text or "")
+        return response.text or ""
+
+    @staticmethod
+    def _note(state: DelegationState, kind: str, reason: str) -> None:
+        # One line per distinct reason in a row: a held night is one entry.
+        if state.log and state.log[-1].get("kind") == kind and state.log[-1].get("reason") == reason:
+            return
+        state.log.append({"kind": kind, "reason": reason})
+
+    @staticmethod
+    def _chat_matches(contact: str, chat: Any) -> bool:
+        if not chat:
+            return True  # no title readable: nothing to contradict
+        wanted = contact.strip().casefold()
+        return bool(wanted) and wanted in str(chat).casefold()
+
+    def _learn_style(self, state: DelegationState, messages: list[dict[str, Any]]) -> None:
+        own = [m.get("text") or "" for m in messages if m.get("outgoing") and m.get("text")]
+        if own:
+            state.style = StyleProfile.from_messages(own)
 
     async def _run_loop(self, state: DelegationState) -> None:
         deadline = state.started_at + self.MAX_DURATION_SECONDS
@@ -202,37 +255,71 @@ class WhatsAppConversationAgent:
             await asyncio.sleep(self.POLL_SECONDS)
             if state.stopped:
                 break
-            read = await self._whatsapp.read_open_conversation(limit=10)
+            read = await self._whatsapp.read_open_conversation(limit=30)
             if read.status is not ToolExecutionStatus.SUCCESS:
                 continue
-            messages = tuple(
-                str(item) for item in (read.data or {}).get("messages", [])
-            )
-            if not messages or messages == state.last_seen:
+            data = read.data or {}
+            if not self._chat_matches(state.contact, data.get("chat")):
+                # The user is looking at another chat; its words are not
+                # this conversation's. Wait until the contact is back.
+                self._note(state, "waiting", "chat_switched")
                 continue
-            fresh = [m for m in messages if m not in state.last_seen]
-            state.last_seen = messages
-            if not fresh:
+            messages = [m for m in data.get("messages", []) if isinstance(m, dict)]
+            self._learn_style(state, messages)
+            fresh = [
+                m for m in messages
+                if message_key(m) not in state.seen
+                and m.get("outgoing") is False
+                and m.get("text")
+            ]
+            decision = decide_reply(
+                [m["text"] for m in fresh], now=self._clock(), quiet=self._quiet
+            )
+            if decision.reason == "quiet_hours":
+                # Asleep: nothing is marked seen, so the morning answers it.
+                self._note(state, "held", "quiet_hours")
+                continue
+            for m in messages:
+                state.seen.add(message_key(m))
+            if not decision.reply:
+                if decision.reason != "nothing_new":
+                    self._note(state, "skipped", decision.reason)
                 continue
 
-            draft, refusal = await self._draft_reply(state, fresh)
-            if draft is None:
-                state.log.append(
-                    {"kind": "skipped", "reason": refusal or "unknown"}
-                )
+            transcript = [
+                f"{'Siz' if m.get('outgoing') else (m.get('author') or state.contact)}: "
+                f"{m.get('text') or '[medya]'}"
+                for m in messages
+            ]
+            draft = await self._draft_reply(state, transcript)
+            bubbles: list[str] = []
+            for bubble in split_bubbles(draft):
+                safe, refusal = screen_draft(bubble)
+                if safe is None:
+                    self._note(state, "skipped", refusal or "unknown")
+                    continue
+                bubbles.append(safe)
+            if not bubbles:
                 continue
-            sent = await self._whatsapp.send_message(
-                state.contact, draft
+            await asyncio.sleep(
+                self._pacing.read_delay(sum(len(m["text"]) for m in fresh))
             )
+            for index, bubble in enumerate(bubbles):
+                if index:
+                    await asyncio.sleep(self._pacing.between_bubbles())
+                pace = self._pacing.typing_rate(len(bubble))
+                sent = await self._whatsapp.send_message(
+                    state.contact, bubble, typing_seconds_per_char=pace or None
+                )
+                state.log.append(
+                    {
+                        "kind": "sent"
+                        if sent.status is ToolExecutionStatus.SUCCESS
+                        else "unverified",
+                        "text": bubble,
+                    }
+                )
             state.turns_taken += 1
-            state.log.append(
-                {
-                    "kind": "sent"
-                    if sent.status is ToolExecutionStatus.SUCCESS
-                    else "unverified",
-                    "text": draft,
-                }
-            )
         state.stopped = True
 
     async def start(
@@ -267,13 +354,16 @@ class WhatsAppConversationAgent:
             max_turns=bounded_turns,
         )
         # Seed with the current messages so the agent replies only to
-        # what arrives after delegation starts.
-        seed = await self._whatsapp.read_open_conversation(limit=10)
+        # what arrives after delegation starts, and learn the user's
+        # style from their own bubbles already on screen.
+        seed = await self._whatsapp.read_open_conversation(limit=30)
         if seed.status is ToolExecutionStatus.SUCCESS:
-            state.last_seen = tuple(
-                str(item)
-                for item in (seed.data or {}).get("messages", [])
-            )
+            messages = [
+                m for m in (seed.data or {}).get("messages", []) if isinstance(m, dict)
+            ]
+            for m in messages:
+                state.seen.add(message_key(m))
+            self._learn_style(state, messages)
         self._state = state
         self._task = asyncio.create_task(self._run_loop(state))
         return ToolResult(
@@ -282,12 +372,13 @@ class WhatsAppConversationAgent:
             message=(
                 f"'{state.contact}' sohbetini devraldım. En fazla "
                 f"{bounded_turns} yanıt vereceğim; "
-                "'sohbeti bırak' dediğinde durururum."
+                "'sohbeti bırak' dediğinde dururum."
             ),
             data={
                 "contact": state.contact,
                 "goal": state.goal,
                 "max_turns": bounded_turns,
+                "style": state.style.describe(),
             },
             verified=True,
         )

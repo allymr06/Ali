@@ -15,7 +15,21 @@ review queue it computes what each topic in scope is:
     due_review          a concept under it is due in the review queue
     misconception       an open, supported finding needs repair
 
-Opening a PDF is "studied", never "demonstrated". From those states it lays
+Opening a PDF is "studied", never "demonstrated". Two kinds of evidence
+can say a topic was measured, and they are not read the same way. An exam
+answer is weighed here and counts only where the scoring policy counts it
+(app/medical/review.py): an answer to a question no source backs is work
+done, never evidence of knowing. A mastery row carries a concept and no
+question, so it cannot be weighed here at all — whether it was earned is
+settled where it is written, and coverage counts every row it finds. Not
+every writer settles it the same way. The exam finish, the chat quiz and
+the prerequisite diagnosis put the question through that same decision
+before writing a row; a lab station has no answer key to weigh, because
+anatomy and histology grade against the curated structure, so its row is a
+measurement in its own right; and the understanding check and the repair
+transfer (app/medical/understanding.py) write a row for whichever bank
+question they were handed without asking at all — see the NOTE in
+``_coverage``, which is where those rows arrive. From those states it lays
 out one day at a time within the day's budget — never over it — with the
 reason and an estimated duration (labelled as an estimate, refined from
 the minutes activities actually took) for every activity. Planned, started,
@@ -35,6 +49,7 @@ from typing import Any
 from app.core.time import utc_now
 from app.medical.learning import is_due
 from app.medical.models import SUBJECT_LABELS_TR, MasteryLevel, QuestionOrigin, new_id
+from app.medical.review import rule_decision
 
 PLAN_KIND = "study_plan"
 ACTIVITY_KIND = "plan_activity"
@@ -43,6 +58,16 @@ STUDY_LOG_KIND = "study_log"
 HORIZON_DAYS = 14
 MIN_ACTIVITY_MINUTES = 5
 DEFAULT_DAILY_MINUTES = 45
+# What belongs to one sitting rather than to the work itself: dropped when a
+# session's remainder goes back into the pool as a candidate again.
+SESSION_FIELDS = frozenset({"activity_id", "plan_id", "date", "status", "status_label", "manual", "started_at", "completed_at", "actual_minutes", "split", "remaining_minutes", "carried_from", "skip_note", "order"})
+# What half-finished work is worth over the same work started fresh: carrying
+# on beats thrashing. A weight inside the one ranking and not a place at the
+# head of it — between topics of equal weight, the narrowest gap under a
+# misconception in the priorities below is 3.0 against 2.5, so this cannot
+# lift anything over a repair. A plan that reweights its own topics or
+# rewrites its own priorities decides its own order.
+CONTINUATION_BONUS = 1.15
 
 COVERAGE_LABELS_TR: dict[str, str] = {
     "misconception": "Onarım bekleyen yanlış anlama",
@@ -90,6 +115,24 @@ def _clean_minutes(value: Any, default: int = DEFAULT_DAILY_MINUTES) -> int:
     return max(0, min(minutes, 12 * 60))
 
 
+def _state_reason(row: dict[str, Any]) -> str:
+    """Why a topic in this state is worth a session, in the student's own words.
+
+    Read from a coverage row and never stored on the work: the half of a
+    reading still owed is planned days after the row that asked for it, by
+    which time the topic has been opened and the first sentence would be a
+    lie on the screen.
+    """
+    return {
+        "misconception": f"{row['findings']} desteklenen yanlış anlama bulgusu onarım bekliyor.",
+        "due_review": "Konunun bir kavramı tekrar kuyruğunda.",
+        "unstudied": "Sınav kapsamında ama hiç açılmadı.",
+        "studied_unassessed": "Okundu ama hiç soru çözülmedi; bilgi ölçülmedi.",
+        "assessed_limited": f"{row['attempts']} cevap var; kanıt hâlâ sınırlı.",
+        "demonstrated": "Anlama gösterildi; kısa bir hatırlatma yeter.",
+    }[row["state"]]
+
+
 class StudyPlanner:
     def __init__(
         self,
@@ -100,6 +143,7 @@ class StudyPlanner:
         understanding: Any | None = None,
         prerequisites: Any | None = None,
         *,
+        scoring: Callable[[Any], dict[str, Any]] | None = None,
         clock: Callable[[], datetime] | None = None,
         remind: Callable[[str, str], str | None] | None = None,
         emit: Callable[[dict[str, Any]], None] | None = None,
@@ -110,6 +154,9 @@ class StudyPlanner:
         self._learning = learning
         self._understanding = understanding
         self._prerequisites = prerequisites
+        # The one scoring decision (app/medical/review.py): the reviewer's
+        # fuller version where there is one, the rules alone otherwise.
+        self._scoring = scoring or rule_decision
         # The clock returns an aware moment; "today" is its local date.
         self._clock = clock or (lambda: utc_now().astimezone())
         self._remind = remind
@@ -340,15 +387,23 @@ class StudyPlanner:
             studied_topics.update(log.get("topic_ids", []))
         attempts = self._store.list_attempts(limit=2000)
         answered_by_topic: dict[str, list[bool]] = {}
-        question_cache: dict[str, Any] = {}
+        # One lookup and one decision per question, not per answered row: the
+        # reviewer's decision re-reads every document a question cites, and a
+        # single page load runs coverage two or three times.
+        decided: dict[str, tuple[Any, bool]] = {}
         for attempt in attempts:
             for question_id, entry in attempt.answers.items():
                 if not entry.answer_key or entry.correct is None:
                     continue
-                if question_id not in question_cache:
-                    question_cache[question_id] = self._store.get_question(question_id)
-                question = question_cache[question_id]
-                if question is None or question.metadata.get("invalidated"):
+                if question_id not in decided:
+                    question = self._store.get_question(question_id)
+                    # Coverage is a claim that the topic was measured, so it
+                    # counts the same answers a score counts: an answer to a
+                    # study-only question is work done, never evidence of
+                    # knowing.
+                    decided[question_id] = (question, question is not None and bool(self._scoring(question).get("scored", False)))
+                question, scored = decided[question_id]
+                if not scored:
                     continue
                 answered_by_topic.setdefault(question.topic_id or "", []).append(bool(entry.correct))
         mastery = {item.concept_id: item for item in self._learning.all()}
@@ -363,6 +418,12 @@ class StudyPlanner:
             topic_answers = answered_by_topic.get(topic_id, [])
             # Exam answers feed the mastery rows too, so the larger of the two
             # counts is the topic's evidence, not their sum.
+            # NOTE: an understanding check and a repair transfer
+            # (app/medical/understanding.py) record mastery for whichever
+            # bank question they were handed without asking the scoring
+            # decision, so a study-only item answered on those screens still
+            # lands in this count. Gating it changes what those screens
+            # promise about their own questions. Owner decision.
             attempts_count = max(len(topic_answers), sum(item.attempts for item in concept_mastery))
             studied = topic_id in studied_topics or any(self._curriculum.is_within(item, topic_id) for item in studied_topics)
             findings = self._understanding.open_findings_for(concept_ids, topic_id=topic_id) if self._understanding is not None else []
@@ -466,16 +527,13 @@ class StudyPlanner:
             state = row["state"]
             kind = STATE_ACTIVITY[state]
             score = priorities.get(state, 1.0) * row["weight"] * urgency
-            reason = {
-                "misconception": f"{row['findings']} desteklenen yanlış anlama bulgusu onarım bekliyor.",
-                "due_review": "Konunun bir kavramı tekrar kuyruğunda.",
-                "unstudied": "Sınav kapsamında ama hiç açılmadı.",
-                "studied_unassessed": "Okundu ama hiç soru çözülmedi; bilgi ölçülmedi.",
-                "assessed_limited": f"{row['attempts']} cevap var; kanıt hâlâ sınırlı.",
-                "demonstrated": "Anlama gösterildi; kısa bir hatırlatma yeter.",
-            }[state]
+            reason = _state_reason(row)
             minutes, label = self._estimate(record, kind)
-            items.append({"topic_id": row["topic_id"], "title": row["title"], "kind": kind, "kind_label": ACTIVITY_LABELS_TR[kind], "state": state, "reason": reason, "estimate_minutes": minutes, "estimate_label": label, "score": round(score, 3), "order": index})
+            # ``base_reason`` is why this work exists and is written once. Every
+            # session built from the candidate starts from it, so a reading cut
+            # across four days says its own minutes four times instead of
+            # repeating the three sessions before it.
+            items.append({"topic_id": row["topic_id"], "title": row["title"], "kind": kind, "kind_label": ACTIVITY_LABELS_TR[kind], "state": state, "reason": reason, "base_reason": reason, "estimate_minutes": minutes, "estimate_label": label, "score": round(score, 3), "order": index})
             if state == "misconception" and self._prerequisites is not None:
                 # Only the concepts the findings are about: a neighbour's
                 # prerequisite is not this gap's foundation.
@@ -484,13 +542,108 @@ class StudyPlanner:
                         level = self._learning.levels().get(prerequisite["concept_id"], MasteryLevel.UNKNOWN)
                         if level in (MasteryLevel.WEAK, MasteryLevel.UNKNOWN):
                             minutes, label = self._estimate(record, "prerequisite")
-                            items.append({"topic_id": row["topic_id"], "concept_id": prerequisite["concept_id"], "title": prerequisite["name"], "kind": "prerequisite", "kind_label": ACTIVITY_LABELS_TR["prerequisite"], "state": "prerequisite", "reason": f"{row['title']} konusundaki bulgu {prerequisite['name']} ön koşuluna dayanabilir ({prerequisite['provenance_label'] if 'provenance_label' in prerequisite else prerequisite['provenance']}).", "estimate_minutes": minutes, "estimate_label": label, "score": round(priorities.get("prerequisite", 1.5) * row["weight"] * urgency, 3), "order": index})
+                            prerequisite_reason = f"{row['title']} konusundaki bulgu {prerequisite['name']} ön koşuluna dayanabilir ({prerequisite['provenance_label'] if 'provenance_label' in prerequisite else prerequisite['provenance']})."
+                            items.append({"topic_id": row["topic_id"], "concept_id": prerequisite["concept_id"], "title": prerequisite["name"], "kind": "prerequisite", "kind_label": ACTIVITY_LABELS_TR["prerequisite"], "state": "prerequisite", "reason": prerequisite_reason, "base_reason": prerequisite_reason, "estimate_minutes": minutes, "estimate_label": label, "score": round(priorities.get("prerequisite", 1.5) * row["weight"] * urgency, 3), "order": index})
                             break
-        items.sort(key=lambda item: (-item["score"], item["order"], item["kind"]))
+        items.sort(key=self._rank)
         return items
+
+    @staticmethod
+    def _rank(item: dict[str, Any]) -> tuple[float, int, str]:
+        """One ranking for everything a day could hold, carried work included.
+
+        A session already begun is worth a little more than the same work
+        started over, but worth *more* and not *first*: put at the head of
+        the list instead it would take the day from a repair the student is
+        waiting on. The bonus is applied here and never written back, so a
+        reading carried across four days is not promoted four times over.
+        """
+        return (-float(item.get("score") or 0.0) * (CONTINUATION_BONUS if item.get("continues") else 1.0), int(item.get("order") or 0), str(item.get("kind") or ""))
 
     def _existing_minutes(self, activities: list[dict[str, Any]]) -> int:
         return sum(int(item.get("estimate_minutes", 0)) for item in activities if item.get("status") in ("planned", "started", "completed"))
+
+    def _carried(self, activities: list[dict[str, Any]], rows: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        """What a session the student already sat down to still owes.
+
+        Coverage reads topics, not sessions, so it cannot see that a reading
+        was cut in half: the day after the first half is done the topic simply
+        reads as studied and the second half would be dropped. Each session
+        therefore records the minutes it leaves behind, and the last session
+        touched for a topic and kind puts them back into the pool. The chain
+        ends by itself — the continuation records nothing left.
+
+        What the work *is* does not change when half of it is done, so the
+        remainder keeps its kind and the priority it was chosen with. What the
+        student is told about the topic is a claim about today, so the state
+        and its sentence are read from today's coverage row instead of from
+        the session that left the minutes behind.
+        """
+        latest: dict[tuple[str, str], dict[str, Any]] = {}
+        for activity in sorted(activities, key=lambda item: (item.get("date", ""), int(item.get("order", 0)))):
+            if activity.get("status") not in ("completed", "started") or activity.get("manual"):
+                continue
+            topic_id = str(activity.get("topic_id") or "")
+            if topic_id in rows:
+                latest[(topic_id, str(activity.get("kind") or ""))] = activity
+        carried: list[dict[str, Any]] = []
+        for (topic_id, _kind), activity in latest.items():
+            rest = int(activity.get("remaining_minutes") or 0)
+            if rest <= 0:
+                continue
+            row = rows[topic_id]
+            base = _state_reason(row)
+            carried.append({**{key: value for key, value in activity.items() if key not in SESSION_FIELDS}, "state": row["state"], "estimate_minutes": rest, "base_reason": base, "continues": True, "carried_from": activity.get("activity_id"), "reason": base + f" Kalan {rest} dk: önceki oturumun devamı.", "order": 0})
+        return carried
+
+    @staticmethod
+    def _cut(minutes: int, budget: int) -> int:
+        """How much of work longer than the day this session takes, or 0 for none.
+
+        The cut has to hold for the whole chain and not just for tomorrow.
+        Taking the day and asking again the next morning loses minutes: a
+        remainder smaller than two activities can no longer be divided, is
+        offered for ever and planned never. So the number of sessions is
+        settled first — the fewest days that hold the work, usable only while
+        the work also stretches to that many sessions of at least
+        ``MIN_ACTIVITY_MINUTES`` — and this session then takes as much of the
+        day as it can while leaving the floor for each session after it. Every
+        remainder it leaves divides again the same way against the same
+        budget, down to the last session; a later day that is shorter may
+        refuse it, and it is then reported uncovered, never quietly shortened.
+        Nothing at all where no such chain exists, which is what work shorter
+        than two activities is, or a day shorter than one.
+        """
+        if budget <= 0 or minutes <= budget:
+            return 0
+        sessions = -(-minutes // budget)
+        if sessions * MIN_ACTIVITY_MINUTES > minutes:
+            return 0
+        return min(budget, minutes - (sessions - 1) * MIN_ACTIVITY_MINUTES)
+
+    def _placeable(self, record: dict[str, Any], minutes: int, start: date, end: date) -> bool:
+        """Whether an empty day in the horizon could hold this work, whole or cut.
+
+        What a day already holds is overload's business, not this one's: the
+        question here is whether the work has a shape any day of the plan
+        could take at all.
+        """
+        day = start
+        while day <= end:
+            budget = self.budget_for(record, day)
+            if budget > 0 and (minutes <= budget or self._cut(minutes, budget)):
+                return True
+            day += timedelta(days=1)
+        return False
+
+    @staticmethod
+    def _session_note(candidate: dict[str, Any], *, minutes: int, rest: int) -> str:
+        """One sentence about this session and no other, so nothing stacks."""
+        if candidate.get("continues"):
+            return f" Önceki oturumun devamı: bu oturum {minutes} dk" + (f", {rest} dk sonraya kalıyor." if rest else ".")
+        if rest:
+            return f" Tahmini {int(candidate['estimate_minutes'])} dk: bir güne sığmaz, birkaç oturuma yayılır; bu oturum {minutes} dk."
+        return ""
 
     def replan(self, plan_id: str, *, reason: str = "") -> dict[str, Any]:
         """Lay the horizon out again from today, keeping what was done or set by hand.
@@ -515,13 +668,25 @@ class StudyPlanner:
             return self.summary(plan_id)
         coverage = self._coverage(record)
         kept = self.activities(plan_id)
+        # A topic read in the last three days is not read again. That rule alone
+        # would also bury the unfinished half of a split reading, so what those
+        # sessions left behind goes back into the same pool and the same
+        # ranking, as work already begun rather than work that goes first.
         done_recently = {item["topic_id"] for item in kept if item.get("status") in ("completed", "started") and item.get("kind") in ("read", "recap") and parse_date(item["date"]) >= today - timedelta(days=3)}
-        candidates = self._candidates(record, coverage, exclude_topics=done_recently)
+        rows = {row["topic_id"]: row for row in coverage["topics"]}
+        candidates = sorted(self._candidates(record, coverage, exclude_topics=done_recently) + self._carried(kept, rows), key=self._rank)
         horizon_end = min(exam, today + timedelta(days=HORIZON_DAYS - 1))
         day = today
         order_base = 100
-        scheduled: set[tuple[str, str]] = {(item["topic_id"], item["kind"]) for item in kept if item.get("status") in ("planned", "started", "completed") and parse_date(item["date"]) >= today}
-        remaining = [item for item in candidates if (item["topic_id"], item["kind"]) not in scheduled]
+        scheduled: dict[tuple[str, str], set[str]] = {}
+        for item in kept:
+            if item.get("status") in ("planned", "started", "completed") and parse_date(item["date"]) >= today:
+                scheduled.setdefault((item["topic_id"], item["kind"]), set()).add(str(item.get("activity_id")))
+        # A session already standing covers its topic and kind, with one
+        # exception: the session a continuation was cut from is the very
+        # reason the continuation exists. Those two are kept apart by the
+        # day's budget instead, which already counts the session.
+        remaining = [item for item in candidates if not scheduled.get((item["topic_id"], item["kind"]), set()) - {item.get("carried_from")}]
         while day <= horizon_end and remaining:
             budget = self.budget_for(record, day)
             used = self._existing_minutes([item for item in kept if item.get("date") == day.isoformat()])
@@ -531,13 +696,28 @@ class StudyPlanner:
                 minutes = candidate["estimate_minutes"]
                 split = False
                 if minutes > budget and budget > 0 and used == 0:
-                    # Longer than any one day allows: today's session is the
-                    # day's budget and the activity says it continues.
-                    minutes, split = budget, True
+                    # Longer than any one day allows, so it is cut — for the
+                    # whole chain of sessions at once, because a cut made a
+                    # day at a time can leave minutes nothing will ever take.
+                    # ``_cut`` returns nothing where no chain of sessions
+                    # clears the floor; the work is then left whole, goes on
+                    # being offered, and is reported uncovered.
+                    session = self._cut(minutes, budget)
+                    if session:
+                        minutes, split = session, True
                 if minutes and used + minutes <= budget:
-                    activity = {**candidate, "estimate_minutes": minutes, "split": split, "activity_id": new_id("act"), "plan_id": plan_id, "date": day.isoformat(), "status": "planned", "order": order, "manual": False, "started_at": None, "completed_at": None, "actual_minutes": None}
-                    if split:
-                        activity["reason"] = candidate["reason"] + f" Tahmini {candidate['estimate_minutes']} dk: bir güne sığmaz, birkaç oturuma yayılır."
+                    rest = candidate["estimate_minutes"] - minutes if split else 0
+                    base = str(candidate.get("base_reason") or candidate["reason"])
+                    # The minutes left over are written down on the session that
+                    # leaves them: coverage cannot see a half-done reading, so
+                    # this is what the next replan reads the remainder back from.
+                    activity = {**candidate, "estimate_minutes": minutes, "split": split, "base_reason": base, "remaining_minutes": rest, "reason": base + self._session_note(candidate, minutes=minutes, rest=rest), "activity_id": new_id("act"), "plan_id": plan_id, "date": day.isoformat(), "status": "planned", "order": order, "manual": False, "started_at": None, "completed_at": None, "actual_minutes": None}
+                    if rest > 0:
+                        # The rest of the work goes back into the pool for a
+                        # later day. Dropped here it would vanish silently:
+                        # the activity would shrink to whatever one day held
+                        # and the plan would call the topic done.
+                        leftovers.append({**candidate, "estimate_minutes": rest, "base_reason": base, "continues": True, "reason": base + f" Kalan {rest} dk: önceki oturumun devamı."})
                     self._store.save_record(ACTIVITY_KIND, activity["activity_id"], activity, subject_key=plan_id)
                     used += minutes
                     order += 1
@@ -563,6 +743,12 @@ class StudyPlanner:
         available = sum(self.budget_for(record, today + timedelta(days=offset)) for offset in range(max(0, days_left) + 1))
         needed = sum(int(item.get("estimate_minutes", 0)) for item in future) + sum(int(item.get("estimate_minutes", 0)) for item in record.get("uncovered", []))
         fit = needed <= available
+        # Work can stay uncovered for two unrelated reasons, and overload is
+        # only one of them: a scope that fits the remaining days can still hold
+        # a session no day is long enough to take, whole or cut. Saying nothing
+        # leaves the screen listing work as open beside a plan that says it fits.
+        horizon_end = min(exam, today + timedelta(days=HORIZON_DAYS - 1))
+        indivisible = [item for item in record.get("uncovered", []) if not self._placeable(record, int(item.get("estimate_minutes", 0)), today, horizon_end)]
         return {
             **{key: record[key] for key in ("plan_id", "name", "exam_date", "status", "scope", "proposed_scope", "scope_confirmed", "budget", "weights", "weighting", "priorities", "notify", "history", "estimates")},
             "days_left": days_left,
@@ -575,6 +761,7 @@ class StudyPlanner:
             "fit": fit,
             "overload": None if fit else {"needed_minutes": needed, "available_minutes": available, "short_by": needed - available, "message": f"Kapsam kalan süreye sığmıyor: tahmini {needed} dk iş var, sınava kadar {available} dk boş. Plan en öncelikli işleri sığdırdı; {len(record.get('uncovered', []))} etkinlik açıkta kaldı."},
             "uncovered": list(record.get("uncovered", [])),
+            "uncovered_note": (f"{len(indivisible)} etkinlik hiçbir güne sığmadığı için açıkta kaldı: en kısa oturum {MIN_ACTIVITY_MINUTES} dk, günlük süre bu işi bölmeye yetmiyor. Günlük süreyi artırın ya da bu işi kendi seçtiğiniz parçalarla elle ekleyin." if indivisible else ""),
             "days": self._days(record, activities, today, min(exam, today + timedelta(days=6))),
         }
 

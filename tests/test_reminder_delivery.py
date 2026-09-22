@@ -266,6 +266,31 @@ def test_concurrent_delivery_loops_deliver_each_reminder_once(tmp_path, clock) -
     assert sorted(delivered) == sorted(ids)
 
 
+def test_snooze_pushes_the_due_time_and_resets_the_retry_state(service, clock) -> None:
+    created = service.create("Su iç", minutes=1)
+    reminder_id = created.data["reminder_id"]
+
+    snoozed = service.snooze(reminder_id, 10)
+    assert snoozed.succeeded and "10 dakika" in snoozed.message
+    clock.advance(5 * 60)
+    assert service.claim_due() == [], "snoozed past the old due minute"
+    clock.advance(6 * 60)
+    (claim,) = service.claim_due()
+    assert claim["reminder_id"] == reminder_id
+
+    # After a failed attempt a snooze resets the retry state to a clean wait.
+    service.release(reminder_id, claim["claim_token"], error="busy")
+    assert service.get(reminder_id)["status"].startswith("yeniden denenecek")
+    assert service.snooze(reminder_id, 3).succeeded
+    row = service.get(reminder_id)
+    assert row["attempts"] == 0 and row["next_attempt_at"] is None
+    assert row["status"] == "bekliyor" and row["last_error"] == ""
+
+    assert service.snooze(reminder_id, 0).error == "invalid_minutes"
+    assert service.cancel(reminder_id).succeeded
+    assert service.snooze(reminder_id, 10).error == "not_found"
+
+
 def test_cancellation_wins_before_delivery_and_while_a_retry_is_pending(service, clock) -> None:
     waiting = due(service, clock, text="Erken")
     assert service.cancel(waiting).succeeded

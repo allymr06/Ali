@@ -24,6 +24,9 @@ class APISettingsSnapshot:
     daily_brief_notification: bool = True
     daily_brief_time: str = "08:30"
     research_enabled: bool = True
+    almanac_city: str = ""
+    vision_enabled: bool = True
+    quiet_hours: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,7 +121,10 @@ class APISettingsService:
             credential_required=credential_required,
             daily_brief_notification=profile.daily_brief_notification,
             daily_brief_time=profile.daily_brief_time,
+            almanac_city=profile.almanac_city,
             research_enabled=profile.research_enabled,
+            vision_enabled=profile.vision_enabled,
+            quiet_hours=profile.quiet_hours,
         )
 
     def save_desktop(
@@ -127,6 +133,9 @@ class APISettingsService:
         daily_brief_notification: bool,
         daily_brief_time: str,
         research_enabled: bool,
+        almanac_city: str = "",
+        vision_enabled: bool = True,
+        quiet_hours: str = "",
     ) -> None:
         """Persist the non-secret assistant preferences atomically."""
         profile = self.preferences.load()
@@ -138,6 +147,9 @@ class APISettingsService:
                 daily_brief_notification=daily_brief_notification,
                 daily_brief_time=daily_brief_time,
                 research_enabled=research_enabled,
+                almanac_city=almanac_city,
+                vision_enabled=vision_enabled,
+                quiet_hours=quiet_hours,
             )
         )
 
@@ -256,6 +268,19 @@ class APISettingsService:
                 base.research_enabled
                 if "JARVIS_RESEARCH_ENABLED" in os.environ
                 else profile.research_enabled
+            ),
+            almanac_city=(
+                base.almanac_city
+                if "JARVIS_ALMANAC_CITY" in os.environ
+                else profile.almanac_city
+            ),
+            # Vision follows the profile the same way. The screen source
+            # exists only on Windows, so elsewhere the flag stays off
+            # instead of failing startup.
+            vision_enabled=(
+                base.vision_enabled
+                if "JARVIS_VISION_ENABLED" in os.environ
+                else (profile.vision_enabled and os.name == "nt")
             ),
         )
 

@@ -123,6 +123,24 @@ class ExecutionService:
         if self._journal is not None:
             await self._journal.append(event)
 
+    def _approval_is_spent(self, grant: Any) -> bool:
+        """Ask the executor whether a one-time capability is already used.
+
+        The tool executor is a loose seam here, so an executor without
+        the question answers "not spent" and retrying behaves as it did
+        before. Nothing is authorised on this answer - the grant is still
+        validated and consumed at the tool boundary.
+        """
+        if not isinstance(grant, ApprovalGrant):
+            return False
+
+        ask = getattr(self._tool_executor, "approval_grant_is_spent", None)
+
+        if ask is None:
+            return False
+
+        return bool(ask(grant))
+
     def _save_snapshot(
         self,
         plan: Plan,
@@ -556,6 +574,14 @@ class ExecutionService:
             1,
             effective_max_attempts + 1,
         ):
+            if attempt > 1 and self._approval_is_spent(approval_grant):
+                # The user authorised one action and the first attempt
+                # spent it. Offering the same capability again can only
+                # come back as a replay refusal, which would bury the
+                # fault the user actually has to read behind a warning
+                # about a replay that never happened.
+                break
+
             remaining = execution_context.usage.remaining_seconds(
                 execution_context.limits
             )

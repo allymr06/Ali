@@ -719,7 +719,11 @@ class ToolSchemaSelector:
         )
 
         if reminder_domain and not selected:
-            if self._has_stem(tokens, self._CANCEL):
+            if self._has_stem(tokens, ("ertele", "snooze")):
+                selected.update(
+                    {"snooze_reminder", "list_reminders"}
+                )
+            elif self._has_stem(tokens, self._CANCEL):
                 selected.update(
                     {"cancel_reminder", "list_reminders"}
                 )

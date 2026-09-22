@@ -39,6 +39,13 @@ class ConversationEngine:
         self._summary_max_characters = summary_max_characters
         self._system_prompt = system_prompt.strip() if system_prompt else None
         self._lock = RLock()
+        # Sensitive tool output is never written to the store; the stored turn
+        # carries a placeholder instead. The provider still needs the real text
+        # for the turn that produced it, or the model is told a tool ran without
+        # being told what it returned and answers from a hole in the transcript.
+        # These overrides therefore live in memory only, keyed by the turn that
+        # produced them, and are dropped as soon as that turn ends.
+        self._provider_overrides: dict[UUID, tuple[UUID, dict[str, str]]] = {}
 
     @property
     def store(self) -> ConversationStore:
@@ -62,10 +69,14 @@ class ConversationEngine:
             return self.create(conversation_id)
 
     def archive(self, conversation_id: UUID) -> Conversation:
-        conversation = self.get(conversation_id)
-        conversation.status = ConversationStatus.ARCHIVED
-        conversation.updated_at = utc_now()
-        return self._store.save(conversation)
+        with self._lock:
+            # An archived conversation takes no further requests, so the turn
+            # that owns any held tool output can never finish and drop it.
+            self._forget_provider_overrides(conversation_id)
+            conversation = self.get(conversation_id)
+            conversation.status = ConversationStatus.ARCHIVED
+            conversation.updated_at = utc_now()
+            return self._store.save(conversation)
 
     def activate(self, conversation_id: UUID) -> Conversation:
         conversation = self.get(conversation_id)
@@ -77,7 +88,12 @@ class ConversationEngine:
         return self._store.list()
 
     def delete(self, conversation_id: UUID) -> Conversation:
-        return self._store.delete(conversation_id)
+        with self._lock:
+            # Deleting a conversation is the gesture that means forget it, and
+            # this process outlives the deletion, so the sensitive tool output
+            # kept in memory for its last turn goes with it.
+            self._forget_provider_overrides(conversation_id)
+            return self._store.delete(conversation_id)
 
     @staticmethod
     def _message_characters(message: dict[str, Any]) -> int:
@@ -106,7 +122,12 @@ class ConversationEngine:
             summary = summary[-limit:]
         return summary
 
-    def _context_messages(self, conversation: Conversation) -> list[dict[str, Any]]:
+    def _context_messages(
+        self,
+        conversation: Conversation,
+        overrides: dict[str, str] | None = None,
+        owning_request_id: UUID | None = None,
+    ) -> list[dict[str, Any]]:
         groups: list[list[ConversationTurn]] = []
         for turn in conversation.turns:
             if groups and groups[-1][0].request_id == turn.request_id:
@@ -163,8 +184,40 @@ class ConversationEngine:
                         "content": summary_prefix + conversation.summary,
                     }
                 )
-        messages.extend(turn.to_message() for turn in selected)
+        for turn in selected:
+            message = turn.to_message()
+            # A provider may reuse a tool call id across turns, so an override
+            # is only ever applied to the turn that produced it; matching on
+            # the id alone would rewrite an older turn's result with the
+            # current one and hand the model a falsified transcript.
+            if overrides and turn.request_id == owning_request_id:
+                tool_call_id = message.get("tool_call_id")
+                replacement = (
+                    overrides.get(tool_call_id)
+                    if isinstance(tool_call_id, str)
+                    else None
+                )
+                if replacement is not None:
+                    message["content"] = replacement
+            messages.append(message)
         return messages
+
+    def _provider_overrides_for(
+        self,
+        conversation_id: UUID,
+        request_id: UUID | None,
+    ) -> dict[str, str]:
+        entry = self._provider_overrides.get(conversation_id)
+        if entry is None:
+            return {}
+        owning_request_id, overrides = entry
+        if request_id is None or owning_request_id != request_id:
+            del self._provider_overrides[conversation_id]
+            return {}
+        return overrides
+
+    def _forget_provider_overrides(self, conversation_id: UUID) -> None:
+        self._provider_overrides.pop(conversation_id, None)
 
     def _sync_context(
         self,
@@ -172,7 +225,12 @@ class ConversationEngine:
         context: Context,
         request_id: UUID | None = None,
     ) -> None:
-        context.values["messages"] = self._context_messages(conversation)
+        overrides = self._provider_overrides_for(
+            conversation.conversation_id,
+            request_id,
+        )
+        messages = self._context_messages(conversation, overrides, request_id)
+        context.values["messages"] = messages
         context.values["conversation_id"] = str(conversation.conversation_id)
         if request_id is not None:
             context.values["conversation_request_id"] = str(request_id)
@@ -247,14 +305,17 @@ class ConversationEngine:
                 metadata=dict(metadata or {}),
             )
             conversation.add_turn(turn)
-            self._sync_context(conversation, context, request_id)
             if provider_content is not None:
-                messages = list(context.values.get("messages", []))
-                if messages and messages[-1].get("tool_call_id") == tool_call_id:
-                    transient = dict(messages[-1])
-                    transient["content"] = provider_content
-                    messages[-1] = transient
-                    context.values["messages"] = messages
+                entry = self._provider_overrides.get(
+                    conversation.conversation_id
+                )
+                if entry is None or entry[0] != request_id:
+                    entry = (request_id, {})
+                    self._provider_overrides[
+                        conversation.conversation_id
+                    ] = entry
+                entry[1][str(tool_call_id)] = provider_content
+            self._sync_context(conversation, context, request_id)
             return turn
 
     def complete_response(
@@ -263,9 +324,12 @@ class ConversationEngine:
         response: Response,
         context: Context,
     ) -> ConversationTurn | None:
-        if not response.text:
-            return None
         with self._lock:
+            # The turn is over, so sensitive tool output has served the provider
+            # call it was needed for and stops being replayed into the context.
+            self._forget_provider_overrides(context.conversation_id)
+            if not response.text:
+                return None
             conversation = self.ensure(context.conversation_id)
             existing = next(
                 (

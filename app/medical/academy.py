@@ -15,7 +15,7 @@ import random
 import threading
 from collections import Counter
 from collections.abc import Callable, Coroutine, Iterable
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -634,6 +634,7 @@ class MedicalAcademy:
             "insights": self.learning.insights(limit=4),
             "recent_documents": [self.pipeline.payload(document) for document in documents[:5]],
             "recent_exams": [self.exam_summary(exam) for exam in recent_exams],
+            "term_of_day": self.term_of_day(),
             "recent_attempts": [
                 {"attempt_id": attempt.attempt_id, "exam_id": attempt.exam_id, "score": attempt.score, "finished_at": attempt.finished_at.isoformat() if attempt.finished_at else None}
                 for attempt in attempts
@@ -1988,7 +1989,11 @@ class MedicalAcademy:
                 analysis["events"] = events
                 self.study.understanding.confirm_follow_ups()
                 if session.adaptive_difficulty and analysis["total"] >= 5:
-                    recent = [bool(attempt.answers[question_id].correct) for question_id in exam.question_ids if question_id in attempt.answers and attempt.answers[question_id].correct is not None]
+                    # The level is a claim about what the student knows, so only
+                    # what this paper measured may move it: a study-only question
+                    # is shown and explained but is evidence of nothing.
+                    measured = set(analysis["scored_question_ids"])
+                    recent = [bool(attempt.answers[question_id].correct) for question_id in exam.question_ids if question_id in measured and question_id in attempt.answers and attempt.answers[question_id].correct is not None]
                     suggested, reason = self.learning.suggest_difficulty(session.difficulty, recent)
                     analysis["adaptive"] = {"previous": session.difficulty, "suggested": suggested, "reason": reason}
                     if suggested != session.difficulty:
@@ -2513,6 +2518,30 @@ class MedicalAcademy:
             "exams": self.exams()[:10],
         }
 
+    def term_of_day(self, today: date | None = None) -> dict[str, Any] | None:
+        """One Latin term a day, the same all day, straight from the catalogue.
+
+        The pick is the calendar date's ordinal over the sorted structure
+        list, so every launch of the same day shows the same term and the
+        whole catalogue comes around before any term repeats. Nothing is
+        generated: the entry is the anatomy card as it stands.
+        """
+        structures: list[dict[str, Any]] = []
+        for region in self.anatomy.hierarchy():
+            for kind in region["kinds"]:
+                structures.extend(kind["structures"])
+        if not structures:
+            return None
+        structures.sort(key=lambda item: item["structure_id"])
+        chosen = structures[(today or date.today()).toordinal() % len(structures)]
+        return {
+            "structure_id": chosen["structure_id"],
+            "latin": chosen["canonical"],
+            "turkish": chosen["turkish"],
+            "region_label": chosen["region_label"],
+            "kind_label": chosen["kind_label"],
+        }
+
     def anatomy_structures(self) -> dict[str, Any]:
         return {
             "hierarchy": self.anatomy.hierarchy(),
@@ -2553,6 +2582,15 @@ class MedicalAcademy:
         a save sent again because its reply was lost is answered from
         memory and moves nothing a second time. The memory is bounded and
         lives with the process — a retry belongs to the same sitting.
+
+        This one does not ask the scoring decision, and deliberately. The
+        ``Question`` below is a carrier for the concept, not a bank item: it
+        has no options, no key and no source, because the station was graded
+        against the curated structure data itself (``AnatomyLab.quiz``). The
+        scoring policy answers "can this question's answer key be trusted",
+        which a station with no key has already answered another way. Asked
+        anyway it would return ``no_answer_key`` and the lab would stop
+        recording anything at all.
         """
         key = str(submission_id or "").strip()[:80]
         with self._lock:

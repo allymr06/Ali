@@ -193,6 +193,641 @@ outranked the panel's own `hidden` attribute, so an empty narration panel took
 from 485 px to 588 px once it was fixed. A page test now refuses any class that
 sets `display` on an element the page hides without its own `[hidden]` rule.
 
+## The chat header renames too (21 September 2026)
+
+The pencil moved up front: a small ✎ beside the chat title opens the
+same promptDialog-and-rename_conversation path the drawer uses, for
+the thread that is open right now. It exists only when a stored
+thread is active - a brand-new empty chat has nothing to rename.
+
+## The brief snoozes in place (21 September 2026)
+
+Reminder rows on the home brief carry a small +10 that appears on
+hover: one press runs the same snooze_reminder path as the Tasks
+screen, stops the row's own jump to Tasks, answers through the toast
+and reloads the brief. A reminder without an id (older payloads)
+simply draws no badge.
+
+## The unit table folds its I too (21 September 2026)
+
+toolboxUnit carried the same latent locale trap the ledger sieve had:
+"5 MIL KM" lowered MIL to a dotless mıl and matched nothing. The
+file-local toolboxFold (searchFold's twin, kept local so QuickJS can
+load toolbox.js alone) now feeds both the unit lookup and the ledger
+sieve, and no toLocaleLowerCase is left in toolbox.js.
+
+## Conversations carry their own names (21 September 2026)
+
+Every drawer row grew a pencil: promptDialog (confirmDialog's sibling
+with one text field - trimmed value on confirm or Enter, null on
+cancel or Escape) feeds rename_conversation, which stores the name in
+the conversation's metadata. The derived title (first user message)
+stays the fallback: an empty name returns to it, archived threads
+rename too, search speaks the new name, and 80 characters is the cap.
+
+## Notes by hand on the Memory screen (21 September 2026)
+
+The Memory screen grew a small form above the groups: type a note,
+press Not ekle, and it runs through the very same remember_note
+bridge the palette uses - guard, bounds, duplicate-returns-existing
+and all. Success clears the field and search and reloads the list.
+
+## A note from the palette (21 September 2026)
+
+"not: ..." in the palette offers to remember the rest: the bridge's
+remember_note runs the same sensitive-data guard the inference path
+uses, refuses empty and over-500 bodies in words, returns the existing
+entry for a duplicate instead of a copy, and the guard's own detail
+never leaks into the error. The demo bridge refuses honestly.
+
+## One fold to search them all (21 September 2026)
+
+Every user-facing search on the page - chat find, conversation search
+and its <mark>, palette scoring via lower(), the Academy's document
+and concept filters, prerequisite matching, the demo bridge - now runs
+through one deterministic `searchFold`: the Turkish I family collapses
+one-to-one to plain i before the generic lowering. PROVIDER finds
+provider, HATIRLATICI finds Hatırlatıcı, indexes into the fold still
+point into the original, and QuickJS folds exactly like the live
+window (no locale APIs anywhere).
+
+## The ledger can be searched (21 September 2026)
+
+Tanılama's event ledger gained a text sieve beside the level select:
+a Turkish-folded substring over what a row shows (level, component,
+name, message, attributes - not the time, which is layout). The count
+becomes "X / Y olay" while any filter is on, the fresh-row highlight
+respects the sieve, and Kopyala copies exactly the visible slice.
+
+## Fenced code wears its language (21 September 2026)
+
+A ``` opener's info word becomes a small corner badge beside the copy
+control - but only as a clean token (letters, digits, `_+#.-`, at most
+24). Anything stranger, hostile included, earns no badge at all, and a
+mid-stream cut keeps the badge it opened with.
+
+## The bell sorts itself (21 September 2026)
+
+The notification centre gained kind chips - Tümü plus one per kind
+present, real counts, most numerous first. The filter is a view and
+never a mutation: read-all and clear still reach everything, a kind
+that vanishes resets to Tümü, and a single-kind centre draws no
+chips at all.
+
+## A routine can run right now (21 September 2026)
+
+Every routine row gained Çalıştır: the same engine, permission and
+notification path as a scheduled run, the schedule itself untouched.
+A paused or busy desktop refuses in words - run-now never queues
+silently, so the deferred-retry path stays a scheduled-run affair.
+
+## The settings know their own build (21 September 2026)
+
+Ayarlar gained a Hakkında card: application, Python and WebView2
+versions plus the data folder path, every value measured by the bridge
+and a missing one drawn as a dash. "Veri klasörünü aç" opens that
+same folder through os.startfile, only on the page's own click, and
+failures come back as words.
+
+## A fired reminder offers another round (21 September 2026)
+
+Reminder entries in the bell carry ⏰: one press creates a NEW
+reminder with the same text ten minutes out - the button's title says
+exactly that, the entry stays as the durable record, and the toast
+carries the service's own answer either way.
+
+## The composer remembers what you sent (21 September 2026)
+
+Ctrl+ArrowUp/Down in the chat box walks the palette's short memory of
+sent commands, terminal style: the unsent draft waits at the bottom of
+the walk, typing by hand or sending leaves it, and plain arrows keep
+moving the caret. `historyStep` is pure and edge-honest (null at both
+ends, clamped after the history shrinks).
+
+## Reminders can wait ten minutes (21 September 2026)
+
+Every reminder row gained "+10 dk": `ReminderService.snooze` moves the
+due time to now+minutes, resets claims, retries and the stale error,
+and refuses what is delivered, cancelled, unknown or non-positive. The
+bridge needs no confirmation - a snooze is reversible - and the chat
+model reaches the same tool ("ertele" selects it).
+
+## Tables are tables (21 September 2026)
+
+The markdown renderer learned tables: a header row, a rule and body
+rows become a real `<table>`, cells keep their inline markdown, short
+rows pad to the header, and a stray pipe line without a rule stays the
+plain text it is. Hostile cells stay escaped like everything else.
+
+## Code blocks are code (21 September 2026)
+
+The chat's markdown renderer learned fenced blocks: ``` opens a literal
+`<pre>` where inline markdown never runs, a stream cut mid-block still
+renders what arrived, and hostile content stays escaped. Every block
+carries a copy control in its corner, through the page's one honest
+clipboard hand.
+
+## Flashcards speak (21 September 2026)
+
+The SRS review card gained Seslendir: it reads exactly what is on
+screen - the front alone, or front plus answer once revealed, never
+the hidden back - through the same gesture-unlocked Speech player,
+and only when the voice service exists.
+
+## The sleep timer shows itself (21 September 2026)
+
+While a Spotify sleep timer is armed, the remote's ⏰ button becomes
+"⏰ 23 dk · iptal" - the measured minutes left, and one press cancels
+through the allow-listed tool. now_playing carries the figure only
+while the timer is really running.
+
+## The remote glances at WhatsApp (21 September 2026)
+
+The Kumanda card shows "💬 3 sohbette okunmamış mesaj" - a count,
+never a name or a preview. The glance uses `whatsapp_read_chats` with
+its new `launch=False`: a closed WhatsApp answers "WhatsApp kapalı"
+and stays closed, because a 12-second poll must never open
+applications by itself.
+
+## The remote takes requests (21 September 2026)
+
+The Kumanda card gained a request line: type a song, press Enter, and
+it goes through the same allow-listed `spotify_queue_track` - searched,
+queued, verified in the queue panel, and reported in the tool's own
+words. The line ships only when Spotify is around, and disables itself
+while a request is in flight.
+
+## Tomorrow in the brief (21 September 2026)
+
+The almanac's forecast call now asks for two days, and the brief shows
+"Yarın ↑18° ↓12°" when the service answered for tomorrow - a
+one-day answer leaves the row out rather than guessing.
+
+## The term of the day speaks (21 September 2026)
+
+The Academy's term-of-the-day card gained Seslendir: the Latin name and
+its Turkish, through the same gesture-unlocked Speech player as the
+chat and the dictionary - and only when the voice service exists.
+
+## The dictionary speaks (21 September 2026)
+
+The TDK card gained two hands: Seslendir reads the headword and its
+first two senses through the same speak_text path the chat uses (the
+button exists only when the voice service does), and Kopyala puts the
+card's text on the clipboard with the action bar stripped out first.
+
+## The held toast wears a moon (21 September 2026)
+
+When quiet hours hold a toast back, the notification centre's entry now
+carries a small moon with the plain words "Sessiz saatlerde geldi;
+Windows bildirimi gösterilmedi" - postponed, and seen to be postponed.
+The quiet decision moved up into `_publish` so the entry is marked at
+the moment it is held; `_notify_os` keeps only its own concerns.
+
+## Archived threads step aside, the ledger copies (21 September 2026)
+
+The drawer can now fold its archive away: one quiet row at the bottom
+hides archived threads (and says how many are hidden so nothing
+disappears silently), another brings them back - and the thread that
+is open right now never hides, archived or not. The choice lives in
+this device's localStorage. The event ledger gained a Kopyala button:
+the visible, filtered slice as plain timestamped lines through the
+same honest clipboard hand - made for pasting into a bug report.
+
+## The palette's short memory (21 September 2026)
+
+An empty palette now lists the last five commands actually sent to
+JARVIS - "Tekrar gönder" rows, newest first, a repeat moving up rather
+than duplicating, entries clipped at 80 characters. The memory lives in
+this device's localStorage and one more row forgets it on request,
+saying so in its own label ("bu cihazda").
+
+## A finished focus asks to be counted (21 September 2026)
+
+When a focus session runs its full course and the Academy is open,
+JARVIS asks one question: should these minutes enter the study log?
+Accepted, they flow through the planner's own `plan_log_study` (as
+activity "focus") and appear in the weekly summary and the month's
+rhythm like any studied minutes; declined or under five minutes or
+with the Academy closed, nothing is written. A session stopped early
+never asks - only a finished one could have been study.
+
+## A copy at hand, a clock in the corner (21 September 2026)
+
+Every full-size chat bubble - the user's and JARVIS's alike - carries a
+copy control that puts the bubble's text on the clipboard through one
+shared hand, and that hand reports what actually happened ("Panoya
+kopyalandı" only after the write succeeded, "Panoya erişilemedi" when
+the platform refused). The research report gained the same: "Kopyala"
+beside the export button puts the exact Markdown the export writes on
+the clipboard. And the mini window shows a small clock, ticking every
+half minute only while the mini window is the one on screen.
+
+## The session on the pulse, and snow (21 September 2026)
+
+The pulse gained two measured rows: how long this JARVIS has been up
+(seconds since the bridge came up, spoken as "2 sa 14 dk") and how much
+the state directory's files weigh, remeasured at most once a minute.
+And one piece of pure whimsy: "Kar yağdır" in the palette drops
+fifteen seconds of CSS snow over the shell - it refuses honestly when
+reduced motion is on, never stacks two skies, and removes itself.
+
+## Quiet hours and the battery (21 September 2026)
+
+Ayarlar' assistant card gained "Sessiz saatler": inside the window
+(e.g. 23:00-08:00, wrapping midnight) the native Windows toast is held
+back while the in-app notification centre keeps collecting - nothing
+is lost, only postponed, and the card says exactly that. The window
+lives in the desktop profile next to the brief time, is normalized on
+save, refuses a start equal to its end, and a page that omits the key
+keeps the stored choice. A broken stored spec fails open: it never
+silences notifications by accident. The Tanılama pulse now carries the
+battery when the machine has one - percent and "şarjda" from
+GetSystemPowerStatus, the API's unknown 255 answered as None, and a
+desktop without a battery simply has no battery cell rather than a
+dash pretending one failed.
+
+## Pins in the drawer, find in the chat (21 September 2026)
+
+The conversation drawer can pin: a 📌 on every row keeps that thread
+in a "Sabitlenmiş" group at the top. Pins live in this device's
+localStorage - a convenience of the screen, and the drawer's note says
+so ("bu cihazda sabitler") instead of pretending they sync. The chat
+toolbar gained a find box: it filters the open conversation's bubbles
+as you type (Turkish-folded, case-insensitive), counts its matches
+("3 eşleşme" / "eşleşme yok"), keeps filtering messages that arrive
+while it is active, and Escape clears it before it ever reaches the
+global Escape chain.
+
+## The sun, the lira and a nudge, all from the palette (21 September 2026)
+
+The almanac's daily answer now carries the day's frame - sunrise and
+sunset ride the same Open-Meteo call and the brief shows "Gün doğumu
+06:52 · batımı 19:24" only when the service actually said so. The
+palette gained three hand-offs, all pure parsers in `toolbox.js`:
+`100 usd` (also `$50`, `€10 tl`, `250 tl usd`) becomes a conversion on
+the almanac's cached ECB reference rates through the new
+`convert_currency` bridge - the answer always names the rate's date,
+lira alone asks for a target instead of guessing, and the demo bridge
+refuses rather than inventing a rate; `hatırlat 10 dk su iç` and
+`hatırlat 09:30 toplantı` become real reminders through the existing
+`create_reminder` path; `odak 45` starts the focus timer with that many
+minutes.
+
+## The phone gets the whole house, and a remote in hand (21 September 2026)
+
+A paired phone loads the desktop Nova page itself (`/nova/`, shim
+first), and its assets are served unstamped with `no-cache`, so every
+card of the last days - calculator, dictionary, Hesaplar, the month's
+rhythm, the pulse, the almanac in the brief, the vision switch - reached
+the phone the moment the desktop restarted; `test_mobile` now pins that
+the served page carries them. What the phone could not do was hold a
+remote: the home screen (phone and desktop alike) now has a "Kumanda"
+card - what is playing, previous/play-pause/next, the heart, a volume
+slider, a 30-minute sleep timer, and the running WhatsApp delegation
+with its stop button. Every press is one bridge method,
+`run_remote_tool`, which runs an allow-listed LOW/read-only tool
+through the ToolExecutor (policy, timeout, verification) and returns
+the tool's own honest report; the bridge never calls an integration
+directly. Still desktop-only by design: vision (`run_vision`), the
+desktop voice session, native pickers and window operations
+(`PHONE_DENIED`), so the research export button on the phone answers
+"telefondan yapılamaz" rather than pretending.
+
+## Spotify, the way a person uses it (21 September 2026)
+
+Beyond media keys and the search-and-press play path, JARVIS now uses
+the desktop app's own controls the way a hand does, through UI
+Automation and without an account link (`app/integrations/spotify_desktop.py`
+plus handle-based helpers in `uia.py`): the volume and progress sliders
+(`spotify_set_volume`, `spotify_seek`, both read back before claiming
+success), the shuffle button whose name announces its state
+(`spotify_shuffle`, pressed until the window agrees), the repeat
+checkbox's three toggle states (`spotify_repeat`), the heart on the
+current track (`spotify_like_track`, honest when the button already
+says "Add to playlist"), the sidebar rows (`spotify_library`) and a
+double-click on one of them verified by the window title
+(`spotify_play_library`), a result's "More options → Add to queue"
+checked through the queue panel (`spotify_queue_track`), a sleep timer
+that fades the last half minute and pauses (`spotify_sleep_timer`), and
+a now-playing that reads the transport bar's own words when the title
+is silent because playback is paused. The search play path now presses
+the row a person would: an exact title first, then the artist card,
+then the top result. While JARVIS speaks in a voice session the music
+ducks to 30 % and comes back afterwards (`SpotifyDucker`, chained into
+the voice state callback; a failing ducker can never break the turn).
+The application keeps its `spotify` reference for that. Everything was
+mapped on the live window with five probes (button names are English
+in this installation; the shuffle name updates a beat late).
+
+## WhatsApp, the way a person uses it (21 September 2026)
+
+The delegation agent had gone blind without anyone noticing: WhatsApp
+Desktop 2.26xx is a Chromium page whose bubbles no longer carry a
+timestamped DataItem name, so `read_conversation` returned nothing and
+the agent polled an empty list every six seconds while fronting the
+window each time. Fourteen masked UIA probes (message text never left
+the machine) mapped the real tree: chat rows are the children of one
+DataGrid; the message list is the nearest ancestor of any bubble that
+has DataItem children; a bubble's words exist only in the document's
+TextPattern, as an optional author line ("Siz:" or "<Name>:"), the
+text, and HH:MM; an outgoing bubble carries a "HH:MM Okundu / Teslim
+edildi / Gönderildi" button, an incoming one does not. Reading through
+that path takes ~0.1 s and works with another window focused; only a
+minimized window publishes nothing, so it is restored without
+activation (SW_SHOWNOACTIVATE). The integration now returns who wrote
+what, the chat list with unread counts (the badge can trail the time),
+and the open chat's title.
+
+On top of that the agent behaves like a person (`whatsapp_human.py`,
+pure and tested): it never answers its own or unattributed bubbles, it
+stops reading when the user switches to another chat, it measures the
+user's style from their own bubbles (case, punctuation, length, emoji,
+favourite words) and puts the measurement in the prompt - honestly
+saying when there are too few samples - it leaves a plain "tamam" or an
+emoji unanswered, it holds replies through quiet hours (00:30-08:00)
+without forgetting them, it takes a moment to read and types at a
+human pace (the other side sees "yazıyor…"), and it sends the model's
+lines as separate short bubbles. Every send still goes through the
+verified, HIGH-risk send path; delegation is still approval-gated and
+bounded by turns and time.
+
+## Vision is on, from the Settings screen (21 September 2026)
+
+Screen vision had been wired since Phase 11 but never reached the
+desktop: `vision_enabled` lived only as an environment default of
+`false`, the profile did not carry it, and the Settings screen showed it
+as a read-only "kapalı". The desktop profile now owns the switch the way
+it owns research - `ProviderPreferences.vision_enabled`, default on, an
+assistant-card switch, `JARVIS_VISION_ENABLED` keeping precedence, and
+the flag folded to off where no Windows screen source exists. Nothing in
+the consent chain changed: the Vision screen's request still mints a
+one-use grant bound to the exact purpose, the taskbar is masked, and the
+raw capture is discarded. A page that omits the key keeps the stored
+choice, so an older client cannot switch the screen off by omission.
+
+## The palette learns Turkish (20 September 2026)
+
+`app/integrations/dictionary.py` asks TDK's Güncel Türkçe Sözlük
+(sozluk.gov.tr, keyless JSON) through the same URL policy and pinned
+transport as web research, reshapes one entry - headword, origin, up to
+six senses with one example, the compound words - and caches it for
+half an hour, misses and dead-service answers included. The palette
+recognises `sözlük <kelime>` (also `sozluk`, `tdk`) and opens a card
+over the `define_word` bridge; the card credits TDK and marks the data
+a live query. Python's `casefold` broke Turkish here (İ became i plus a
+combining dot, so HEKİM missed hekim): the service folds I/İ the
+Turkish way before asking. Found along the way and fixed in the same
+batch: the F1 card's close button had no glyph and no click handler
+(both cards now close by X and by a click on the veil), a month cell
+with answers or cards but no logged minutes sat empty while the legend
+called the day active (it now wears the first shade), and the morning
+notification line carries the almanac when it answered - `Bekleyen iş
+yok · İstanbul 21°, parçalı bulutlu · 1 $ = 41,2 ₺` - and stays
+silent about it when it did not, because the brief page already prints
+the reason in full.
+
+## A backup must never overwrite a backup (20 September 2026)
+
+The third defect the flake hunt surfaced, and the worst of the three:
+Windows serves `datetime.now` in ~16 ms steps (2000 tight calls produced
+two distinct values on this machine), so two quick academy backups could
+share a stamp to the microsecond - and the second silently replaced the
+first. "The rotation keeps two" was then one copy wearing two names in
+the report. A same-instant sibling now takes a counter, lettered so the
+name order stays the creation order (`b2` sorts after the plain name's
+`.` where `-2` would sort before it), and a regression test freezes the
+clock, takes three backups in one instant, and demands three files with
+the rotation removing the true oldest.
+
+## The month's rhythm and the system's pulse (20 September 2026)
+
+- **Aylık ritim.** The progress screen shows the last twenty-eight days
+  as a calendar heatmap, from the same weekly_report records the summary
+  prints; intensity is minutes in honest steps, tooltips carry exact
+  figures, empty days are empty cells, and the report itself now
+  stretches to 28 days (capped at 31, where the record limits still
+  hold).
+- **Sistem nabzı.** The Tanılama header carries live CPU, RAM and disk
+  figures, measured with GetSystemTimes and GlobalMemoryStatusEx - no
+  psutil, no estimates. The CPU figure is the busy share between two
+  beats, so the first beat honestly shows a dash; the pulse ticks every
+  five seconds and only while the screen is visible.
+- **Odak sesi.** A palette toggle loops four seconds of synthesized
+  brown noise through a low-pass filter - a steady rain-like study bed
+  that names itself synthetic, never autostarts, and stops on Escape.
+- The palette also rolls a die and flips a coin, each labelled random.
+
+## A voice for replies, ink for reports, accents to taste (20 September 2026)
+
+- **Sesli oku.** Every assistant bubble grows a speaker button (shown
+  only while the voice service exists). The bridge's `speak_text` rides
+  the same cloud-then-local Turkish voices the phone uses, strips markup
+  the same way, bounds the length by the same setting, and returns
+  base64 audio for a plain `<audio>` element - an honest refusal keeps
+  the text and says why. One bubble speaks at a time; clicking again
+  stops it.
+- **Rapor mürekkebi.** The research report exports as Markdown: the page
+  composes exactly what the cards say (findings with citations, sources
+  with provenance, uncertainties in Turkish) and the new `save_markdown`
+  bridge owns the boundaries - an existing folder from the picker, a
+  flattened safe basename, a size cap, and never overwriting.
+- **Vurgu renkleri.** Ayarlar's appearance card offers the shell's one
+  intelligence colour in five moods (buz, zümrüt, kehribar, gül, leylak),
+  bound in `tokens.css` before the rooms so the academy and research
+  keep their own identities; the choice lives in `localStorage`.
+
+## Two races the gate itself surfaced (20 September 2026)
+
+Running the full suite repeatedly under load turned two ~10% flakes into
+diagnoses, and both were real:
+
+- **An oversized recording aborted the connection.** A voice upload just
+  over the 2 MB cap is refused by header arithmetic before a byte is
+  read, but the drain ceiling sat exactly at the cap, so the remainder
+  could not be swallowed and the socket closed while the phone was still
+  sending - the client saw a connection abort instead of the 413 the
+  server had already written. The ceiling is now twice the cap, and a
+  raw-socket test pins the whole story: the 413 arrives, the remainder
+  is drained, and the same connection serves the next request.
+- **turn_done could overtake turn_started.** The live channel announced
+  a turn after handing it to the runner, so an engine that answers
+  instantly could finish - and emit turn_done from the runner thread -
+  before the accepting thread announced the start. Accepting the message
+  is the start: the announcement now precedes the hand-over, and a
+  refused hand-over closes the same lifecycle as failed, so the channel
+  never carries a start without an end or an end without a start.
+
+## The morning almanac (20 September 2026)
+
+The daily brief now opens with the sky and the lira. `app/integrations/almanac.py`
+asks Open-Meteo for the one city named in Ayarlar (geocoded once, in
+Turkish) and Frankfurter's ECB reference rates for what a dollar and a
+euro cost, both keyless, both through the research module's URL policy
+and pinned transport, both cached for half an hour - failures included,
+so a dead service is not knocked on every glance at the home screen.
+Each half reports independently and honestly: no city means no weather
+line and no nagging, a service that does not answer is named with its
+HTTP status, missing fields refuse instead of showing zero, and an
+unknown WMO code shows nothing. The city travels the same profile path
+as the other assistant preferences (`settings.json`, environment
+variable keeps precedence) and is edited on the Ayarlar assistant card.
+
+## A drawer of small instruments (20 September 2026)
+
+Ali asked for features, necessary and unnecessary alike, until he says
+stop. The first drawer, all offline and deterministic:
+
+- **The palette computes.** `js/toolbox.js` gives the command palette an
+  answer row: arithmetic ("12*(3+2)", Turkish decimal commas, powers,
+  sqrt/log/ln and degree-speaking trig) and unit conversions ("70 kg lb",
+  "37 c f", "120 mmhg kpa", "90 dk sa") over a hand-rolled tokenizer and
+  shunting-yard - never eval. The guard errs toward silence, so command
+  queries are left alone; six significant digits, comma decimals.
+- **Clinical calculators.** A "Hesaplar" section in the academy
+  (`js/medcalc.js`): twelve bedside formulas - VKİ, Mosteller VYA, Devine,
+  Cockcroft-Gault, anyon açığı, düzeltilmiş Ca ve Na, Friedewald (with its
+  own TG ≥ 400 refusal), OAB, hesaplanan ozmolalite, 220−yaş, and a lab
+  unit converter (glukoz, kolesterol, trigliserid, kreatinin). Each card
+  names its formula; the banner says education-only; missing inputs answer
+  with silence, never zero. Every formula is pinned by a test vector.
+- **The day's term.** The academy dashboard shows one Latin term a day,
+  picked deterministically (date ordinal over the sorted catalogue) from
+  the real anatomy cards, and clicking it opens that structure in the lab
+  through `Lab.pendingSelect`. Empty catalogue says so.
+- **F1.** A keyboard-shortcut card whose every named key is asserted by a
+  test to be a binding the shell actually has.
+
+## Research: many doors, and a room of its own (20 September 2026)
+
+Ali asked for the research screen to get the academy's treatment and to
+be able to look in YouTube, GitHub and many other places.
+
+- **Where it looks.** `app/research/sources.py` is the catalogue: the open
+  web (DuckDuckGo), YouTube (candidates from the web index, each confirmed
+  by YouTube's own oEmbed answer for title and channel), GitHub, Wikipedia
+  (Turkish first, English when short), PubMed, arXiv, Stack Overflow,
+  Hacker News, and one named site. Every source is keyless and read-only,
+  speaks JSON or Atom through the same pinned transport and URL policy as
+  every other fetch, and runs in its own thread under one deadline; a
+  source that fails is named in the report's uncertainties and never
+  takes the others down. A hit that carries its source's own evidence is
+  cited as it is, without fetching a page that would say less.
+- **The tool is unchanged unless asked.** `research_web` still searches
+  the web alone; the model may pass `sources` (a comma list) or a `site`.
+  The cache key includes both. `JARVIS_RESEARCH_SOURCES` bounds the
+  catalogue.
+- **The room.** `Alt+8` opens Araştırma the way `Alt+3` opens the
+  academy: the shell's chrome steps aside, a side column asks the core
+  where it may look and remembers the selection (with Genel, Kod, Bilim,
+  Video and Hepsi as starting points, and a field for one site), and the
+  report is drawn as cards by kind - depo, video, makale, tartışma,
+  ansiklopedi, web sayfası - with the facts each endpoint gave (stars and
+  language, channel, journal and year, score and answers), the findings
+  with their citations, and the uncertainties in Turkish. Indigo daylight
+  with an amber lamp, a night switch, a sound switch, and an opening in
+  which the eight sources light up one by one on their lines to the hub.
+- **Shared machinery.** `js/rooms.js` holds what the two rooms share: the
+  Web Audio engine, the remembered switches, and the veil runner.
+
+Tests: `tests/test_research_sources.py` (every source over a canned
+transport, gzip unpacking, interleaving, failure isolation, the direct
+evidence path, the cache key, the tool contract) and six page checks in
+`tests/test_nova_web.py` (wiring, palette and contrast, Turkish
+uncertainties, presets, card escaping, room switches).
+
+## The academy as a room of its own (20 September 2026)
+
+Ali asked for a Medical Academy interface that is not another Nova screen:
+bright and cheerful where the shell is dark and technical, heavier type
+that reads at a glance, an opening of two or three seconds with sound when
+the academy is entered, and independence from JARVIS's own chrome.
+
+- **A room, not a tab.** Entering the academy sets `body.academy`; the
+  rail, the top bar and the ambient field step aside and the academy fills
+  the window with its own chrome: a side column with the thirteen sections
+  grouped under Çalış, Ölç, Anla and Lab, a `JARVIS` way back, a serif
+  masthead greeting by the clock, and a heartbeat line for a rule. `Esc`
+  leaves as before. On the phone the column becomes a strip.
+- **Its own palette, in one place.** `css/tokens.css` re-binds every token
+  under `body.academy` - white ground, deep slate ink, teal accent, serif
+  display and kicker faces, coral heartbeat, a warm sun-glow - so the
+  existing components re-dress themselves; `css/academy.css` adds layout
+  and weight (body 500, labels and sections 600, headings 700). Body and
+  secondary ink clear WCAG AAA on the ground and tertiary ink clears AA,
+  and a test pins the ratios. The academy looks the same whichever theme
+  the shell is in; native fields switch to the light colour scheme.
+- **The opening.** A coral ECG trace draws across the window, a heart
+  pulses on each R wave, and the masthead rises before the veil lifts,
+  2.65 seconds in all. Under the title: the nearest exam countdown exactly
+  as the topbar chip reports it, or nothing. Any click or key skips it,
+  the in-app "Hareketi azalt" switch removes it entirely, and the
+  workspace loads underneath meanwhile.
+- **Sound, synthesised.** Web Audio makes the monitor blip on each R wave,
+  a low lub-dub timed from the drawn trace itself, and a quiet chord as
+  the masthead arrives. No audio file ships. A switch in the side column
+  remembers "Ses açık / Ses kapalı" per browser, and a skipped opening
+  goes quiet at once.
+- **Night on request.** A second switch beside it turns the academy dark -
+  the same identity with the lights down, declared last in `tokens.css` so
+  it outranks the shell's theme - and remembers the choice per browser.
+  Daylight stays the default; the dark block keeps the same contrast
+  floors, and a test pins them too.
+
+Tests in `tests/test_nova_web.py` pin the wiring, the daylight palette and
+its contrast, the heavier type, the honest countdown line and greeting,
+the silent-when-muted and no-motion paths, and the grouped section order.
+
+## End-to-end audit and its repairs (20 September 2026)
+
+A multi-agent audit of the whole application, plus a live pass over the
+running desktop and phone surfaces. The live pass found nothing broken:
+all twelve Nova screens and all thirteen Medical Academy views rendered
+with no console error and no horizontal overflow, a chat turn, a
+committee rehearsal, a card review, reminders, research, the weekly
+report, the permission audit and the mobile API surface (401 before
+pairing, 403 without the page header, 403/404 on denied and unknown
+bridge methods, real cloud speech) all behaved. The static audit reached
+the task and execution layer before its budget ran out, and every one of
+its eight claims was reproduced by hand before anything was changed.
+
+Fixed:
+
+- **A failed resume reported success.** `TaskControlService.resume`
+  counted FAILED, CANCELLED and PAUSED as verified, so a task that died
+  on its first step told the model, the desktop and the phone that the
+  work was done. Only COMPLETED is a verified success now; PAUSED is
+  partial and carries `side_effects_may_continue`, FAILED and CANCELLED
+  are failures and carry the task's own error.
+- **A parked task could not be cancelled.** `cancel` only ever
+  interrupted a live executor, so the cancel control the phone offers
+  for queued, paused and waiting tasks always failed with a ValueError.
+  A task that is not actively executing is now cancelled through the
+  manager; the terminal-state refusal is unchanged.
+- **The approval capability was written to disk.** A granted
+  single-use approval rode `step.metadata` into `plan.json`, leaving the
+  operation id and binding digest readable on disk. Plan persistence now
+  strips it, so the capability stays in memory; a step resumed after a
+  pause asks again, which is what fail-closed means.
+- **The phone labelled every task with a raw UUID.** The client read
+  `task.title`/`task.description` while the server sends `goal`.
+- **English engine strings were shown as Turkish UI text.** The
+  execution engine's failures are stable machine values; both the
+  desktop task card and the phone now map the known ones to Turkish and
+  show an unmapped one verbatim rather than inventing a translation.
+- **A long task could not finish and could not be configured.** One
+  300-second wall-clock budget covered an entire durable task and
+  bootstrap never overrode it, so a bulk job was cut off mid-step with
+  no way to change it short of editing code. The budget is now
+  `JARVIS_EXECUTION_TIMEOUT_SECONDS`, still 300 seconds by default.
+
+Reported, deliberately not changed: recovery resets the step that was in
+flight when the process died back to PENDING without consulting the
+tool's `idempotent` flag, so a non-idempotent side effect can run twice
+after a crash. The risk is real and reproduced, but "unverified means
+redo" is the documented recovery contract and seven tests pin it;
+changing it is the owner's call, and the code now says so in place.
+
 ## Mobile companion: the PC's JARVIS from an Android phone (17 September 2026)
 
 A first phone release, built as a narrow authenticated HTTP surface inside

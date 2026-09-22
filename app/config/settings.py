@@ -295,11 +295,18 @@ class Settings:
     research_max_response_bytes: int = 2_000_000
     research_max_content_characters: int = 50_000
     research_max_redirects: int = 3
-    research_max_sources: int = 5
+    research_max_sources: int = 10
     research_max_concurrency: int = 3
     research_user_agent: str = "JARVIS/0.1"
     research_cache_database_path: str | None = None
     research_cache_ttl_seconds: float = 86_400.0
+    # The places research may look beside the open web, as a comma list of
+    # catalogue ids (app/research/sources.py). The web is always in; the
+    # bootstrap refuses an id the catalogue does not know.
+    research_sources: str = "web,youtube,github,wikipedia,pubmed,arxiv,stackoverflow,hackernews,site"
+    # The morning almanac: weather for one named city and TRY reference
+    # rates on the daily brief, over keyless public services.
+    almanac_city: str = ""
 
     # Manifest-based plugins: off by default, discovered only below the
     # trusted plugins directory, and each plugin stays disabled until the
@@ -325,6 +332,14 @@ class Settings:
 
     core_max_concurrent_requests: int = 8
     core_max_queued_requests: int = 32
+    # Wall-clock budget for one Core execution, a durable task included.
+    # The default is the long-standing 300 s; a long job (bulk conversion,
+    # a big import) needs it raised, and until now that meant editing code.
+    execution_timeout_seconds: float = 300.0
+    # Wall-clock budget for one Core execution, a durable task included.
+    # The default is the long-standing 300 s; a long job (bulk conversion,
+    # a big import) needs it raised, and until now that meant editing code.
+    execution_timeout_seconds: float = 300.0
     core_admission_timeout_seconds: float = 2.0
     provider_circuit_failure_threshold: int = 5
     provider_circuit_recovery_seconds: float = 30.0
@@ -482,6 +497,10 @@ class Settings:
             0 <= int(parts[0]) <= 23 and 0 <= int(parts[1]) <= 59
         ):
             raise ValueError("daily_brief_time must be HH:MM on a 24-hour clock.")
+        if not 1.0 <= self.execution_timeout_seconds <= 86_400.0:
+            raise ValueError(
+                "execution_timeout_seconds must be between 1 and 86400."
+            )
         if not 1024 <= self.mobile_port <= 65535:
             raise ValueError("mobile_port must be between 1024 and 65535.")
         if not 1 <= self.mobile_session_days <= 365:
@@ -568,6 +587,8 @@ class Settings:
             )
         if self.research_cache_ttl_seconds <= 0:
             raise ValueError("research_cache_ttl_seconds must be positive.")
+        if not self.research_sources.strip():
+            raise ValueError("research_sources cannot be empty.")
         if min(
             self.diagnostics_event_capacity,
             self.diagnostics_metric_capacity,
@@ -878,13 +899,21 @@ class Settings:
                 "JARVIS_RESEARCH_MAX_REDIRECTS", 3
             ),
             research_max_sources=_get_positive_int(
-                "JARVIS_RESEARCH_MAX_SOURCES", 5
+                "JARVIS_RESEARCH_MAX_SOURCES", 10
             ),
             research_max_concurrency=_get_positive_int(
                 "JARVIS_RESEARCH_MAX_CONCURRENCY", 3
             ),
             research_user_agent=os.getenv(
                 "JARVIS_RESEARCH_USER_AGENT", "JARVIS/0.1"
+            ),
+            almanac_city=os.getenv("JARVIS_ALMANAC_CITY", "").strip(),
+            research_sources=(
+                os.getenv(
+                    "JARVIS_RESEARCH_SOURCES",
+                    "web,youtube,github,wikipedia,pubmed,arxiv,stackoverflow,hackernews,site",
+                ).strip()
+                or "web"
             ),
             research_cache_database_path=os.getenv(
                 "JARVIS_RESEARCH_CACHE_DATABASE_PATH",
@@ -923,6 +952,9 @@ class Settings:
             ),
             diagnostics_health_timeout_seconds=_get_float(
                 "JARVIS_DIAGNOSTICS_HEALTH_TIMEOUT_SECONDS", 2.0
+            ),
+            execution_timeout_seconds=_get_float(
+                "JARVIS_EXECUTION_TIMEOUT_SECONDS", 300.0
             ),
             core_max_concurrent_requests=_get_positive_int(
                 "JARVIS_CORE_MAX_CONCURRENT_REQUESTS", 8

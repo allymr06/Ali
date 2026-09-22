@@ -40,6 +40,15 @@ class SearchHit:
     snippet: str = ""
     published_at: datetime | None = None
     engine: str | None = None
+    # Where the hit came from and what it is: a video, a repository, a
+    # paper... The page groups by kind; the report keeps the source name.
+    kind: str = "web"
+    source: str = "web"
+    # Evidence the source's own endpoint gave about the result. When it is
+    # present the report cites it directly instead of fetching a page that
+    # would say less (a video's watch page, a repository's rendered README).
+    evidence: str = ""
+    meta: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +113,9 @@ class ResearchSource:
     published_at: datetime | None = None
     resolved_addresses: tuple[str, ...] = ()
     injection_findings: tuple[InjectionFinding, ...] = ()
+    kind: str = "web"
+    source: str = "web"
+    meta: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +191,9 @@ class ResearchReport:
                         }
                         for finding in source.injection_findings
                     ],
+                    "kind": source.kind,
+                    "source": source.source,
+                    "meta": dict(source.meta),
                 }
                 for source in self.sources
             ],
@@ -263,6 +278,13 @@ class ResearchReport:
                     maximum=32,
                 )
             )
+            raw_meta = raw_source.get("meta")
+            meta: list[tuple[str, str]] = []
+            if raw_meta is not None:
+                if not isinstance(raw_meta, Mapping) or len(raw_meta) > 24:
+                    raise ValueError("source.meta must be a small object.")
+                for key, value in raw_meta.items():
+                    meta.append((text(key, "meta.key"), text(value, "meta.value", allow_empty=True)))
             sources.append(
                 ResearchSource(
                     source_id=text(raw_source.get("id"), "source.id"),
@@ -277,6 +299,9 @@ class ResearchReport:
                     content_hash=text(raw_source.get("content_hash"), "source.content_hash"),
                     resolved_addresses=addresses,
                     injection_findings=tuple(findings),
+                    kind=text(raw_source.get("kind", "web"), "source.kind"),
+                    source=text(raw_source.get("source", "web"), "source.source"),
+                    meta=tuple(meta),
                 )
             )
 

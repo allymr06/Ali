@@ -39,13 +39,34 @@ function homeBriefMarkup(brief) {
   if (!brief || brief.ok === false) return emptyState("Özet okunamadı", "Çekirdek köprüsü yanıt vermedi.");
   const rows = [];
   if ((brief.reminders || []).length) {
-    rows.push(...brief.reminders.map((item) => `<button type="button" class="hb-row" data-brief-go="tasks"><span class="hb-icon">⏰</span><span class="hb-text">${esc(item.text)}</span><span class="hb-side">${esc(item.due_local || "")}</span></button>`));
+    rows.push(...brief.reminders.map((item) => `<button type="button" class="hb-row" data-brief-go="tasks"><span class="hb-icon">⏰</span><span class="hb-text">${esc(item.text)}</span><span class="hb-side">${esc(item.due_local || "")}${item.reminder_id ? `<span class="hb-snz" data-brief-snooze="${esc(item.reminder_id)}" title="10 dakika sonraya ertele">+10</span>` : ""}</span></button>`));
   } else if (brief.reminders_available) {
     rows.push(`<div class="hb-row muted"><span class="hb-icon">⏰</span><span class="hb-text">Bugün için hatırlatıcı yok</span></div>`);
   }
   (brief.routines || []).forEach((routine) => rows.push(`<button type="button" class="hb-row" data-brief-go="automation"><span class="hb-icon">🔁</span><span class="hb-text">${esc(routine.name)}</span><span class="hb-side">${esc(routine.next_run_local || routine.schedule || "")}</span></button>`));
   if (brief.tasks_open) rows.push(`<button type="button" class="hb-row" data-brief-go="tasks"><span class="hb-icon">▶</span><span class="hb-text">${brief.tasks_open} açık görev</span></button>`);
   if (brief.notifications_unread) rows.push(`<button type="button" class="hb-row" data-brief-notify><span class="hb-icon">🔔</span><span class="hb-text">${brief.notifications_unread} okunmamış bildirim</span></button>`);
+  const almanac = brief.almanac || {};
+  const weather = almanac.weather || {};
+  const liraFmt = (value) => String(value).replace(".", ",");
+  if (weather.available) {
+    const range = weather.high !== null && weather.high !== undefined && weather.low !== null && weather.low !== undefined
+      ? `↑${weather.high}° ↓${weather.low}°` : "";
+    rows.push(`<div class="hb-row muted"><span class="hb-icon">🌤</span><span class="hb-text">${esc(weather.city)} ${weather.temperature}°${weather.label ? " · " + esc(weather.label) : ""}</span><span class="hb-side">${esc(range)}</span></div>`);
+    if (weather.tomorrow_high !== null && weather.tomorrow_high !== undefined
+        && weather.tomorrow_low !== null && weather.tomorrow_low !== undefined) {
+      rows.push(`<div class="hb-row muted"><span class="hb-icon">📅</span><span class="hb-text">Yarın</span><span class="hb-side">↑${esc(String(weather.tomorrow_high))}° ↓${esc(String(weather.tomorrow_low))}°</span></div>`);
+    }
+    if (weather.sunrise && weather.sunset) {
+      rows.push(`<div class="hb-row muted"><span class="hb-icon">☀️</span><span class="hb-text">Gün doğumu ${esc(weather.sunrise)} · batımı ${esc(weather.sunset)}</span></div>`);
+    }
+  } else if (weather.reason && weather.reason !== "Şehir ayarlanmadı.") {
+    rows.push(`<div class="hb-row muted"><span class="hb-icon">🌤</span><span class="hb-text">${esc(weather.reason)}</span></div>`);
+  }
+  const rates = almanac.rates || {};
+  if (rates.available) {
+    rows.push(`<div class="hb-row muted"><span class="hb-icon">💱</span><span class="hb-text">1 $ = ${liraFmt(rates.usd_try)} ₺ · 1 € = ${liraFmt(rates.eur_try)} ₺</span><span class="hb-side">${esc(rates.date || "")}</span></div>`);
+  }
   const medical = brief.medical || {};
   if (medical.available) {
     if (medical.countdown) rows.push(`<button type="button" class="hb-row ${medical.countdown.days_left <= 7 ? "warn" : ""}" data-brief-medical="plan"><span class="hb-icon">🎓</span><span class="hb-text">${esc(medical.countdown.name)}</span><span class="hb-side">${medical.countdown.days_left} gün</span></button>`);
@@ -70,6 +91,7 @@ function examChipText(countdown) {
 }
 
 function renderExamChip(countdown) {
+  State.examCountdown = countdown || null;   // the academy's opening reads the same figure
   const chip = $("#exam-chip");
   if (!chip) return;
   const built = examChipText(countdown);
@@ -91,6 +113,12 @@ async function renderHomeBrief(force) {
   $$("[data-brief-go]", host).forEach((node) => node.addEventListener("click", () => showScreen(node.dataset.briefGo)));
   $$("[data-brief-notify]", host).forEach((node) => node.addEventListener("click", () => Notify.set(true)));
   $$("[data-brief-medical]", host).forEach((node) => node.addEventListener("click", () => { showScreen("medical"); if (typeof Medical !== "undefined") Medical.show(node.dataset.briefMedical); }));
+  $$("[data-brief-snooze]", host).forEach((node) => node.addEventListener("click", async (event) => {
+    event.stopPropagation(); // the row underneath jumps to Tasks; +10 stays put
+    const done = await call("snooze_reminder", node.dataset.briefSnooze, 10);
+    toast(done.message || done.error, done.ok ? "ok" : true);
+    renderHomeBrief(true);
+  }));
 }
 
 function renderGreeting() {
@@ -104,6 +132,116 @@ function renderGreeting() {
     ? "Demo modu: çekirdek bağlı değil, veriler örnek."
     : `Sistemler hazır · ${parts.join(" · ")}.`;
 }
+
+/* ── remote: the home card's markup (pure) ─────────────────────────────── */
+
+/* What the tools reported, drawn as a remote a thumb can use. The
+   phone loads this very page, so this is the phone's remote too. */
+function remoteMarkup(now, delegation, chats) {
+  const parts = [];
+  const data = (now && now.data) || {};
+  if (!now || (now.ok === false && !data.running)) {
+    parts.push(`<div class="remote-off">${esc((now && (now.message || now.error)) || "Spotify durumu okunamadı.")}</div>`);
+  } else {
+    const artists = Array.isArray(data.artists) ? data.artists : [];
+    const who = data.playing ? (data.artist || "") : artists.join(", ");
+    const title = data.track ? `${who ? who + " — " : ""}${data.track}` : "Bir şey çalmıyor";
+    const clock = data.position && data.duration ? `${data.position} / ${data.duration}` : "";
+    parts.push(`<div class="remote-now"><span class="remote-track">${esc(title)}</span>` +
+      `${clock ? `<span class="remote-clock">${esc(clock)}</span>` : ""}</div>`);
+    parts.push('<div class="remote-buttons">' +
+      '<button type="button" class="remote-btn" data-tool="spotify_previous_track" title="Önceki">⏮</button>' +
+      `<button type="button" class="remote-btn primary" data-tool="spotify_play_pause" title="${data.playing ? "Duraklat" : "Çal"}">${data.playing ? "⏸" : "▶"}</button>` +
+      '<button type="button" class="remote-btn" data-tool="spotify_next_track" title="Sonraki">⏭</button>' +
+      `<button type="button" class="remote-btn ${data.liked ? "liked" : ""}" data-tool="spotify_like_track" title="${data.liked ? "Beğenilen Şarkılar'da" : "Beğen"}">♥</button>` +
+      (typeof data.sleep_minutes_left === "number"
+        ? `<button type="button" class="remote-btn liked" data-tool="spotify_cancel_sleep_timer" title="Uyku zamanlayıcısını iptal et">⏰ ${esc(String(data.sleep_minutes_left))} dk · iptal</button>`
+        : '<button type="button" class="remote-btn" data-tool="spotify_sleep_timer" data-args=\'{"minutes":30}\' title="30 dakika sonra sesi kısıp duraklat">⏰ 30</button>') +
+      "</div>");
+    if (typeof data.volume_percent === "number") {
+      parts.push(`<label class="remote-volume-row"><span>Ses %${esc(String(data.volume_percent))}</span>` +
+        `<input type="range" class="remote-volume" min="0" max="100" step="5" value="${esc(String(data.volume_percent))}" aria-label="Spotify sesi"></label>`);
+    }
+    parts.push('<input type="text" class="remote-queue" placeholder="Sıraya şarkı ekle… (Enter)" aria-label="Sıraya şarkı ekle" spellcheck="false">');
+  }
+  const glance = (chats && chats.ok !== false && chats.data) || null;
+  if (glance && glance.unread_chats) {
+    parts.push(`<div class="remote-wa"><span>💬 ${esc(String(glance.unread_chats))} sohbette okunmamış mesaj</span></div>`);
+  }
+  const wa = (delegation && delegation.data) || {};
+  if (wa.active) {
+    parts.push(`<div class="remote-wa"><span>WhatsApp: <b>${esc(wa.contact || "")}</b> için yazışıyor (${esc(String(wa.turns_taken ?? 0))}/${esc(String(wa.max_turns ?? 0))})</span>` +
+      '<button type="button" class="remote-btn" data-tool="whatsapp_stop_delegation" title="Devri durdur">Durdur</button></div>');
+  }
+  return parts.join("");
+}
+
+/* ── remote: runtime ───────────────────────────────────────────────── */
+
+const Remote = {
+  timer: 0,
+  busy: false,
+
+  async refresh() {
+    const host = $("#home-remote");
+    if (!host || this.busy) return;
+    if (!bridgeReady() || !State.snapshot || !State.snapshot.windows_available) {
+      host.innerHTML = '<div class="remote-off">Windows entegrasyonları kapalı; kumanda yok.</div>';
+      return;
+    }
+    this.busy = true;
+    try {
+      const [now, delegation, chats] = await Promise.all([
+        call("run_remote_tool", "spotify_now_playing", {}),
+        call("run_remote_tool", "whatsapp_delegation_status", {}),
+        // The quiet glance: a closed WhatsApp stays closed.
+        call("run_remote_tool", "whatsapp_read_chats", { limit: 20, launch: false }),
+      ]);
+      host.innerHTML = remoteMarkup(now, delegation, chats);
+    } catch (error) {
+      host.innerHTML = `<div class="remote-off">${esc(String((error && error.message) || error || "Kumanda okunamadı."))}</div>`;
+    } finally {
+      this.busy = false;
+    }
+    $$("[data-tool]", host).forEach((button) => button.addEventListener("click", () => {
+      let args = {};
+      try { args = button.dataset.args ? JSON.parse(button.dataset.args) : {}; } catch (_error) { args = {}; }
+      this.act(button.dataset.tool, args);
+    }));
+    const volume = $(".remote-volume", host);
+    if (volume) volume.addEventListener("change", () => this.act("spotify_set_volume", { percent: Number(volume.value) }));
+    const queue = $(".remote-queue", host);
+    if (queue) queue.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      const wanted = queue.value.trim();
+      if (!wanted) return;
+      queue.disabled = true;
+      this.act("spotify_queue_track", { query: wanted }).finally(() => { queue.disabled = false; });
+    });
+  },
+
+  async act(tool, args) {
+    if (!bridgeReady()) return;
+    const result = await call("run_remote_tool", tool, args || {});
+    toast(result.message || result.error || "Tamam.", result.ok === false);
+    await this.refresh();
+    return result;
+  },
+
+  start() {
+    this.refresh();
+    clearInterval(this.timer);
+    // A glance, not a watch: the card follows the music while the home
+    // screen is in front, and rests when it is not.
+    this.timer = setInterval(() => { if (State.screen === "home" && !document.hidden) this.refresh(); }, 12000);
+  },
+
+  stop() {
+    clearInterval(this.timer);
+    this.timer = 0;
+  },
+};
 
 function renderHomeSystem() {
   const s = State.snapshot;
@@ -179,7 +317,7 @@ function taskCardHTML(task, { compact = false } = {}) {
     : ["running"].includes(status) ? "accent" : ["paused", "waiting_for_input", "waiting_for_approval"].includes(status) ? "warn" : "";
   const steps = Array.isArray(task.steps) ? task.steps : [];
   const timeline = steps.length
-    ? `<div class="timeline">${steps.map((step) => `<div class="tl-node ${esc(step.status)}"><div class="tl-name">${esc(step.name)}</div>${step.error ? `<div class="tl-meta"><span class="bad">${esc(step.error)}</span></div>` : ""}</div>`).join("")}</div>`
+    ? `<div class="timeline">${steps.map((step) => `<div class="tl-node ${esc(step.status)}"><div class="tl-name">${esc(step.name)}</div>${step.error ? `<div class="tl-meta"><span class="bad">${esc(taskErrorTr(step.error))}</span></div>` : ""}</div>`).join("")}</div>`
     : (compact ? "" : `<div class="ctx-empty">Bu görevin adım planı yok.</div>`);
   return `<div class="panel task-card animated-border ${status === "running" ? "live" : ""}">
     <div class="task-goal">${esc(task.goal)}</div>
@@ -191,9 +329,33 @@ function taskCardHTML(task, { compact = false } = {}) {
       ${task.updated_at ? `<span class="faint">${esc(fmtRelative(task.updated_at))}</span>` : ""}
       ${task.recovery_required ? `<span class="chip warn">kurtarma gerekli</span>` : ""}
     </div>
-    ${task.error ? `<div class="task-error">${esc(task.error)}</div>` : ""}
+    ${task.error ? `<div class="task-error">${esc(taskErrorTr(task.error))}</div>` : ""}
     ${timeline}
   </div>`;
+}
+
+/* The execution engine writes its failures in English as stable machine
+   strings. They are values, not prose, so they are mapped here instead of
+   being translated at the source - an unknown one is shown as it came,
+   never invented. */
+const TASK_ERROR_TR = {
+  "Invalid tool_name.": "Adımın aracı tanımsız.",
+  "Parameters must be a dictionary.": "Araç parametreleri geçersiz.",
+  "Execution time budget exhausted.": "Süre bütçesi doldu; adım yarıda kesildi.",
+  "Tool result has no explicit postcondition verification.": "Aracın sonucu doğrulanamadı.",
+  "Plan could not be persisted safely.": "Plan güvenle kaydedilemedi.",
+  "User confirmation required.": "Bu adım için onayın gerekiyor.",
+  "Verifier must be callable.": "Doğrulayıcı çağrılabilir değil.",
+  "Maximum concurrent executions reached.": "Bu araç şu anda meşgul; aynı anda çalışabilecek kopya sayısı doldu.",
+  "Tool executor is shutting down.": "JARVIS kapanıyor; bu adım hiç başlamadı.",
+  "Cannot resume a plan containing a permanently failed step.": "Kalıcı olarak başarısız bir adım var; plan sürdürülemez.",
+  "Execution snapshot is terminal and cannot be resumed.": "Görev sonlanmış; sürdürülemez.",
+};
+
+function taskErrorTr(text) {
+  const value = String(text == null ? "" : text).trim();
+  if (!value) return "";
+  return TASK_ERROR_TR[value] || value;
 }
 
 function renderTasks(tasks) {
@@ -216,6 +378,7 @@ const Reminders = {
         <span class="routine-icon">⏰</span>
         <span class="routine-main"><span class="routine-name">${esc(row.text)}</span>
         <span class="routine-meta">${esc(row.due_local || "")}${row.status && row.status !== "bekliyor" ? ` · ${esc(row.status)}` : ""}</span></span>
+        <button type="button" class="btn btn-text" data-reminder-snooze="${esc(row.reminder_id)}" title="10 dakika sonraya ertele">+10 dk</button>
         <button type="button" class="btn btn-text" data-reminder-cancel="${esc(row.reminder_id)}">İptal</button>
       </div>`).join("");
   },
@@ -228,6 +391,13 @@ const Reminders = {
     const rows = result.reminders || [];
     $("#reminders-count").textContent = rows.length ? `${rows.length} aktif` : "";
     host.innerHTML = this.markup(rows);
+    $$("[data-reminder-snooze]", host).forEach((button) => button.addEventListener("click", async () => {
+      // A snooze is reversible, so no dialog - one press, ten minutes.
+      const done = await call("snooze_reminder", button.dataset.reminderSnooze, 10);
+      toast(done.message || done.error, done.ok ? "ok" : true);
+      Reminders.load();
+      renderHomeBrief(true);
+    }));
     $$("[data-reminder-cancel]", host).forEach((button) => button.addEventListener("click", async () => {
       const row = rows.find((item) => item.reminder_id === button.dataset.reminderCancel);
       const confirmed = await confirmDialog({
@@ -438,64 +608,60 @@ function renderVisionResult(ok, text, error) {
   if (State.busy) setBusy(false, READY);
 }
 
-async function renderResearchHistory() {
-  const host = $("#research-history");
-  if (!host || !bridgeReady()) return;
-  const history = await call("research_history");
-  if (history.ok === false || !(history.items || []).length) { host.innerHTML = ""; return; }
-  host.innerHTML = '<span class="msg-sources-label">Son araştırmalar</span>' + history.items.map((item) =>
-    `<button type="button" class="chip" data-history-query="${esc(item.question)}" title="${item.sources} kaynak · yeniden açar">${esc(item.question.length > 60 ? item.question.slice(0, 60) + "…" : item.question)}</button>`).join("");
-  $$("[data-history-query]", host).forEach((chip) => chip.addEventListener("click", () => {
-    $("#research-input").value = chip.dataset.historyQuery;
-    $("#research-form").requestSubmit();
-  }));
+/* The research screen's own functions live in research.js: the room, the
+   source chips, the report. bindPanels still binds the form's submit. */
+
+/* ── the system pulse: alive only while Tanılama is on screen ─────── */
+/* Seconds into the words a person says: "3 g 4 sa", "2 sa 14 dk", "48 dk". */
+function pulseUptime(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  if (days) return `${days} g ${hours} sa`;
+  if (hours) return `${hours} sa ${minutes} dk`;
+  return `${minutes} dk`;
 }
 
-async function submitResearch(event) {
-  event.preventDefault();
-  if (State.paused) { toast(PAUSED_NOTICE, true); return; }
-  if (State.busy || !bridgeReady()) return;
-  const query = $("#research-input").value.trim();
-  if (!query) return;
-  const panel = $("#research-result");
-  panel.hidden = false;
-  panel.classList.remove("err");
-  panel.innerHTML = '<span class="thinking"><span class="orbit"></span>kaynaklar taranıyor ve doğrulanıyor…</span>';
-  $("#research-submit").disabled = true;
-  setBusy(true, "RESEARCHING");
-  const result = await call("run_research", query, Number($("#research-sources").value));
-  if (result.ok === false) renderResearch(false, null, result.error || "Araştırma başlatılamadı.");
-}
+const Pulse = {
+  timer: 0,
 
-function renderResearch(ok, report, error) {
-  const panel = $("#research-result");
-  panel.hidden = false;
-  panel.classList.toggle("err", !ok);
-  $("#research-submit").disabled = false;
-  if (State.busy) setBusy(false, READY);
-  if (!ok) { panel.textContent = error || "Araştırma başarısız."; Presence.error("araştırma başarısız"); return; }
-  const parts = [];
-  if (report.query) parts.push(`<h3>SORGU</h3>${esc(report.query)}`);
-  const summary = report.summary || report.answer || report.text;
-  if (summary) parts.push(`<h3>ÖZET</h3>${esc(summary)}`);
-  const sources = report.sources || report.citations || [];
-  if (Array.isArray(sources) && sources.length) {
-    parts.push("<h3>KAYNAKLAR</h3>" + sources.map((src) => {
-      const title = src.title || src.url || String(src);
-      const url = src.url ? ` — <button type="button" class="src-link" data-open-url="${esc(src.url)}" title="Tarayıcıda açar">${esc(src.url)}</button>` : "";
-      return `<span class="src">▸ ${esc(title)}${url}</span>`;
-    }).join(""));
-  }
-  const uncertainties = report.uncertainties || [];
-  if (Array.isArray(uncertainties) && uncertainties.length) {
-    parts.push("<h3>BELİRSİZLİKLER</h3>" + uncertainties.map((u) => `<span class="src">▸ ${esc(u)}</span>`).join(""));
-  }
-  panel.innerHTML = parts.join("") || esc(JSON.stringify(report, null, 2));
-  $$("[data-open-url]", panel).forEach((node) => node.addEventListener("click", async () => {
-    const opened = await call("open_external", node.dataset.openUrl);
-    if (opened.ok === false) toast(opened.error || "Bağlantı açılamadı.", true);
-  }));
-}
+  markup(pulse) {
+    if (!pulse || pulse.ok === false) return "";
+    const cpu = pulse.cpu_percent === null || pulse.cpu_percent === undefined ? "—" : `%${String(pulse.cpu_percent).replace(".", ",")}`;
+    const memory = pulse.memory_percent === null || pulse.memory_percent === undefined ? "—"
+      : `%${String(pulse.memory_percent).replace(".", ",")} (${String(pulse.memory_used_gib).replace(".", ",")}/${String(pulse.memory_total_gib).replace(".", ",")} GB)`;
+    const disk = pulse.disk_free_gib === null || pulse.disk_free_gib === undefined ? "—" : `${String(pulse.disk_free_gib).replace(".", ",")} GB boş`;
+    // A machine without a battery simply has no battery cell - a dash
+    // would imply one that failed to answer.
+    const battery = pulse.battery_percent === null || pulse.battery_percent === undefined ? ""
+      : `<span>Pil %${esc(String(pulse.battery_percent))}${pulse.battery_charging ? " · şarjda" : ""}</span>`;
+    const session = pulse.uptime_seconds === null || pulse.uptime_seconds === undefined ? ""
+      : `<span>Oturum ${esc(pulseUptime(pulse.uptime_seconds))}</span>`;
+    const data = pulse.state_data_bytes ? `<span>Veri ${esc(fmtBytes(pulse.state_data_bytes))}</span>` : "";
+    return `<span>CPU ${esc(cpu)}</span><span>RAM ${esc(memory)}</span><span>Disk ${esc(disk)}</span>${battery}${session}${data}`;
+  },
+
+  async beat() {
+    if (State.screen !== "diagnostics" || document.hidden || !bridgeReady()) return;
+    const pulse = await call("system_pulse");
+    const host = $("#diag-pulse");
+    if (host) host.innerHTML = this.markup(pulse);
+  },
+
+  start() {
+    this.stop();
+    this.beat();
+    // The first beat has no previous sample, so the CPU shows a dash;
+    // the second, five seconds later, is the first honest figure.
+    this.timer = setInterval(() => this.beat(), 5000);
+  },
+
+  stop() {
+    clearInterval(this.timer);
+    this.timer = 0;
+  },
+};
 
 /* ── diagnostics ──────────────────────────────────────────────────── */
 
@@ -512,6 +678,7 @@ function renderDiagnosticsHead() {
 const Diagnostics = {
   loading: false,
   levelFilter: "",
+  textFilter: "",
 
   async refresh({ quiet = false } = {}) {
     if (this.loading) return;
@@ -644,11 +811,25 @@ const Diagnostics = {
     const host = $("#diag-events");
     if (!host) return;
     const filter = this.levelFilter;
-    const rows = State.diagnosticEvents.filter((e) => !filter || String(e.level) === filter);
+    const query = this.textFilter;
+    const rows = State.diagnosticEvents.filter((e) => (!filter || String(e.level) === filter) && eventMatches(e, query));
+    $("#diag-events-count").textContent = filter || query.trim()
+      ? `${rows.length} / ${State.diagnosticEvents.length} olay`
+      : `${State.diagnosticEvents.length} olay bellekte`;
     if (!rows.length) { host.innerHTML = '<div class="ctx-empty">Bu süzgeçle eşleşen olay yok.</div>'; return; }
     host.innerHTML = rows.slice(0, 120).map((e) => this.eventRow(e)).join("");
-    if (fresh && (!filter || String(fresh.level) === filter)) host.firstElementChild?.classList.add("new");
-    $("#diag-events-count").textContent = `${State.diagnosticEvents.length} olay bellekte`;
+    if (fresh && (!filter || String(fresh.level) === filter) && eventMatches(fresh, query)) host.firstElementChild?.classList.add("new");
+  },
+
+  /* The visible slice of the ledger, as plain lines for a bug report. */
+  copyEvents() {
+    const filter = this.levelFilter;
+    const rows = State.diagnosticEvents
+      .filter((e) => (!filter || String(e.level) === filter) && eventMatches(e, this.textFilter))
+      .slice(0, 120);
+    if (!rows.length) { toast("Kopyalanacak olay yok.", true); return; }
+    const lines = rows.map((e) => `${fmtTime(e.observed_at)} [${e.level || "info"}] ${e.component || ""} ${e.name || ""}: ${e.message || ""}`.trim());
+    copyTextToClipboard(lines.join("\n"));
   },
 };
 
@@ -669,6 +850,10 @@ function renderSettings() {
     $("#settings-brief").checked = s.daily_brief_notification !== false;
     $("#settings-brief-time").value = s.daily_brief_time || "08:30";
     $("#settings-research").checked = s.research_enabled !== false;
+    $("#settings-vision-toggle").checked = s.vision_enabled !== false;
+    $("#settings-city").value = s.almanac_city || "";
+    $("#settings-quiet").value = s.quiet_hours || "";
+    $("#settings-accent").value = ACCENTS.includes(store("nova.accent") || "") ? (store("nova.accent") || "") : "";
   }
   $("#settings-motion").checked = State.reducedMotion;
   $("#settings-ambient").checked = State.ambient;
@@ -677,6 +862,7 @@ function renderSettings() {
   Files.render();
   renderStateBackups();
   Phone.render();
+  About.load();
 }
 
 function renderConfig() {
@@ -912,6 +1098,9 @@ async function saveAssistantSettings() {
     daily_brief_notification: $("#settings-brief").checked,
     daily_brief_time: $("#settings-brief-time").value.trim(),
     research_enabled: $("#settings-research").checked,
+    almanac_city: $("#settings-city").value.trim(),
+    vision_enabled: $("#settings-vision-toggle").checked,
+    quiet_hours: $("#settings-quiet").value.trim(),
   });
   status.textContent = result.message || result.error || "";
   status.className = `settings-status ${result.ok ? "ok" : "err"}`;
@@ -978,8 +1167,16 @@ const Routines = {
           <div class="routine-prompt">${esc(item.prompt)}</div>
           <div class="routine-meta"><span class="chip">${esc(item.schedule)}</span>sıradaki ${esc(item.next_run_local || "—")}${item.last_run_local ? ` · son ${esc(item.last_run_local)} (${esc(tr(item.last_outcome || ""))})` : ""} · ${item.run_count} çalışma</div>
         </div>
+        <button type="button" class="btn btn-ghost small" data-act="run" title="Programı bozmadan şimdi çalıştır">Çalıştır</button>
         <button type="button" class="btn btn-ghost small" data-act="delete">Sil</button>
       </div>`).join("");
+    $$("[data-act='run']", host).forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        const done = await call("run_routine_now", btn.closest(".routine-row").dataset.id);
+        btn.disabled = false;
+        toast(done.message || done.error, done.ok ? "ok" : true);
+      }));
     $$("[data-act='delete']", host).forEach((btn) =>
       btn.addEventListener("click", () => this.remove(btn.closest(".routine-row").dataset.id)));
   },
@@ -1025,15 +1222,49 @@ const Routines = {
   },
 };
 
+/* ── about: the build's own facts (pure markup) ──────────────────────
+   Every value is measured by the bridge or missing; a missing one is
+   an honest dash, never a guess. */
+
+function aboutRows(info) {
+  const row = (label, value) => `<div class="config-row"><span class="config-name">${esc(label)}</span><span class="config-value ${value ? "" : "off"}">${esc(value || "—")}</span></div>`;
+  return row("Uygulama", info.app_version)
+    + row("Python", info.python_version)
+    + row("WebView2", info.webview2_version)
+    + row("Veri klasörü", info.state_directory);
+}
+
+/* ── about: runtime ─────────────────────────────────────────── */
+
+const About = {
+  async load() {
+    const host = $("#about-rows");
+    if (!host) return;
+    const info = await call("about_info");
+    if (info.ok === false) { host.innerHTML = `<div class="ctx-empty">${esc(info.error || "Okunamadı.")}</div>`; return; }
+    host.innerHTML = aboutRows(info);
+  },
+
+  bind() {
+    $("#about-open-state")?.addEventListener("click", async () => {
+      const done = await call("open_state_folder");
+      if (done.ok === false) toast(done.error || "Klasör açılamadı.", true);
+    });
+  },
+};
+
 function bindPanels() {
   buildQuickActions();
   $("#vision-form").addEventListener("submit", submitVision);
   $("#research-form").addEventListener("submit", submitResearch);
+  $("#settings-accent").addEventListener("change", () => applyAccent($("#settings-accent").value));
   $("#settings-form").addEventListener("submit", saveSettings);
+  $("#diag-copy")?.addEventListener("click", () => Diagnostics.copyEvents());
   $("#settings-assistant-save").addEventListener("click", saveAssistantSettings);
   $("#settings-backup-now").addEventListener("click", runStateBackup);
   Reminders.bind();
   Phone.bind();
+  About.bind();
   $("#exam-chip").addEventListener("click", () => { showScreen("medical"); if (typeof Medical !== "undefined") Medical.show("plan"); });
   $("#settings-test").addEventListener("click", testConnection);
   $("#settings-delete").addEventListener("click", deleteKey);
@@ -1047,6 +1278,15 @@ function bindPanels() {
     $$("#settings-nav .tab").forEach((t) => t.classList.toggle("active", t === tab));
     $(`#settings-${tab.dataset.target}`)?.scrollIntoView({ behavior: State.reducedMotion ? "auto" : "smooth", block: "start" });
   }));
+  $("#memory-note-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = $("#memory-note-input");
+    const body = input.value.trim();
+    if (!body) return;
+    const done = await call("remember_note", body);
+    toast(done.message || done.error, done.ok ? "ok" : true);
+    if (done.ok) { input.value = ""; $("#memory-search").value = ""; Memory.load(); }
+  });
   $("#memory-search").addEventListener("input", (event) => {
     clearTimeout(Memory._debounce);
     Memory._debounce = setTimeout(() => Memory.search(event.target.value), 220);
@@ -1056,6 +1296,7 @@ function bindPanels() {
   $("#diag-refresh").innerHTML = `${icon("refresh")}<span>Yenile</span>`;
   $("#diag-refresh").addEventListener("click", () => Diagnostics.refresh());
   $("#diag-level").addEventListener("change", (event) => { Diagnostics.levelFilter = event.target.value; Diagnostics.renderEvents(); });
+  $("#diag-find").addEventListener("input", (event) => { Diagnostics.textFilter = event.target.value; Diagnostics.renderEvents(); });
   $("#file-root-add").addEventListener("click", () => Files.add());
   $("#routines-refresh").innerHTML = icon("refresh");
   $("#routines-refresh").addEventListener("click", () => Routines.load());

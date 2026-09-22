@@ -81,6 +81,14 @@ PHONE_DENIED_MESSAGE = "Bu işlem telefondan yapılamaz; bilgisayardaki JARVIS't
 # Phone voice: the phone records, the PC's own speech providers listen and
 # speak. 16 kHz mono PCM16 for 30 s is under a megabyte; two is plenty.
 MAX_VOICE_UPLOAD_BYTES = 2 * 1024 * 1024
+# The most this server will swallow from a request it refused before
+# reusing the connection. Twice the voice cap, deliberately: a recording
+# just over that cap is refused by header arithmetic before a byte is
+# read, and if the drain ceiling sat at the cap itself the remainder
+# could not be swallowed - the socket would close while the phone was
+# still sending, which surfaced as a connection abort instead of the
+# 413 the server had already written. Anything larger still closes.
+MAX_DRAIN_BYTES = 2 * MAX_VOICE_UPLOAD_BYTES
 VOICE_SAMPLE_RATES = range(8_000, 48_001)
 VOICE_MIME_BY_ENCODING = {
     "wav": "audio/wav", "mp3": "audio/mpeg", "opus": "audio/ogg", "aac": "audio/aac", "flac": "audio/flac",
@@ -91,6 +99,19 @@ NL_BYTES = b'\n'
 CLIENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 CANCELLABLE_STATUSES = {"queued", "running", "paused", "waiting_for_input", "waiting_for_approval"}
 PAUSED_MESSAGE = "JARVIS duraklatıldı; masaüstünden sürdürülene kadar komut almıyor."
+ARCHIVED_MESSAGE = "Arşivdeki bir konuşmaya yazılamaz; önce masaüstünden arşivden çıkar."
+# What a task action actually achieved, said in the phone's own language.
+TASK_ACTION_MESSAGES_TR = {
+    ("resume", "completed"): "Görev tamamlandı.",
+    ("resume", "paused"): "Görev yeniden duraklatıldı; henüz bitmedi.",
+    ("resume", "failed"): "Görev sürdürülemedi ve başarısız oldu.",
+    ("resume", "cancelled"): "Görev sürdürülürken iptal edildi.",
+    ("pause", "paused"): "Görev duraklatıldı.",
+    ("cancel", "cancelled"): "Görev iptal edildi.",
+    # Requested but not confirmed at the boundary: say that, do not imply it stopped.
+    ("pause", "partial"): "Duraklatma istendi; görev henüz durmadı.",
+    ("cancel", "partial"): "İptal istendi; görev henüz durmadı.",
+}
 
 
 def _json_default(value: Any) -> Any:
@@ -111,6 +132,22 @@ def _json_default(value: Any) -> Any:
 
 def _dumps(payload: Any) -> bytes:
     return json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
+
+
+class ArchivedConversationError(ValueError):
+    """The thread is archived, so nothing may be written into it.
+
+    A ValueError, so every caller that already maps one to a Turkish
+    refusal keeps working - and its own type, so the conversation routes
+    can tell it apart from the other ValueError that lands there, a
+    malformed conversation id, which is a different kind of wrong.
+    """
+
+
+def _status_value(conversation: Any) -> str:
+    """A conversation's status as the wire spells it, enum or plain string."""
+    status = getattr(conversation, "status", None)
+    return str(getattr(status, "value", status))
 
 
 @dataclass
@@ -189,6 +226,9 @@ class MobileServer:
         watchers = getattr(bridge, "_approval_watchers", None)
         if isinstance(watchers, list):
             watchers.append(self._on_approval)
+        statuses = getattr(controller, "conversation_status_watchers", None)
+        if isinstance(statuses, list):
+            statuses.append(self._on_conversation_status)
 
     # ------------------------------------------------------------ lifecycle
     def _compute_stamp(self) -> str:
@@ -245,6 +285,9 @@ class MobileServer:
         watchers = getattr(self.bridge, "_approval_watchers", None)
         if isinstance(watchers, list) and self._on_approval in watchers:
             watchers.remove(self._on_approval)
+        statuses = getattr(self.controller, "conversation_status_watchers", None)
+        if isinstance(statuses, list) and self._on_conversation_status in statuses:
+            statuses.remove(self._on_conversation_status)
 
     # -------------------------------------------------------------- channels
     def subscribe(self, session_id: str) -> queue.Queue[Any]:
@@ -273,6 +316,17 @@ class MobileServer:
                 item.put_nowait((kind, payload))
             except queue.Full:
                 pass
+
+    def _on_conversation_status(self, conversation_id: str, status: str) -> None:
+        """Say on the channel that the desktop closed or reopened a thread.
+
+        A phone sitting on that very thread reads a status only when it
+        (re)connects, so without this it keeps a live composer over a
+        conversation the PC will no longer take messages into, and hears
+        of it from the refusal of one already sent. Every paired phone is
+        told; the one whose screen holds another thread ignores it.
+        """
+        self.emit(None, "conversation_status", {"conversation_id": str(conversation_id), "status": str(status)})
 
     def broadcast_push(self, kind: str, payload: Any) -> None:
         """Mirror one desktop push (window.NOVA.push) to every phone."""
@@ -507,6 +561,13 @@ class MobileServer:
             self.emit(session_id, "turn_done", record.to_dict())
 
         context = Context(conversation_id=UUID(record.conversation_id))
+        # The start is announced before the work is handed over: an engine
+        # that answers instantly runs done() on the runner thread at once,
+        # and announcing afterwards let turn_done overtake turn_started on
+        # the live channel. Accepting the message IS the start; if the
+        # hand-over is then refused, the same record closes the lifecycle
+        # as failed, so the channel never carries a start without an end.
+        self.emit(session_id, "turn_started", record.to_dict())
         try:
             self.controller.submit_background(
                 self.controller.submit_command(
@@ -518,8 +579,11 @@ class MobileServer:
             with self._lock:
                 self._running.pop(session_id, None)
                 self._turns.get(session_id, {}).pop(client_id, None)
+            record.status = "failed"
+            record.error = f"İstek gönderilemedi ({exc})."
+            record.finished_at = time.time()
+            self.emit(session_id, "turn_done", record.to_dict())
             raise ValueError(f"İstek gönderilemedi ({exc}).") from exc
-        self.emit(session_id, "turn_started", record.to_dict())
         return record, False
 
     def _resolve_conversation(self, session: DeviceSession, conversation_id: str | None) -> str:
@@ -530,7 +594,13 @@ class MobileServer:
                 conversation = engine.get(UUID(str(chosen)))
             except (KeyError, ValueError):
                 conversation = None
-            if conversation is not None and getattr(conversation.status, "value", conversation.status) == "active":
+            if conversation is not None:
+                if _status_value(conversation) != "active":
+                    # The phone still shows this thread as the open one.
+                    # Filing the message in a fresh conversation would
+                    # leave the user writing where nobody is reading, so
+                    # refuse exactly as tapping the archived thread does.
+                    raise ArchivedConversationError(ARCHIVED_MESSAGE)
                 if chosen != session.conversation_id:
                     self.store.set_conversation(session.session_id, str(chosen))
                 return str(chosen)
@@ -547,11 +617,19 @@ class MobileServer:
         return rows
 
     def messages(self, conversation_id: str) -> dict[str, Any]:
-        title, created, messages = self.controller.conversation_export(str(conversation_id))
+        # /api/state answers through here on every reconnection, so the
+        # whole answer comes out of one read of the conversation.
+        title, created, status, messages = self.controller.conversation_snapshot(str(conversation_id))
         return {
             "conversation_id": str(conversation_id),
             "title": title,
             "created": created,
+            # The phone locks its composer on anything but "active".
+            # This is the status the page reads when it (re)connects;
+            # _on_conversation_status puts every later change on the
+            # open channel, so an archived thread is refused before a
+            # message is typed rather than after it has been sent.
+            "status": status,
             "messages": [
                 {"role": message.role, "text": message.text, "metadata": dict(message.metadata)}
                 for message in messages
@@ -561,15 +639,20 @@ class MobileServer:
     def select_conversation(self, session: DeviceSession, conversation_id: str) -> dict[str, Any]:
         engine = self.controller.application.conversation_engine
         conversation = engine.get(UUID(str(conversation_id)))  # KeyError/ValueError bubble up
-        if getattr(conversation.status, "value", conversation.status) != "active":
-            raise ValueError("Arşivdeki bir konuşmaya yazılamaz; önce masaüstünden arşivden çıkar.")
+        if _status_value(conversation) != "active":
+            raise ArchivedConversationError(ARCHIVED_MESSAGE)
         self.store.set_conversation(session.session_id, str(conversation_id))
         return self.messages(str(conversation_id))
 
     def new_conversation(self, session: DeviceSession) -> dict[str, Any]:
         created = self.controller.application.conversation_engine.create()
         self.store.set_conversation(session.session_id, str(created.conversation_id))
-        return {"conversation_id": str(created.conversation_id), "title": "Yeni konuşma", "messages": []}
+        return {
+            "conversation_id": str(created.conversation_id),
+            "title": "Yeni konuşma",
+            "status": _status_value(created),
+            "messages": [],
+        }
 
     # ----------------------------------------------------------------- tasks
     def tasks(self) -> list[dict[str, Any]]:
@@ -599,11 +682,19 @@ class MobileServer:
         except Exception as exc:
             return {"ok": False, "error": f"İşlem tamamlanamadı ({type(exc).__name__})."}
         succeeded = bool(getattr(result, "succeeded", False))
+        # The service answers in English machine strings; the phone is
+        # Turkish, and the outcome it reports must be the one that
+        # happened - a resume that parks again is not a completion.
+        status = getattr(getattr(result, "status", None), "value", "")
+        task_status = str((getattr(result, "data", None) or {}).get("status") or "")
+        spoken = TASK_ACTION_MESSAGES_TR.get((action, task_status)) or TASK_ACTION_MESSAGES_TR.get((action, status))
+        if not spoken:
+            spoken = "İşlem tamamlandı." if succeeded else str(getattr(result, "error", "") or getattr(result, "message", "") or "İşlem başarısız.")
         return {
             "ok": succeeded,
-            "message": str(getattr(result, "message", "") or ""),
+            "message": spoken,
             "verified": bool(getattr(result, "verified", False)),
-            "error": None if succeeded else str(getattr(result, "message", "") or "İşlem başarısız."),
+            "error": None if succeeded else spoken,
         }
 
     # ----------------------------------------------------------------- state
@@ -612,7 +703,11 @@ class MobileServer:
         if session.conversation_id:
             try:
                 summary = self.messages(session.conversation_id)
-                conversation = {"conversation_id": summary["conversation_id"], "title": summary["title"]}
+                conversation = {
+                    "conversation_id": summary["conversation_id"],
+                    "title": summary["title"],
+                    "status": summary["status"],
+                }
             except (KeyError, ValueError):
                 conversation = None
         return {
@@ -645,6 +740,13 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
         protocol_version = "HTTP/1.1"
         server_version = "JARVIS-Mobile"
         sys_version = ""
+        # A declared body that stops arriving would otherwise park this
+        # thread with no deadline at all; the socket ends the request
+        # instead. Long enough that a slow upload over Tailscale finishes.
+        timeout = 30
+        # Whether this request's body is some response's to swallow - see
+        # _claim_body.
+        _body_consumed = False
 
         # ----------------------------------------------------------- utils
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - stdlib signature
@@ -715,6 +817,7 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
             if length < 0 or length > MAX_BODY_BYTES:
                 raise ValueError("İstek gövdesi çok büyük.")
             raw = self.rfile.read(length) if length else b""
+            self._body_consumed = not self._chunked()
             if not raw:
                 return {}
             payload = json.loads(raw.decode("utf-8"))
@@ -728,10 +831,77 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
                 raise ValueError("İstek gövdesi boş.")
             if length > limit:
                 raise OverflowError("İstek gövdesi çok büyük.")
-            return self.rfile.read(length)
+            payload = self.rfile.read(length)
+            self._body_consumed = not self._chunked()
+            return payload
+
+        def _chunked(self) -> bool:
+            """Whether the body's end is marked in the stream, not in a header."""
+            encoding = (self.headers.get("Transfer-Encoding") or "").strip().lower()
+            return bool(encoding) and encoding != "identity"
+
+        def _claim_body(self) -> int:
+            """How many unread body bytes this response has to swallow.
+
+            Header arithmetic only, and it has to be: whether the body can
+            be drained at all decides whether the connection survives, and
+            that goes out in the response headers, ahead of the draining
+            itself. Returns -1 when there is no safe place to stop - a
+            length beyond what this server ever accepts, a length that is
+            not a number, or an end marked in the stream rather than in a
+            header. Any method may declare a body, GET included, so every
+            answer that goes out through _send claims one whatever the
+            method was. The event stream is the one answer that does not:
+            it writes its own headers and ends the connection, so nothing
+            it leaves in the socket is ever parsed as a request.
+            """
+            if self._body_consumed:
+                return 0
+            self._body_consumed = True
+            try:
+                remaining = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                return -1
+            if remaining < 0 or remaining > MAX_DRAIN_BYTES or self._chunked():
+                return -1
+            return remaining
+
+        def _drain_body(self, remaining: int) -> None:
+            """Swallow a request body no handler asked for.
+
+            Keep-alive is on, so whatever a request declared and nobody
+            read stays in the socket and the next request on that
+            connection is parsed out of the leftovers - the phone's
+            following tap answers with someone else's garbage.
+            """
+            while remaining > 0:
+                try:
+                    chunk = self.rfile.read(min(remaining, 65536))
+                except OSError:
+                    chunk = b""  # the socket's own deadline, or a dead peer
+                if not chunk:
+                    # The rest never arrived. The answer is already out, so
+                    # the only thing left is to stop reusing this socket.
+                    self.close_connection = True
+                    return
+                remaining -= len(chunk)
 
         def _send(self, status: int, body: bytes, content_type: str, extra: dict[str, str] | None = None) -> None:
+            # The answer goes out before the body it answers is read. A
+            # refusal the request has already earned - no session, wrong
+            # origin, no such route - must not wait on bytes the caller may
+            # never send. When the rest of the body does arrive, draining
+            # it afterwards leaves the connection in step for the request
+            # that follows; when it does not, the answer is already out
+            # and dropping the socket is all that is left - too late to
+            # have said "Connection: close", so a request pipelined behind
+            # the stalled body is lost rather than answered.
+            pending = self._claim_body()
+            if pending < 0:
+                self.close_connection = True
             self.send_response(status)
+            if self.close_connection:
+                self.send_header("Connection", "close")
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("X-Content-Type-Options", "nosniff")
@@ -741,6 +911,8 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(body)
+            if pending > 0:
+                self._drain_body(pending)
 
         def _json(self, status: int, payload: dict[str, Any], extra: dict[str, str] | None = None) -> None:
             headers = {"Cache-Control": "no-store"}
@@ -765,6 +937,7 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
             self._dispatch("POST")
 
         def _dispatch(self, method: str) -> None:
+            self._body_consumed = False
             path = urlsplit(self.path).path
             try:
                 if path.startswith("/api/"):
@@ -919,6 +1092,12 @@ def _make_handler(server: MobileServer) -> type[BaseHTTPRequestHandler]:
                         self._json(HTTPStatus.METHOD_NOT_ALLOWED, {"ok": False, "error": "Yöntem desteklenmiyor."})
                 except KeyError:
                     self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Konuşma bulunamadı."})
+                except ArchivedConversationError as exc:
+                    # The same refusal /api/chat gives, under the same code:
+                    # the thread exists and is readable, it just will not be
+                    # written into. A malformed id is the other ValueError
+                    # that lands here, and it stays a 400.
+                    self._json(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc)})
                 except ValueError as exc:
                     self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc) or "Konuşma kimliği geçersiz."})
                 return

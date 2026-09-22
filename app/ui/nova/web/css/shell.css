@@ -241,6 +241,10 @@ body.light #topbar { background: linear-gradient(180deg, rgba(255,255,255,0.82),
 }
 .notify-head .kicker { margin-right: auto; }
 .notify-summary { color: var(--ink-4); font-size: var(--text-xs); letter-spacing: 0.08em; }
+.notify-filter { display: flex; flex-wrap: wrap; gap: 0.3rem; padding: 0.1rem 0.8rem 0.35rem; }
+.notify-filter:empty { display: none; }
+.notify-filter .chip { cursor: pointer; border: 1px solid var(--line-1); background: none; }
+.notify-filter .chip.on { border-color: var(--accent); color: var(--accent); }
 .notify-list { min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0.35rem; display: flex; flex-direction: column; gap: 0.15rem; }
 .notify-empty { color: var(--ink-4); font-size: var(--text-sm); line-height: 1.5; padding: 1.2rem 1rem 1.4rem; text-align: center; }
 .notify-item {
@@ -498,6 +502,9 @@ body.light #context { background: linear-gradient(180deg, rgba(255,255,255,0.78)
 #home-brief .hb-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; width: 100%; text-align: left; padding: 0.4rem 0.45rem; border-radius: var(--radius-1); color: var(--ink-2); font-size: var(--text-sm); }
 
 #home-brief button.hb-row:hover { background: rgba(var(--accent-rgb), 0.07); color: var(--ink-1); }
+#home-brief .hb-snz { margin-left: 0.4rem; padding: 0 0.3rem; border: 1px solid var(--line-1); border-radius: var(--radius-pill); font-size: 0.6rem; color: var(--ink-3); opacity: 0; transition: opacity 0.15s ease; }
+#home-brief .hb-row:hover .hb-snz { opacity: 0.9; }
+#home-brief .hb-snz:hover { color: var(--accent); border-color: var(--accent); }
 
 #home-brief .hb-row.warn .hb-side { color: var(--warn); }
 

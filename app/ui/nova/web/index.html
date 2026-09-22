@@ -13,6 +13,8 @@
 <link rel="stylesheet" href="css/screens.css">
 <link rel="stylesheet" href="css/medical.css">
 <link rel="stylesheet" href="css/study.css">
+<link rel="stylesheet" href="css/academy.css">
+<link rel="stylesheet" href="css/research.css">
 <link rel="stylesheet" href="css/phone.css">
 </head>
 <body>
@@ -86,6 +88,7 @@
       <button id="notify-clear" class="btn btn-ghost small" type="button">Temizle</button>
       <button id="notify-close" class="icon-btn small" type="button" title="Kapat"></button>
     </div>
+    <div id="notify-filter" class="notify-filter"></div>
     <div id="notify-list" class="notify-list"></div>
   </section>
 
@@ -139,6 +142,10 @@
             <div class="ctx-title"><span>Sistem</span></div>
             <div id="home-system"></div>
           </div>
+          <div class="home-block">
+            <div class="ctx-title"><span>Kumanda</span></div>
+            <div id="home-remote"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -150,12 +157,15 @@
           <div class="conv-head"><span class="kicker">Konuşmalar</span><button id="conv-new" class="btn btn-text" type="button">+ Yeni</button></div>
           <input id="conv-search" class="conv-search" type="text" spellcheck="false" placeholder="Konuşmalarda ara… (içerikte)">
           <div id="conv-items" class="conv-items"></div>
-          <div class="settings-note">Sağ tık: arşivle</div>
+          <div class="settings-note">Sağ tık: arşivle · 📌 bu cihazda sabitler</div>
         </aside>
         <div class="chat-main">
           <div class="chat-toolbar">
             <button id="conv-toggle" class="btn btn-text" type="button">Konuşmalar</button>
             <span id="chat-title" class="chat-title">Yeni konuşma</span>
+            <button id="chat-rename" class="chat-rename" type="button" title="Konuşmayı yeniden adlandır" hidden>✎</button>
+            <input id="chat-find" class="chat-find" type="text" spellcheck="false" placeholder="Bu konuşmada ara…" aria-label="Bu konuşmada ara">
+            <span id="chat-find-count" class="chat-find-count" hidden></span>
             <button id="chat-export" class="btn btn-text" type="button" title="Açık konuşmayı Markdown dosyası olarak kaydeder">Dışa aktar</button>
             <button id="chat-new" class="btn btn-text" type="button" title="Yeni konuşma (Ctrl+N)">+ Yeni</button>
           </div>
@@ -234,6 +244,10 @@
         <span id="memory-count" class="sys-label"></span>
         <button id="memory-refresh" class="icon-btn small" type="button" title="Yenile"></button>
       </div>
+      <form id="memory-note-form" class="memory-note" autocomplete="off">
+        <input id="memory-note-input" type="text" maxlength="500" placeholder="Elle not ekle… (örn. “sınav 12 Ekim'de”)" spellcheck="false" aria-label="Yeni not">
+        <button type="submit" class="btn btn-primary">Not ekle</button>
+      </form>
       <div id="memory-groups" class="memory-groups"></div>
       <div class="panel quiet memory-privacy">
         <span class="kicker">Gizlilik</span>
@@ -280,22 +294,47 @@
 
     <!-- ── ARAŞTIRMA ───────────────────────────────── -->
     <section class="screen" data-screen="research">
-      <div class="screen-head">
-        <span class="kicker">Sınırlı web erişimi</span>
-        <h1>Araştırma</h1>
-        <p>Kaynak damgalı, tazelik denetimli ve alıntı doğrulamalı raporlar.</p>
+      <div class="res-shell">
+        <aside class="res-side" aria-label="Araştırma">
+          <div class="res-brand">
+            <button id="res-back" class="res-back" type="button" title="JARVIS'e dön (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>JARVIS</button>
+            <button id="res-theme" class="res-side-btn" type="button" aria-pressed="false" title="Araştırma teması"></button>
+            <button id="res-sound" class="res-side-btn" type="button" aria-pressed="true" title="Açılış sesleri"></button>
+            <div class="res-brand-mark">
+              <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13.5" fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.5"/><circle cx="16" cy="16" r="4" fill="currentColor"/><path d="M16 3v4M16 25v4M3 16h4M25 16h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M16 16l7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              <span class="res-brand-name">Araştırma<small>JARVIS</small></span>
+            </div>
+          </div>
+          <div class="res-side-section">
+            <span class="res-side-title">Nerede aransın?</span>
+            <div id="res-presets" class="res-presets"></div>
+            <div id="res-sources" class="res-sources" role="group" aria-label="Kaynak seçimi"></div>
+            <label class="res-site"><span>Belirli bir site</span><input id="research-site" type="text" spellcheck="false" placeholder="örn. docs.python.org" aria-label="Belirli site"></label>
+          </div>
+          <div class="res-side-section res-side-history">
+            <span class="res-side-title">Son araştırmalar</span>
+            <div id="research-history" class="res-history"></div>
+          </div>
+        </aside>
+        <div class="res-main">
+          <header class="res-head">
+            <span class="kicker">Kaynak damgalı, alıntı doğrulamalı</span>
+            <h1>Araştırma</h1>
+            <p>Web, YouTube, GitHub, Wikipedia, PubMed, arXiv, Stack Overflow ve Hacker News'te arar. Her kaynak damgalanır, tazeliği söylenir, alıntılar doğrulanır; kaynağın söylemediği hiçbir şey rapora girmez.</p>
+          </header>
+          <form id="research-form" class="res-form panel" autocomplete="off">
+            <input id="research-input" type="text" spellcheck="false" placeholder="Ne araştıralım?">
+            <select id="research-count" aria-label="Kaynak sayısı">
+              <option value="3">3 kaynak</option>
+              <option value="5" selected>5 kaynak</option>
+              <option value="8">8 kaynak</option>
+              <option value="10">10 kaynak</option>
+            </select>
+            <button type="submit" id="research-submit" class="btn btn-primary">Araştır</button>
+          </form>
+          <div id="research-result" class="res-result" hidden></div>
+        </div>
       </div>
-      <form id="research-form" class="tool-form panel" autocomplete="off">
-        <input id="research-input" type="text" spellcheck="false" placeholder="Araştırma sorgusu…">
-        <select id="research-sources" aria-label="Kaynak sayısı">
-          <option value="3">3 kaynak</option>
-          <option value="5" selected>5 kaynak</option>
-          <option value="8">8 kaynak</option>
-        </select>
-        <button type="submit" id="research-submit" class="btn btn-primary">Araştır</button>
-      </form>
-      <div id="research-history" class="med-chips research-history"></div>
-      <div id="research-result" class="result-panel panel" hidden></div>
     </section>
 
     <!-- ── OTOMASYON ───────────────────────────────── -->
@@ -348,6 +387,7 @@
       <div class="screen-head">
         <div class="head-row">
           <h1>Tanılama</h1>
+          <span id="diag-pulse" class="diag-pulse" aria-live="off"></span>
           <span id="diag-head-note" class="sys-label"></span>
           <button id="diag-refresh" class="btn btn-ghost small" type="button"></button>
         </div>
@@ -364,6 +404,8 @@
             <span class="kicker">Olay defteri · canlı</span>
             <span class="diag-toolbar">
               <span id="diag-events-count" class="sys-label"></span>
+              <button type="button" id="diag-copy" class="btn btn-text" title="Görünen olayları düz metin olarak panoya kopyalar">Kopyala</button>
+              <input type="text" id="diag-find" class="input" style="padding:.3rem .6rem;font-size:var(--text-xs);width:9rem" placeholder="olaylarda ara" aria-label="Olay arama" spellcheck="false">
               <select id="diag-level" class="input" style="padding:.3rem .6rem;font-size:var(--text-xs)" aria-label="Seviye süzgeci">
                 <option value="">tüm seviyeler</option>
                 <option value="info">bilgi</option>
@@ -383,15 +425,28 @@
     <!-- ── TIP AKADEMİSİ ───────────────────────────── -->
     <section class="screen" data-screen="medical">
       <div class="med-shell">
+        <aside class="med-side" aria-label="Tıp Akademisi">
+          <div class="med-brand">
+            <button id="med-back" class="med-back" type="button" title="JARVIS'e dön (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>JARVIS</button>
+            <button id="med-theme" class="med-side-btn" type="button" aria-pressed="false" title="Akademi teması"></button>
+            <button id="med-sound" class="med-side-btn" type="button" aria-pressed="true" title="Açılış sesleri"></button>
+            <div class="med-brand-mark">
+              <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="1.4" opacity="0.45"/><path d="M6 17h5l2-5 3 10 3-8 2 3h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="med-brand-name">Tıp Akademisi<small>JARVIS</small></span>
+            </div>
+          </div>
+          <nav id="med-tabs" class="med-tabs" aria-label="Tıp Akademisi bölümleri"></nav>
+        </aside>
+        <div class="med-main">
         <header class="med-head">
           <div class="med-head-main">
-            <span class="kicker">Tıp Akademisi</span>
+            <span id="med-greeting" class="kicker">Hoş geldin</span>
             <h1 id="med-title">Çalışma merkezi</h1>
             <p id="med-subtitle">Birinci sınıf tıp müfredatı, kendi ders materyalin ve hocanın soru tarzı tek yerde.</p>
           </div>
           <div id="med-session-chips" class="med-session-chips"></div>
+          <svg class="med-head-pulse" viewBox="0 0 1200 26" preserveAspectRatio="none" aria-hidden="true"><path d="M0 13 H96 q7 0 11 -5 t11 5 H140 l5 7 l8 -22 l8 26 l6 -11 H190 q10 0 15 -8 t15 8 H1200"/></svg>
         </header>
-        <nav id="med-tabs" class="med-tabs" aria-label="Tıp Akademisi bölümleri"></nav>
         <!-- Sesli anlatım: the lecture being read aloud, wherever the student is in the academy -->
         <section id="med-narration" class="panel med-narration" hidden aria-live="polite">
           <div class="mn-head">
@@ -447,6 +502,10 @@
               <div class="panel med-card">
                 <div class="panel-title"><span class="kicker">İçgörüler</span></div>
                 <div id="med-insights" class="med-list"></div>
+              </div>
+              <div class="panel med-card">
+                <div class="panel-title"><span class="kicker">Günün terimi</span></div>
+                <div id="med-term" class="med-term"></div>
               </div>
               <div class="panel med-card">
                 <div class="panel-title"><span class="kicker">Son belgeler</span></div>
@@ -595,6 +654,11 @@
           </section>
 
           <!-- Hoca tarzı -->
+          <section class="med-view" data-view="calc" hidden>
+            <p class="med-calc-banner">Eğitim amaçlıdır: her kart yalnızca yazdığı formülün aritmetiğini uygular. Klinik karar için birincil kaynağa başvur.</p>
+            <div id="med-calc-grid" class="med-grid"></div>
+          </section>
+
           <section class="med-view" data-view="professor" hidden>
             <div class="med-split">
               <aside class="panel med-doc-panel">
@@ -622,6 +686,10 @@
               <div class="panel med-card med-span-2">
                 <div class="panel-title"><span class="kicker">Haftalık özet</span><span id="med-week-streak" class="faint"></span><button type="button" id="med-week-export" class="btn btn-ghost small" title="Haftalık özeti Markdown dosyası olarak kaydeder">Dışa aktar (.md)</button></div>
                 <div id="med-week"></div>
+              </div>
+              <div class="panel med-card med-span-2">
+                <div class="panel-title"><span class="kicker">Aylık ritim</span><span class="faint">son 28 gün</span></div>
+                <div id="med-month"></div>
               </div>
               <div class="panel med-card med-span-2">
                 <div class="panel-title"><span class="kicker">Öğrenme durumu</span></div>
@@ -765,6 +833,7 @@
           </section>
 
         </div>
+        </div>
       </div>
     </section>
 
@@ -814,6 +883,7 @@
             <label class="switch-row"><span>Hareketi azalt<small>Animasyonları durdurur; çekirdek tek karede kalır. İşletim sistemi ayarından bağımsızdır.</small></span><input type="checkbox" id="settings-motion" class="switch"></label>
             <label class="switch-row"><span>Ortam parçacıkları<small>Arka plandaki sakin toz katmanı. Kapatınca yalnızca ışık geçişleri kalır.</small></span><input type="checkbox" id="settings-ambient" class="switch"></label>
             <label class="switch-row"><span>Açık tema<small>Gündüz için aynı sistem. Koyu tema birincil tasarımdır.</small></span><input type="checkbox" id="settings-theme" class="switch"></label>
+            <label class="switch-row"><span>Vurgu rengi<small>Kabuğun tek zekâ rengi. Akademi ve Araştırma kendi kimliklerini korur.</small></span><select id="settings-accent"><option value="">Buz (varsayılan)</option><option value="zumrut">Zümrüt</option><option value="kehribar">Kehribar</option><option value="gul">Gül</option><option value="leylak">Leylak</option></select></label>
           </div>
           <div id="settings-assistant" class="panel settings-card">
             <div class="panel-title"><span class="kicker">Asistan</span></div>
@@ -823,6 +893,9 @@
               <input id="settings-brief-time" class="mono" type="time" value="08:30">
             </label>
             <label class="switch-row"><span>Web araştırması<small>Soru güncel bilgi gerektirdiğinde JARVIS webde arar ve kaynak gösterir. Kapatınca araştırma aracı hiç kaydedilmez.</small></span><input type="checkbox" id="settings-research" class="switch"></label>
+            <label class="switch-row"><span>Görüş (ekran analizi)<small>Görüş ekranından istediğinde JARVIS ekranın tek bir görüntüsünü alıp modele gösterir; her görüntü o istek için verilen tek kullanımlık rızayla alınır, görev çubuğu maskelenir, ham görüntü saklanmaz. Kapatınca görüş servisi hiç kurulmaz.</small></span><input type="checkbox" id="settings-vision-toggle" class="switch"></label>
+            <label class="switch-row"><span>Hava durumu şehri<small>Sabah özetine o şehrin bugünkü havasını ekler (Open-Meteo, anahtarsız). Boş bırakınca özet hava satırı taşımaz.</small></span><input id="settings-city" type="text" maxlength="80" placeholder="örn. İstanbul" spellcheck="false"></label>
+            <label class="switch-row"><span>Sessiz saatler<small>Bu aralıkta Windows bildirimi (toast) gösterilmez; uygulama içi bildirim merkezi almaya devam eder. Boş = hep açık.</small></span><input id="settings-quiet" type="text" maxlength="11" placeholder="23:00-08:00" spellcheck="false"></label>
             <div id="settings-assistant-status" class="settings-status" role="status"></div>
             <div class="btn-row">
               <button type="button" id="settings-assistant-save" class="btn btn-primary">Kaydet</button>
@@ -864,6 +937,13 @@
             <div class="panel-title"><span class="kicker">Sistem</span><span class="chip">salt okunur</span></div>
             <div id="config-system"></div>
           </div>
+          <div id="settings-about" class="panel settings-card">
+            <div class="panel-title"><span class="kicker">Hakkında</span></div>
+            <div id="about-rows"></div>
+            <div class="btn-row" style="justify-content:flex-start">
+              <button type="button" id="about-open-state" class="btn btn-ghost small">Veri klasörünü aç</button>
+            </div>
+          </div>
           <div id="settings-files" class="panel settings-card">
             <div class="panel-title"><span class="kicker">Dosya erişimi</span><span id="file-roots-count" class="chip"></span></div>
             <p class="settings-note">JARVIS yalnız burada eklediğin klasörlerin içinde, göreli yollarla çalışabilir. Varsayılan olarak hiçbir klasöre erişim yoktur; her değişiklik yine ayrıca onayına sunulur ve değiştirilen ya da silinen dosyalar geri alınabilir.</p>
@@ -902,7 +982,7 @@
 <div id="mini" hidden>
   <div class="mini-core"><canvas id="mini-canvas"></canvas></div>
   <div class="mini-body">
-    <div class="mini-state"><span id="mini-orb" class="presence-orb" data-state="idle"></span><span id="mini-label">HAZIR</span></div>
+    <div class="mini-state"><span id="mini-orb" class="presence-orb" data-state="idle"></span><span id="mini-label">HAZIR</span><span id="mini-clock" class="mini-clock"></span></div>
     <div id="mini-line" class="mini-line"></div>
     <form id="mini-form" class="mini-form" autocomplete="off"><input id="mini-input" type="text" placeholder="Komut…" aria-label="Komut" spellcheck="false"></form>
   </div>
@@ -954,7 +1034,7 @@
 <div id="confirm" class="veil" hidden>
   <div class="modal confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
     <div class="modal-head"><span id="confirm-title" class="modal-title">Emin misin?</span></div>
-    <div class="modal-body"><p id="confirm-text" class="approval-reason"></p></div>
+    <div class="modal-body"><p id="confirm-text" class="approval-reason"></p><input id="confirm-input" class="input" type="text" spellcheck="false" autocomplete="off" hidden><textarea id="confirm-area" class="mem-edit" rows="8" spellcheck="false" hidden></textarea></div>
     <div class="modal-actions">
       <button id="confirm-cancel" class="btn btn-ghost" type="button">Vazgeç</button>
       <button id="confirm-ok" class="btn btn-primary" type="button">Onayla</button>
@@ -974,9 +1054,87 @@
   </div>
 </div>
 
+<!-- ══════════════════ KISAYOLLAR ══════════════════ -->
+<div id="shortcuts" class="veil" hidden>
+  <div class="modal shortcuts" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+    <div class="modal-head"><span id="shortcuts-title" class="modal-title">Klavye kısayolları</span><button id="shortcuts-close" class="icon-btn small" type="button" title="Kapat"></button></div>
+    <div class="modal-body">
+      <dl class="kbd-list">
+        <div><dt><kbd>Alt</kbd>+<kbd>1…0</kbd></dt><dd>Ekranlar arasında geç (Komuta Merkezi'nden Güven'e)</dd></div>
+        <div><dt><kbd>Ctrl</kbd>+<kbd>K</kbd></dt><dd>Komut paleti · hesap da yapar: “12*(3+2)”, “70 kg lb” · sözlük de: “sözlük kalp”</dd></div>
+        <div><dt><kbd>Ctrl</kbd>+<kbd>D</kbd></dt><dd>Tanılama</dd></div>
+        <div><dt><kbd>Ctrl</kbd>+<kbd>,</kbd></dt><dd>Ayarlar</dd></div>
+        <div><dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd></dt><dd>Gezinme rayını daralt / genişlet</dd></div>
+        <div><dt><kbd>Enter</kbd></dt><dd>Komuta Merkezi'nde hızlı soruya, diğer ekranlarda sohbete odaklan</dd></div>
+        <div><dt><kbd>Esc</kbd></dt><dd>Açık paneli kapat · odalardan ve ekranlardan Komuta Merkezi'ne dön</dd></div>
+        <div><dt><kbd>F1</kbd></dt><dd>Bu kart</dd></div>
+      </dl>
+      <p class="settings-note">Tıp Akademisi <kbd>Alt</kbd>+<kbd>3</kbd>, Araştırma <kbd>Alt</kbd>+<kbd>8</kbd> ile açılır; açılışları herhangi bir tuş geçer.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ SÖZLÜK KARTI ══════════════════ -->
+<div id="dictcard" class="veil" hidden>
+  <div class="modal dict" role="dialog" aria-modal="true" aria-labelledby="dict-title">
+    <div class="modal-head"><span id="dict-title" class="modal-title">Sözlük</span><button id="dict-close" class="icon-btn small" type="button" title="Kapat"></button></div>
+    <div id="dict-body" class="modal-body dict-body"></div>
+  </div>
+</div>
+
+<!-- ══════════════════ ARAŞTIRMA AÇILIŞI ══════════════════ -->
+<div id="research-intro" class="research-intro" hidden aria-hidden="true">
+  <div class="ri-stage">
+    <svg class="ri-map" viewBox="0 0 720 300" aria-hidden="true">
+      <line class="ri-line" data-source="web" x1="360" y1="160" x2="110" y2="70"/>
+      <line class="ri-line" data-source="wikipedia" x1="360" y1="160" x2="235" y2="30"/>
+      <line class="ri-line" data-source="youtube" x1="360" y1="160" x2="360" y2="18"/>
+      <line class="ri-line" data-source="github" x1="360" y1="160" x2="485" y2="30"/>
+      <line class="ri-line" data-source="pubmed" x1="360" y1="160" x2="610" y2="70"/>
+      <line class="ri-line" data-source="arxiv" x1="360" y1="160" x2="150" y2="238"/>
+      <line class="ri-line" data-source="stackoverflow" x1="360" y1="160" x2="360" y2="262"/>
+      <line class="ri-line" data-source="hackernews" x1="360" y1="160" x2="570" y2="238"/>
+      <circle class="ri-hub-ring" cx="360" cy="160" r="30"/>
+      <circle class="ri-hub" cx="360" cy="160" r="12"/>
+      <g class="ri-node" data-source="web" transform="translate(110 70)"><g class="ri-pop"><circle r="15"/><text y="4">W</text><text class="ri-node-name" y="34">Web</text></g></g>
+      <g class="ri-node" data-source="wikipedia" transform="translate(235 30)"><g class="ri-pop"><circle r="15"/><text y="4">Wi</text><text class="ri-node-name" y="34">Wikipedia</text></g></g>
+      <g class="ri-node" data-source="youtube" transform="translate(360 18)"><g class="ri-pop"><circle r="15"/><text y="4">YT</text><text class="ri-node-name" y="34">YouTube</text></g></g>
+      <g class="ri-node" data-source="github" transform="translate(485 30)"><g class="ri-pop"><circle r="15"/><text y="4">GH</text><text class="ri-node-name" y="34">GitHub</text></g></g>
+      <g class="ri-node" data-source="pubmed" transform="translate(610 70)"><g class="ri-pop"><circle r="15"/><text y="4">PM</text><text class="ri-node-name" y="34">PubMed</text></g></g>
+      <g class="ri-node" data-source="arxiv" transform="translate(150 238)"><g class="ri-pop"><circle r="15"/><text y="4">aX</text><text class="ri-node-name" y="-24">arXiv</text></g></g>
+      <g class="ri-node" data-source="stackoverflow" transform="translate(360 262)"><g class="ri-pop"><circle r="15"/><text y="4">SO</text><text class="ri-node-name" y="-24">Stack Overflow</text></g></g>
+      <g class="ri-node" data-source="hackernews" transform="translate(570 238)"><g class="ri-pop"><circle r="15"/><text y="4">HN</text><text class="ri-node-name" y="-24">Hacker News</text></g></g>
+    </svg>
+    <div class="ri-word">
+      <span class="ri-kicker">JARVIS</span>
+      <h1 class="ri-title">Araştırma</h1>
+      <p class="ri-line-text">Web · YouTube · GitHub · Wikipedia · PubMed · arXiv · Stack Overflow · Hacker News</p>
+    </div>
+  </div>
+  <p class="ri-skip">Geçmek için tıkla</p>
+</div>
+
+<!-- ══════════════════ TIP AKADEMİSİ AÇILIŞI ══════════════════ -->
+<div id="academy-intro" class="academy-intro" hidden aria-hidden="true">
+  <div class="ai-stage">
+    <svg class="ai-ecg" viewBox="0 0 720 200" aria-hidden="true">
+      <path class="ai-ecg-ghost" d="M0 118 H194 q9 0 14 -7 t14 7 H244 l6 8 l12 -86 l12 108 l8 -30 H306 q14 0 20 -14 t20 14 H444 q9 0 14 -7 t14 7 H494 l6 8 l12 -86 l12 108 l8 -30 H556 q14 0 20 -14 t20 14 H720"/>
+      <path id="academy-ecg-path" d="M0 118 H194 q9 0 14 -7 t14 7 H244 l6 8 l12 -86 l12 108 l8 -30 H306 q14 0 20 -14 t20 14 H444 q9 0 14 -7 t14 7 H494 l6 8 l12 -86 l12 108 l8 -30 H556 q14 0 20 -14 t20 14 H720"/>
+    </svg>
+    <svg id="academy-heart" class="ai-heart" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 21s-7.2-4.6-9.6-9.2C.4 8 3 4 6.6 4c2 0 3.6 1 5.4 3 1.8-2 3.4-3 5.4-3C21 4 23.6 8 21.6 11.8 19.2 16.4 12 21 12 21z"/></svg>
+    <div class="ai-word">
+      <span class="ai-kicker">JARVIS</span>
+      <h1 class="ai-title">Tıp Akademisi</h1>
+      <p id="academy-intro-line" class="ai-line"></p>
+    </div>
+  </div>
+  <p class="ai-skip">Geçmek için tıkla</p>
+</div>
+
 <div id="toasts" aria-live="polite"></div>
 
 <script src="js/foundation.js"></script>
+<script src="js/toolbox.js"></script>
 <script src="js/bridge.js"></script>
 <script src="js/presence.js"></script>
 <script src="js/shell.js"></script>
@@ -985,6 +1143,10 @@
 <script src="js/panels.js"></script>
 <script src="js/medical.js"></script>
 <script src="js/study.js"></script>
+<script src="js/medcalc.js"></script>
+<script src="js/rooms.js"></script>
+<script src="js/academy.js"></script>
+<script src="js/research.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

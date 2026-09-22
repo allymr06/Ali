@@ -76,8 +76,57 @@ function renderMarkdownLite(raw) {
   const lines = escaped.split(/\r?\n/);
   const parts = [];
   let list = null; // "ul" | "ol" | null
+  let fence = null; // collected lines of an open ``` block
+  let fenceLang = ""; // the opener's info word, only when it is a clean token
+  const isRow = (line) => /^\s*\|.*\|\s*$/.test(line || "");
+  const isRule = (line) => isRow(line) && /^[\s|:\-]+$/.test(line || "") && (line || "").includes("-");
+  const cells = (line) => String(line).trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
   const closeList = () => { if (list) { parts.push(`</${list}>`); list = null; } };
-  for (const line of lines) {
+  const closeFence = () => {
+    if (fence === null) return;
+    const lang = fenceLang ? `<span class="code-lang">${fenceLang}</span>` : "";
+    parts.push('<pre class="md-code">' + lang + '<button type="button" class="code-copy" data-code-copy title="Kodu kopyala">⎘</button><code>'
+      + fence.join("\n") + "</code></pre>");
+    fence = null;
+    fenceLang = "";
+  };
+  for (let at = 0; at < lines.length; at += 1) {
+    const line = lines[at];
+    // ``` opens and closes a literal block; inline markdown stays out
+    // of it, and a stream cut mid-block still renders what arrived.
+    const fenceMark = /^\s*```\s*(\S*)/.exec(line);
+    if (fenceMark) {
+      if (fence === null) {
+        closeList();
+        fence = [];
+        // The info word rides the badge only as a clean token; anything
+        // stranger (already HTML-escaped here) earns no badge at all.
+        fenceLang = /^[A-Za-z0-9_+#.\-]{1,24}$/.test(fenceMark[1]) ? fenceMark[1] : "";
+      } else closeFence();
+      continue;
+    }
+    if (fence !== null) { fence.push(line); continue; }
+    // A table is a header row, a rule, then body rows - anything less
+    // stays plain text, so a stray pipe never becomes a broken grid.
+    if (isRow(line) && !isRule(line) && isRule(lines[at + 1])) {
+      closeList();
+      const header = cells(line);
+      const body = [];
+      let cursor = at + 2;
+      while (cursor < lines.length && isRow(lines[cursor]) && !isRule(lines[cursor])) {
+        body.push(cells(lines[cursor]));
+        lines[cursor] = "\u0000consumed"; // this row is the table's now
+        cursor += 1;
+      }
+      parts.push('<table class="md-table"><thead><tr>'
+        + header.map((cell) => `<th>${inline(cell)}</th>`).join("")
+        + "</tr></thead><tbody>"
+        + body.map((row) => "<tr>" + header.map((cell, index) => `<td>${inline(row[index] || "")}</td>`).join("") + "</tr>").join("")
+        + "</tbody></table>");
+      lines[at + 1] = "\u0000consumed";
+      continue;
+    }
+    if (line === "\u0000consumed") continue;
     const bullet = /^\s*[-•] +(.*)$/.exec(line);
     const numbered = /^\s*\d+[.)] +(.*)$/.exec(line);
     const heading = /^\s*#{1,4} +(.*)$/.exec(line);
@@ -93,7 +142,46 @@ function renderMarkdownLite(raw) {
     parts.push(`<div>${inline(line)}</div>`);
   }
   closeList();
+  closeFence();
   return parts.join("");
+}
+
+/* ── drawer pins & in-chat find (pure) ─────────────────────────── */
+
+/* Pins live in this device's localStorage, not in the conversation
+   store: a convenience of this screen, honest about its scope. */
+function convPinsParse(rawValue) {
+  return new Set(String(rawValue || "").split(",").map((piece) => piece.trim()).filter(Boolean));
+}
+
+function convOrder(items, pins, { hideArchived = false } = {}) {
+  const source = Array.isArray(items) ? items : [];
+  // The active thread stays visible even when archived threads hide:
+  // the list must never lose the conversation that is open right now.
+  const list = hideArchived
+    ? source.filter((item) => item.status !== "archived" || item.active)
+    : source;
+  return {
+    pinned: list.filter((item) => pins.has(item.conversation_id)),
+    rest: list.filter((item) => !pins.has(item.conversation_id)),
+    hiddenCount: source.length - list.length,
+  };
+}
+
+/* Which message indexes match the query; null means the filter is off. */
+function chatFindFilter(texts, query) {
+  const needle = searchFold(String(query || "").trim());
+  if (!needle) return null;
+  const hits = [];
+  (texts || []).forEach((text, index) => {
+    if (searchFold(text).includes(needle)) hits.push(index);
+  });
+  return hits;
+}
+
+/* The copy control every full-size bubble carries. */
+function copyButton(slim) {
+  return slim ? "" : '<button type="button" class="msg-copy" data-copy title="Metni kopyala">⎘</button>';
 }
 
 function appendMessage(host, message, slim, { animate = true } = {}) {
@@ -101,13 +189,17 @@ function appendMessage(host, message, slim, { animate = true } = {}) {
   const node = el("div", `msg ${esc(message.role)}`);
   const roleLabel = message.role === "user" ? "SEN" : message.role === "assistant" ? "JARVIS" : "";
   const time = message.at ? `<span class="msg-time">${esc(fmtClock(new Date(message.at)))}</span>` : "";
+  const speakButton = message.role === "assistant" && !slim && State.snapshot?.voice_available
+    ? '<button type="button" class="msg-speak" data-speak title="Sesli oku">🔊</button>' : "";
   node.innerHTML =
-    (roleLabel && !slim ? `<div class="msg-meta"><span class="msg-role">${roleLabel}</span>${time}</div>` : "") +
+    (roleLabel && !slim ? `<div class="msg-meta"><span class="msg-role">${roleLabel}</span>${time}${speakButton}${copyButton(slim)}</div>` : "") +
     `<div class="msg-body"></div>` +
     (message.role === "assistant" && !slim ? assuranceChips(message.metadata) : "");
   if (message.role === "assistant") node.querySelector(".msg-body").innerHTML = renderMarkdownLite(message.text);
   else node.querySelector(".msg-body").textContent = message.text;
   host.appendChild(node);
+  const find = typeof document !== "undefined" ? document.getElementById("chat-find") : null;
+  if (find && find.value.trim()) applyChatFind();
   if (animate) Motion.rise(node, { y: 10, duration: 360 });
   return node;
 }
@@ -152,6 +244,21 @@ function finalizePendingBubble(message) {
   appendMessage($("#chat-list"), message, false);
 }
 
+/* The busy push opens a turn on every surface that did not start it, and
+   only the answer closes it again. A submission that produces no answer —
+   refused by the runner, cancelled on the way down — ends with busy:false
+   and nothing else, and an unclosed bubble is handed to the NEXT question
+   by ensurePendingBubble. sendCommand does this for the page that typed
+   the message; this is the same cleanup for the page that only watched. */
+function closeWatchedTurn() {
+  const turn = State.watchedTurn;
+  State.watchedTurn = null;
+  if (!turn) return;
+  State.pendingEl?.remove();
+  State.pendingEl = null;
+  if (Activity.current === turn) Activity.abortTurn("Yanıt gelmeden tur kapandı.");
+}
+
 function hideChatEmpty() { const empty = $("#chat-empty"); if (empty) empty.hidden = true; }
 
 function renderChatHistory() {
@@ -166,6 +273,24 @@ function renderChatHistory() {
 function renderChatTitle() {
   const active = State.conversations.find((item) => item.active);
   $("#chat-title").textContent = active ? active.title : (State.messages.length ? "Konuşma" : "Yeni konuşma");
+  // The pencil exists only when there is a stored thread to rename.
+  const pencil = $("#chat-rename");
+  if (pencil) pencil.hidden = !active;
+}
+
+async function renameActiveConversation() {
+  const active = State.conversations.find((item) => item.active);
+  if (!active) return;
+  const name = await promptDialog({
+    title: "Konuşmayı yeniden adlandır",
+    body: "Boş bırakırsan başlık otomatiğe döner (ilk mesajın).",
+    value: active.title, placeholder: "Yeni başlık",
+  });
+  if (name === null) return;
+  const result = await call("rename_conversation", active.conversation_id, name);
+  if (result.ok === false) { toast(result.error || "Adlandırılamadı.", true); return; }
+  toast(result.message, "ok");
+  refreshConversations();
 }
 
 /* Auto-scroll only when the reader is already at (or near) the bottom.
@@ -200,6 +325,8 @@ async function sendCommand(raw) {
   if (State.paused) { toast(PAUSED_NOTICE, true); return; }
   if (!text || State.busy || !bridgeReady()) return;
   const message = { role: "user", text, at: Date.now() };
+  // The palette's short memory: this device only, five entries, newest first.
+  store("nova.palette.recent", paletteRecentAdd(store("nova.palette.recent"), text));
   State.pendingSources = null; // sources belong to the turn that earned them
   hideChatEmpty();
   updateChat(() => {
@@ -244,17 +371,66 @@ function renderConversations() {
     renderChatTitle();
     return;
   }
-  let group = null;
-  host.innerHTML = items.map((item) => {
-    const label = convGroupLabel(item.updated_at);
-    const heading = label !== group ? `<div class="conv-group">${label}</div>` : "";
-    group = label;
-    return `${heading}
+  const pins = convPinsParse(store("nova.conv.pins"));
+  const hideArchived = store("nova.conv.hidearchive") === "1";
+  const ordered = convOrder(items, pins, { hideArchived });
+  const row = (item) => `
     <button type="button" class="conv-item ${item.active ? "active" : ""}" data-id="${esc(item.conversation_id)}" title="${esc(item.title)}">
       <span class="conv-title">${esc(item.title)}</span>
       <span class="conv-meta"><span>${item.turn_count} mesaj${item.status === "archived" ? " · arşiv" : ""}</span><span>${esc(fmtRelative(item.updated_at))}</span></span>
+      <span class="conv-ren" data-ren="${esc(item.conversation_id)}" title="Yeniden adlandır">✎</span>
+      <span class="conv-pin ${pins.has(item.conversation_id) ? "on" : ""}" data-pin="${esc(item.conversation_id)}" title="${pins.has(item.conversation_id) ? "Sabitlemeyi kaldır" : "Sabitle (bu cihazda)"}">📌</span>
     </button>`;
-  }).join("");
+  let group = null;
+  const parts = [];
+  if (ordered.pinned.length) {
+    parts.push('<div class="conv-group">Sabitlenmiş</div>');
+    ordered.pinned.forEach((item) => parts.push(row(item)));
+  }
+  ordered.rest.forEach((item) => {
+    const label = convGroupLabel(item.updated_at);
+    if (label !== group) { parts.push(`<div class="conv-group">${label}</div>`); group = label; }
+    parts.push(row(item));
+  });
+  if (ordered.hiddenCount) {
+    parts.push(`<button type="button" class="conv-archtoggle" data-arch-show>${ordered.hiddenCount} arşivli konuşma gizli · göster</button>`);
+  } else if (hideArchived) {
+    parts.push('<button type="button" class="conv-archtoggle" data-arch-show>Arşivliler gizleniyor · göster</button>');
+  } else if (items.some((item) => item.status === "archived")) {
+    parts.push('<button type="button" class="conv-archtoggle" data-arch-hide>Arşivlileri gizle</button>');
+  }
+  host.innerHTML = parts.join("");
+  $$("[data-arch-show]", host).forEach((node) => node.addEventListener("click", () => {
+    store("nova.conv.hidearchive", "0");
+    renderConversations();
+  }));
+  $$("[data-arch-hide]", host).forEach((node) => node.addEventListener("click", () => {
+    store("nova.conv.hidearchive", "1");
+    renderConversations();
+  }));
+  $$(".conv-pin", host).forEach((node) => node.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const current = convPinsParse(store("nova.conv.pins"));
+    if (current.has(node.dataset.pin)) current.delete(node.dataset.pin);
+    else current.add(node.dataset.pin);
+    store("nova.conv.pins", [...current].join(","));
+    renderConversations();
+  }));
+  $$(".conv-ren", host).forEach((node) => node.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    const item = items.find((entry) => entry.conversation_id === node.dataset.ren);
+    if (!item) return;
+    const name = await promptDialog({
+      title: "Konuşmayı yeniden adlandır",
+      body: "Boş bırakırsan başlık otomatiğe döner (ilk mesajın).",
+      value: item.title, placeholder: "Yeni başlık",
+    });
+    if (name === null) return;
+    const result = await call("rename_conversation", item.conversation_id, name);
+    if (result.ok === false) { toast(result.error || "Adlandırılamadı.", true); return; }
+    toast(result.message, "ok");
+    refreshConversations();
+  }));
   $$(".conv-item", host).forEach((node) => {
     node.addEventListener("click", () => openConversation(node.dataset.id));
     node.addEventListener("contextmenu", async (event) => {
@@ -295,7 +471,7 @@ function convSearchMarkup(payload) {
   const mark = (text) => {
     const safe = esc(text);
     const needle = esc(payload.query);
-    const index = safe.toLocaleLowerCase("tr-TR").indexOf(needle.toLocaleLowerCase("tr-TR"));
+    const index = searchFold(safe).indexOf(searchFold(needle));
     if (index < 0) return safe;
     return safe.slice(0, index) + "<mark>" + safe.slice(index, index + needle.length) + "</mark>" + safe.slice(index + needle.length);
   };
@@ -486,6 +662,31 @@ function updateVoiceUI() {
 
 /* ── wiring ───────────────────────────────────────────────────────── */
 
+function applyChatFind() {
+  const input = $("#chat-find");
+  const count = $("#chat-find-count");
+  if (!input || !count) return;
+  const nodes = $$("#chat-list .msg");
+  const hits = chatFindFilter(nodes.map((node) => node.innerText), input.value);
+  nodes.forEach((node, index) => node.classList.toggle("find-miss", hits !== null && !hits.includes(index)));
+  count.hidden = hits === null;
+  if (hits !== null) count.textContent = hits.length ? `${hits.length} eşleşme` : "eşleşme yok";
+}
+
+function clearChatFind() {
+  const input = $("#chat-find");
+  if (input && input.value) { input.value = ""; applyChatFind(); }
+}
+
+function bindChatFind() {
+  const input = $("#chat-find");
+  if (!input) return;
+  input.addEventListener("input", () => applyChatFind());
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") { event.stopPropagation(); clearChatFind(); input.blur(); }
+  });
+}
+
 function bindConversation() {
   $("#quick-form").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -498,6 +699,8 @@ function bindConversation() {
   });
   $("#quick-send").innerHTML = icon("send");
 
+  let historyIndex = -1; // -1 = the live draft; 0.. walks the sent history
+  let historyDraft = "";
   $("#chat-form").addEventListener("submit", (event) => {
     event.preventDefault();
     const input = $("#chat-input");
@@ -505,13 +708,29 @@ function bindConversation() {
     if (!text.trim()) return;
     if (State.busy) { toast("JARVIS hâlâ yanıtlıyor; mesajın bekliyor, yanıt bitince gönder.", true); return; }
     input.value = ""; input.style.height = "auto";
+    historyIndex = -1; historyDraft = "";
     sendCommand(text);
   });
   const chatInput = $("#chat-input");
   chatInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("#chat-form").requestSubmit(); }
+    // Ctrl+ArrowUp/Down: step through the short sent history, terminal
+    // style; the unsent draft waits at the bottom of the walk.
+    if (event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+      if (historyIndex === -1) historyDraft = chatInput.value;
+      const step = historyStep(paletteRecentParse(store("nova.palette.recent")), historyIndex,
+        event.key === "ArrowUp" ? "back" : "forward", historyDraft);
+      if (!step) return;
+      event.preventDefault();
+      historyIndex = step.index;
+      chatInput.value = step.text;
+      chatInput.style.height = "auto";
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 176) + "px";
+      chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length);
+    }
   });
   chatInput.addEventListener("input", () => {
+    historyIndex = -1; // typing by hand leaves the walk
     chatInput.style.height = "auto";
     chatInput.style.height = Math.min(chatInput.scrollHeight, 176) + "px";
   });
@@ -527,6 +746,7 @@ function bindConversation() {
   });
   $("#conv-new").addEventListener("click", newConversation);
   $("#chat-new").addEventListener("click", newConversation);
+  $("#chat-rename").addEventListener("click", renameActiveConversation);
   bindConvSearch();
   const chatExport = $("#chat-export");
   if (chatExport) chatExport.addEventListener("click", async () => {
@@ -549,4 +769,128 @@ function bindConversation() {
   /* The core itself is the voice switch: click it, start talking. */
   $$("#stage .core-frame").forEach((frame) => frame.addEventListener("click", () => toggleVoice()));
   updateVoiceUI();
+}
+
+/* ── read a reply aloud ───────────────────────────────────────────────
+   One shared <audio> element: starting a bubble stops the previous one,
+   clicking the same bubble again stops it. The audio comes back from the
+   bridge as base64 through the same cloud-then-local voices the phone
+   uses; a refusal keeps the text and says why. */
+const Readaloud = {
+  audio: null,
+  active: null,
+
+  stop() {
+    Speech.stop();
+    if (this.active) this.active.classList.remove("speaking");
+    this.active = null;
+  },
+
+  async toggle(button) {
+    if (this.active === button) { this.stop(); return; }
+    this.stop();
+    // The click is the moment the audio context can be unlocked; the
+    // clip arriving seconds later then plays without an activation.
+    Speech.unlock();
+    const body = button.closest(".msg")?.querySelector(".msg-body");
+    const text = body ? body.textContent : "";
+    if (!text.trim() || !bridgeReady()) return;
+    button.classList.add("speaking");
+    this.active = button;
+    const result = await call("speak_text", text);
+    if (this.active !== button) return;   // stopped or replaced while synthesizing
+    if (result.ok === false) { this.stop(); toast(result.error || "Ses üretilemedi.", true); return; }
+    const played = await Speech.play(result.audio, () => { if (this.active === button) this.stop(); });
+    if (!played) this.stop();
+  },
+};
+
+function bindReadaloud() {
+  const host = $("#chat-list");
+  if (!host) return;
+  host.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-speak]");
+    if (button) Readaloud.toggle(button);
+    const copy = event.target.closest("[data-copy]");
+    if (copy) {
+      const body = copy.closest(".msg")?.querySelector(".msg-body");
+      if (body) copyTextToClipboard(body.innerText);
+    }
+    const codeCopy = event.target.closest("[data-code-copy]");
+    if (codeCopy) {
+      const code = codeCopy.closest(".md-code")?.querySelector("code");
+      if (code) copyTextToClipboard(code.innerText);
+    }
+  });
+}
+
+/* One speech player for the page. A click unlocks the shared
+   AudioContext immediately (that part must happen inside the gesture);
+   the clip that arrives seconds later then plays through it, which no
+   autoplay policy blocks. Success and failure both speak. */
+const Speech = {
+  context: null,
+  source: null,
+  onended: null,
+
+  unlock() {
+    try {
+      if (!this.context) this.context = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.context.state === "suspended") this.context.resume();
+      return true;
+    } catch (error) {
+      return false;
+    }
+  },
+
+  async play(base64, onended) {
+    if (!this.context) this.unlock();
+    if (!this.context) { toast("Ses çalınamadı.", true); return false; }
+    this.stop();
+    try {
+      const raw = atob(base64);
+      const bytes = new Uint8Array(raw.length);
+      for (let index = 0; index < raw.length; index += 1) bytes[index] = raw.charCodeAt(index);
+      const buffer = await this.context.decodeAudioData(bytes.buffer);
+      const source = this.context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(this.context.destination);
+      this.source = source;
+      this.onended = onended || null;
+      source.onended = () => {
+        if (this.source === source) {
+          this.source = null;
+          if (this.onended) this.onended();
+        }
+      };
+      source.start();
+      return true;
+    } catch (error) {
+      toast("Ses çalınamadı.", true);
+      return false;
+    }
+  },
+
+  stop() {
+    if (this.source) {
+      const source = this.source;
+      this.source = null;
+      this.onended = null;
+      try { source.stop(); } catch (error) { /* already ended */ }
+    }
+  },
+};
+
+/* One clipboard hand for the page: reports what actually happened. */
+async function copyTextToClipboard(text) {
+  const value = String(text ?? "");
+  if (!value.trim()) { toast("Kopyalanacak metin yok.", true); return false; }
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch (error) {
+    toast("Panoya erişilemedi.", true);
+    return false;
+  }
+  toast("Panoya kopyalandı.", "ok");
+  return true;
 }

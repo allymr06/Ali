@@ -97,6 +97,11 @@ records a `nova.unavailable` warning.
 | --- | --- |
 | `%LOCALAPPDATA%\JARVIS\webview` | WebView2 profile holding the page's own preferences (theme, "Hareketi azalt"). Follows `JARVIS_STATE_DIRECTORY` when that override is set. |
 
+"Sessiz saatler" (assistant card) holds Windows toasts inside a
+"SS:DD-SS:DD" window (it may wrap midnight); the in-app notification
+centre still collects everything. Stored in the desktop profile's
+`quiet_hours`; empty disables it.
+
 The settings screen shows the voice, vision, research, memory, model and
 system variables from this document read-only, with the environment variable
 name next to each value; only the Gemini model and credential are editable
@@ -240,7 +245,7 @@ Every analysis still requires a separately approved, short-lived consent grant.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `JARVIS_VISION_ENABLED` | `false` | Constructs the vision service at application startup. |
+| `JARVIS_VISION_ENABLED` | unset (desktop switch: on) | Constructs the vision service at application startup. The desktop shell follows the Settings screen's "Görüş" switch (on by default, stored in `settings.json`) unless this variable is set; the source-only default stays `false`. |
 | `JARVIS_VISION_MODEL` | unset | Optional dedicated Gemini vision model. When set and different from the general model, `VISION` requests route to it exclusively; when unset, vision uses the general model. |
 | `JARVIS_VISION_DETAIL` | `high` | Image detail: `low`, `high`, `original`, or `auto`. |
 | `JARVIS_VISION_OPERATION_TIMEOUT_SECONDS` | `60` | Timeout for each capture or analysis operation. |
@@ -269,6 +274,7 @@ local address rejection.
 | --- | --- | --- |
 | `JARVIS_DAILY_BRIEF_NOTIFICATION` | `true` | One OS notification a day with the day's summary; reads services, never the model. |
 | `JARVIS_STATE_AUTO_BACKUP` | `true` | Weekly consistent copies of the state databases (conversations, reminders, routines, notifications, memory, tasks); newest three kept. |
+| `JARVIS_EXECUTION_TIMEOUT_SECONDS` | `300` | Wall-clock budget for one Core execution, a durable task included; raise it for long jobs. Range 1 through 86400. |
 | `JARVIS_MOBILE_ENABLED` | `true` | Starts the mobile companion server inside the desktop process, bound to 127.0.0.1 only (see `docs/MOBILE.md`). |
 | `JARVIS_MOBILE_PORT` | `8765` | Loopback port of the mobile companion; Tailscale Serve forwards to it. |
 | `JARVIS_MOBILE_SESSION_DAYS` | `30` | Lifetime of a paired phone session; range 1 through 365. |
@@ -283,9 +289,11 @@ local address rejection.
 | `JARVIS_RESEARCH_MAX_RESPONSE_BYTES` | `2000000` | Maximum bytes accepted from one response. |
 | `JARVIS_RESEARCH_MAX_CONTENT_CHARACTERS` | `50000` | Maximum extracted characters per source. |
 | `JARVIS_RESEARCH_MAX_REDIRECTS` | `3` | Maximum manually validated redirects; range `0` through `10`. |
-| `JARVIS_RESEARCH_MAX_SOURCES` | `5` | Maximum source pages in one report; range `1` through `10`. |
+| `JARVIS_RESEARCH_MAX_SOURCES` | `10` | Maximum sources in one report; range `1` through `10`. The page clamps its request to this. |
 | `JARVIS_RESEARCH_MAX_CONCURRENCY` | `3` | Maximum simultaneous source fetches; range `1` through `8`. |
 | `JARVIS_RESEARCH_USER_AGENT` | `JARVIS/0.1` | Non-secret HTTP user-agent for source-page fetches. The DuckDuckGo search request itself presents a browser string, because the endpoint serves an empty challenge page to non-browser agents. |
+| `JARVIS_ALMANAC_CITY` | unset | City for the morning brief's weather line (Open-Meteo, keyless); also editable from Ayarlar. Empty means no weather line. |
+| `JARVIS_RESEARCH_SOURCES` | all | Comma list of the places research may look beside the web: `web`, `youtube`, `github`, `wikipedia`, `pubmed`, `arxiv`, `stackoverflow`, `hackernews`, `site`. All keyless and read-only; the web is always included; an unknown id refuses to start. |
 
 ## Plugins
 

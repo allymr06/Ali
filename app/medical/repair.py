@@ -97,10 +97,20 @@ def backup_now(store: Any, *, keep: int = BACKUP_KEEP) -> dict[str, Any]:
         raise ValueError(f"Diskte yer yok: yedek için en az {2 * size // (1024 * 1024)} MB boş alan gerekli, {free // (1024 * 1024)} MB var.")
     stamp = utc_now().strftime("%Y%m%d-%H%M%S-%f")
     target = directory / f"{BACKUP_PREFIX}{stamp}.sqlite3"
+    # Windows serves datetime.now in ~16 ms steps, so two quick backups can
+    # share a stamp to the microsecond - and a backup must never overwrite
+    # a backup. A same-instant sibling takes a counter. The letter matters:
+    # rotation orders by name, and "b" sorts after the "." of the plain
+    # name where a "-" would sort before it, so the sibling counts as the
+    # newer copy - which it is.
+    counter = 2
+    while target.exists():
+        target = directory / f"{BACKUP_PREFIX}{stamp}b{counter}.sqlite3"
+        counter += 1
     # Copy to a temporary name first: a copy cut short by shutdown must not
     # sit in the rotation looking like a good backup. sqlite3's context
     # manager commits but does not close, so close by hand before renaming.
-    partial = directory / f"{BACKUP_PREFIX}{stamp}.sqlite3.tmp"
+    partial = directory / f"{target.name}.tmp"
     src = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
     dst = sqlite3.connect(partial)
     try:

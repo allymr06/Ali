@@ -1,10 +1,14 @@
 """WhatsApp Desktop integration.
 
-Reading uses the Windows UI Automation accessibility tree of the real
-WhatsApp window — native metadata, not pixel scraping. Sending is a
-HIGH-risk, approval-gated action that drives the official
-whatsapp://send deep link, then invokes the send button through UI
-Automation and verifies the result. If any step cannot be verified the
+Reading uses the Windows UI Automation tree of the real WhatsApp window
+— native metadata, not pixel scraping — and never takes the user's focus:
+the chat list is the rows of its grid, the open conversation is read
+through the page's text pattern bubble by bubble, with the author label
+("Siz:" or the contact's name) and the outgoing status button telling
+who wrote what. Sending is a HIGH-risk, approval-gated action that
+drives the official whatsapp://send deep link (or the visible chat row),
+types the text — at a human pace when asked — then invokes the send
+button and verifies the result. If any step cannot be verified the
 message is left unsent in the input box, never fired blindly.
 
 Contacts live in a user-editable JSON file inside the JARVIS state
@@ -35,6 +39,110 @@ _PHONE_PATTERN = re.compile(r"^\+?[0-9]{7,15}$")
 _WINDOW_TITLE = "WhatsApp"
 _SEND_BUTTON_NAMES = ("Gönder", "Gonder", "Send")
 _COMPOSER_HINTS = ("mesaj yaz", "type a message")
+
+# Chat-list rows read "[N okunmamış mesaj ]<name> <when> <preview>"; the
+# "when" is a clock time today, a day word, a date, or a weekday.
+# The badge text sits before the name on most rows and after the time on
+# some (the layout reads the badge later when the preview wraps).
+_UNREAD_BADGE = re.compile(r"(?<!\S)(?P<count>\d[\d.]*)\s+okunmamış mesaj(?!\S)", re.I)
+_WHEN_TOKEN = re.compile(
+    r"(?<!\S)(?P<when>\d{1,2}:\d{2}|Dün|Bugün|Yesterday|Today|\d{1,2}\.\d{1,2}\.\d{2,4}"
+    r"|Pazartesi|Salı|Çarşamba|Perşembe|Cuma|Cumartesi|Pazar"
+    r"|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)(?!\S)"
+)
+_TIME_LINE = re.compile(r"^\d{1,2}:\d{2}$")
+_OWN_LABELS = frozenset({"siz", "sen", "you", "ben"})
+
+
+def parse_chat_row(name: str) -> dict[str, Any]:
+    """One chat-list row into name, unread count, when and preview."""
+    text = " ".join(str(name).split())
+    unread = 0
+    match = _UNREAD_BADGE.search(text)
+    if match:
+        unread = int(match.group("count").replace(".", "") or 0)
+        text = " ".join((text[: match.start()] + " " + text[match.end():]).split())
+    title, when, preview = text, "", ""
+    found = _WHEN_TOKEN.search(text)
+    if found:
+        title = text[: found.start()].strip()
+        when = found.group("when")
+        preview = text[found.end():].strip()
+    return {"name": title, "unread": unread, "when": when, "preview": preview[:120]}
+
+
+def parse_message_row(text: str, has_status: bool) -> dict[str, Any] | None:
+    """One bubble's text run into author, text, time and direction.
+
+    The run is an optional author label line ("Siz:" for the user's own
+    bubbles, "<Name>:" for the other side), the message lines, and the
+    HH:MM line. WhatsApp omits the label on a run of bubbles by the same
+    author, so a row without one answers ``outgoing=None`` for the caller
+    to inherit. A row with a label and no text is media.
+    """
+    lines = [" ".join(line.split()) for line in str(text).splitlines()]
+    lines = [line for line in lines if line]
+    if not lines:
+        return None
+    time_index = None
+    for index in range(len(lines) - 1, -1, -1):
+        if _TIME_LINE.match(lines[index]):
+            time_index = index
+            break
+    when = lines[time_index] if time_index is not None else ""
+    body_lines = lines[:time_index] if time_index is not None else lines
+    author = None
+    if body_lines and body_lines[0].endswith(":") and len(body_lines[0]) <= 80:
+        author = body_lines[0][:-1].strip()
+        body_lines = body_lines[1:]
+    outgoing: bool | None = True if has_status else None
+    if author is not None:
+        outgoing = has_status or author.casefold() in _OWN_LABELS
+    body = " ".join(body_lines).strip()
+    return {
+        "author": author,
+        "text": body,
+        "time": when,
+        "outgoing": outgoing,
+        "kind": "text" if body else "media",
+    }
+
+
+def messages_from_rows(rows: list[tuple[str, bool]]) -> list[dict[str, Any]]:
+    """Parse rows in order, inheriting the author across unlabeled runs."""
+    messages: list[dict[str, Any]] = []
+    previous_author: str | None = None
+    previous_outgoing: bool | None = None
+    for text, has_status in rows:
+        parsed = parse_message_row(text, has_status)
+        if parsed is None:
+            continue
+        if parsed["author"] is None:
+            parsed["author"] = previous_author
+            if parsed["outgoing"] is None:
+                parsed["outgoing"] = previous_outgoing
+        previous_author, previous_outgoing = parsed["author"], parsed["outgoing"]
+        messages.append(parsed)
+    return messages
+
+
+def message_line(message: dict[str, Any]) -> str:
+    """A transcript line the model reads: who said what."""
+    who = "Siz" if message.get("outgoing") else (message.get("author") or "?")
+    body = message.get("text") or "[medya]"
+    return f"{who}: {body}"
+
+
+def parse_composer_name(name: str | None) -> tuple[str, bool] | None:
+    """The open chat's title (and whether it is a group) from the message
+    box's accessible name, "<title>[ grup] sohbetine bir mesaj yazın"."""
+    text = " ".join(str(name or "").split())
+    lowered = text.casefold()
+    for marker, group in ((" grup sohbetine", True), (" sohbetine", False)):
+        index = lowered.find(marker)
+        if index > 0:
+            return text[:index].strip(), group
+    return None
 
 
 class WhatsAppIntegration:
@@ -172,13 +280,28 @@ class WhatsAppIntegration:
                 return True
         return False
 
-    async def read_recent_chats(self, limit: int = 8) -> ToolResult:
+    async def read_recent_chats(self, limit: int = 8, launch: bool = True) -> ToolResult:
+        """The chat list as a person glances at it: who, how many unread.
+
+        ``launch=False`` is the quiet glance: a closed WhatsApp answers
+        BLOCKED instead of being started - the home remote polls with
+        it, and a poll must never open applications by itself.
+        """
         bounded = max(1, min(int(limit), 20))
         client = self._uia_client()
-        await self._ensure_window()
+        if launch:
+            await self._ensure_window()
+        elif not await asyncio.to_thread(client.window_exists, _WINDOW_TITLE):
+            return ToolResult(
+                ToolExecutionStatus.BLOCKED,
+                "whatsapp_read_chats",
+                message="WhatsApp kapalı.",
+                error="window_not_found",
+                verified=True,
+            )
         try:
-            entries = await asyncio.to_thread(
-                client.read_items, _WINDOW_TITLE, limit=bounded
+            rows = await asyncio.to_thread(
+                client.read_chat_rows, _WINDOW_TITLE, limit=bounded
             )
         except Exception as exc:
             return ToolResult(
@@ -187,7 +310,7 @@ class WhatsAppIntegration:
                 message="Sohbet listesi okunamadı.",
                 error=f"uia_{type(exc).__name__}",
             )
-        if entries is None:
+        if rows is None:
             return ToolResult(
                 ToolExecutionStatus.BLOCKED,
                 "whatsapp_read_chats",
@@ -198,26 +321,50 @@ class WhatsAppIntegration:
                 error="window_not_found",
                 verified=True,
             )
+        entries = [parse_chat_row(row) for row in rows]
+        unread = sum(1 for entry in entries if entry["unread"])
+        message = f"{len(entries)} sohbet okundu"
+        message += f"; {unread} sohbette okunmamış mesaj var." if unread else "."
         return ToolResult(
             ToolExecutionStatus.SUCCESS,
             "whatsapp_read_chats",
-            message=f"{len(entries)} sohbet girdisi okundu.",
-            data={"chats": entries},
+            message=message,
+            data={"chats": rows, "entries": entries, "unread_chats": unread},
             verified=bool(entries),
         )
+
+    async def current_chat(self) -> dict[str, Any] | None:
+        """Title of the chat open on screen, or None when none is.
+
+        The header strip answers in milliseconds; the message box's
+        accessible name is the fallback when the header is not found.
+        """
+        client = self._uia_client()
+        try:
+            header = await asyncio.to_thread(client.chat_title, _WINDOW_TITLE)
+        except Exception:
+            header = None
+        if header:
+            return {"title": header[0], "group": bool(header[1])}
+        try:
+            name = await asyncio.to_thread(client.composer_name, _WINDOW_TITLE)
+        except Exception:
+            return None
+        parsed = parse_composer_name(name)
+        if parsed is None:
+            return None
+        return {"title": parsed[0], "group": parsed[1]}
 
     async def read_open_conversation(
         self, limit: int = 12
     ) -> ToolResult:
-        """Read message bubbles from the currently open chat."""
+        """Read the open chat bubble by bubble, with who wrote each."""
         bounded = max(1, min(int(limit), 40))
         client = self._uia_client()
         await self._ensure_window()
         try:
-            messages = await asyncio.to_thread(
-                client.read_conversation,
-                _WINDOW_TITLE,
-                limit=bounded,
+            rows = await asyncio.to_thread(
+                client.read_message_rows, _WINDOW_TITLE
             )
         except Exception as exc:
             return ToolResult(
@@ -226,7 +373,7 @@ class WhatsAppIntegration:
                 message="Sohbet içeriği okunamadı.",
                 error=f"uia_{type(exc).__name__}",
             )
-        if messages is None:
+        if rows is None:
             return ToolResult(
                 ToolExecutionStatus.BLOCKED,
                 "whatsapp_read_conversation",
@@ -234,11 +381,20 @@ class WhatsAppIntegration:
                 error="window_not_found",
                 verified=True,
             )
+        messages = messages_from_rows(rows)[-bounded:]
+        chat = await self.current_chat()
+        summary = f"{len(messages)} mesaj okundu"
+        summary += f" ({chat['title']})." if chat else "."
         return ToolResult(
             ToolExecutionStatus.SUCCESS,
             "whatsapp_read_conversation",
-            message=f"{len(messages)} mesaj okundu.",
-            data={"messages": messages},
+            message=summary,
+            data={
+                "messages": messages,
+                "lines": [message_line(item) for item in messages],
+                "chat": chat["title"] if chat else None,
+                "group": chat["group"] if chat else None,
+            },
             verified=bool(messages),
         )
 
@@ -371,8 +527,19 @@ class WhatsAppIntegration:
         )
 
     async def send_message(
-        self, contact: str, message: str
+        self,
+        contact: str,
+        message: str,
+        *,
+        typing_seconds_per_char: float | None = None,
     ) -> ToolResult:
+        """Send one message; with a typing pace, type it like a person.
+
+        The paced path opens the chat without a prefilled draft and types
+        the text keystroke by keystroke, which is what the other side sees
+        as "yazıyor…". Everything after that - the verified send button,
+        the honest PARTIAL when it cannot be verified - is the same.
+        """
         normalized = message.strip()
         if not normalized:
             return ToolResult(
@@ -381,10 +548,36 @@ class WhatsAppIntegration:
                 message="Mesaj boş olamaz.",
                 error="empty_message",
             )
-        opened = await self.open_chat(contact, normalized)
-        if opened.status is not ToolExecutionStatus.SUCCESS:
-            opened.tool_name = "whatsapp_send_message"
-            return opened
+        if typing_seconds_per_char:
+            opened = await self.open_chat(contact)
+            if opened.status is not ToolExecutionStatus.SUCCESS:
+                opened.tool_name = "whatsapp_send_message"
+                return opened
+            draft = " ".join(normalized.split())
+            client = self._uia_client()
+            pace = float(typing_seconds_per_char)
+
+            def place() -> bool:
+                for hint in _COMPOSER_HINTS:
+                    if client.type_into_edit(
+                        _WINDOW_TITLE, hint, draft, per_char_seconds=pace
+                    ):
+                        return True
+                return False
+
+            if not await asyncio.to_thread(place):
+                return ToolResult(
+                    ToolExecutionStatus.PARTIAL,
+                    "whatsapp_send_message",
+                    message="Yazı kutusu bulunamadı; mesaj yazılamadı.",
+                    data={"contact": contact},
+                    error="composer_not_found",
+                )
+        else:
+            opened = await self.open_chat(contact, normalized)
+            if opened.status is not ToolExecutionStatus.SUCCESS:
+                opened.tool_name = "whatsapp_send_message"
+                return opened
         await asyncio.sleep(1.2)
         client = self._uia_client()
         try:
@@ -447,8 +640,8 @@ class WhatsAppIntegration:
         def list_contacts() -> ToolResult:
             return self.list_contacts()
 
-        async def read_chats(limit: int = 8) -> ToolResult:
-            return await self.read_recent_chats(limit)
+        async def read_chats(limit: int = 8, launch: bool = True) -> ToolResult:
+            return await self.read_recent_chats(limit, launch=launch)
 
         async def read_conversation(limit: int = 12) -> ToolResult:
             return await self.read_open_conversation(limit)
@@ -485,8 +678,8 @@ class WhatsAppIntegration:
         executor.register(
             define(
                 "whatsapp_read_chats",
-                "Açık WhatsApp penceresindeki son sohbetleri "
-                "erişilebilirlik ağacından oku.",
+                "WhatsApp sohbet listesini oku: kimden kaç okunmamış "
+                "mesaj var, son mesaj ne zaman. Pencereyi öne getirmez.",
             ),
             read_chats,
             source="integration:whatsapp",
@@ -494,7 +687,8 @@ class WhatsAppIntegration:
         executor.register(
             define(
                 "whatsapp_read_conversation",
-                "Açık olan WhatsApp sohbetindeki son mesajları oku.",
+                "Açık olan WhatsApp sohbetindeki son mesajları kimin "
+                "yazdığıyla birlikte oku. Pencereyi öne getirmez.",
             ),
             read_conversation,
             source="integration:whatsapp",

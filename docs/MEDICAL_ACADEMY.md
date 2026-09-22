@@ -919,6 +919,10 @@ activities actually took; an activity longer than the day is split and says
 so. Planned, started, skipped, completed and missed are five different
 states; nothing completes on a timer. When the scope cannot fit the remaining
 budget, the plan says so with the numbers and lists what stays uncovered.
+Work can stay uncovered for a second reason, on a scope that does fit: a
+session no day is long enough to take, whole or cut, because the shortest
+activity is five minutes and both sides of a cut have to clear it. The plan
+says that in its own words rather than leaving it to the overload line.
 Replanning — a new day, a changed budget, a day off, a changed scope, or on
 request — keeps completed and manual activities.
 
@@ -1043,8 +1047,8 @@ total includes questions left blank.
 
 ### One scoring decision (13 September 2026)
 
-Every place that measures asks one question of a question: does the scoring
-policy count it? `review.rule_decision` (and the reviewer's fuller
+Nearly every place that measures asks one question of a question: does the
+scoring policy count it? `review.rule_decision` (and the reviewer's fuller
 `decision`, which adds the passage review when `JARVIS_MEDICAL_SOURCE_REVIEW`
 is on) answers with `scored`, `status`, `label` and `reason`. A key on its own
 is not enough:
@@ -1072,6 +1076,13 @@ when the paper is finished and saved with the result (`analysis.scoring`,
 that paper's history; only an invalidation reaches back, through the existing
 correction path. A blank is a blank: a concept is weak only on answered
 questions, and the questions left blank are listed apart.
+
+Two places do not ask. `understanding.answer_check` and
+`understanding.answer_transfer` record mastery for whichever bank question
+they were handed, so an answer to a study-only item on those two screens
+still reaches the planner's coverage; `StudyPlanner._coverage` carries a NOTE
+where those rows arrive. Gating them would change what those screens promise
+about their own questions, which is an owner decision and not yet taken.
 
 A paper is named for the questions it holds, not the number asked for; the
 list says *N soru · M istendi · K puanlı* when they differ.

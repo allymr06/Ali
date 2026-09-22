@@ -4,6 +4,7 @@ import http.client
 import json
 import re
 import ssl
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
 from html.parser import HTMLParser
@@ -330,6 +331,7 @@ class DuckDuckGoSearchProvider(SearchProvider):
     """
 
     _ENDPOINT = "https://html.duckduckgo.com/html/"
+    _THROTTLE_PAUSE_SECONDS = 1.5
     _TIME_RANGES = {"day": "d", "month": "m", "year": "y"}
     _BROWSER_UA = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -373,16 +375,24 @@ class DuckDuckGoSearchProvider(SearchProvider):
         if time_range:
             params["df"] = self._TIME_RANGES[time_range]
         target = self._result_policy.validate(f"{self._ENDPOINT}?{urlencode(params)}")
-        try:
-            response = self._transport.request(
-                target,
-                address=target.addresses[0],
-                timeout_seconds=self._timeout_seconds,
-                max_bytes=self._max_response_bytes,
-                user_agent=self._BROWSER_UA,
-            )
-        except (FetchError, ContentRejectedError) as exc:
-            raise SearchError("The search page could not be fetched.") from exc
+        response = None
+        # A burst of searches gets HTTP 202 and a challenge page instead of
+        # results: the endpoint's throttle, not a failure. One patient
+        # retry usually clears it; a second 202 is reported as it is.
+        for attempt in range(2):
+            try:
+                response = self._transport.request(
+                    target,
+                    address=target.addresses[0],
+                    timeout_seconds=self._timeout_seconds,
+                    max_bytes=self._max_response_bytes,
+                    user_agent=self._BROWSER_UA,
+                )
+            except (FetchError, ContentRejectedError) as exc:
+                raise SearchError("The search page could not be fetched.") from exc
+            if response.status != 202 or attempt:
+                break
+            time.sleep(self._THROTTLE_PAUSE_SECONDS)
         if response.status != 200:
             raise SearchError(f"Search page returned HTTP {response.status}.")
         parser = _DuckDuckGoResultParser()

@@ -163,6 +163,8 @@ const DemoBridge = {
     };
   },
   async submit_command(text) {
+    NOVA.push({ kind: "busy",
+                payload: { busy: true, status: "PROCESSING", text, spoken: false } });
     setTimeout(() => NOVA.push({ kind: "tool_activity", payload: { phase: "started",
       execution_id: "demo-x", tool: "get_windows_system_info", operation: null, at: Date.now() } }), 400);
     setTimeout(() => NOVA.push({ kind: "tool_activity", payload: { phase: "finished",
@@ -197,6 +199,72 @@ const DemoBridge = {
     return { ok: true, items: [] };
   },
 
+  async system_pulse() {
+    return { ok: true, cpu_percent: 12.5, memory_percent: 41.2, memory_used_gib: 6.6,
+             memory_total_gib: 16, disk_free_gib: 208.4, disk_total_gib: 476,
+             battery_percent: 84, battery_charging: true,
+             uptime_seconds: 8100, state_data_bytes: 1_234_567 };
+  },
+
+  async speak_text() {
+    return { ok: false, error: "Demo modunda ses üretilmez." };
+  },
+
+  async save_markdown() {
+    return { ok: false, error: "Demo modunda dosya yazılmaz." };
+  },
+
+  async about_info() {
+    return { ok: false, error: "Demo modunda ölçülmez." };
+  },
+
+  async open_state_folder() {
+    return { ok: false, error: "Demo modunda klasör yok." };
+  },
+
+  async run_routine_now() {
+    return { ok: false, error: "Demo modunda rutin çalışmaz." };
+  },
+
+  async remember_note() {
+    return { ok: false, error: "Demo modunda hafızaya yazılmaz." };
+  },
+
+  async rename_conversation() {
+    return { ok: false, error: "Demo modunda yeniden adlandırma yok." };
+  },
+
+  async convert_currency(amount, source, target) {
+    // Honest demo: no live rate exists here, so none is invented.
+    return { ok: false, error: "Demo modunda canlı kur yok (" + String(source || "") + "→" + String(target || "") + ")." };
+  },
+
+  async define_word(word) {
+    // One canned entry so the card can be seen; the demo never asks TDK.
+    return { ok: true, word: String(word || "kalp"),
+             origin: "Demo verisi (canlı sözlük yalnız masaüstünde)",
+             meanings: [{ features: "isim", sense: "Demo modunda TDK'ya sorulmaz; bu satır örnektir.", example: "" }],
+             compounds: [] };
+  },
+
+  async run_remote_tool(name) {
+    return { ok: false, error: "Demo modunda kumanda çalışmaz (" + String(name || "") + ")." };
+  },
+
+  async research_sources() {
+    return { ok: true, sources: [
+      { id: "web", label: "Web", kind: "web", description: "Genel web araması (DuckDuckGo)." },
+      { id: "youtube", label: "YouTube", kind: "video", description: "Videolar." },
+      { id: "github", label: "GitHub", kind: "repo", description: "Depolar." },
+      { id: "wikipedia", label: "Wikipedia", kind: "encyclopedia", description: "Maddeler." },
+      { id: "pubmed", label: "PubMed", kind: "paper", description: "Tıp literatürü." },
+      { id: "arxiv", label: "arXiv", kind: "paper", description: "Ön baskılar." },
+      { id: "stackoverflow", label: "Stack Overflow", kind: "discussion", description: "Soru ve cevaplar." },
+      { id: "hackernews", label: "Hacker News", kind: "discussion", description: "Tartışmalar." },
+      { id: "site", label: "Belirli site", kind: "web", description: "Verdiğin alan adında arar." },
+    ] };
+  },
+
   async open_external() {
     return { ok: false, error: "Demo modunda tarayıcı açılmaz." };
   },
@@ -210,10 +278,10 @@ const DemoBridge = {
   },
 
   async search_conversations(query) {
-    const needle = String(query || "").trim().toLocaleLowerCase("tr-TR");
+    const needle = searchFold(String(query || "").trim());
     if (needle.length < 2) return { ok: false, error: "Arama için en az 2 karakter yaz." };
     const rows = (await this.list_conversations()).conversations
-      .filter((item) => item.title.toLocaleLowerCase("tr-TR").includes(needle))
+      .filter((item) => searchFold(item.title).includes(needle))
       .map((item) => ({ ...item, matches: 1, excerpt: item.title, excerpt_role: "user" }));
     return { ok: true, query: needle, results: rows };
   },
@@ -415,7 +483,8 @@ const DemoBridge = {
   },
   async get_settings() { return { provider: "gemini", model: "gemini-2.5-pro",
     credential_configured: true, credential_required: true,
-    daily_brief_notification: true, daily_brief_time: "08:30", research_enabled: true }; },
+    daily_brief_notification: true, daily_brief_time: "08:30", research_enabled: true, almanac_city: "",
+    vision_enabled: true, quiet_hours: "" }; },
   async save_settings() {
     return { ok: true, message: "Demo modu: ayarlar kaydedilmedi." };
   },
@@ -440,6 +509,10 @@ const DemoBridge = {
 
   async cancel_reminder(_id, confirmed) {
     if (confirmed !== true) return { ok: false, error: "İptal işlemi onaylanmadı." };
+    return { ok: false, error: "Demo modunda hatırlatıcı yok." };
+  },
+
+  async snooze_reminder(_id, _minutes) {
     return { ok: false, error: "Demo modunda hatırlatıcı yok." };
   },
 
@@ -552,7 +625,30 @@ window.NOVA = {
 const PUSH = {
   snapshot(payload) { State.snapshot = payload; renderSnapshot(); },
 
-  busy({ busy, status }) { setBusy(!!busy, status); },
+  /* A turn can begin on the other surface: the phone submits through the
+     same bridge and this page has no bubble for it. State.busy is the tell
+     - the page that sent the message set it before the call, so only the
+     watching one draws the question and the thinking mark here. A spoken
+     turn is left alone: its voice loop already wrote the line. Nobody on
+     this surface typed anything, so the reader keeps their place and the
+     "yeni mesaj" pill does the telling; busy:false closes what this
+     opened, because no other push on this page ever will. */
+  busy({ busy, status, text, spoken }) {
+    if (busy && text && !spoken && !State.busy) {
+      const message = { role: "user", text, at: Date.now() };
+      State.messages.push(message);
+      State.pendingSources = null;
+      hideChatEmpty();
+      updateChat(() => {
+        appendMessage($("#chat-list"), message, false);
+        State.watchedTurn = Activity.beginTurn(text);
+        showThinking();
+      });
+    }
+    if (!busy) closeWatchedTurn();
+    setBusy(!!busy, status);
+    renderHomeSession();
+  },
 
   stream({ text }) {
     if (!text) return;

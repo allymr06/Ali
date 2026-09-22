@@ -165,6 +165,46 @@ def test_a_simulation_marked_at_the_end_applies_the_same_decision_once(academy) 
     assert {event["question_id"] for event in instance.study.understanding.events()} == {"q1"}
 
 
+def test_study_only_answers_do_not_move_the_adaptive_difficulty(academy) -> None:
+    instance = academy(None)
+    scored = [question(f"s{index}") for index in range(5)]
+    study = [question(f"g{index}", origin=QuestionOrigin.GENERATED) for index in range(5)]
+    exam_id = paper(instance, *scored, *study)
+    session = instance.sessions.get()
+    session.difficulty, session.adaptive_difficulty = 3, True
+    instance.sessions.save(session)
+    instance.start_exam(exam_id)
+    for item in scored:
+        instance.answer(exam_id, item.question_id, "B")  # wrong: the key is A
+    for item in study:
+        instance.answer(exam_id, item.question_id, "A")  # right, but nothing was measured
+
+    analysis = instance.finish_exam(exam_id)["analysis"]
+
+    assert (analysis["total"], analysis["correct"], analysis["unscored_answered"]) == (5, 0, 5)
+    # Every measured answer was wrong. The five study-only answers sit last in
+    # the paper, where the verdict looks: they must not read as a run of
+    # successes and raise the level the next paper is built at.
+    assert analysis["adaptive"] == {"previous": 3, "suggested": 2, "reason": "Son 5 sorunun yalnız 0'i doğru: zorluk bir kademe düştü, eksik kavram önce anlatılacak."}
+    assert instance.sessions.get().difficulty == 2
+
+
+def test_the_plan_reports_a_topic_covered_only_when_the_reviewer_scored_the_answer(academy) -> None:
+    instance = academy(None, review=True)
+    unreviewed = question("q1", origin=QuestionOrigin.LECTURE_DERIVED, refs=True)
+    instance.store.save_question(unreviewed)
+    instance.store.save_attempt(ExamAttempt("att", "e1", started_at=BASE, finished_at=BASE, answers={"q1": QuestionAttempt("q1", "A", True)}))
+    planner = instance.study.planner
+    record = planner.create("Komite", (planner.today() + timedelta(days=10)).isoformat(), topic_ids=[ARM], daily_minutes=45)
+
+    row = next(item for item in planner.coverage(record["plan_id"])["topics"] if item["topic_id"] == ARM)
+
+    # The source is cited but nobody checked it: with the gate on the paper
+    # would not score this answer, so the plan may not call the topic measured.
+    assert instance.scoring_of(unreviewed)["status"] == "needs_review"
+    assert row["attempts"] == 0 and row["flags"]["assessed"] is False and row["state"] != "assessed_limited"
+
+
 def test_a_finished_paper_keeps_the_decision_of_its_day(academy) -> None:
     instance = academy(None)
     exam_id = paper(instance, question("q1"), question("q2"))
@@ -816,3 +856,33 @@ def test_weekly_export_prints_only_what_the_records_hold(academy) -> None:
     assert "İşaretlenen cevap:" in busy and "Bitirilen kâğıt:" in busy, (
         "marked answers and finished-paper scoring stay separate facts"
     )
+
+
+def test_backups_of_the_same_instant_never_overwrite_each_other(academy, monkeypatch) -> None:
+    """Windows ticks datetime in ~16 ms steps; a shared stamp must fork, not clobber.
+
+    This was the load-flake: three quick backups could produce two files,
+    the rotation then had nothing to remove, and - far worse - one of the
+    "kept two" copies had been silently replaced by its sibling.
+    """
+    from pathlib import Path
+
+    from app.medical import repair as repair_module
+    from app.medical.repair import backup_now, list_backups
+
+    instance = academy(None)
+    instance.store.save_question(question("b1"))
+    frozen = repair_module.utc_now()
+    monkeypatch.setattr(repair_module, "utc_now", lambda: frozen)
+
+    reports = [backup_now(instance.store, keep=3) for _index in range(3)]
+
+    names = [Path(report["path"]).name for report in reports]
+    assert len(set(names)) == 3, "one file per backup, even inside one clock tick"
+    stamp = frozen.strftime("%Y%m%d-%H%M%S-%f")
+    assert names[0].endswith(f"{stamp}.sqlite3")
+    assert names[1].endswith(f"{stamp}b2.sqlite3") and names[2].endswith(f"{stamp}b3.sqlite3")
+    kept = [row["file"] for row in list_backups(instance.store) if row["kind"] == "backup"]
+    assert sorted(kept) == sorted(names), "the rotation keeps all three distinct copies"
+    fourth = backup_now(instance.store, keep=3)
+    assert fourth["removed"] == [names[0]], "the plain name is the oldest of the shared instant"

@@ -31,12 +31,44 @@ class WebTransport(Protocol):
         timeout_seconds: float,
         max_bytes: int,
         user_agent: str,
+        accept: str | None = None,
     ) -> TransportResponse: ...
+
+
+_DEFAULT_ACCEPT = "text/html, text/plain, application/xhtml+xml, application/json"
+_ssl_context: ssl.SSLContext | None = None
+
+
+def research_ssl_context() -> ssl.SSLContext:
+    """The verifying TLS context every research connection uses.
+
+    The system store is the base. On Windows the store as Python reads it
+    can lag behind the browser's - Windows fetches new roots on demand for
+    its own TLS stack and Python never triggers that - so a site whose
+    chain rests on a newer root fails with "certificate has expired" here
+    while Edge opens it. When the certifi bundle is installed its roots are
+    loaded on top; verification is never relaxed, it only gets the roots a
+    stale store lacks. Built once per process.
+    """
+    global _ssl_context
+    if _ssl_context is None:
+        context = ssl.create_default_context()
+        try:
+            import certifi  # optional: pulled in by other dependencies, not required
+        except ImportError:
+            certifi = None
+        if certifi is not None:
+            try:
+                context.load_verify_locations(cafile=certifi.where())
+            except (OSError, ssl.SSLError):
+                pass  # the bundle is missing or unreadable: the system store still applies
+        _ssl_context = context
+    return _ssl_context
 
 
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     def __init__(self, host: str, address: str, port: int, timeout: float) -> None:
-        super().__init__(host, port=port, timeout=timeout)
+        super().__init__(host, port=port, timeout=timeout, context=research_ssl_context())
         self._address = address
 
     def connect(self) -> None:
@@ -55,6 +87,7 @@ class PinnedHTTPTransport:
         timeout_seconds: float,
         max_bytes: int,
         user_agent: str,
+        accept: str | None = None,
     ) -> TransportResponse:
         parsed = urlsplit(target.url)
         path = parsed.path or "/"
@@ -81,7 +114,7 @@ class PinnedHTTPTransport:
                 headers={
                     "Host": host_header,
                     "User-Agent": user_agent,
-                    "Accept": "text/html, text/plain, application/xhtml+xml, application/json",
+                    "Accept": accept or _DEFAULT_ACCEPT,
                     "Accept-Encoding": "identity",
                     "Connection": "close",
                 },

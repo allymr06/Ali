@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from threading import Lock
 from typing import Iterator
 from urllib.parse import urlsplit
@@ -12,6 +13,7 @@ from urllib.parse import urlsplit
 from app.core.models import ToolDefinition, ToolExecutionStatus, ToolResult
 from app.research.citations import validate_citations
 from app.research.errors import FetchError, SearchError
+from app.research.extractor import detect_prompt_injection
 from app.research.fetcher import SafeWebFetcher
 from app.research.models import (
     Freshness,
@@ -23,6 +25,12 @@ from app.research.models import (
     WebDocument,
 )
 from app.research.search import SearchProvider
+from app.research.sources import (
+    MultiSourceSearchProvider,
+    normalize_site,
+    parse_sources,
+    source_spec,
+)
 from app.research.sqlite_cache import SQLiteResearchCache
 from app.tools.executor import ToolExecutor
 
@@ -73,6 +81,10 @@ class ResearchService:
     max_concurrency: int = 3
     operation_timeout_seconds: float = 45.0
     cache: SQLiteResearchCache | None = None
+    # The places beside the web. search_provider stays the configured web
+    # backend, so what the settings chose is what the report's web hits come
+    # from; the catalogue wraps it for the sources the page may pick.
+    sources: MultiSourceSearchProvider | None = None
     _cache_guard: Lock = field(default_factory=Lock, init=False, repr=False)
     _cache_locks: dict[str, _KeyLock] = field(default_factory=dict, init=False, repr=False)
 
@@ -91,6 +103,8 @@ class ResearchService:
         time_range: str | None = None,
         *,
         refresh: bool = False,
+        sources: object = None,
+        site: str | None = None,
     ) -> ResearchReport:
         question = query.strip()
         if not question or len(question) > 500:
@@ -98,18 +112,22 @@ class ResearchService:
         limit = max_sources if max_sources is not None else self.max_sources
         if not 1 <= limit <= self.max_sources:
             raise ValueError(f"max_sources must be between 1 and {self.max_sources}.")
+        chosen = parse_sources(sources)
+        host = normalize_site(site)
+        if host is not None and "site" not in chosen:
+            chosen = chosen + ("site",)
         if self.cache is None:
-            return self._research_uncached(question, limit, time_range)
+            return self._research_uncached(question, limit, time_range, chosen, host)
 
-        baseline = self.cache.get(question, limit, time_range, allow_stale=True)
+        baseline = self.cache.get(question, limit, time_range, allow_stale=True, sources=chosen, site=host)
         if not refresh:
-            fresh = self.cache.get(question, limit, time_range)
+            fresh = self.cache.get(question, limit, time_range, sources=chosen, site=host)
             if fresh is not None:
                 return fresh
 
-        cache_key = self.cache.key_for(question, limit, time_range)
+        cache_key = self.cache.key_for(question, limit, time_range, sources=chosen, site=host)
         with self._single_flight(cache_key):
-            fresh = self.cache.get(question, limit, time_range)
+            fresh = self.cache.get(question, limit, time_range, sources=chosen, site=host)
             if not refresh and fresh is not None:
                 return fresh
             if refresh and fresh is not None and (
@@ -117,13 +135,15 @@ class ResearchService:
             ):
                 return fresh
             try:
-                report = self._research_uncached(question, limit, time_range)
+                report = self._research_uncached(question, limit, time_range, chosen, host)
             except (FetchError, SearchError, OSError, TimeoutError) as exc:
                 stale = self.cache.get(
                     question,
                     limit,
                     time_range,
                     allow_stale=True,
+                    sources=chosen,
+                    site=host,
                 )
                 if stale is None:
                     raise
@@ -148,7 +168,7 @@ class ResearchService:
                         )
                     ),
                 )
-            return self.cache.put(question, limit, time_range, report)
+            return self.cache.put(question, limit, time_range, report, sources=chosen, site=host)
 
     @contextmanager
     def _single_flight(self, cache_key: str) -> Iterator[None]:
@@ -168,47 +188,101 @@ class ResearchService:
                 if entry.users == 0:
                     self._cache_locks.pop(cache_key, None)
 
+    def _search(
+        self,
+        question: str,
+        limit: int,
+        time_range: str | None,
+        sources: tuple[str, ...],
+        site: str | None,
+    ) -> tuple[tuple[SearchHit, ...], tuple[tuple[str, str], ...]]:
+        provider = self.sources if self.sources is not None else self.search_provider
+        if isinstance(provider, MultiSourceSearchProvider):
+            result = provider.search_sources(
+                question, limit=limit * 2, time_range=time_range, sources=sources or None, site=site
+            )
+            return result.hits, result.failures
+        if (sources and tuple(sources) != ("web",)) or site:
+            raise ValueError("This research backend searches the web only.")
+        return provider.search(question, limit=limit * 2, time_range=time_range), ()
+
     def _research_uncached(
         self,
         question: str,
         limit: int,
         time_range: str | None,
+        sources: tuple[str, ...] = (),
+        site: str | None = None,
     ) -> ResearchReport:
         stages = [ResearchStage.QUESTION, ResearchStage.SEARCH]
-        hits = self.search_provider.search(question, limit=limit * 2, time_range=time_range)
+        hits, source_failures = self._search(question, limit, time_range, sources, site)
         stages.extend((ResearchStage.COLLECT, ResearchStage.FILTER))
-        documents, failures = self._collect(hits, limit)
         now = datetime.now(UTC)
-        sources = tuple(
-            ResearchSource(
-                source_id=f"S{index}",
-                title=document.title,
-                url=document.final_url,
-                excerpt=_best_excerpt(document, question),
-                observed_at=document.observed_at,
-                published_at=document.published_at,
-                freshness=_freshness(document.published_at, now),
-                content_hash=document.content_hash,
-                resolved_addresses=document.resolved_addresses,
-                injection_findings=document.findings,
+        # A hit that carries its own evidence - what the source's endpoint
+        # said about it - is cited as it is. Only the rest are fetched, and
+        # only as many as the report still has room for.
+        direct = [hit for hit in hits if hit.evidence][:limit]
+        pending = tuple(hit for hit in hits if not hit.evidence)
+        remaining = limit - len(direct)
+        documents, failures = self._collect(pending, remaining) if remaining > 0 and pending else ([], 0)
+        origins = {hit.url: hit for hit in hits}
+        collected: list[ResearchSource] = []
+        for hit in direct:
+            collected.append(
+                ResearchSource(
+                    source_id="",
+                    title=hit.title,
+                    url=hit.url,
+                    excerpt=hit.evidence[:700],
+                    observed_at=now,
+                    published_at=hit.published_at,
+                    freshness=_freshness(hit.published_at, now),
+                    content_hash=sha256(hit.evidence.encode("utf-8")).hexdigest(),
+                    injection_findings=detect_prompt_injection(hit.evidence),
+                    kind=hit.kind,
+                    source=hit.source,
+                    meta=hit.meta,
+                )
             )
-            for index, document in enumerate(documents, start=1)
+        for document in documents:
+            origin = origins.get(document.url) or origins.get(document.final_url)
+            collected.append(
+                ResearchSource(
+                    source_id="",
+                    title=document.title,
+                    url=document.final_url,
+                    excerpt=_best_excerpt(document, question),
+                    observed_at=document.observed_at,
+                    published_at=document.published_at,
+                    freshness=_freshness(document.published_at, now),
+                    content_hash=document.content_hash,
+                    resolved_addresses=document.resolved_addresses,
+                    injection_findings=document.findings,
+                    kind=origin.kind if origin is not None else "web",
+                    source=origin.source if origin is not None else "web",
+                    meta=origin.meta if origin is not None else (),
+                )
+            )
+        sources_out = tuple(
+            replace(item, source_id=f"S{index}") for index, item in enumerate(collected, start=1)
         )
         stages.extend((ResearchStage.CROSS_CHECK, ResearchStage.SYNTHESIZE))
-        claims = self._synthesize(sources)
+        claims = self._synthesize(sources_out)
         uncertainties: list[str] = []
+        for source_id, reason in source_failures:
+            uncertainties.append(f"Source {source_spec(source_id).label} was unavailable ({reason}).")
         if failures:
             uncertainties.append(f"{failures} candidate source(s) could not be safely collected.")
-        if not sources:
+        if not sources_out:
             uncertainties.append("No eligible source content was collected.")
-        elif all(source.freshness is Freshness.UNKNOWN for source in sources):
+        elif all(source.freshness is Freshness.UNKNOWN for source in sources_out):
             uncertainties.append("The publication dates of all collected sources are unknown.")
-        if len({urlsplit(source.url).hostname for source in sources}) < 2:
+        if len({urlsplit(source.url).hostname for source in sources_out}) < 2:
             uncertainties.append("The evidence was not corroborated across independent domains.")
         stages.append(ResearchStage.CITE)
         report = ResearchReport(
             question=question,
-            sources=sources,
+            sources=sources_out,
             claims=claims,
             uncertainties=tuple(uncertainties),
             stages=tuple(stages + [ResearchStage.COMPLETE]),
@@ -272,12 +346,16 @@ class ResearchService:
             max_sources: int = 5,
             time_range: str | None = None,
             refresh: bool = False,
+            sources: str | None = None,
+            site: str | None = None,
         ) -> ToolResult:
             report = self.research(
                 query,
                 max_sources=max_sources,
                 time_range=time_range,
                 refresh=refresh,
+                sources=sources,
+                site=site,
             )
             return ToolResult(
                 status=ToolExecutionStatus.SUCCESS,
@@ -295,7 +373,10 @@ class ResearchService:
                     "source timestamps, hashes, citations, and explicit uncertainties. "
                     "Use it whenever the answer needs current or verifiable facts - "
                     "news, dates, prices, schedules, guidelines, anything after the "
-                    "training cutoff - instead of guessing."
+                    "training cutoff - instead of guessing. sources is an optional "
+                    "comma list of web, youtube, github, wikipedia, pubmed, arxiv, "
+                    "stackoverflow, hackernews; site restricts the web search to one "
+                    "host."
                 ),
                 timeout_seconds=self.operation_timeout_seconds,
                 capabilities=frozenset({"web", "research", "search"}),

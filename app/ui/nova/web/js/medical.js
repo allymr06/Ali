@@ -11,6 +11,8 @@
    ════════════════════════════════════════════════════════════════════ */
 "use strict";
 
+/* The sections in the order the side column lists them: what you study,
+   what measures you, what explains you, and the two labs. */
 const MED_TABS = [
   ["dashboard", "Panel", "home"],
   ["plan", "Plan", "alarm"],
@@ -19,13 +21,16 @@ const MED_TABS = [
   ["notes", "Notlar", "chat"],
   ["exam", "Sınav", "tasks"],
   ["bank", "Soru bankası", "tools"],
-  ["understanding", "Anlama", "spark"],
-  ["histology", "Histoloji", "vision"],
   ["cards", "Kartlar", "memory"],
+  ["calc", "Hesaplar", "tools"],
+  ["understanding", "Anlama", "spark"],
   ["professor", "Hoca tarzı", "integrations"],
   ["progress", "İlerleme", "diagnostics"],
+  ["histology", "Histoloji", "vision"],
   ["anatomy", "Anatomi Lab", "vision"],
 ];
+/* The heading each group opens under, keyed by the section that starts it. */
+const MED_TAB_GROUPS = { dashboard: "Çalış", exam: "Ölç", understanding: "Anla", histology: "Lab" };
 
 const MED_ORIGIN_TR = {
   generated: "Üretilmiş",
@@ -154,6 +159,7 @@ const Medical = {
     if (!host) return;
     host.innerHTML = "";
     MED_TABS.forEach(([id, label, iconName]) => {
+      if (MED_TAB_GROUPS[id]) host.appendChild(el("span", "med-tab-group", MED_TAB_GROUPS[id]));
       const btn = el("button", "med-tab");
       btn.type = "button";
       btn.dataset.view = id;
@@ -225,6 +231,7 @@ const Medical = {
     if (view === "understanding") { await Study.openUnderstanding(); return; }
     if (view === "histology") { await Study.openHistology(); return; }
     if (view === "cards") { await Cards.open(); return; }
+    if (view === "calc") { MedCalc.render(); return; }
     if (view === "anatomy") { await Lab.open(); return; }
   },
 
@@ -289,6 +296,30 @@ const Medical = {
             <span class="med-row-side">${esc(item.subject_label || "")}</span>
             <span class="med-row-meta"><span class="chip ${MED_LEVEL_TONE[item.level] || ""}">${esc(item.level_label)}</span>${esc(item.reason)}</span></div>`).join("")
         : medEmpty("Bugün tekrar bekleyen kavram yok", "Quiz çözdükçe zayıf kavramlar burada birikir.");
+    }
+
+    const term = this.state.term_of_day;
+    const termHost = $("#med-term");
+    if (termHost) {
+      termHost.innerHTML = term
+        ? `<button type="button" class="med-term-card" data-term="${esc(term.structure_id)}" title="Anatomi Lab'de aç">
+             <span class="mt-latin">${esc(term.latin)}</span>
+             <span class="mt-turkish">${esc(term.turkish)}</span>
+             <span class="med-row-meta">${esc(term.region_label)} · ${esc(term.kind_label)}</span>
+           </button>${State.snapshot?.voice_available ? '<button type="button" class="btn btn-ghost small med-term-speak" data-term-speak title="Latince adı ve Türkçesini okur">Seslendir</button>' : ""}`
+        : medEmpty("Günün terimi yok", "Anatomi kataloğu boş.");
+      const speakButton = $("[data-term-speak]", termHost);
+      if (speakButton && term) speakButton.addEventListener("click", async () => {
+        Speech.unlock(); // inside the gesture, before the slow synthesis
+        const result = await call("speak_text", `${term.latin}. Türkçesi: ${term.turkish}.`);
+        if (result.ok === false || !result.audio) { toast(result.error || "Seslendirilemedi.", true); return; }
+        Speech.play(result.audio);
+      });
+      const termButton = $("[data-term]", termHost);
+      if (termButton) termButton.addEventListener("click", () => {
+        Lab.pendingSelect = termButton.dataset.term;
+        this.show("anatomy");
+      });
     }
 
     const weakHost = $("#med-weak");
@@ -636,14 +667,14 @@ const Medical = {
   },
 
   visibleDocuments() {
-    const query = String(($("#med-doc-search") || {}).value || "").trim().toLocaleLowerCase("tr");
+    const query = searchFold(String(($("#med-doc-search") || {}).value || "").trim());
     const set = this.setFilter ? (this.lectureSets || []).find((item) => item.set_id === this.setFilter) : null;
     return this.documents.filter((item) => {
       if (set && !(item.tags || []).includes(set.name)) return false;
       if (this.committeeFilter && !(item.tags || []).includes(this.committeeFilter)) return false;
       if (this.lessonFilter && !(item.tags || []).includes(this.lessonFilter)) return false;
       if (!query) return true;
-      const haystack = [item.title, item.file_name, item.subject, ...(item.tags || [])].join(" ").toLocaleLowerCase("tr");
+      const haystack = searchFold([item.title, item.file_name, item.subject, ...(item.tags || [])].join(" "));
       return haystack.includes(query);
     });
   },
@@ -1756,6 +1787,7 @@ const Medical = {
         title: "Sınav sorularını yapıştır",
         body: "Numaralı sorular ve A) B) C) biçimli şıklar bekleniyor. Cevap anahtarı metinde varsa okunur; yoksa asla tahmin edilmez.",
         placeholder: "1. Scapula'nın spina scapulae'si…\nA) …\nB) …",
+        multiline: true, confirmLabel: "İÇE AKTAR",
       });
       if (!text) return;
       const result = await this.request("import_questions", { profile_id: profile.profile_id, subject: profile.subject || "", text });
@@ -1805,12 +1837,24 @@ const Medical = {
   /* ── progress ──────────────────────────────────────────────────── */
 
   async loadProgress() {
-    const [result, week] = await Promise.all([this.request("progress"), this.request("weekly_report", {})]);
+    const [result, week, month] = await Promise.all([
+      this.request("progress"),
+      this.request("weekly_report", {}),
+      this.request("weekly_report", { days: 28 }),
+    ]);
     if (result.ok === false) { toast(result.error || "İlerleme okunamadı.", true); return; }
     this.progressData = result;
     this.weekData = week.ok === false ? null : week;
+    this.monthData = month.ok === false ? null : month;
     this.renderProgress();
     this.renderWeek();
+    this.renderMonth();
+  },
+
+  renderMonth() {
+    const host = $("#med-month");
+    if (!host) return;
+    host.innerHTML = this.monthData ? monthRhythmMarkup(this.monthData.days || []) : "";
   },
 
   bindWeekExport() {
@@ -2174,34 +2218,6 @@ function renderMarkdown(text) {
   return out.join("");
 }
 
-/* A small text prompt built on the existing confirmation dialog styling. */
-function promptDialog({ title, body, placeholder = "" }) {
-  return new Promise((resolve) => {
-    const veil = $("#confirm");
-    const ok = $("#confirm-ok"), cancel = $("#confirm-cancel");
-    const textNode = $("#confirm-text");
-    $("#confirm-title").textContent = title;
-    textNode.innerHTML = `${esc(body)}<textarea id="confirm-input" class="mem-edit" rows="8" placeholder="${esc(placeholder)}"></textarea>`;
-    ok.textContent = "İÇE AKTAR";
-    cancel.textContent = "VAZGEÇ";
-    ok.className = "btn btn-primary";
-    const finish = (value) => {
-      ok.onclick = null; cancel.onclick = null;
-      window.removeEventListener("keydown", onKey, true);
-      veil.hidden = true;
-      textNode.textContent = "";
-      resolve(value);
-    };
-    const onKey = (event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); finish(null); } };
-    ok.onclick = () => finish(($("#confirm-input").value || "").trim() || null);
-    cancel.onclick = () => finish(null);
-    window.addEventListener("keydown", onKey, true);
-    veil.hidden = false;
-    Motion.rise(veil.querySelector(".modal"), { y: 14, scale: 0.97, duration: Motion.panel });
-    $("#confirm-input").focus();
-  });
-}
-
 /* ════════════════════════════════════════════════════════════════════
    Lab: the Anatomy Lab
    A real WebGL viewer when a licensed mesh is registered, and an honest
@@ -2386,6 +2402,11 @@ const Lab = {
       this.renderList();
       this.renderLayers();
     }
+    // A card elsewhere (the day's term) may have asked for one structure
+    // before the lab was open; that wish wins over the default scene.
+    const pending = this.pendingSelect;
+    this.pendingSelect = null;
+    if (pending) { await this.select(pending); return; }
     if (!this.structure) {
       // Licensed meshes for a whole region are the richer first sight; a
       // single card is what remains when the manifest names no scene.
@@ -3771,4 +3792,43 @@ function bindMedical() {
     Medical.quickAsk(`${Lab.structure.canonical} yapısını anlat`);
   });
   Lab.bind();
+}
+
+/* ── the month's rhythm ───────────────────────────────────────────────
+   Twenty-eight days as a calendar heatmap, straight from the same
+   weekly_report records the summary prints - study-log minutes, answers,
+   cards. Intensity is minutes in honest steps; the tooltip carries the
+   exact figures, and a day with nothing recorded is an empty cell, not
+   a gap. The newest day sits bottom-right, reading like a calendar. */
+function monthRhythmLevel(minutes) {
+  if (!minutes) return 0;
+  if (minutes < 15) return 1;
+  if (minutes < 30) return 2;
+  if (minutes < 60) return 3;
+  return 4;
+}
+
+function monthRhythmMarkup(days) {
+  if (!Array.isArray(days) || !days.length) return "";
+  const names = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
+  const cells = days.map((day) => {
+    // A day with recorded answers or card reviews is active even when no
+    // study minutes were logged - the legend counts it as active, so the
+    // cell must not sit there looking empty.
+    const worked = (Number(day.answers) || 0) + (Number(day.cards) || 0) > 0 ? 1 : 0;
+    const level = Math.max(monthRhythmLevel(Number(day.minutes) || 0), worked);
+    const date = new Date(String(day.date) + "T12:00:00");
+    const title = `${esc(day.date)} · ${Number(day.minutes) || 0} dk · ${Number(day.answers) || 0} soru · ${Number(day.cards) || 0} kart`;
+    return `<span class="mr-cell l${level}" title="${title}" data-day="${esc(String(day.date))}">` +
+      `<i>${date.getDate()}</i></span>`;
+  });
+  const header = days.slice(0, 7).map((day) => {
+    const date = new Date(String(day.date) + "T12:00:00");
+    return `<span class="mr-name">${names[date.getDay()]}</span>`;
+  }).join("");
+  const total = days.reduce((sum, day) => sum + (Number(day.minutes) || 0), 0);
+  const active = days.filter((day) => Number(day.minutes) || Number(day.answers) || Number(day.cards)).length;
+  return `<div class="med-rhythm"><div class="mr-grid">${header}${cells.join("")}</div>` +
+    `<div class="mr-legend"><span>${active} aktif gün · ${total} dk</span>` +
+    `<span class="mr-scale">az <i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> çok</span></div></div>`;
 }

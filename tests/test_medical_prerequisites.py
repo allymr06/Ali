@@ -18,7 +18,7 @@ from app.medical.catalog import Curriculum
 from app.medical.concepts import default_concept_graph
 from app.medical.learning import LearningEngine
 from app.medical.model import MedicalModelClient
-from app.medical.models import ConceptMastery, Question, QuestionOption
+from app.medical.models import ConceptMastery, Question, QuestionOption, QuestionOrigin
 from app.medical.prerequisites import (
     MAX_DIAGNOSTIC_QUESTIONS,
     PrerequisiteDiagnosis,
@@ -48,12 +48,15 @@ class Clock:
         self.now = self.now + timedelta(**delta)
 
 
-def question(question_id: str, concept: str, subject: str, stem: str) -> Question:
+def question(question_id: str, concept: str, subject: str, stem: str, *, origin: str = QuestionOrigin.GENERATED) -> Question:
+    """A diagnostic bank item. Generated with no source passage by default:
+    study material under the scoring policy, which a person's key
+    (``MANUAL``) is not. The diagnosis takes whichever the bank has."""
     options = [QuestionOption(key, text) for key, text in zip("ABCD", ["Bir", "İki", "Üç", "Dört"])]
-    return Question(question_id=question_id, subject=subject, stem=stem, options=options, correct_key="B", concept_ids=[concept], explanation="Açıklama burada durur.")
+    return Question(question_id=question_id, subject=subject, stem=stem, options=options, correct_key="B", concept_ids=[concept], explanation="Açıklama burada durur.", origin=origin)
 
 
-def build(path=None, *, with_questions: bool = True):
+def build(path=None, *, with_questions: bool = True, origin: str = QuestionOrigin.GENERATED):
     store = MedicalStore(path)
     concepts = default_concept_graph()
     curriculum = Curriculum()
@@ -63,10 +66,10 @@ def build(path=None, *, with_questions: bool = True):
     graph = PrerequisiteGraph(concepts, store, clock=clock)
     diagnosis = PrerequisiteDiagnosis(graph, store, learning, understanding, curriculum, clock=clock)
     if with_questions:
-        store.save_question(question("q-rmp", RMP, "physiology", "Dinlenim potansiyeli hangi iyonun denge potansiyeline yakındır?"))
-        store.save_question(question("q-nernst", NERNST, "biophysics", "Nernst denklemi neyi verir?"))
-        store.save_question(question("q-pump", PUMP, "physiology", "Na+/K+-ATPaz bir döngüde kaç Na+ atar?"))
-        store.save_question(question("q-ap", AP, "physiology", "Aksiyon potansiyelinin yükselen fazı?"))
+        store.save_question(question("q-rmp", RMP, "physiology", "Dinlenim potansiyeli hangi iyonun denge potansiyeline yakındır?", origin=origin))
+        store.save_question(question("q-nernst", NERNST, "biophysics", "Nernst denklemi neyi verir?", origin=origin))
+        store.save_question(question("q-pump", PUMP, "physiology", "Na+/K+-ATPaz bir döngüde kaç Na+ atar?", origin=origin))
+        store.save_question(question("q-ap", AP, "physiology", "Aksiyon potansiyelinin yükselen fazı?", origin=origin))
     return graph, diagnosis, store, learning, understanding, clock
 
 
@@ -163,8 +166,30 @@ def test_a_cycle_in_the_data_does_not_hang_the_walk(tmp_path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_a_diagnosis_asks_short_questions_and_the_answers_decide_the_starting_point(tmp_path) -> None:
-    graph, diagnosis, store, learning, understanding, clock = build(tmp_path / "medical.sqlite3")
+def test_a_study_only_question_still_locates_the_gap_but_moves_no_mastery() -> None:
+    """Where the gap is, is a bounded claim about this diagnosis and stands
+    on the answer whatever the question was. A mastery row is a claim about
+    what the student knows, read back by the planner, the review queue and
+    the adaptive level, so only an answer the policy counts earns one."""
+    _graph, diagnosis, store, learning, understanding, _clock = build(with_questions=False)
+    store.save_question(question("q-rmp", RMP, "physiology", "Dinlenim potansiyeli hangi iyonun denge potansiyeline yakındır?", origin=QuestionOrigin.GENERATED))
+
+    record = diagnosis.start(AP)
+    answered = diagnosis.answer(record["diagnosis_id"], RMP, "A", confidence="sure")
+
+    candidate = next(item for item in answered["candidates"] if item["concept_id"] == RMP)
+    assert candidate["answer"]["correct"] is False and answered["asked"] == 1
+    assert [event["source"] for event in understanding.events()] == ["diagnosis"]
+    assert learning.summary()["attempts"] == 0, "a question no source backs moves no mastery"
+
+
+@pytest.mark.parametrize(("origin", "attempts"), [(QuestionOrigin.MANUAL, 3), (QuestionOrigin.GENERATED, 0)])
+def test_a_diagnosis_asks_short_questions_and_the_answers_decide_the_starting_point(tmp_path, origin: str, attempts: int) -> None:
+    """The walk, the verdict and the path back read the answers themselves and
+    come out the same whatever the bank held. What those answers are allowed
+    to move does not: three questions a person keyed leave three mastery
+    attempts behind, three the generator wrote from no source leave none."""
+    graph, diagnosis, store, learning, understanding, clock = build(tmp_path / "medical.sqlite3", origin=origin)
 
     record = diagnosis.start(AP, objective={"question_stem": "Aksiyon potansiyelinin yükselen fazı?"}, reason="Üç yanlış cevap")
 
@@ -187,7 +212,7 @@ def test_a_diagnosis_asks_short_questions_and_the_answers_decide_the_starting_po
     assert located["steps"][-1]["objective"] is True and "Orijinal hedefe dön" in located["steps"][-1]["activity"]
     assert all(step["estimate_label"] == "tahmini" for step in located["steps"])
     assert located["verdict"].startswith(f"Başlangıç noktası: {graph.name(deep)}")
-    assert learning.summary()["attempts"] == 3
+    assert learning.summary()["attempts"] == attempts
     assert {event["source"] for event in understanding.events()} == {"diagnosis"}
     assert diagnosis.answer(record["diagnosis_id"], RMP, "A")["candidates"][0]["answer"]["answer_key"] in ("B", "A") and located["asked"] == 3
 

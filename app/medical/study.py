@@ -67,15 +67,17 @@ class StudyWorkflow:
         store, learning, concepts, curriculum, model = academy.store, academy.learning, academy.concepts, academy.curriculum, academy.model
         self.understanding = UnderstandingEngine(store, learning, concepts, curriculum, model, academy.retriever, generator=academy.generator, emit=academy._emit)
         self.prerequisites = PrerequisiteGraph(concepts, store)
-        self.diagnosis = PrerequisiteDiagnosis(self.prerequisites, store, learning, self.understanding, curriculum)
         self.reviewer = SourceSupportReviewer(store, model, gate=source_review)
         self.source_review = bool(source_review)
         if self.source_review:
             academy.generator._reviewer = self.reviewer
         # One scoring decision for the whole academy: the bank picker, the
-        # paper, the answer and the analysis all ask the reviewer.
+        # paper, the answer, the analysis, the planner and the prerequisite
+        # diagnosis all ask the reviewer, so the same question is never
+        # measured by one rule here and another one there.
         academy.generator.scoring = self.reviewer.decision
-        self.planner = StudyPlanner(store, curriculum, concepts, learning, self.understanding, self.prerequisites, remind=remind, emit=academy._emit)
+        self.diagnosis = PrerequisiteDiagnosis(self.prerequisites, store, learning, self.understanding, curriculum, scoring=self.reviewer.decision)
+        self.planner = StudyPlanner(store, curriculum, concepts, learning, self.understanding, self.prerequisites, scoring=self.reviewer.decision, remind=remind, emit=academy._emit)
         self.histology = HistologyBank(store, academy.pipeline, learning, self.understanding, concepts, model)
         # Flashcards: repetition from the student's own material, never measurement.
         self.flashcards = FlashcardDeck(store, academy.anatomy, academy.terminology, curriculum, self.histology, academy.pipeline, planner=self.planner)
@@ -158,7 +160,6 @@ class StudyWorkflow:
             "histology_show": lambda payload: {"session": self.histology.show(_text(payload, "session_id"), _number(payload, "index"))},
             "histology_finish": lambda payload: {"session": self.histology.finish_session(_text(payload, "session_id"))},
             # flashcards (deterministic; a grade is study, not evidence)
-            "weekly_report": lambda payload: self.weekly_report(days=_number(payload, "days", 7)),
             "weekly_report": lambda payload: self.weekly_report(days=_number(payload, "days", 7)),
             "committee_options": lambda payload: self._academy.committee_options(),
             "committee_exam": lambda payload: {"exam": self._academy.committee_exam(_mapping(payload, "distribution"), seconds_per_question=(_number(payload, "seconds_per_question") or None), unseen_only=bool(payload.get("unseen_only")), seed=_optional(payload, "seed"))},

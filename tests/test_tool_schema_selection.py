@@ -451,6 +451,7 @@ def _select(text):
         "whatsapp_send_message", "whatsapp_add_contact",
         "whatsapp_list_contacts",
         "create_reminder", "list_reminders", "cancel_reminder",
+        "snooze_reminder",
         "create_routine", "list_routines", "delete_routine",
         "open_website", "open_web_search", "system_volume",
         "launch_windows_application",
@@ -481,6 +482,7 @@ def test_selector_exposes_whatsapp_tools() -> None:
 def test_selector_exposes_reminder_web_volume_tools() -> None:
     assert "create_reminder" in _select("Bana 10 dakika sonra çayı hatırlat")
     assert "cancel_reminder" in _select("Hatırlatıcıyı iptal et")
+    assert "snooze_reminder" in _select("Hatırlatıcıyı 10 dakika ertele")
     assert "open_web_search" in _select("Google'da hava durumunu araştır")
     assert _select("Sesi biraz kıs") == {"system_volume"}
 

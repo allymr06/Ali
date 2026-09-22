@@ -32,6 +32,7 @@ import ctypes
 import getpass
 import hashlib
 import importlib.metadata
+import itertools
 import json
 import os
 import platform
@@ -57,6 +58,7 @@ import webview
 from app.config.paths import default_state_directory
 from app.core.models import Context, Request, RequestSource
 from app.notifications import NotificationCenter, NotificationStore, ReminderWatch
+from app.research.sources import SOURCE_CATALOG, normalize_site, parse_sources
 from app.reminders.service import show_windows_toast
 from app.security.interactive import (
     InteractiveApprovalRequest,
@@ -76,8 +78,11 @@ WEB_ASSETS: tuple[str, ...] = (
     "css/screens.css",
     "css/medical.css",
     "css/study.css",
+    "css/academy.css",
+    "css/research.css",
     "css/phone.css",
     "js/foundation.js",
+    "js/toolbox.js",
     "js/bridge.js",
     "js/presence.js",
     "js/shell.js",
@@ -86,12 +91,21 @@ WEB_ASSETS: tuple[str, ...] = (
     "js/panels.js",
     "js/medical.js",
     "js/study.js",
+    "js/medcalc.js",
+    "js/rooms.js",
+    "js/academy.js",
+    "js/research.js",
     "js/main.js",
 )
 WEB_RELATIVE_PATH = PurePath("app", "ui", "nova", "web")
 SOURCE_WEB_ROOT = Path(__file__).resolve().parent / "web"
+# Markup stripped before speech, the same set the phone strips
+# (app/mobile/server.py): the voice reads prose, not asterisks.
+_MARKDOWN_NOISE = _re.compile(r"[*_`#>]+")
+
 WINDOW_TITLE = "JARVIS"
 READY_STATUS = "LOCAL CORE READY"
+WORKING_STATUS = "PROCESSING"
 PAUSED_STATUS = "PAUSED"
 PAUSED_MESSAGE = (
     "JARVIS duraklatıldı; devam etmek için tepsi menüsünden Devam'ı seç."
@@ -173,6 +187,24 @@ DIAGNOSTIC_NOTIFICATION_TITLES: Mapping[str, str] = {
 }
 SHUTDOWN_LOCK_TIMEOUT_SECONDS = 2.0
 MAX_RESEARCH_SOURCES = 10
+
+
+def research_source_limit(requested: object, service_maximum: object) -> int:
+    """How many sources a research request may ask for.
+
+    The page offers up to ten; the service refuses more than it was
+    configured for. Asking is clamped rather than refused, so "8 kaynak"
+    on a service capped at 5 gives five sources instead of an error.
+    """
+    try:
+        wanted = int(requested)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        wanted = 5
+    try:
+        ceiling = int(service_maximum)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        ceiling = MAX_RESEARCH_SOURCES
+    return max(1, min(wanted, MAX_RESEARCH_SOURCES, max(1, ceiling)))
 MAX_DIAGNOSTIC_EVENTS = 500
 MAX_MEMORY_LIST = 500
 MAX_CONVERSATION_LIST = 100
@@ -271,6 +303,98 @@ def daily_brief_due(now: datetime, target: str, stamp: str | None) -> bool:
     return (now.hour, now.minute) >= (hour, minute)
 
 
+# The home screen's remote (and the phone, which loads the same page)
+# may run only these: media transport and the delegation's own status
+# and stop. Every one is LOW risk or read-only and needs no approval;
+# anything else on the executor stays a chat request.
+REMOTE_TOOLS: frozenset[str] = frozenset({
+    "spotify_now_playing",
+    "spotify_play_pause",
+    "spotify_next_track",
+    "spotify_previous_track",
+    "spotify_set_volume",
+    "spotify_seek",
+    "spotify_shuffle",
+    "spotify_repeat",
+    "spotify_like_track",
+    "spotify_library",
+    "spotify_play_library",
+    "spotify_queue_track",
+    "spotify_sleep_timer",
+    "spotify_cancel_sleep_timer",
+    "whatsapp_delegation_status",
+    "whatsapp_stop_delegation",
+    "whatsapp_read_chats",
+})
+
+
+def compose_voice_state_callback(push: Callable[[Any], None], ducker: Any | None) -> Callable[[Any], None]:
+    """The page hears every voice phase; the music ducks on SPEAKING and
+    comes back after. A failing ducker must never break the voice turn."""
+
+    def callback(state: Any) -> None:
+        push(state)
+        if ducker is not None:
+            try:
+                ducker.on_voice_state(state)
+            except Exception:
+                pass
+
+    return callback
+
+
+def state_data_bytes(directory: Path) -> int:
+    """Total size of the files sitting in the state directory, measured.
+
+    Top-level files only (the databases and their -wal/-shm shadows);
+    a missing directory or an unreadable file counts as zero rather
+    than failing the pulse.
+    """
+    total = 0
+    try:
+        entries = list(directory.iterdir())
+    except OSError:
+        return 0
+    for entry in entries:
+        try:
+            if entry.is_file():
+                total += entry.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def within_quiet_hours(now: datetime, spec: str) -> bool:
+    """Whether the OS-toast quiet window covers this moment.
+
+    The spec is "SS:DD-SS:DD" (already validated where it is stored);
+    a window across midnight wraps. Anything unreadable answers False:
+    a broken spec must never silence notifications by accident.
+    """
+    text = str(spec or "").strip()
+    if not text or "-" not in text:
+        return False
+    try:
+        start_text, end_text = text.split("-")
+        start_hour, start_minute = (int(piece) for piece in start_text.split(":"))
+        end_hour, end_minute = (int(piece) for piece in end_text.split(":"))
+    except ValueError:
+        return False
+    start = start_hour * 60 + start_minute
+    end = end_hour * 60 + end_minute
+    moment = now.hour * 60 + now.minute
+    if start == end:
+        return False
+    if start < end:
+        return start <= moment < end
+    return moment >= start or moment < end
+
+
+def _now() -> datetime:
+    """The clock the quiet-hours check reads; tests replace it."""
+    return datetime.now()
+
+
 def brief_notification_body(brief: Mapping[str, Any]) -> str:
     """The day's summary as one honest notification line.
 
@@ -297,9 +421,23 @@ def brief_notification_body(brief: Mapping[str, Any]) -> str:
     tasks = int(brief.get("tasks_open") or 0)
     if tasks:
         parts.append(f"{tasks} açık görev")
-    if not parts:
+    # The almanac rides along when it answered; its absence stays silent
+    # here because the brief page already prints the reason in full.
+    ambient: list[str] = []
+    almanac = brief.get("almanac") or {}
+    weather = almanac.get("weather") or {}
+    if weather.get("available") and weather.get("temperature") is not None:
+        label = str(weather.get("label") or "").strip()
+        ambient.append(f"{weather.get('city')} {weather.get('temperature')}°" + (f", {label}" if label else ""))
+    rates = almanac.get("rates") or {}
+    if rates.get("available") and rates.get("usd_try") is not None:
+        lira = str(rates.get("usd_try")).replace(".", ",")
+        ambient.append(f"1 $ = {lira} ₺")
+    if not parts and not ambient:
         return "Bugün için bekleyen bir şey görünmüyor."
-    return " · ".join(parts)[:220]
+    if not parts:
+        parts.append("Bekleyen iş yok")
+    return " · ".join(parts + ambient)[:220]
 
 MIN_REMEMBERED_SIZE = (900, 600)
 
@@ -684,13 +822,25 @@ class NovaBridge:
         # Re-entrant on purpose: a background operation can finish before
         # its completion callback is registered, in which case
         # concurrent.futures runs the callback synchronously on the thread
-        # that is still holding this lock inside submit_command/start_voice.
+        # that is still holding this lock inside start_voice or the routine
+        # runner, and that callback pushes to the window. Both of them keep
+        # the lock across their submission, so a window round-trip under it
+        # is rare but real; submit_command is the one that hands its
+        # coroutine over with the lock released, because its bracket push
+        # blocks on WebView2 every single turn while done() waits on this
+        # same lock from the core's event-loop thread.
         self._lock = RLock()
         self._push_lock = Lock()
-        # The window's UI thread, learned from the first event it delivers.
-        # A push raised on that thread is deferred instead of evaluated, or
-        # the thread would wait for the JavaScript result it has to deliver.
+        # The window's UI thread, asked of the window itself (see
+        # :meth:`_note_ui_thread`). A push raised on that thread is deferred
+        # instead of evaluated, or the thread would wait for the JavaScript
+        # result it has to deliver.
         self._ui_thread_id: int | None = None
+        # False until the form itself marshalled the answer back.
+        self._ui_thread_confirmed = False
+        # Pushes carry news, so no two of them are interchangeable; the
+        # counter keeps the worker's dedupe from mistaking one for another.
+        self._push_serial = itertools.count()
         self._window_worker = WindowWorker(
             lambda key, exc: self._record_ui_event(
                 "window.worker_failed",
@@ -699,9 +849,23 @@ class NovaBridge:
                 error=type(exc).__name__,
             )
         )
-        self._stream_buffer: list[str] = []
+        # The engine hands the callback the CUMULATIVE answer so far, not
+        # a delta, and the page replaces the bubble with whatever arrives.
+        # Only the newest snapshot is worth sending; joining them printed
+        # "BuBu birBu bir deneme" while JARVIS was typing.
+        self._stream_latest: str = ""
+        # The previous GetSystemTimes sample; the pulse's CPU figure
+        # is the delta between two beats.
+        self._pulse_times: tuple[int, int, int] | None = None
+        # When this bridge came up, for the pulse's session row; the
+        # data-size figure is remeasured at most once a minute.
+        self._pulse_started = time.time()
+        self._state_size_cache: tuple[float, int] | None = None
         self._stream_last_flush = 0.0
         self._command_future: Future[Any] | None = None
+        # A turn claimed by submit_command but not yet handed to the runner;
+        # see :meth:`_command_active`.
+        self._command_opening = False
         self._voice_future: Future[Any] | None = None
         self._approvals: dict[str, Future[bool]] = {}
         # Other surfaces (the mobile companion) watch the same approval
@@ -740,8 +904,68 @@ class NovaBridge:
         self._window = window
 
     def _note_ui_thread(self) -> None:
-        """Remember the thread pywebview delivers window events on."""
-        self._ui_thread_id = threading.get_ident()
+        """Remember the thread the window's message loop runs on.
+
+        pywebview delivers a non-blocking window event (``shown``,
+        ``minimized``, ``restored``) on a thread it starts for that one
+        callback and then drops, so the ident read here is usually a thread
+        that is already gone by the time :meth:`_push` compares against it.
+        The window is asked instead: an operation marshalled through the
+        native form runs on the message loop itself, and that is the only
+        answer taken as final. Without a native form — the tests, any
+        backend that is not WinForms — the calling thread is the only
+        answer there is, and it is the one the blocking ``closing`` event
+        arrives on.
+
+        Every other answer stays provisional, because WinForms
+        ``Control.InvokeRequired`` is false on *every* thread while no
+        handle exists anywhere in the parent chain: a window event that
+        arrives before the handle would otherwise brand a throwaway thread
+        as the message loop for the rest of the session. Such an answer is
+        still taken — a guess beats no guard at all — but nothing is
+        marshalled for it, so the unconditional assignment above is the
+        whole defence: every later event overwrites the unconfirmed ident,
+        and deleting that overwrite brings the permanent wrong ident back.
+        The form is asked only by an event it answers ``InvokeRequired``
+        true for, which cannot happen before the handle exists; that one
+        marshalled answer settles the ident for good, and from then on only
+        a thread the form answers false for rewrites it, which once the
+        handle exists is the message loop itself.
+
+        ``Control.Invoke`` has no timeout, so the marshalled ask blocks for
+        as long as the message loop is stopped while the handle still
+        lives; a pywebview backend whose event thread is not a daemon can
+        pin the process there.
+        """
+        window = self._window
+        native = getattr(window, "native", None)
+        if native is None or not getattr(native, "InvokeRequired", False):
+            self._ui_thread_id = threading.get_ident()
+            return
+        if self._ui_thread_confirmed:
+            return
+
+        def confirm() -> None:
+            # Reached on whatever thread the form marshalled to, so the form
+            # is asked once more there: an ask that was never marshalled at
+            # all would otherwise confirm the asking thread.
+            if getattr(native, "InvokeRequired", False):
+                raise RuntimeError("the window did not marshal the question")
+            self._ui_thread_id = threading.get_ident()
+            self._ui_thread_confirmed = True
+
+        try:
+            _run_on_ui_thread(window, confirm)
+        except Exception as exc:
+            # Nothing was learned, and the guard in _push is only as good as
+            # this ident: say so instead of leaving the application without
+            # one and no trace of why.
+            self._record_ui_event(
+                "window.ui_thread_unknown",
+                "The window did not say which thread its message loop runs on.",
+                error=type(exc).__name__,
+                ident=self._ui_thread_id,
+            )
 
     def _defer(self, key: str, job: Callable[[], None]) -> bool:
         """Run ``job`` off the UI thread; ``False`` if one is already queued.
@@ -770,8 +994,13 @@ class NovaBridge:
             # Evaluating here would block the thread that has to run the
             # script. A window event that records a diagnostic — hiding to
             # the tray, minimising — reaches this line, and inline it hangs
-            # the whole application.
-            self._window_worker.submit(f"push:{kind}:{len(message)}", lambda: self._evaluate_push(message))
+            # the whole application. The key is serial because the worker
+            # drops a job whose key is already waiting: two notifications
+            # that merely share a kind are still two notifications.
+            self._window_worker.submit(
+                f"push:{kind}:{next(self._push_serial)}",
+                lambda: self._evaluate_push(message),
+            )
             return
         self._evaluate_push(message)
 
@@ -947,7 +1176,12 @@ class NovaBridge:
         alert: bool = False,
     ) -> None:
         """Record a notification; ``alert`` also reaches the OS when
-        nobody is looking at the window."""
+        nobody is looking at the window - unless quiet hours hold it,
+        in which case the entry itself carries the mark."""
+        held = alert and not self._attended and self._within_quiet_now()
+        payload = dict(data) if data else {}
+        if held:
+            payload["quiet_held"] = True
         try:
             entry = self._notifications.publish(
                 kind,
@@ -956,12 +1190,12 @@ class NovaBridge:
                 severity=severity,
                 target=target,
                 reference=reference,
-                data=dict(data) if data else None,
+                data=payload or None,
                 dedupe_key=dedupe_key,
             )
         except ValueError:
             return
-        if alert and not self._attended:
+        if alert and not self._attended and not held:
             self._notify_os(entry.title, entry.body)
 
     def _notification_store(self) -> NotificationStore | None:
@@ -987,6 +1221,17 @@ class NovaBridge:
                 "attended": self._attended,
             },
         )
+
+    def _within_quiet_now(self) -> bool:
+        """Whether the stored quiet window covers this moment; the
+        in-app centre still collects, only the toast waits."""
+        if self.api_settings is None:
+            return False
+        try:
+            spec = self.api_settings.preferences.load().quiet_hours
+        except Exception:
+            return False
+        return within_quiet_hours(_now(), spec)
 
     def _os_notifications_enabled(self) -> bool:
         settings = getattr(self.controller.application, "settings", None)
@@ -1129,30 +1374,127 @@ class NovaBridge:
         if watch is not None:
             watch.stop()
 
-    def _run_routine(self, routine: Mapping[str, Any]) -> None:
+    def _run_routine(
+        self, routine: Mapping[str, Any], *, defer_when_blocked: bool = True
+    ) -> bool:
         """Run one due routine through the core like a typed command.
 
         The prompt goes through the same engine, permission engine and
         approval overlay; an approval nobody answers fails closed. The
         outcome lands in the notification centre (and reaches the OS when
         the window is unattended). A paused or busy desktop defers the
-        routine instead of dropping it.
+        routine instead of dropping it - unless ``defer_when_blocked`` is
+        False (the page's "run now"), which refuses without nudging the
+        schedule. Returns True when the routine reached the engine.
         """
         routines = getattr(self.controller.application, "routines", None)
         routine_id = str(routine.get("routine_id", ""))
         name = str(routine.get("name", "")).strip() or "Rutin"
         prompt = str(routine.get("prompt", "")).strip()
         if routines is None or not routine_id or not prompt:
-            return
+            return False
+        submitted = False
         with self._lock:
             blocked = (
                 self._closing
                 or self.controller.paused
-                or _active(self._command_future)
+                or self._command_active()
                 or _active(self._routine_future)
                 or self.controller.state.busy
             )
-            if blocked:
+            if not blocked:
+                stored_conversation = routine.get("conversation_id")
+                try:
+                    context = (
+                        Context(conversation_id=UUID(str(stored_conversation)))
+                        if stored_conversation
+                        else Context()
+                    )
+                except ValueError:
+                    context = Context()
+                request = Request(
+                    prompt,
+                    source=RequestSource.SYSTEM,
+                    metadata={"routine_id": routine_id, "routine_name": name},
+                )
+                started = time.monotonic()
+
+                def done(future: Future[Any]) -> None:
+                    with self._lock:
+                        if self._routine_future is future:
+                            self._routine_future = None
+                    if future.cancelled():
+                        return
+                    try:
+                        response = future.result()
+                    except Exception as exc:
+                        outcome, text = "failed", (
+                            f"Rutin çalıştırılamadı ({type(exc).__name__})."
+                        )
+                        severity = "error"
+                    else:
+                        metadata = _message_field(response, "metadata")
+                        outcome = str(
+                            metadata.get("outcome", "completed")
+                            if isinstance(metadata, Mapping)
+                            else "completed"
+                        )
+                        text = str(_message_field(response, "text") or "").strip()
+                        severity = "info" if outcome == "completed" else "warning"
+                    try:
+                        routines.record_run(
+                            routine_id,
+                            outcome=outcome,
+                            summary=text,
+                            conversation_id=str(context.conversation_id),
+                        )
+                    except Exception:
+                        pass
+                    self._record_ui_event(
+                        "routine.completed",
+                        "A routine finished.",
+                        routine_id=routine_id,
+                        outcome=outcome,
+                        seconds=round(time.monotonic() - started, 3),
+                    )
+                    self._publish(
+                        "task",
+                        f"Rutin · {name}",
+                        text or "Rutin tamamlandı.",
+                        severity=severity,
+                        target="chat",
+                        reference=routine_id,
+                        data={
+                            "routine_id": routine_id,
+                            "conversation_id": str(context.conversation_id),
+                            "outcome": outcome,
+                        },
+                        alert=True,
+                    )
+                    self._push_snapshot()
+
+                try:
+                    self._routine_future = self.controller.submit_background(
+                        self.controller.application.engine.handle(
+                            request,
+                            context,
+                            approval_callback=self._request_approval,
+                        ),
+                        done,
+                    )
+                    submitted = True
+                except RuntimeError:
+                    if defer_when_blocked:
+                        try:
+                            routines.defer(routine_id, ROUTINE_DEFER_SECONDS)
+                        except Exception:
+                            pass
+        if blocked:
+            # Reported with the lock released: the ledger calls its
+            # listeners on the recording thread, so this diagnostic travels
+            # straight into a blocking window round-trip, and the very turn
+            # the routine is waiting for finishes by taking this same lock.
+            if defer_when_blocked:
                 try:
                     routines.defer(routine_id, ROUTINE_DEFER_SECONDS)
                 except Exception:
@@ -1162,93 +1504,37 @@ class NovaBridge:
                     "A due routine waits because the desktop is paused or busy.",
                     routine_id=routine_id,
                 )
-                return
-            stored_conversation = routine.get("conversation_id")
-            try:
-                context = (
-                    Context(conversation_id=UUID(str(stored_conversation)))
-                    if stored_conversation
-                    else Context()
-                )
-            except ValueError:
-                context = Context()
-            request = Request(
-                prompt,
-                source=RequestSource.SYSTEM,
-                metadata={"routine_id": routine_id, "routine_name": name},
-            )
-            started = time.monotonic()
-
-            def done(future: Future[Any]) -> None:
-                with self._lock:
-                    if self._routine_future is future:
-                        self._routine_future = None
-                if future.cancelled():
-                    return
-                try:
-                    response = future.result()
-                except Exception as exc:
-                    outcome, text = "failed", (
-                        f"Rutin çalıştırılamadı ({type(exc).__name__})."
-                    )
-                    severity = "error"
-                else:
-                    outcome = str(
-                        _message_field(response, "metadata").get("outcome", "completed")
-                        if isinstance(_message_field(response, "metadata"), Mapping)
-                        else "completed"
-                    )
-                    text = str(_message_field(response, "text") or "").strip()
-                    severity = "info" if outcome == "completed" else "warning"
-                try:
-                    routines.record_run(
-                        routine_id,
-                        outcome=outcome,
-                        summary=text,
-                        conversation_id=str(context.conversation_id),
-                    )
-                except Exception:
-                    pass
-                self._record_ui_event(
-                    "routine.completed",
-                    "A routine finished.",
-                    routine_id=routine_id,
-                    outcome=outcome,
-                    seconds=round(time.monotonic() - started, 3),
-                )
-                self._publish(
-                    "task",
-                    f"Rutin · {name}",
-                    text or "Rutin tamamlandı.",
-                    severity=severity,
-                    target="chat",
-                    reference=routine_id,
-                    data={
-                        "routine_id": routine_id,
-                        "conversation_id": str(context.conversation_id),
-                        "outcome": outcome,
-                    },
-                    alert=True,
-                )
-                self._push_snapshot()
-
-            try:
-                self._routine_future = self.controller.submit_background(
-                    self.controller.application.engine.handle(
-                        request,
-                        context,
-                        approval_callback=self._request_approval,
-                    ),
-                    done,
-                )
-            except RuntimeError:
-                try:
-                    routines.defer(routine_id, ROUTINE_DEFER_SECONDS)
-                except Exception:
-                    pass
+            return False
+        if not submitted:
+            return False
         self._record_ui_event(
             "routine.started", "A routine started.", routine_id=routine_id
         )
+        return True
+
+    def run_routine_now(self, routine_id: Any) -> dict[str, Any]:
+        """Run one routine immediately on the page's own click.
+
+        The same engine, permission and notification path as a scheduled
+        run; the schedule itself is untouched, and a busy desktop refuses
+        in words instead of queueing silently."""
+        routines = getattr(self.controller.application, "routines", None)
+        if routines is None:
+            return {"ok": False, "error": "Rutin hizmeti kapalı."}
+        routine = routines.get(str(routine_id or "").strip())
+        if routine is None:
+            return {"ok": False, "error": "Bu kimlikte bir rutin yok."}
+        if not str(routine.get("prompt", "")).strip():
+            return {"ok": False, "error": "Rutinin komutu boş."}
+        if not self._run_routine(routine, defer_when_blocked=False):
+            return {"ok": False, "error": "Masaüstü şu an meşgul; rutin çalıştırılamadı."}
+        self._record_ui_event(
+            "routine.run_now",
+            "A routine was started from the page.",
+            routine_id=str(routine.get("routine_id", "")),
+        )
+        name = str(routine.get("name", "")).strip() or "Rutin"
+        return {"ok": True, "message": f"“{name}” çalışıyor; sonucu bildirimlere düşer."}
 
     def _routines_payload(self) -> dict[str, Any]:
         routines = getattr(self.controller.application, "routines", None)
@@ -1438,6 +1724,84 @@ class NovaBridge:
         self._record_ui_event("conversation.exported", "A conversation was exported.")
         return {"ok": True, "path": str(target), "file": target.name, "messages": len(messages)}
 
+    def speak_text(self, text: Any) -> dict[str, Any]:
+        """One reply as audio, through the same voices the phone uses.
+
+        Cloud first, the local Turkish voice as the fallback, and an
+        honest refusal when neither can speak - the page then keeps the
+        text and says why. The audio returns as base64 WAV/MP3 for a
+        plain <audio> element; nothing is written to disk.
+        """
+        import base64
+
+        from app.voice.models import AudioEncoding, pcm16_to_wav
+
+        voice = getattr(self.controller.application, "voice", None)
+        synthesizer = getattr(voice, "synthesizer", None) if voice is not None else None
+        if synthesizer is None:
+            return {"ok": False, "error": "Sesli iletişim bu bilgisayarda ayarlanmamış."}
+        settings = getattr(self.controller.application, "settings", None)
+        limit = int(getattr(settings, "voice_max_tts_characters", 4000) or 4000)
+        timeout = float(getattr(settings, "voice_operation_timeout_seconds", 60.0) or 60.0)
+        spoken = " ".join(_MARKDOWN_NOISE.sub("", str(text or "")).split())
+        if not spoken:
+            return {"ok": False, "error": "Seslendirilecek metin boş."}
+        if len(spoken) > limit:
+            spoken = spoken[:limit].rsplit(" ", 1)[0]
+
+        def run(operation: Any) -> Any:
+            future = self.controller.submit_background(operation, lambda done: None)
+            return future.result(timeout=timeout)
+
+        try:
+            speech = run(synthesizer.synthesize(spoken))
+            encoding = getattr(speech.encoding, "value", str(speech.encoding))
+            if encoding == AudioEncoding.PCM16.value:
+                body, mime = pcm16_to_wav(bytes(speech.data), 24_000), "audio/wav"
+            else:
+                body, mime = bytes(speech.data), {"mp3": "audio/mpeg", "wav": "audio/wav"}.get(encoding, "application/octet-stream")
+            return {"ok": True, "mime": mime, "source": "cloud", "audio": base64.b64encode(body).decode("ascii")}
+        except Exception:
+            pass
+        try:
+            from app.voice.audio import synthesize_local_turkish
+
+            local = run(synthesize_local_turkish(spoken))
+        except Exception:
+            local = None
+        if local:
+            return {"ok": True, "mime": "audio/wav", "source": "local", "audio": base64.b64encode(bytes(local)).decode("ascii")}
+        return {"ok": False, "error": "Ses üretilemedi; yanıt metin olarak duruyor."}
+
+    def save_markdown(self, directory: Any, filename: Any, content: Any) -> dict[str, Any]:
+        """One Markdown file the page composed, into a folder the user picked.
+
+        The page owns the words (a research report, a summary); this side
+        owns the boundaries: the folder must exist and be one the picker
+        returned, the name is flattened to a safe .md basename, the size
+        is bounded, and an existing file is never overwritten.
+        """
+        target_dir = Path(str(directory or ""))
+        if not target_dir.is_dir():
+            return {"ok": False, "error": "Klasör bulunamadı; önce bir klasör seç."}
+        body = str(content or "")
+        if not body.strip():
+            return {"ok": False, "error": "Kaydedilecek içerik boş."}
+        if len(body) > 512_000:
+            return {"ok": False, "error": "İçerik bir Markdown dosyası için fazla büyük."}
+        stem = _re.sub(r"[^\w\sçğıöşüÇĞİÖŞÜ-]", "", str(filename or "")).strip()
+        stem = _re.sub(r"\s+", "-", stem)[:80] or "jarvis-notu"
+        target = target_dir / f"{stem}.md"
+        counter = 2
+        while target.exists():
+            target = target_dir / f"{stem}-{counter}.md"
+            counter += 1
+        try:
+            target.write_text(body, encoding="utf-8")
+        except OSError as exc:
+            return {"ok": False, "error": f"Dosya yazılamadı ({type(exc).__name__})."}
+        return {"ok": True, "path": str(target), "file": target.name}
+
     def daily_brief(self) -> dict[str, Any]:
         """The day at a glance, read from the services that hold it.
 
@@ -1494,7 +1858,124 @@ class NovaBridge:
             except Exception:
                 medical["available"] = False
         brief["medical"] = medical
+        almanac = getattr(application, "almanac", None)
+        if almanac is not None:
+            try:
+                brief["almanac"] = _jsonable(almanac.snapshot())
+            except Exception as exc:
+                reason = f"Almanak okunamadı ({type(exc).__name__})."
+                brief["almanac"] = {
+                    "weather": {"available": False, "reason": reason},
+                    "rates": {"available": False, "reason": reason},
+                }
         return brief
+
+    def convert_currency(self, amount: Any = 0, source: str = "", target: str = "") -> dict[str, Any]:
+        """One conversion between USD, EUR and TRY on the almanac's cached
+        ECB reference rates - the answer always names the rate's date.
+        """
+        almanac = getattr(self.controller.application, "almanac", None)
+        if almanac is None:
+            return {"ok": False, "error": "Almanak servisi hazır değil."}
+        try:
+            value = float(amount)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "Tutar sayı olmalı."}
+        if not 0 < value <= 1_000_000_000:
+            return {"ok": False, "error": "Tutar 0 ile 1 milyar arası olmalı."}
+        codes = {"USD", "EUR", "TRY"}
+        source_code = str(source or "").strip().upper()
+        target_code = str(target or "").strip().upper()
+        if source_code not in codes or target_code not in codes or source_code == target_code:
+            return {"ok": False, "error": "Yalnız USD, EUR ve TRY arası çevrilir."}
+        try:
+            rates = almanac.rates()
+        except Exception as exc:
+            return {"ok": False, "error": f"Kur okunamadı ({type(exc).__name__})."}
+        if not rates.get("available"):
+            return {"ok": False, "error": str(rates.get("reason") or "Kur servisi yanıt vermedi.")}
+        usd, eur = float(rates["usd_try"]), float(rates["eur_try"])
+        in_lira = {"USD": usd, "EUR": eur, "TRY": 1.0}
+        converted = value * in_lira[source_code] / in_lira[target_code]
+
+        def turkish(number: float, decimals: int = 2) -> str:
+            text = f"{number:,.{decimals}f}"
+            return text.replace(",", "§").replace(".", ",").replace("§", ".")
+
+        amount_text = turkish(value, 0 if value == int(value) else 2)
+        display = (
+            f"{amount_text} {source_code} = {turkish(converted)} {target_code}"
+            f" (ECB {rates.get('date', '?')} kuru)"
+        )
+        return {
+            "ok": True,
+            "value": round(converted, 2),
+            "display": display,
+            "rate_date": str(rates.get("date") or ""),
+        }
+
+    def define_word(self, word: str = "") -> dict[str, Any]:
+        """One TDK dictionary entry for the palette's lookup card.
+
+        The service already answers with honest reasons; the bridge only
+        translates its refusals into the card's error shape.
+        """
+        dictionary = getattr(self.controller.application, "dictionary", None)
+        if dictionary is None:
+            return {"ok": False, "error": "Sözlük servisi hazır değil."}
+        try:
+            result = dictionary.lookup(str(word or ""))
+        except Exception as exc:
+            return {"ok": False, "error": f"Sözlük okunamadı ({type(exc).__name__})."}
+        if not result.get("ok"):
+            return {"ok": False, "error": str(result.get("reason") or "Sözlükte bulunamadı.")}
+        return _jsonable(result)
+
+    def run_remote_tool(self, name: str, payload: Any = None) -> dict[str, Any]:
+        """One control from the home remote, run through the tool executor.
+
+        The executor keeps its policy, timeout and verification in the
+        loop; the bridge never calls an integration directly. The result
+        is the tool's own honest report - PARTIAL and BLOCKED included.
+        (The parameter is not called ``arguments``: pywebview builds the
+        page-side wrapper from these names, and ``arguments`` is
+        JavaScript's own reserved object - the wrapper then sends nothing.)
+        """
+        tool = str(name or "").strip()
+        if tool not in REMOTE_TOOLS:
+            return {"ok": False, "error": "Bu araç kumandadan çalıştırılamaz."}
+        if self.controller.paused:
+            return {"ok": False, "error": PAUSED_MESSAGE}
+        executor = self.controller.application.tool_executor
+        if not executor.contains(tool):
+            return {"ok": False, "error": "Bu araç bu yapılandırmada kayıtlı değil."}
+        parameters = dict(payload) if isinstance(payload, Mapping) else {}
+        # Tool handlers may be coroutines, and the executor runs those only
+        # inside an event loop: the controller's runner is that loop, and
+        # this thread waits for the verified result, as the settings
+        # connection test does.
+        timeout = float(getattr(executor.get(tool).definition, "timeout_seconds", 30.0) or 30.0) + 5.0
+
+        async def run() -> Any:
+            outcome = executor.execute(tool, parameters=parameters)
+            if hasattr(outcome, "__await__"):
+                outcome = await outcome
+            return outcome
+
+        try:
+            future = self.controller.submit_background(run(), lambda done: None)
+            result = future.result(timeout=timeout)
+        except Exception as exc:
+            return {"ok": False, "error": f"Araç çalıştırılamadı ({type(exc).__name__})."}
+        status = getattr(getattr(result, "status", None), "value", str(getattr(result, "status", "")))
+        return {
+            "ok": bool(getattr(result, "succeeded", False)),
+            "status": status,
+            "message": str(getattr(result, "message", "") or ""),
+            "data": _jsonable(getattr(result, "data", None) or {}),
+            "verified": bool(getattr(result, "verified", False)),
+            "error": getattr(result, "error", None),
+        }
 
     def medical_pick_file(self, kind: str = "document") -> dict[str, Any]:
         """Open the native picker for a lecture document, an exam file or a
@@ -2204,6 +2685,15 @@ class NovaBridge:
     # ------------------------------------------------------------------
     # Chat
     # ------------------------------------------------------------------
+    def _command_active(self) -> bool:
+        """A chat turn is running, or is on its way to the runner.
+
+        Read under :attr:`_lock`. ``_command_opening`` covers the gap where
+        submit_command has claimed the turn but leaves the lock to raise the
+        busy bracket, which blocks until the browser answers.
+        """
+        return self._command_opening or _active(self._command_future)
+
     def submit_command(self, text: str, spoken: Any = False) -> dict[str, Any]:
         """One chat turn. ``spoken`` marks a transcript (the phone's voice
         loop): the record and the core see it as a voice request."""
@@ -2217,7 +2707,7 @@ class NovaBridge:
         def stream(chunk: str) -> None:
             if not chunk:
                 return
-            self._stream_buffer.append(chunk)
+            self._stream_latest = chunk
             now = time.monotonic()
             if now - self._stream_last_flush >= STREAM_FLUSH_SECONDS:
                 self._flush_stream()
@@ -2228,6 +2718,12 @@ class NovaBridge:
                     self._command_future = None
             self._flush_stream()
             if future.cancelled():
+                # No answer exists, so none is reported; the bracket still
+                # closes, because a surface that only watched the turn has
+                # no other way to learn that it ended. During shutdown the
+                # push is already a no-op — _ready is false before anything
+                # is cancelled — so this is the invariant, not a new frame.
+                self._push("busy", {"busy": False, "status": READY_STATUS})
                 return
             try:
                 message = future.result()
@@ -2246,33 +2742,70 @@ class NovaBridge:
             self._push("busy", {"busy": False, "status": READY_STATUS})
             self._push_snapshot()
 
-        # The busy check and the submission happen under one lock, so two
-        # rapid sends cannot both slip past the guard before the runner
-        # marks the controller busy.
+        # The turn is claimed under the lock, so two rapid sends cannot both
+        # slip past the guard before the runner marks the controller busy.
+        # The work below happens with the lock released: a push blocks until
+        # WebView2 answers and done() waits on this lock from the core's
+        # event-loop thread, so an immediate answer — the direct clock
+        # reply, a cached one — would park the core on a browser round-trip.
         with self._lock:
             if self._closing:
                 return {"ok": False, "error": "JARVIS kapanıyor."}
-            if _active(self._command_future) or self.controller.state.busy:
+            if self._command_active() or self.controller.state.busy:
                 return {
                     "ok": False,
                     "error": "JARVIS şu an başka bir istek işliyor.",
                 }
-            try:
-                self._command_future = self.controller.submit_background(
-                    self.controller.submit_command(
-                        normalized, stream_callback=stream, source=source
-                    ),
-                    done,
-                )
-            except RuntimeError as exc:
-                return {"ok": False, "error": f"İstek gönderilemedi ({exc})."}
+            self._command_opening = True
+        try:
+            # Every surface has to learn that a turn started, not only the
+            # one that started it: a phone submit reaches this method through
+            # the same bridge and otherwise leaves the desktop sitting at
+            # READY with a bubble filling itself in. Raised before the
+            # submission, because a callback that fires synchronously pushes
+            # the matching busy:false and must not be overtaken.
+            self._push(
+                "busy",
+                {
+                    "busy": True,
+                    "status": WORKING_STATUS,
+                    "text": normalized,
+                    "spoken": spoken is True,
+                },
+            )
+            future = self.controller.submit_background(
+                self.controller.submit_command(
+                    normalized, stream_callback=stream, source=source
+                ),
+                done,
+            )
+            with self._lock:
+                # done() may have run already and found nothing to clear;
+                # the future it belongs to is recorded either way, before
+                # the claim is dropped.
+                self._command_future = future
+                if self._closing:
+                    # _shutdown ran while the bracket push was waiting on
+                    # the browser. It cancels what it finds and never looks
+                    # again, and this turn was not recorded yet, so it has
+                    # to cancel itself or outlive the window.
+                    future.cancel()
+                    return {"ok": False, "error": "JARVIS kapanıyor."}
+        except RuntimeError as exc:
+            # Still claimed: the closing half of the bracket cannot be
+            # overtaken by the next turn's opening half.
+            self._push("busy", {"busy": False, "status": READY_STATUS})
+            return {"ok": False, "error": f"İstek gönderilemedi ({exc})."}
+        finally:
+            with self._lock:
+                self._command_opening = False
         return {"ok": True}
 
     def _flush_stream(self) -> None:
-        if not self._stream_buffer:
+        text = self._stream_latest
+        if not text:
             return
-        text = "".join(self._stream_buffer)
-        self._stream_buffer.clear()
+        self._stream_latest = ""
         self._stream_last_flush = time.monotonic()
         self._push("stream", {"text": text})
 
@@ -2282,7 +2815,7 @@ class NovaBridge:
     def _conversation_switch_blocked(self) -> str | None:
         if self._closing:
             return "JARVIS kapanıyor."
-        if _active(self._command_future) or self.controller.state.busy:
+        if self._command_active() or self.controller.state.busy:
             return "Yanıt tamamlanmadan konuşma değiştirilemez."
         if _active(self._voice_future):
             return "Sesli oturum açıkken konuşma değiştirilemez."
@@ -2295,6 +2828,32 @@ class NovaBridge:
             "conversations": _jsonable(
                 self.controller.list_conversations(limit=MAX_CONVERSATION_LIST)
             ),
+        }
+
+    def rename_conversation(self, conversation_id: Any, title: Any) -> dict[str, Any]:
+        """Name a conversation by hand; an empty name returns it to the
+        derived title (the first thing the user said). Archived threads
+        rename too - metadata is not a turn."""
+        wanted = " ".join(str(title or "").split())
+        if len(wanted) > 80:
+            return {"ok": False, "error": "Başlık 80 karakteri aşamaz."}
+        engine = self.controller.application.conversation_engine
+        try:
+            conversation = engine.get(UUID(str(conversation_id)))
+        except (ValueError, KeyError):
+            return {"ok": False, "error": "Böyle bir konuşma yok."}
+        if wanted:
+            conversation.metadata["title"] = wanted
+        else:
+            conversation.metadata.pop("title", None)
+        engine.store.save(conversation)
+        self._record_ui_event(
+            "conversation.renamed", "A conversation was renamed from the drawer."
+        )
+        return {
+            "ok": True,
+            "message": "Başlık güncellendi." if wanted else "Başlık otomatiğe döndü.",
+            "title": self.controller.conversation_title(conversation),
         }
 
     def search_conversations(self, query: Any) -> dict[str, Any]:
@@ -2372,6 +2931,10 @@ class NovaBridge:
             # talk over the session and hear itself.
             return {"ok": False, "error": "Sesli anlatım açıkken sesli oturum başlatılamaz; önce anlatımı bitir."}
 
+        # A person turns the music down to talk: the voice phases also
+        # drive a Spotify ducker when the desktop app is around.
+        ducker = self._spotify_ducker()
+
         def deliver(message: Any) -> None:
             self._push("voice_message", message)
 
@@ -2387,6 +2950,8 @@ class NovaBridge:
                     current.level_callback = None
                 except Exception:
                     pass
+            if ducker is not None:
+                ducker.restore()
             if future.cancelled():
                 return
             error: str | None = None
@@ -2407,9 +2972,12 @@ class NovaBridge:
             # into the core visualization, and the microphone level while
             # it listens.
             if hasattr(voice, "state_callback"):
-                voice.state_callback = lambda state: self._push(
-                    "voice_phase",
-                    {"phase": getattr(state, "value", str(state))},
+                voice.state_callback = compose_voice_state_callback(
+                    lambda state: self._push(
+                        "voice_phase",
+                        {"phase": getattr(state, "value", str(state))},
+                    ),
+                    ducker,
                 )
             if hasattr(voice, "level_callback"):
                 try:
@@ -2516,7 +3084,33 @@ class NovaBridge:
         except Exception as exc:
             return {"ok": False, "error": f"Geçmiş okunamadı ({type(exc).__name__})."}
 
-    def run_research(self, query: str, max_sources: Any = 5) -> dict[str, Any]:
+    def research_sources(self) -> dict[str, Any]:
+        """The places research may look, as configured: the page builds its chips from this."""
+        research = self.controller.application.research
+        provider = (
+            (getattr(research, "sources", None) or getattr(research, "search_provider", None))
+            if research is not None
+            else None
+        )
+        available = tuple(getattr(provider, "available", ()) or ()) if provider is not None else ()
+        if research is not None and not available:
+            available = ("web",)
+        return {
+            "ok": True,
+            "sources": [
+                {"id": spec.id, "label": spec.label, "kind": spec.kind, "description": spec.description}
+                for spec in SOURCE_CATALOG
+                if spec.id in available
+            ],
+        }
+
+    def run_research(
+        self,
+        query: str,
+        max_sources: Any = 5,
+        sources: Any = None,
+        site: Any = None,
+    ) -> dict[str, Any]:
         normalized = str(query or "").strip()
         if not normalized:
             return {"ok": False, "error": "Araştırma sorgusu boş olamaz."}
@@ -2524,11 +3118,19 @@ class NovaBridge:
             return {"ok": False, "error": "Web araştırması ayarlanmamış."}
         if self.controller.paused:
             return {"ok": False, "error": PAUSED_MESSAGE}
+        bounded = research_source_limit(
+            max_sources,
+            getattr(self.controller.application.research, "max_sources", MAX_RESEARCH_SOURCES),
+        )
         try:
-            requested = int(max_sources)
-        except (TypeError, ValueError):
-            requested = 5
-        bounded = max(1, min(requested, MAX_RESEARCH_SOURCES))
+            chosen = parse_sources(sources)
+            host = normalize_site(str(site) if site else None)
+        except ValueError:
+            return {"ok": False, "error": "Kaynak seçimi geçersiz."}
+        if host is not None and "site" not in chosen:
+            chosen = chosen + ("site",)
+        if "site" in chosen and host is None:
+            return {"ok": False, "error": "Belirli site araması için bir alan adı yaz."}
 
         def done(future: Future[Any]) -> None:
             if future.cancelled():
@@ -2556,7 +3158,9 @@ class NovaBridge:
 
         try:
             self.controller.submit_background(
-                self.controller.run_research(normalized, max_sources=bounded),
+                self.controller.run_research(
+                    normalized, max_sources=bounded, sources=chosen, site=host
+                ),
                 done,
             )
         except RuntimeError as exc:
@@ -2687,6 +3291,50 @@ class NovaBridge:
     def refresh(self) -> dict[str, Any]:
         return {"snapshot": _jsonable(self.controller.snapshot())}
 
+    def system_pulse(self) -> dict[str, Any]:
+        """CPU, memory and disk right now, measured, never estimated.
+
+        The CPU figure is the busy share between this call and the
+        previous one, so the very first reading honestly answers None
+        and the page shows a dash until the second beat.
+        """
+        try:
+            from app.platform.windows.service import (
+                WindowsIntegrationService,
+                cpu_percent_between,
+            )
+
+            times = WindowsIntegrationService.read_cpu_times()
+            info = WindowsIntegrationService.system_info()
+        except OSError as exc:
+            return {"ok": False, "error": f"Sistem ölçülemedi ({type(exc).__name__})."}
+        previous = self._pulse_times
+        self._pulse_times = times
+        cpu = cpu_percent_between(previous, times) if previous is not None else None
+        total = int(info.get("memory_total_bytes") or 0)
+        available = int(info.get("memory_available_bytes") or 0)
+        try:
+            battery = WindowsIntegrationService.read_power_status()
+        except OSError:
+            battery = {"has_battery": False, "percent": None, "charging": None}
+        cache = self._state_size_cache
+        if cache is None or time.time() - cache[0] > 60.0:
+            cache = (time.time(), state_data_bytes(default_state_directory()))
+            self._state_size_cache = cache
+        return {
+            "ok": True,
+            "uptime_seconds": int(time.time() - self._pulse_started),
+            "state_data_bytes": cache[1],
+            "battery_percent": battery["percent"] if battery["has_battery"] else None,
+            "battery_charging": battery["charging"] if battery["has_battery"] else None,
+            "cpu_percent": cpu,
+            "memory_percent": round(100.0 * (total - available) / total, 1) if total else None,
+            "memory_used_gib": round((total - available) / 1024 ** 3, 1) if total else None,
+            "memory_total_gib": info.get("memory_total_gib"),
+            "disk_free_gib": info.get("disk_free_gib"),
+            "disk_total_gib": info.get("disk_total_gib"),
+        }
+
     def system_status(self) -> dict[str, Any]:
         """Live health checks, bounded metrics, and process figures.
 
@@ -2789,6 +3437,29 @@ class NovaBridge:
     # ------------------------------------------------------------------
     # Memory
     # ------------------------------------------------------------------
+    def remember_note(self, content: Any) -> dict[str, Any]:
+        """A quick user note into memory, through the same sensitive-data
+        guard the inference path uses; a duplicate returns the existing
+        entry instead of a copy."""
+        body = str(content or "").strip()
+        if not body:
+            return {"ok": False, "error": "Not boş olamaz."}
+        if len(body) > 500:
+            return {"ok": False, "error": "Not 500 karakteri aşamaz."}
+        service = self.controller.application.memory_service
+        try:
+            entry = service.manager.remember(body, source_reference="palette")
+        except Exception as exc:
+            return {"ok": False, "error": f"Not kaydedilemedi ({type(exc).__name__})."}
+        self._record_ui_event(
+            "memory.note_added", "A note went into memory from the palette."
+        )
+        return {
+            "ok": True,
+            "message": "Hafızaya yazıldı.",
+            "memory_id": str(entry.memory_id),
+        }
+
     def list_memories(self, limit: Any = 200) -> dict[str, Any]:
         try:
             bounded = max(1, min(int(limit), MAX_MEMORY_LIST))
@@ -3184,6 +3855,14 @@ class NovaBridge:
     def _reminders(self) -> Any | None:
         return getattr(self.controller.application, "reminders", None)
 
+    def _spotify_ducker(self) -> Any | None:
+        spotify = getattr(self.controller.application, "spotify", None)
+        if spotify is None:
+            return None
+        from app.integrations.spotify_desktop import SpotifyDucker
+
+        return SpotifyDucker(spotify)
+
     def list_reminders(self) -> dict[str, Any]:
         """Active reminders straight from the service, waiting ones first."""
         service = self._reminders()
@@ -3220,6 +3899,21 @@ class NovaBridge:
         self._record_ui_event("reminder.created", "A reminder was created from the page.")
         return {"ok": True, "message": f"Hatırlatıcı kuruldu: {due}.", "due_local": str(due)}
 
+    def snooze_reminder(self, reminder_id: Any, minutes: Any = 10) -> dict[str, Any]:
+        """Push one reminder back a few minutes; reversible, so no dialog."""
+        service = self._reminders()
+        if service is None:
+            return {"ok": False, "error": "Hatırlatıcı hizmeti kapalı."}
+        try:
+            wanted = int(minutes)
+        except (TypeError, ValueError):
+            wanted = 10
+        result = service.snooze(str(reminder_id or ""), wanted)
+        if not result.succeeded:
+            return {"ok": False, "error": str(result.message or "Hatırlatıcı ertelenemedi.")}
+        self._record_ui_event("reminder.snoozed", "A reminder was pushed back from the page.")
+        return {"ok": True, "message": str(result.message)}
+
     def cancel_reminder(self, reminder_id: Any, confirmed: Any = False) -> dict[str, Any]:
         """Cancel one reminder; the page asks the user first, then says so."""
         if confirmed is not True:
@@ -3232,6 +3926,30 @@ class NovaBridge:
             return {"ok": False, "error": str(result.message or "Hatırlatıcı iptal edilemedi.")}
         self._record_ui_event("reminder.cancelled", "A reminder was cancelled from the page.")
         return {"ok": True, "message": "Hatırlatıcı iptal edildi."}
+
+    def about_info(self) -> dict[str, Any]:
+        """What this build is: versions and the data folder, all measured."""
+        return {
+            "ok": True,
+            "app_version": _application_version(),
+            "python_version": platform.python_version(),
+            "webview2_version": detect_webview2_runtime(),
+            "state_directory": str(default_state_directory()),
+        }
+
+    def open_state_folder(self) -> dict[str, Any]:
+        """Open the data folder in the file manager; the page's click asked."""
+        if not hasattr(os, "startfile"):
+            return {"ok": False, "error": "Bu ortamda klasör açılamıyor."}
+        try:
+            os.startfile(str(default_state_directory()))  # noqa: S606
+        except OSError as exc:
+            return {"ok": False, "error": f"Klasör açılamadı ({type(exc).__name__})."}
+        self._record_ui_event(
+            "settings.state_folder_opened",
+            "The data folder was opened from the page.",
+        )
+        return {"ok": True}
 
     # ------------------------------------------------------------------
     # Mobile companion (Ayarlar > Telefon)
@@ -3375,17 +4093,26 @@ class NovaBridge:
         ).start()
 
     def save_desktop_settings(self, payload: Any) -> dict[str, Any]:
-        """Non-secret assistant preferences: morning brief and web research."""
+        """Non-secret assistant preferences: morning brief, web research,
+        screen vision."""
         if self.api_settings is None:
             return {"ok": False, "error": "Ayar hizmeti kullanılamıyor."}
         data = payload if isinstance(payload, Mapping) else {}
+        # A caller that does not mention vision keeps the stored choice:
+        # an older page must not switch the screen off by omission.
+        stored = self.api_settings.preferences.load()
         try:
             self.api_settings.save_desktop(
                 daily_brief_notification=bool(data.get("daily_brief_notification")),
                 daily_brief_time=str(data.get("daily_brief_time") or ""),
                 research_enabled=bool(data.get("research_enabled")),
+                almanac_city=str(data.get("almanac_city") or ""),
+                vision_enabled=bool(data.get("vision_enabled", stored.vision_enabled)),
+                quiet_hours=str(data.get("quiet_hours", stored.quiet_hours) or ""),
             )
-        except ValueError:
+        except ValueError as exc:
+            if "quiet_hours" in str(exc):
+                return {"ok": False, "error": "Sessiz saatler boş ya da SS:DD-SS:DD olmalı (örn. 23:00-08:00)."}
             return {"ok": False, "error": "Saat biçimi SS:DD olmalı (örn. 08:30)."}
         try:
             self._rebuild_runtime()
@@ -3662,6 +4389,17 @@ def launch_nova(
     )
 
     start_options: dict[str, Any] = {"debug": False}
+    # Read-aloud plays a clip the user just asked for by clicking, but
+    # synthesis takes seconds and Chromium's activation window does not
+    # wait that long - WebView2 then rejects play(). Autoplay is allowed
+    # explicitly; anything already in the variable (a debugging port on
+    # the QA instance) is kept.
+    autoplay_flag = "--autoplay-policy=no-user-gesture-required"
+    existing_arguments = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
+    if autoplay_flag not in existing_arguments:
+        os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
+            f"{existing_arguments} {autoplay_flag}".strip()
+        )
     storage = webview_storage_directory()
     try:
         storage.mkdir(parents=True, exist_ok=True)

@@ -1100,3 +1100,432 @@ in the shared conversation and appears in the desktop chat. `tests/
 test_nova_web.py` (QuickJS): the shim's WAV encoder downsamples 48 kHz
 float audio into a valid mono 16-bit 16 kHz file with the right header
 and amplitude, and the RMS helper is exact.
+
+## Audit repairs (20 September 2026)
+
+`tests/test_task_service.py`: a resume is reported as the outcome it
+actually reached - COMPLETED verified success, PAUSED partial with
+`side_effects_may_continue`, FAILED and CANCELLED failures carrying the
+task's error; a queued or paused task cancels through the manager, a
+second cancel refuses, and an unknown id raises rather than reporting a
+cancellation. `tests/test_planning.py`: the approval grant never
+reaches `plan.json` (no operation id, no binding digest, no key) while
+the rest of the step metadata persists, and saving does not mutate the
+caller's in-memory plan. `tests/test_nova_web.py`: engine failure
+strings map to Turkish in both the desktop card and the step timeline,
+an unmapped one is shown verbatim, and the phone's task card reads the
+`goal` key the server actually sends. `tests/test_settings.py`: the
+execution budget defaults to 300 s, reads
+`JARVIS_EXECUTION_TIMEOUT_SECONDS`, refuses values outside 1-86400 and
+reaches the engine.
+
+Live pass (QA instance, isolated state directory, the user's own JARVIS
+untouched): twelve Nova screens and thirteen Medical Academy views with
+no console error, no unhandled rejection and no horizontal overflow; a
+chat turn, conversation list and search, memory, tasks, routines, a
+reminder created and cancelled, notifications, a four-question committee
+rehearsal answered and finished, a card graded, progress and the weekly
+report, a real web research, the permission audit and system status; the
+bridge refusing unknown and empty approval tokens; the mobile surface
+answering 401 unpaired, 200 paired, 403 without the page header, 403 for
+denied bridge methods, 404 for unknown ones, and returning real cloud
+speech. Thread and handle counts after that exercise matched an idle
+instance.
+
+## The academy room (20 September 2026)
+
+`tests/test_nova_web.py` gained six checks for the Medical Academy's own
+interface: the room is declared and wired (`showScreen` enters and leaves
+it, `bindAcademy` runs at boot, the opening and the topbar chip read one
+countdown field); the palette lives in `tokens.css` under `body.academy`,
+is bright, and its inks clear WCAG AAA (body, secondary) and AA (tertiary)
+against the ground; the type is set heavier; `academyIntroLine` and
+`academyGreeting` say only what the core reported and what the clock says;
+the opening is skipped without motion and opens no audio context when
+muted; the sections are grouped in the order they are listed. Two more
+pin the night theme: its block comes after the daylight one, its inks keep
+the same contrast floors, the switch lives in the side column and leaves
+with the room, and the preference defaults to daylight.
+
+Manual live acceptance: open `nova-demo` (`?demo=1`), press `Alt+3`: the
+veil shows the trace, the heart and the title within three seconds and
+lifts on its own; a click or `Esc` during it skips; `Esc` afterwards
+returns to Komuta Merkezi with the rail back; the side column groups the
+thirteen sections; "Ses kapalı" silences the next opening; at 375 px with
+`body.phone` the column becomes a strip and nothing overflows.
+
+## Research sources and the research room (20 September 2026)
+
+`tests/test_research_sources.py` drives every source over a canned
+transport keyed by host: GitHub facts as evidence, YouTube candidates from
+the web index confirmed by oEmbed (and an unconfirmed one that says so),
+Wikipedia Turkish first, PubMed's two-step lookup, arXiv's Atom entries,
+Stack Overflow's gzip answer, Hacker News' fallback to the discussion
+link, a site search held to its host, non-200 and bad JSON as errors,
+interleaving with one failure named, the build wiring exactly the enabled
+sources, evidence-bearing hits cited without a fetch, a web-only backend
+refusing other sources honestly, the cache key telling a YouTube question
+from a web one, and the tool accepting a source list and a site.
+
+`tests/test_nova_web.py` pins the room: assets and script order, the ids
+and the eight constellation nodes, the `showScreen` hook and the single
+binding, the two palettes and their contrast, Turkish uncertainties with
+unknown strings verbatim, presets that only offer what the core enabled,
+card markup that escapes untrusted text and names the facts, and room
+switches that default to day and sound.
+
+Manual live acceptance: `Alt+8` shows the constellation and lifts on its
+own; a click skips; the side column lists the sources the core enabled;
+a real query over Genel returns cards of more than one kind with an
+"Aç" button that opens the browser; the night switch and the sound switch
+remember themselves; `Esc` returns to Komuta Merkezi with the rail back.
+
+## The instrument drawer (20 September 2026)
+
+`tests/test_nova_web.py` gained three checks: the palette calculator
+answers the pinned cases (Turkish commas, degrees for trig, unit tables)
+and stays silent on nine command-like or undefined queries, with `eval`
+asserted absent; every clinical calculator reproduces its textbook vector
+(including Friedewald's refusal above 400 mg/dL and silence on missing
+inputs); and the wiring test walks the new assets, the calc view, the
+term card's read-only data path, and each key the F1 card names back to
+a real binding in the shell. `tests/test_medical_academy.py` pins the
+term of the day: same day same term, five consecutive days five terms,
+every term a real catalogue entry, and the key riding `dashboard()`.
+
+## The almanac (20 September 2026)
+
+`tests/test_almanac.py` drives both halves over a canned transport: the
+weather names the city, the sky and the range; the rates invert
+Frankfurter's TRY base to street form; each half fails alone with a
+Turkish reason; answers and failures are cached for half an hour with
+the city geocoded once; missing fields refuse instead of showing zero;
+an unknown weather code shows nothing. `tests/test_ui_nova.py` pins the
+brief carrying the snapshot and surviving a broken or absent almanac,
+and `tests/test_nova_web.py` pins the two brief rows, silence when no
+city is set, and the settings card round-tripping the city.
+
+## Two mobile races pinned (20 September 2026)
+
+`tests/test_mobile.py` gained a raw-socket test for the oversized
+recording: 413 with its Turkish message on the same connection that then
+serves a normal request, proving the drain ceiling clears the voice cap.
+The streaming lifecycle test that was flaky under load is deterministic
+now that `turn_started` is emitted before the hand-over; the ordering is
+by construction, not by scheduler luck.
+
+## Voice, ink and accents (20 September 2026)
+
+`tests/test_ui_nova.py` pins `speak_text` on a fake synthesizer - a
+playable RIFF WAV from PCM, markup stripped before speech, honest
+refusals for no service and empty text - and `save_markdown`'s
+boundaries: sanitized basename, no overwrite, missing folder, empty and
+oversized content. `tests/test_nova_web.py` pins the wiring (the
+speaker button gated on `voice_available`, the export button and
+`State.lastResearchReport`, accent blocks in `tokens.css` declared
+before the rooms, the settings select) and the report Markdown builder
+against a fixture, uncertainty translation included.
+
+## The header pencil (21 September 2026)
+
+Pins: the header button, its active-thread-only visibility, and the
+shared rename path (no second dialog, no second bridge call).
+
+## The brief's +10 (21 September 2026)
+
+The markup test pins the badge riding only id-bearing rows (escaped),
+and the handler pins hold stopPropagation, the shared snooze call,
+the brief reload and the absence of any dialog.
+
+## The folded units (21 September 2026)
+
+The calculator test gained "5 MIL KM" and "70 KG LB" vectors, and the
+fold sweep now also pins toolbox.js free of locale lowering.
+
+## The renamed conversation (21 September 2026)
+
+The bridge test renames through every edge: unknown id, the 80-char
+cap, whitespace collapsing, the drawer and search speaking the new
+name, archived threads renaming, the empty name returning to the
+derived title, and the ledger event. Web pins hold promptDialog's
+null-vs-empty contract and the shared modal's field cleanup.
+
+## The hand-written note (21 September 2026)
+
+Pins: the form and its 500-character field in the page, the handler
+riding remember_note (not a second path), the empty-body early
+return, and the reload-and-clear on success.
+
+## The palette note (21 September 2026)
+
+QuickJS pins noteQuery (both prefixes, the not-a-prefix word, the
+too-short body); the bridge test pins the single entry a duplicate
+maps to, the user source, the bounds, and that a guard refusal names
+the type without leaking its message.
+
+## The search fold (21 September 2026)
+
+QuickJS pins searchFold's collapse in both directions, its one-to-one
+length, and the bare inputs; the chat-find and conv-search tests
+gained uppercase-I vectors and an uppercase <mark> proof; a sweep pin
+holds every search surface on the fold with no locale API left in the
+demo bridge.
+
+## The ledger sieve (21 September 2026)
+
+QuickJS pins eventMatches over every shown field, empty-query
+pass-through, case folding and bare rows; source pins hold the three
+sieve call sites (render, fresh mark, copy) and the X / Y count.
+
+## The language badge (21 September 2026)
+
+Vectors: python and c++ badges, the bare fence with none, the hostile
+opener refused outright, and the mid-stream cut keeping its badge.
+
+## The bell's chips (21 September 2026)
+
+QuickJS pins notifKinds (counts, order, ties by name, the kindless
+skipped); source pins hold the view-only filter line, the vanished-
+kind reset and the no-chips-for-one-kind rule.
+
+## Run now (21 September 2026)
+
+The bridge test runs a routine now against a fake engine and pins the
+untouched next_run_at, the run_now ledger event, the paused refusal in
+words and the absence of any silent defer; the web test pins the
+dialog-free, self-disabling button.
+
+## The About card (21 September 2026)
+
+QuickJS renders aboutRows full, bare (four dashes, off styling) and
+hostile (escaped); the bridge test pins measured shapes and that the
+folder opened is the folder reported, with the OSError path in words.
+
+## The bell's re-arm (21 September 2026)
+
+Source pins: the ⏰ only on reminder kinds, the honest "new
+reminder" title, the create_reminder("+10") call, the non-reminder
+refusal, and the rearm branch running before the row's activate.
+
+## The composer's history walk (21 September 2026)
+
+QuickJS drives `historyStep` over both edges, the draft's seat at -1,
+a shrunken-history clamp and non-string entries; source pins hold the
+Ctrl-arrow wiring, the draft capture and both resets.
+
+## The ten-minute snooze (21 September 2026)
+
+`test_reminder_delivery` pins snooze against the controllable clock:
+past the old minute, claimable at the new one, retry state reset to a
+clean wait, and refusals for zero, cancelled and unknown. The bridge
+test moves a real row twice and compares the shown times; the web test
+pins the dialog-free handler.
+
+## Tables (21 September 2026)
+
+The markdown test gained table vectors: the three-row shape, consumed
+rule, inline markdown inside cells, the no-rule stray pipe staying
+text, ragged-row padding, and the escaped hostile cell.
+
+## Fenced code (21 September 2026)
+
+The markdown test gained fence vectors: literal content (no inline
+emphasis inside), a single block per fence, the mid-stream cut, the
+escaped hostile fence, and the corner copy control.
+
+## Cards that speak (21 September 2026)
+
+`test_nova_web` pins the card's voice-gated button, the on-screen-only
+spoken text (hidden backs stay silent), and the Speech player with no
+`<audio>` left in study.js.
+
+## The visible sleep timer (21 September 2026)
+
+`test_integrations` pins the figure riding now_playing only while the
+timer runs; `test_nova_web` pins the button swap (arm ↔ cancel, never
+both).
+
+## The quiet glance (21 September 2026)
+
+`test_integrations` pins launch=False answering BLOCKED without a
+window; `test_nova_web` pins the count line (and its absence when the
+glance is blocked) plus the poll's quiet parameters.
+
+## The request line (21 September 2026)
+
+`test_nova_web` pins the request line appearing only on a live card,
+the queue call's shape, and the in-flight disable.
+
+## Tomorrow's row (21 September 2026)
+
+`test_almanac` pins the two-day arrays (tomorrow's rounded range, the
+`forecast_days=2` parameter); `test_nova_web` pins the brief's Yarın
+row appearing only when the payload carries both figures.
+
+## The term that speaks (21 September 2026)
+
+`test_nova_web` pins the term card's voice-gated button, the in-gesture
+unlock, the Speech player (no `<audio>` left in medical.js), and the
+spoken sentence carrying both names.
+
+## The dictionary's hands (21 September 2026)
+
+`test_nova_web` pins the card's action bar: voice-gated Seslendir, the
+two-sense spoken text, the copy that strips its own buttons, and the
+audio data URL matching the bridge's mime.
+
+## The moon on the held toast (21 September 2026)
+
+The quiet-hours bridge test now also reads the centre: the night entry
+carries `quiet_held`, the daytime one does not; the page test pins the
+moon's markup and its honest tooltip.
+
+## The folded archive and the copied ledger (21 September 2026)
+
+`test_nova_web` extends the pure drawer split: with hideArchived the
+open thread survives, others fold, and the hidden count is exact; the
+wiring pins both toggle rows, the storage key, the ledger's copy
+button and its empty-list refusal.
+
+## The palette's short memory (21 September 2026)
+
+`test_nova_web` runs the pure recent-list in QuickJS: five entries
+newest first, repeats promoted not duplicated, junk JSON answering an
+empty list, long commands clipped; and pins the empty-query rows, the
+forget row's device-local label, and the write on `sendCommand`.
+
+## The focus that asks (21 September 2026)
+
+`test_nova_web` pins the offer's guardrails: only a finished session
+offers (one call site, inside `stop(true)`), short sits and a closed
+Academy stay silent, the dialog's words, and the log call going through
+`plan_log_study` with activity "focus".
+
+## Copy and the corner clock (21 September 2026)
+
+`test_nova_web` pins the copy control on full-size bubbles only, the
+single clipboard hand's three honest answers (copied, refused, nothing
+to copy), the report's Kopyala building the same Markdown the export
+writes, and the mini clock starting with compact mode and stopping
+with it.
+
+## Session, data, snow (21 September 2026)
+
+`test_ui_nova` pins the size helper (top-level files only, a missing
+directory is zero), the pulse's cached data figure (a livelier helper
+is not consulted inside the minute) and a monotonic uptime.
+`test_nova_web` walks `pulseUptime`'s words and the snow's three
+honesty pins: the reduced-motion refusal, the single sky, the
+self-removal.
+
+## Quiet hours and the battery (21 September 2026)
+
+`test_ui_api_settings` round-trips the quiet window (halves normalized,
+equal ends refused, empty allowed). `test_ui_nova` walks the pure clock
+check (midnight wrap, a daytime window's exclusive end, junk answering
+False) and then the bridge itself with a frozen `_now`: inside the
+window the stubbed OS notifier stays silent while the centre records,
+outside it fires once; the settings error is Turkish and an omitted key
+keeps the stored window. The pulse tests stub `read_power_status` three
+ways - battery, no battery, a raising API - and the live Windows test
+asserts the power answer's shape in the API's own terms.
+
+## Pins and find (21 September 2026)
+
+`test_nova_web` runs the pure drawer/find helpers in QuickJS: pin-set
+parsing tolerates blanks, unknown pins pin nothing, the split keeps
+order; the find filter lowercases Turkish, answers indexes, and an
+empty query means "off", not "nothing matches". Wiring pins the row's
+pin control, the localStorage key, the device-local note, the find box
+and its Escape-to-clear, and the CSS that hides misses.
+
+## Sun, lira, nudge (21 September 2026)
+
+`test_almanac` pins the sunrise/sunset fields on the same forecast call
+(and their absence staying None). `test_nova_web` walks the two new
+palette parsers - currency vectors incl. symbol forms, lira needing a
+target, the unit-converter and math guards staying out - and the
+reminder forms (+minutes, HH:MM, hour normalisation, the "hatırlatma"
+non-prefix), plus the sun row appearing only when the payload carries
+times. `test_ui_nova` drives `convert_currency` against a stubbed
+almanac: dated display in Turkish separators, TRY round-trip, EUR/USD
+cross rate, and every refusal (amount, codes, dead service, no
+almanac).
+
+## The remote (21 September 2026)
+
+`test_ui_nova` runs `run_remote_tool` against a tool registered on the
+booted executor (once, result mirrored) and pins the two refusals: not
+on the allow-list, and allowed but unregistered. `test_nova_web` draws
+the remote from tool reports - playing, paused, Spotify closed, a
+delegation running, a hostile artist name escaped - and checks the
+wiring (card id, start/stop with the home screen, the bridge call).
+`test_mobile` asserts the served `/nova/` page carries the new cards
+and that the remote's bridge method answers from the phone.
+
+## Spotify's hands (21 September 2026)
+
+`tests/test_spotify_desktop.py` pins the pure helpers with the names the
+window showed (library rows, shuffle states, seek arithmetic and clamps,
+the play row a person would press, the transport bar), the ducker's
+duck/restore sequence on a worker thread (no stacking, silence and a
+missing window left alone) and the sleep timer's fade-then-pause with an
+injected sleep. `tests/test_integrations.py` drives every new tool
+through `FakeSpotifyUia` - sliders read back, shuffle pressed until the
+name agrees and PARTIAL when it never does, repeat toggled to the
+wanted state, like honest about an already-saved track, library rows
+listed and double-clicked with the title as proof, queue verified in
+the panel, now-playing from the bar when paused - and the shell's
+voice-state chain keeps pushing phases when the ducker raises.
+
+## WhatsApp manners and the vision that finally ran (21 September 2026)
+
+`tests/test_whatsapp_human.py` pins the pure layer: nods and emoji are
+acknowledgements (vocatives like "kanka" do not change that), a
+question is not; the style profile is measured and says when it is
+thin; quiet hours wrap midnight; pacing is bounded, capped and
+reproducible with a seeded RNG; replies split into at most three
+bubbles. `tests/test_whatsapp_agent.py` drives the agent with structured
+snapshots: replies only to the contact's fresh bubbles, never to its own
+or unattributed ones, leaves a "tamam 👍" alone, holds a night message
+and sends it at 08:30, refuses to read a switched chat, types each
+bubble at a pace, and one exchange is one turn however many bubbles.
+`tests/test_integrations.py` covers the parsers with the shapes the
+probes recorded (badge before or after the time, author inheritance
+across unlabeled runs, media rows) and the paced send that types
+instead of prefilling. The vision path is tested against the real
+`VisionSessionResult` now: two test doubles had invented a `response`
+field the controller then read, which is why the first live capture
+failed with an AttributeError the suite had never seen.
+
+## The dictionary and the honest month (20 September 2026)
+
+`tests/test_dictionary.py` cans the live sozluk.gov.tr shape captured
+by probe (list of entries, senses under `anlamlarListe`, compounds as
+one comma-joined string) and pins: the reshape invents nothing, the
+Turkish case fold (HEKİM→hekim, ISPARTA→ısparta) hits one transport
+call for every casing, misses and dead services answer with named
+reasons and are cached, guards run before any network, and the cache
+cap evicts the oldest word. `test_nova_web.py` walks `dictionaryQuery`
+prefixes and the card markup (hostile words stay escaped), checks the
+shortcuts X is actually wired, and demands an answers-only day wear
+`l1` while a truly empty day stays `l0`. `test_ui_nova.py` drives the
+`define_word` bridge against a stub and reads the morning line with
+and without the almanac.
+
+## Rhythm, pulse and noise (20 September 2026)
+
+`tests/test_medical_scoring.py` gained the frozen-clock backup test:
+three backups inside one `datetime.now` tick yield three files, the
+sibling names sort as the creation order, and rotation removes the true
+oldest - pinning the collision that used to overwrite a kept copy.
+
+
+`tests/test_nova_web.py` pins the heatmap builder against a fixture
+(levels, tooltips, empty input) and the pulse's page half: beats only on
+the diagnostics screen, a dash - never a zero - for the first CPU
+reading, silence on failure, and the focus noise declaring itself
+synthetic and yielding to Escape. `tests/test_ui_nova.py` drives
+`system_pulse` over monkeypatched counters (first beat None, second the
+exact busy share) and `cpu_percent_between` over its refusals; the
+academy tests pin `weekly_report(days=28)` and the 31-day cap.

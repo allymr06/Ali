@@ -212,6 +212,58 @@ class WindowsIntegrationService:
         )
 
     @staticmethod
+    def read_cpu_times() -> tuple[int, int, int]:
+        """(idle, kernel, user) 100 ns counters from GetSystemTimes.
+
+        Raw and monotonic: a CPU percentage is honest only as the ratio
+        of two samples' deltas, so this returns the counters and leaves
+        the arithmetic to whoever holds the previous pair. Note kernel
+        time includes idle time, as Windows defines it.
+        """
+        if os.name != "nt":
+            raise OSError("CPU times require Windows.")
+        idle = ctypes.c_ulonglong()
+        kernel = ctypes.c_ulonglong()
+        user = ctypes.c_ulonglong()
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        if not kernel32.GetSystemTimes(
+            ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)
+        ):
+            raise OSError(ctypes.get_last_error(), "GetSystemTimes failed.")
+        return idle.value, kernel.value, user.value
+
+    @staticmethod
+    def read_power_status() -> dict[str, object]:
+        """GetSystemPowerStatus, reported as the API states it.
+
+        A desktop without a battery answers has_battery=False; an
+        unknown percentage (the API's 255) stays None instead of a
+        guess. Charging means "on AC power" exactly as Windows says it.
+        """
+        import ctypes
+
+        class SYSTEM_POWER_STATUS(ctypes.Structure):
+            _fields_ = [
+                ("ACLineStatus", ctypes.c_ubyte),
+                ("BatteryFlag", ctypes.c_ubyte),
+                ("BatteryLifePercent", ctypes.c_ubyte),
+                ("SystemStatusFlag", ctypes.c_ubyte),
+                ("BatteryLifeTime", ctypes.c_ulong),
+                ("BatteryFullLifeTime", ctypes.c_ulong),
+            ]
+
+        status = SYSTEM_POWER_STATUS()
+        if not ctypes.WinDLL("kernel32").GetSystemPowerStatus(ctypes.byref(status)):
+            raise OSError("GetSystemPowerStatus failed")
+        no_battery = bool(status.BatteryFlag & 128) or status.BatteryFlag == 255
+        percent = None if status.BatteryLifePercent > 100 else int(status.BatteryLifePercent)
+        return {
+            "has_battery": not no_battery,
+            "percent": None if no_battery else percent,
+            "charging": None if no_battery else status.ACLineStatus == 1,
+        }
+
+    @staticmethod
     def system_info() -> dict[str, object]:
         if os.name != "nt":
             raise OSError("Windows system information requires Windows.")
@@ -353,3 +405,22 @@ class WindowsIntegrationService:
             launch_windows_application,
             source="platform:windows",
         )
+
+
+def cpu_percent_between(
+    previous: tuple[int, int, int], current: tuple[int, int, int]
+) -> float | None:
+    """Busy share of the CPU between two GetSystemTimes samples.
+
+    Kernel time includes idle time, so busy = (kernel - idle) + user.
+    Two equal samples (or a counter that went backwards after resume)
+    answer None rather than a made-up figure.
+    """
+    idle = current[0] - previous[0]
+    kernel = current[1] - previous[1]
+    user = current[2] - previous[2]
+    total = kernel + user
+    if total <= 0 or idle < 0:
+        return None
+    busy = max(0, total - idle)
+    return round(min(100.0, 100.0 * busy / total), 1)

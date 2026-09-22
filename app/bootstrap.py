@@ -32,11 +32,15 @@ from app.providers.gateway import ProviderGateway
 from app.providers.models import ModelProfile, TaskType
 from app.providers.registry import ProviderRegistry
 from app.providers.router import ModelRouter
+from app.integrations.almanac import AlmanacService
+from app.integrations.dictionary import DictionaryService
 from app.research import (
     DuckDuckGoSearchProvider,
     GeminiGroundedSearch,
     ResearchService,
     SQLiteResearchCache,
+    build_source_providers,
+    parse_sources,
     SafeWebFetcher,
     SearXNGSearchProvider,
     URLPolicy,
@@ -79,6 +83,9 @@ class JARVISApplication:
     medical: object | None = None
     vision: VisionService | None = None
     research: ResearchService | None = None
+    almanac: AlmanacService | None = None
+    dictionary: DictionaryService | None = None
+    spotify: object | None = None
     reminders: object | None = None
     routines: object | None = None
     screen_watcher: object | None = None
@@ -115,6 +122,7 @@ class JARVISApplication:
 
         self.task_manager.close()
         self.memory_manager.close()
+        self.tool_executor.shutdown()
 
 
 def create_application(
@@ -365,8 +373,13 @@ def create_application(
             model=active_settings.memory_extraction_model,
         )
 
+    from app.execution.models import ExecutionLimits
+
     engine = CoreEngine(
         provider_registry=provider_registry,
+        execution_limits=ExecutionLimits(
+            timeout_seconds=active_settings.execution_timeout_seconds
+        ),
         memory_manager=memory_manager,
         tool_executor=tool_executor,
         task_manager=task_manager,
@@ -575,8 +588,34 @@ def create_application(
             )
 
     if search_provider is not None:
+        # Every keyless source the settings allow, around whichever web
+        # backend was chosen. YouTube and site searches ride the DuckDuckGo
+        # index even when another web backend is configured, because that
+        # is the one that can be told "only this host".
+        enabled = parse_sources(active_settings.research_sources)
+        if "web" not in enabled:
+            enabled = ("web",) + enabled
+        duckduckgo = (
+            search_provider
+            if isinstance(search_provider, DuckDuckGoSearchProvider)
+            else DuckDuckGoSearchProvider(
+                policy,
+                timeout_seconds=active_settings.research_timeout_seconds,
+                max_response_bytes=active_settings.research_max_response_bytes,
+            )
+        )
+        source_catalogue = build_source_providers(
+            policy,
+            web=search_provider,
+            duckduckgo=duckduckgo,
+            enabled=enabled,
+            timeout_seconds=active_settings.research_timeout_seconds,
+            max_response_bytes=active_settings.research_max_response_bytes,
+            user_agent=active_settings.research_user_agent,
+        )
         research = ResearchService(
             search_provider=search_provider,
+            sources=source_catalogue,
             fetcher=fetcher,
             max_sources=active_settings.research_max_sources,
             max_concurrency=active_settings.research_max_concurrency,
@@ -595,6 +634,22 @@ def create_application(
             ),
         )
         research.register_tools(tool_executor)
+
+    # The almanac is independent of research: keyless, read-only, and
+    # only ever asked when the brief is drawn. No city still answers for
+    # the rates half.
+    almanac = AlmanacService(
+        city=active_settings.almanac_city,
+        timeout_seconds=active_settings.research_timeout_seconds,
+        user_agent=active_settings.research_user_agent,
+    )
+
+    # The palette's dictionary is the same shape: keyless, read-only,
+    # policy-pinned, and only ever asked when the user asks for a word.
+    dictionary = DictionaryService(
+        timeout_seconds=active_settings.research_timeout_seconds,
+        user_agent=active_settings.research_user_agent,
+    )
 
     from app.config.paths import default_state_path
     from app.reminders import ReminderService
@@ -616,6 +671,7 @@ def create_application(
     )
     routines.register_tools(tool_executor)
 
+    spotify = None
     if windows is not None:
         from app.integrations import (
             SpotifyIntegration,
@@ -626,12 +682,13 @@ def create_application(
         )
         from app.security.credentials import WindowsCredentialStore
 
-        SpotifyIntegration(
+        spotify = SpotifyIntegration(
             client_id=active_settings.spotify_client_id,
             credential_store=WindowsCredentialStore(
                 "JARVIS/Spotify OAuth"
             ),
-        ).register_tools(tool_executor)
+        )
+        spotify.register_tools(tool_executor)
         whatsapp = WhatsAppIntegration(
             contacts_path=(
                 active_settings.whatsapp_contacts_path
@@ -808,6 +865,9 @@ def create_application(
         voice=voice,
         vision=vision,
         research=research,
+        almanac=almanac,
+        dictionary=dictionary,
+        spotify=spotify,
         reminders=reminders,
         routines=routines,
         screen_watcher=screen_watcher,
